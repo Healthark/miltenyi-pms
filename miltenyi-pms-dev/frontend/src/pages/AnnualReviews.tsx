@@ -139,7 +139,7 @@ export function AnnualReviews() {
       <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="font-display text-xl font-semibold text-text-main">
-            Annual Reviews
+            Team Reviews
             {fyLabel && (
               <span className="ml-2 text-sm font-normal text-text-muted">
                 · {fyLabel}
@@ -147,8 +147,7 @@ export function AnnualReviews() {
             )}
           </h1>
           <p className="mt-0.5 text-sm text-text-muted">
-            Complete your annual review, receive mentor feedback, and view your
-            final rating.
+            Complete your team review and provide feedback for your team members.
           </p>
         </div>
         {activeTab === "my" && canStart && (

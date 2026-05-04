@@ -167,7 +167,7 @@ export function UsersTab({
                   <SortableHeader label="Mentor" columnKey="mentor_name" sort={sort} onSort={setSort} />
                 </th>
                 <th className="px-5 py-3">
-                  <SortableHeader label="Department" columnKey="department_name" sort={sort} onSort={setSort} />
+                  <SortableHeader label="Function" columnKey="department_name" sort={sort} onSort={setSort} />
                 </th>
                 <th className="px-5 py-3">
                   <SortableHeader label="Designation" columnKey="designation_name" sort={sort} onSort={setSort} />

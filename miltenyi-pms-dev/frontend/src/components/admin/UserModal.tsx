@@ -225,7 +225,7 @@ export function UserModal({
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label htmlFor="dept" className={LABEL_CLS}>
-                Department
+                Function
               </label>
               <select
                 id="dept"
