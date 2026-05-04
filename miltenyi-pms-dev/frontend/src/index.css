@@ -1,0 +1,89 @@
+@import "tailwindcss";
+
+@theme {
+  /* Map Tailwind colors to our dynamic CSS variables */
+  --color-brand: var(--brand);
+  --color-brand-light: var(--brand-light);
+  --color-accent: var(--accent); /* <-- NEW: Dynamic Accent Color */
+  
+  /* Layout Colors */
+  --color-background: var(--background); /* Made background dynamic too */
+  --color-surface: #FFFFFF;
+
+  /* Text Colors */
+  --color-text-main: #0F172A;
+  --color-text-muted: #64748B;
+
+  /* Status Colors */
+  --color-green: #10B981;
+  --color-amber: #F59E0B;
+  --color-red: #EF4444;
+  --color-border: #E2E8F0;
+
+  /* Typography */
+  --font-display: 'Poppins', sans-serif;
+  --font-body: 'DM Sans', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+/* Base Styles */
+@layer base {
+  /* Bake in a one-notch zoom-out so the app matches the typical
+     1366×768 / 1920×1080 14–16" laptop. All rem-based Tailwind
+     utilities (spacing, font sizes, gaps) scale off this. */
+  html {
+    font-size: 87.5%;
+  }
+
+  /* Default Theme (Healthark - org_id: 1) */
+  :root, [data-theme="healthark"] {
+    --brand: #315C84;
+    --brand-light: #EBF1F6;
+    --accent: #0EA5E9; /* A nice secondary Sky Blue for Healthark */
+    --background: #F8FAFC; 
+  }
+
+  /* Miltenyi Biotec Theme (org_id: 2) */
+  [data-theme="miltenyi"] {
+    --brand: #3C1053; /* Miltenyi Deep Purple */
+    --brand-light: #F4EFF8; 
+    --accent: #F37920; /* <-- NEW: Miltenyi Vibrant Orange */
+    --background: #FDFCFE; 
+  }
+
+  body {
+    @apply bg-background text-text-main font-body min-h-screen overflow-x-hidden antialiased;
+  }
+
+  /* ── Site-wide minimalist scrollbar ───────────────────────────────
+     Subtle gray, applied to every scroll container automatically.
+     Firefox honours the standardized `scrollbar-*` properties; Chrome,
+     Edge, and Safari fall through to the `::-webkit-scrollbar` pseudos.
+     Track is transparent on both engines so the bar doesn't read as a
+     framed channel. */
+
+  /* Firefox */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(15, 23, 42, 0.18) transparent; /* slate-900 @ 18% */
+  }
+
+  /* WebKit / Chromium / Safari */
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background-color: rgba(15, 23, 42, 0.18);
+    border-radius: 2px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(15, 23, 42, 0.32);
+  }
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+}

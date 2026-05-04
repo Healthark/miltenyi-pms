@@ -1,0 +1,24 @@
+# .graphifyignore
+
+# Environments & Modules
+venv/
+.venv/
+env/
+__pycache__/
+node_modules/
+
+# Images
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+*.ico
+*.webp
+
+# Videos
+*.mp4
+*.mkv
+*.avi
+*.mov
+*.webm

@@ -1,0 +1,34 @@
+# Backend (Python)
+.env
+.venv/
+env/
+venv/
+ENV/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# SQLite Database (Do not commit local test databases)
+*.db
+*.sqlite3
+
+# Frontend (Node/React)
+node_modules/
+dist/
+build/
+.next/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+project_structure.md
+
+
+# AI Assistant & Knowledge Graph Data
+.claude/
+graphify-out/
+.graphify_*
+CLAUDE.md
+.claudeignore
