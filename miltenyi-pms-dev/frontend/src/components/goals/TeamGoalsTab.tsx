@@ -276,7 +276,7 @@ export function TeamGoalsTab() {
     payload: GoalMentorReviewPayload,
   ) => {
     if (!reviewGoal) return;
-    const halfLabel = halfDisplayLabel(cycleHalf, cycleType);
+    const halfLabel = halfDisplayLabel(cycleHalf);
     const ok = await confirm({
       title: `Submit ${halfLabel} mentor review?`,
       message: `Submit your ${halfLabel} review on "${reviewGoal.title}" for ${reviewGoal.owner_name}. Mentor reviews are one-shot — once submitted you can't edit this entry, and ${reviewGoal.owner_name} will see your assessment for this half.`,

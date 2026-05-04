@@ -190,10 +190,10 @@ export function ProjectReviews() {
       {/* ── Page Header ── */}
       <div>
         <h1 className="font-display text-xl font-semibold text-text-main">
-          Project Reviews
+          Evaluate Team
         </h1>
         <p className="mt-0.5 text-sm text-text-muted">
-          Project-specific performance feedback and evaluations.
+          Provide feedback for projects and team members
         </p>
       </div>
 
