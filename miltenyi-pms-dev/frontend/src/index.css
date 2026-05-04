@@ -35,20 +35,20 @@
     font-size: 87.5%;
   }
 
-  /* Default Theme (Healthark - org_id: 1) */
-  :root, [data-theme="healthark"] {
-    --brand: #315C84;
-    --brand-light: #EBF1F6;
-    --accent: #0EA5E9; /* A nice secondary Sky Blue for Healthark */
-    --background: #F8FAFC; 
+  /* Default Theme (Miltenyi Biotec - org_id: 2) */
+  :root, [data-theme="miltenyi"] {
+    --brand: #3C1053; /* Miltenyi Deep Purple */
+    --brand-light: #F4EFF8;
+    --accent: #F37920; /* Miltenyi Vibrant Orange */
+    --background: #FDFCFE;
   }
 
-  /* Miltenyi Biotec Theme (org_id: 2) */
-  [data-theme="miltenyi"] {
-    --brand: #3C1053; /* Miltenyi Deep Purple */
-    --brand-light: #F4EFF8; 
-    --accent: #F37920; /* <-- NEW: Miltenyi Vibrant Orange */
-    --background: #FDFCFE; 
+  /* Healthark Theme (org_id: 1) */
+  [data-theme="healthark"] {
+    --brand: #315C84;
+    --brand-light: #EBF1F6;
+    --accent: #0EA5E9;
+    --background: #F8FAFC;
   }
 
   body {
