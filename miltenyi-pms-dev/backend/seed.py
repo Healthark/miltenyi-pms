@@ -26,7 +26,6 @@ from app.models.annual_review_models import AnnualReview
 from app.models.goal_models import Goal
 from app.models.goal_self_review_models import GoalSelfReview
 from app.models.role_expectation_models import RoleExpectation
-from app.models.feedback_360_models import Feedback360Review, Feedback360Answer
 
 
 def seed_database():
@@ -54,7 +53,6 @@ def seed_database():
             print("  [+] Created Organization: Miltenyi (full suite)")
         else:
             print("  [~] Organization 'Miltenyi' already exists, skipping...")
-
 
         # ================================================================== #
         # 2. DEPARTMENTS & DESIGNATIONS                                       #

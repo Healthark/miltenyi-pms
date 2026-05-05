@@ -4,7 +4,6 @@ import {
   Target,
   Users,
   FileText,
-  MessagesSquare,
   User,
   HelpCircle,
   LogOut,
@@ -80,8 +79,7 @@ const MAIN_NAV: NavItemData[] = [
   { id: "annual-goals", path: "/annual-goals", label: "Annual Goals", icon: Target, feature: "goals" },
   { id: "annual-reviews", path: "/annual-reviews", label: "Annual Reviews", icon: FileText, feature: "annual_reviews" },
   { id: "my-mentees", path: "/my-mentees", label: "My Mentees", icon: Users, feature: "mentoring" },
-  { id: "feedback", path: "/feedback", label: "360 Feedback", icon: MessagesSquare, feature: "feedback_360" },
-  { id: "admin", path: "/admin", label: "Admin Panel", icon: Settings, feature: "admin", requiredRole: ["Admin"] },
+{ id: "admin", path: "/admin", label: "Admin Panel", icon: Settings, feature: "admin", requiredRole: ["Admin"] },
 ];
 
 const BOTTOM_NAV: NavItemData[] = [

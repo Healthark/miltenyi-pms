@@ -78,17 +78,6 @@ class Settings(BaseSettings):
     # Used to render the "Sign in" CTA link inside outbound emails.
     APP_BASE_URL: str = "http://localhost:5173"
 
-    # ── 360 Feedback ────────────────────────────────────────────────
-    # Per-deployment HMAC secret used to anonymise reviewers in the
-    # 360 feedback module. Never logged. Rotating it invalidates the
-    # uniqueness check ("one review per (reviewer, target, FY)") for
-    # all previously-submitted reviews. Generate with:
-    #   python -c "import secrets; print(secrets.token_urlsafe(32))"
-    # No default — the app fails to boot if unset, so misconfigured
-    # deployments can't accidentally write reviewer hashes that all
-    # collide on an empty secret.
-    FEEDBACK_HASH_SECRET: str
-
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=True)
 
     FISCAL_START_MONTH: int = 4
