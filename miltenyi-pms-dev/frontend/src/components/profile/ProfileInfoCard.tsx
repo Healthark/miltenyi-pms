@@ -2,7 +2,7 @@
  * ProfileInfoCard.tsx — Read-Only HR Identity Card.
  *
  * Displays the user's name, avatar initials, employee code, org,
- * department, designation, mentor, and join date.
+ * function, designation, mentor, and join date.
  *
  * All fields are HR-controlled and read-only — the user cannot edit
  * them here. Edits go through the Admin Panel (Epic 1.3).
@@ -124,8 +124,8 @@ export function ProfileInfoCard({ profile, isLoading }: ProfileInfoCardProps) {
         />
         <InfoRow
           icon={Briefcase}
-          label="Department"
-          value={profile.department}
+          label="Function"
+          value={profile.function}
         />
         <InfoRow
           icon={Briefcase}

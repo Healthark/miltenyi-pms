@@ -23,7 +23,7 @@ type UsersSortKey =
   | "full_name"
   | "email"
   | "mentor_name"
-  | "department_name"
+  | "function_name"
   | "designation_name"
   | "status";
 
@@ -53,7 +53,7 @@ const USERS_SORT_CONFIG: Record<
     get: (u, all) =>
       u.mentor_id ? all.find((x) => x.id === u.mentor_id)?.full_name ?? null : null,
   },
-  department_name:  { kind: "alpha", get: (u) => u.department?.name ?? null },
+  function_name:  { kind: "alpha", get: (u) => u.function?.name ?? null },
   designation_name: { kind: "alpha", get: (u) => u.designation?.name ?? null },
   status:           { kind: "alpha", get: (u) => (u.is_deleted ? "Inactive" : "Active") },
 };
@@ -167,7 +167,7 @@ export function UsersTab({
                   <SortableHeader label="Mentor" columnKey="mentor_name" sort={sort} onSort={setSort} />
                 </th>
                 <th className="px-5 py-3">
-                  <SortableHeader label="Function" columnKey="department_name" sort={sort} onSort={setSort} />
+                  <SortableHeader label="Function" columnKey="function_name" sort={sort} onSort={setSort} />
                 </th>
                 <th className="px-5 py-3">
                   <SortableHeader label="Designation" columnKey="designation_name" sort={sort} onSort={setSort} />
@@ -221,7 +221,7 @@ export function UsersTab({
                       {users.find((u) => u.id === user.mentor_id)?.full_name ?? "—"}
                     </td>
                     <td className="px-5 py-3.5 text-text-muted">
-                      {user.department?.name ?? "—"}
+                      {user.function?.name ?? "—"}
                     </td>
                     <td className="px-5 py-3.5 text-text-muted">
                       {user.designation?.name ?? "—"}

@@ -147,7 +147,7 @@ class MyProjectCard(BaseModel):
     project_expected_end_date: Optional[date] = None
     assigned_date: Optional[date] = None
     assignment_role: Optional[str] = None
-    department_name: Optional[str] = None
+    function_name: Optional[str] = None
     review_status: Optional[str] = None  # null = no review yet, "pending", "reviewed"
     performance_group: Optional[str] = None
     pm_name: Optional[str] = None
@@ -166,7 +166,7 @@ class PMPendingReviewCard(BaseModel):
     user_id: int
     employee_name: str
     assignment_role: Optional[str] = None
-    department_name: Optional[str] = None
+    function_name: Optional[str] = None
     designation_name: Optional[str] = None
     assigned_date: Optional[date] = None
     review_status: Optional[str] = None
@@ -187,10 +187,10 @@ class RoleExpectationResponse(BaseModel):
     """
     Reference data shown to the PM while evaluating.
     Contains expected behaviors per competency for a specific
-    department × designation combination.
+    function × designation combination.
     """
     id: int
-    department_name: str
+    function_name: str
     designation_name: str
     exp_task_execution: Optional[str] = None
     exp_ownership: Optional[str] = None
@@ -212,7 +212,7 @@ class AdminMemberReviewRow(BaseModel):
     user_id: int
     employee_name: str
     assignment_role: Optional[str] = None
-    department_name: Optional[str] = None
+    function_name: Optional[str] = None
     review_status: str          # "pending" | "reviewed" | "not_started"
     performance_group: Optional[str] = None
 

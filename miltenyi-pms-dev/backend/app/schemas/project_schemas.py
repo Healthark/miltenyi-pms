@@ -8,7 +8,7 @@ Changes:
     - Added pm_id + pm_name on Project (Primary evaluator, resolved in responses)
     - Added secondary_evaluator_id + secondary_evaluator_name on Project
       (single project-level secondary; replaces multi-row Secondary assignments)
-    - Added department_id + department_name on Assignment
+    - Added function_id + function_name on Assignment
     - Assignment.evaluator_type is "Primary" or null only
     - ProjectCreate validates: reports_to_id required, exactly one Primary
 """
@@ -27,9 +27,9 @@ class AssignmentCreate(BaseModel):
         default=None, max_length=100,
         description="Auto-filled from designation, editable per project"
     )
-    department_id: Optional[int] = Field(
+    function_id: Optional[int] = Field(
         default=None,
-        description="Auto-filled from user's department, editable per project"
+        description="Auto-filled from user's function, editable per project"
     )
     evaluator_type: Optional[str] = Field(
         default=None, pattern=r"^Primary$",
@@ -41,7 +41,7 @@ class AssignmentCreate(BaseModel):
 class AssignmentUpdate(BaseModel):
     """Payload for updating a member's role or PM flag."""
     assignment_role: Optional[str] = Field(default=None, max_length=100)
-    department_id: Optional[int] = None
+    function_id: Optional[int] = None
     evaluator_type: Optional[str] = Field(
         default=None, pattern=r"^Primary$"
     )
@@ -49,14 +49,14 @@ class AssignmentUpdate(BaseModel):
 
 
 class AssignmentResponse(BaseModel):
-    """Assignment with resolved user/department names."""
+    """Assignment with resolved user/function names."""
     id: int
     project_id: int
     user_id: int
     user_name: str
     assignment_role: Optional[str] = None
-    department_id: Optional[int] = None
-    department_name: Optional[str] = None
+    function_id: Optional[int] = None
+    function_name: Optional[str] = None
     evaluator_type: Optional[str] = None
     assigned_date: Optional[date] = None
     created_at: datetime

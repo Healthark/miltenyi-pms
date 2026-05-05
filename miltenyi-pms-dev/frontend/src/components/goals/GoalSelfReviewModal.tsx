@@ -11,7 +11,7 @@
  *       fetch via /users/me/expectations.
  *   - readOnly=true  (mentor viewing the mentee's submission):
  *       fetch all org role expectations and filter by the goal owner's
- *       department + designation injected on the goal payload.
+ *       function + designation injected on the goal payload.
  */
 
 import { useState, useEffect } from "react";
@@ -57,7 +57,7 @@ function asRoleExpectation(u: UserRoleExpectation | null): RoleExpectation | nul
   if (!u) return null;
   return {
     id: 0,
-    department_name: u.department_name ?? "",
+    function_name: u.function_name ?? "",
     designation_name: u.designation_name ?? "",
     exp_task_execution: u.exp_task_execution,
     exp_ownership: u.exp_ownership,
@@ -124,7 +124,7 @@ export function GoalSelfReviewModal({
   // Fetched only when readOnly=false (mentee writing their own review).
   const [myExpectation, setMyExpectation] = useState<UserRoleExpectation | null>(null);
   // Fetched only when readOnly=true (mentor viewing): all org expectations,
-  // then filtered client-side by the goal owner's dept + desig.
+  // then filtered client-side by the goal owner's func + desig.
   const [orgExpectations, setOrgExpectations] = useState<RoleExpectation[]>([]);
 
   // Re-seed the textarea whenever the modal opens on a different (goal, half).
@@ -192,11 +192,11 @@ export function GoalSelfReviewModal({
   // Pick the right expectation source for the rubric panels.
   let expectationForPanel: RoleExpectation | null;
   if (readOnly) {
-    const { dept, desig } = getOwnerRole(goal);
+    const { func, desig } = getOwnerRole(goal);
     expectationForPanel =
-      dept && desig
+      func && desig
         ? orgExpectations.find(
-            (e) => e.department_name === dept && e.designation_name === desig,
+            (e) => e.function_name === func && e.designation_name === desig,
           ) ?? null
         : null;
   } else {

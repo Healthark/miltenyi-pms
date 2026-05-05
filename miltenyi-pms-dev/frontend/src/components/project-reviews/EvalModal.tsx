@@ -19,7 +19,7 @@ export interface EvalModalCard {
   employee_name: string;
   project_name: string;
   project_code: string;
-  department_name: string | null;
+  function_name: string | null;
   review_id: number | null;
 }
 
@@ -151,7 +151,7 @@ export function EvalModal({
               <span>
                 {card.project_name} ({card.project_code})
               </span>
-              {card.department_name && <span>Function: {card.department_name}</span>}
+              {card.function_name && <span>Function: {card.function_name}</span>}
             </div>
           </div>
           <button

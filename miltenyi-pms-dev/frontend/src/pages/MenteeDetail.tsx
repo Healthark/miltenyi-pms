@@ -154,7 +154,7 @@ export function MenteeDetail() {
           ...evalReview,
           employee_name: data.full_name,
           employee_email: data.email,
-          department: data.department_name,
+          function: data.function_name,
           designation: data.designation_name,
         }
       : null;
@@ -279,7 +279,7 @@ export function MenteeDetail() {
             <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1.5 border-t border-border pt-3 text-xs text-text-main">
               <DetailItem icon={BadgeCheck} value={data.employee_code} title="Employee Code" />
               <DetailItem icon={Mail} value={data.email} title="Email" />
-              <DetailItem icon={Building2} value={data.department_name} title="Department" />
+              <DetailItem icon={Building2} value={data.function_name} title="Function" />
               <DetailItem icon={Briefcase} value={data.designation_name} title="Designation" />
               {data.phone && (
                 <DetailItem icon={Phone} value={data.phone} title="Phone" />

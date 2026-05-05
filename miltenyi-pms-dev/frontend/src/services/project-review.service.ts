@@ -71,7 +71,7 @@ export interface MyProjectCard {
   project_expected_end_date: string | null;
   assigned_date: string | null;
   assignment_role: string | null;
-  department_name: string | null;
+  function_name: string | null;
   review_status: string | null; // "pending" | "reviewed" | null
   performance_group: string | null;
   pm_name: string | null;
@@ -86,7 +86,7 @@ export interface PMPendingReviewCard {
   user_id: number;
   employee_name: string;
   assignment_role: string | null;
-  department_name: string | null;
+  function_name: string | null;
   designation_name: string | null;
   assigned_date: string | null;
   review_status: string | null;
@@ -100,7 +100,7 @@ export interface PMPendingReviewCard {
 
 export interface RoleExpectation {
   id: number;
-  department_name: string;
+  function_name: string;
   designation_name: string;
   exp_task_execution: string | null;
   exp_ownership: string | null;
@@ -143,7 +143,7 @@ export interface AdminMemberReviewRow {
   user_id: number;
   employee_name: string;
   assignment_role: string | null;
-  department_name: string | null;
+  function_name: string | null;
   review_status: "pending" | "reviewed" | "not_started";
   performance_group: string | null;
 }

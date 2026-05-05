@@ -11,7 +11,7 @@ proceeding. Pass --yes to skip the confirmation in deploy automation.
 
 Final state:
   Organization:  Healthark (domain: healtharkinsights.com)
-  Departments:   Strategy, IDT, RWE, Marketing, HR
+  Functions:     Strategy, IDT, RWE, Marketing, HR
   Designations:  Consultant, Senior Consultant, Manager, Senior Manager,
                  Associate Director, Director,
                  HR Executive, Senior HR Executive, Head HR
@@ -33,7 +33,7 @@ from app.core.database import SessionLocal
 from app.core.security import get_password_hash
 
 from app.models.organization_models import Organization
-from app.models.reference_models import Department, Designation
+from app.models.reference_models import Function, Designation
 from app.models.user_models import User
 from app.models.system_settings_models import SystemSettings, CycleType
 
@@ -92,7 +92,7 @@ def _wipe_all(db):
     db.query(User).update({User.mentor_id: None}, synchronize_session=False)
     db.flush()
 
-    for model in (User, Designation, Department, Organization):
+    for model in (User, Designation, Function, Organization):
         n = db.query(model).delete(synchronize_session=False)
         print(f"  wiped {n:>4} rows from {model.__tablename__}")
 
@@ -115,9 +115,9 @@ def _seed_org(db) -> Organization:
 
 
 def _seed_reference_data(db, org):
-    dept_names = ["Strategy", "IDT", "RWE", "Marketing", "HR"]
-    depts = {n: Department(org_id=org.id, name=n) for n in dept_names}
-    db.add_all(depts.values())
+    func_names = ["Strategy", "IDT", "RWE", "Marketing", "HR"]
+    funcs = {n: Function(org_id=org.id, name=n) for n in func_names}
+    db.add_all(funcs.values())
 
     desig_specs = [
         # Existing org-wide ladder (mirrors seed.py).
@@ -139,18 +139,18 @@ def _seed_reference_data(db, org):
     db.add_all(desigs.values())
     db.flush()
 
-    print(f"  [+] Departments: {', '.join(dept_names)}")
+    print(f"  [+] Functions: {', '.join(func_names)}")
     print(f"  [+] Designations: {', '.join(d[0] for d in desig_specs)}")
-    return depts, desigs
+    return funcs, desigs
 
 
-def _seed_users(db, org, depts, desigs):
+def _seed_users(db, org, funcs, desigs):
     pw = get_password_hash(PASSWORD)
-    hr_dept = depts["HR"]
+    hr_func = funcs["HR"]
 
     amol = User(
         org_id=org.id,
-        department_id=hr_dept.id,
+        function_id=hr_func.id,
         designation_id=desigs["Head HR"].id,
         employee_code="HRK-001",
         full_name="Amol Pandya",
@@ -162,7 +162,7 @@ def _seed_users(db, org, depts, desigs):
     )
     devanshi = User(
         org_id=org.id,
-        department_id=hr_dept.id,
+        function_id=hr_func.id,
         designation_id=desigs["Senior HR Executive"].id,
         employee_code="HRK-002",
         full_name="Devanshi Shukla",
@@ -174,7 +174,7 @@ def _seed_users(db, org, depts, desigs):
     )
     trapti = User(
         org_id=org.id,
-        department_id=hr_dept.id,
+        function_id=hr_func.id,
         designation_id=desigs["HR Executive"].id,
         employee_code="HRK-003",
         full_name="Trapti Tiwari",
@@ -300,15 +300,15 @@ EXPECTATIONS_DATA = {
 
 
 def _seed_role_expectations(db, org):
-    """Add role expectations for each dept/designation combo that doesn't already exist."""
+    """Add role expectations for each function/designation combo that doesn't already exist."""
     added_count = 0
     skipped_count = 0
-    for dept_name, designations_dict in EXPECTATIONS_DATA.items():
-        dept = db.query(Department).filter(
-            Department.org_id == org.id, Department.name == dept_name
+    for func_name, designations_dict in EXPECTATIONS_DATA.items():
+        func_row = db.query(Function).filter(
+            Function.org_id == org.id, Function.name == func_name
         ).first()
-        if not dept:
-            print(f"  [!] Department '{dept_name}' not found, skipping")
+        if not func_row:
+            print(f"  [!] Function '{func_name}' not found, skipping")
             continue
         for desig_name, competencies in designations_dict.items():
             desig = db.query(Designation).filter(
@@ -319,7 +319,7 @@ def _seed_role_expectations(db, org):
                 continue
             already_exists = db.query(RoleExpectation).filter(
                 RoleExpectation.org_id == org.id,
-                RoleExpectation.department_id == dept.id,
+                RoleExpectation.function_id == func_row.id,
                 RoleExpectation.designation_id == desig.id,
             ).first()
             if already_exists:
@@ -327,7 +327,7 @@ def _seed_role_expectations(db, org):
                 continue
             db.add(RoleExpectation(
                 org_id=org.id,
-                department_id=dept.id,
+                function_id=func_row.id,
                 designation_id=desig.id,
                 exp_task_execution=competencies.get("exp_task_execution", ""),
                 exp_ownership=competencies.get("exp_ownership", ""),
@@ -384,8 +384,8 @@ def seed_production(skip_confirm: bool = False):
     try:
         _wipe_all(db)
         org = _seed_org(db)
-        depts, desigs = _seed_reference_data(db, org)
-        users = _seed_users(db, org, depts, desigs)
+        funcs, desigs = _seed_reference_data(db, org)
+        users = _seed_users(db, org, funcs, desigs)
         _seed_system_settings(db, org, users["amol"])
         _seed_role_expectations(db, org)
         db.commit()

@@ -56,7 +56,7 @@ export interface AnnualReview {
 export interface MenteeAnnualReview extends AnnualReview {
   employee_name: string;
   employee_email: string | null;
-  department: string | null;
+  function: string | null;
   designation: string | null;
 }
 
@@ -66,7 +66,7 @@ export interface CalibrationRow {
   employee_name: string;
   employee_email: string | null;
   mentor_name: string | null;
-  department: string | null;
+  function: string | null;
   designation: string | null;
   self_performance_rating: number | null;
   mentor_performance_rating: number | null;

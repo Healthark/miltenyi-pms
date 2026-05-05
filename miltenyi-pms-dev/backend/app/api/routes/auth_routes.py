@@ -323,7 +323,7 @@ def get_my_profile(current_user: CurrentUser):
         employee_code=current_user.employee_code,
         phone=current_user.phone,
         role=current_user.role,
-        department=current_user.department.name if current_user.department else None,
+        function=current_user.function.name if current_user.function else None,
         designation=current_user.designation.name if current_user.designation else None,
         mentor_name=current_user.mentor.full_name if current_user.mentor else None,
     )

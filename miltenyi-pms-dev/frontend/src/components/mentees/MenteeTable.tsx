@@ -8,7 +8,7 @@ export type MenteeTableSortKey =
   | "full_name"
   | "employee_code"
   | "email"
-  | "department_name"
+  | "function_name"
   | "designation_name"
   | "pending_actions_count";
 
@@ -49,7 +49,7 @@ export function MenteeTable({ mentees, sort, onSort }: MenteeTableProps) {
             </th>
             <th className={plainThCls}>Phone</th>
             <th className={thCls}>
-              <SortableHeader label="Function" columnKey="department_name" sort={sort} onSort={onSort} />
+              <SortableHeader label="Function" columnKey="function_name" sort={sort} onSort={onSort} />
             </th>
             <th className={thCls}>
               <SortableHeader label="Designation" columnKey="designation_name" sort={sort} onSort={onSort} />
@@ -91,7 +91,7 @@ export function MenteeTable({ mentees, sort, onSort }: MenteeTableProps) {
                 <td className="px-4 py-3 text-text-main">{m.email}</td>
                 <td className="px-4 py-3 text-text-main">{m.phone ?? "—"}</td>
                 <td className="px-4 py-3 text-text-main">
-                  {m.department_name ?? "—"}
+                  {m.function_name ?? "—"}
                 </td>
                 <td className="px-4 py-3 text-text-main">
                   {m.designation_name ?? "—"}

@@ -6,7 +6,7 @@ Endpoints:
     POST   /api/v1/admin/users              → Create a new user
     PATCH  /api/v1/admin/users/{user_id}    → Update user details
     DELETE /api/v1/admin/users/{user_id}    → Soft-delete (deactivate) a user
-    GET    /api/v1/admin/departments         → List departments (for dropdowns)
+    GET    /api/v1/admin/functions           → List functions (for dropdowns)
     GET    /api/v1/admin/designations        → List designations (for dropdowns)
     GET    /api/v1/admin/settings            → Get simplified active cycle info
     PATCH  /api/v1/admin/settings            → Update active cycle
@@ -27,14 +27,14 @@ from sqlalchemy.orm import joinedload
 from app.api.dependencies import DbSession, CurrentUser
 from app.core.cache import (
     admin_settings_cache,
-    departments_cache,
+    functions_cache,
     designations_cache,
     invalidate_settings,
 )
 from app.core.config import settings
 from app.core.security import get_password_hash
 from app.models.user_models import User
-from app.models.reference_models import Department, Designation
+from app.models.reference_models import Function, Designation
 from app.models.system_settings_models import SystemSettings, CycleType
 from app.core.cycle_utils import get_current_cycle_info
 from app.services.send_email import (
@@ -43,7 +43,7 @@ from app.services.send_email import (
 )
 from datetime import date, datetime, timedelta, timezone
 from app.schemas.admin_schemas import (
-    DepartmentBrief,
+    FunctionBrief,
     DesignationBrief,
     UserResponse,
     UserCreate,
@@ -87,7 +87,7 @@ def list_users(
     """
     Return every user in the organization (including deactivated ones).
 
-    Uses joinedload to eagerly fetch department + designation in ONE query,
+    Uses joinedload to eagerly fetch function + designation in ONE query,
     avoiding the N+1 problem when the table renders 50+ rows.
     """
     _require_admin(current_user)
@@ -95,7 +95,7 @@ def list_users(
     users = (
         db.query(User)
         .options(
-            joinedload(User.department),
+            joinedload(User.function),
             joinedload(User.designation),
         )
         .filter(User.org_id == current_user.org_id)
@@ -157,7 +157,7 @@ def create_user(
         email=user_in.email,
         phone=user_in.phone,
         role=user_in.role,
-        department_id=user_in.department_id,
+        function_id=user_in.function_id,
         designation_id=user_in.designation_id,
         mentor_id=user_in.mentor_id,
         password_hash=get_password_hash(user_in.password),
@@ -198,7 +198,7 @@ def update_user(
     current_user: CurrentUser,
 ):
     """
-    Update a user's details (name, role, department, mentor, etc.).
+    Update a user's details (name, role, function, mentor, etc.).
 
     Email is intentionally NOT updatable — the frontend makes the field
     read-only during edit mode to prevent orphaned JWT tokens.
@@ -324,29 +324,29 @@ def deactivate_user(
 # REFERENCE DATA (for dropdown menus)
 # =====================================================================
 
-@router.get("/departments", response_model=List[DepartmentBrief])
-def list_departments(
+@router.get("/functions", response_model=List[FunctionBrief])
+def list_functions(
     db: DbSession,
     current_user: CurrentUser,
 ):
-    """Return all active departments for the org (powers the <select> dropdown)."""
+    """Return all active functions for the org (powers the <select> dropdown)."""
     _require_admin(current_user)
 
-    def _query() -> List[DepartmentBrief]:
+    def _query() -> List[FunctionBrief]:
         rows = (
-            db.query(Department)
+            db.query(Function)
             .filter(
-                Department.org_id == current_user.org_id,
-                Department.is_active == True,  # noqa: E712
+                Function.org_id == current_user.org_id,
+                Function.is_active == True,  # noqa: E712
             )
-            .order_by(Department.name)
+            .order_by(Function.name)
             .all()
         )
         # Serialize to plain Pydantic models so the cache holds stable values
         # rather than ORM objects bound to a (now-closed) Session.
-        return [DepartmentBrief.model_validate(r, from_attributes=True) for r in rows]
+        return [FunctionBrief.model_validate(r, from_attributes=True) for r in rows]
 
-    return departments_cache.get_or_compute(current_user.org_id, _query)
+    return functions_cache.get_or_compute(current_user.org_id, _query)
 
 
 @router.get("/designations", response_model=List[DesignationBrief])
@@ -497,12 +497,12 @@ def _load_user_with_relations(db: DbSession, user_id: int) -> User:
     Re-query a user with eagerly loaded relationships.
 
     Called after create/update to ensure the response includes nested
-    department and designation objects, not just their IDs.
+    function and designation objects, not just their IDs.
     """
     return (
         db.query(User)
         .options(
-            joinedload(User.department),
+            joinedload(User.function),
             joinedload(User.designation),
         )
         .filter(User.id == user_id)

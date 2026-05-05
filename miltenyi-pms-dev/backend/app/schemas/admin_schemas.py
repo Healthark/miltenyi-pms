@@ -14,8 +14,8 @@ from datetime import datetime
 
 # ── Reference Data (Dropdowns) ───────────────────────────────────────
 
-class DepartmentBrief(BaseModel):
-    """Lightweight department payload for <select> dropdowns."""
+class FunctionBrief(BaseModel):
+    """Lightweight function payload for <select> dropdowns."""
     id: int
     name: str
 
@@ -37,7 +37,7 @@ class UserResponse(BaseModel):
     """
     Full user record returned to the Admin table.
 
-    Includes nested department/designation objects so the table can
+    Includes nested function/designation objects so the table can
     display human-readable names without a second lookup.
     """
     id: int
@@ -47,14 +47,14 @@ class UserResponse(BaseModel):
     email: str
     phone: Optional[str] = None
     role: str
-    department_id: Optional[int] = None
+    function_id: Optional[int] = None
     designation_id: Optional[int] = None
     mentor_id: Optional[int] = None
     is_deleted: bool
     created_at: datetime
 
     # Nested objects — populated from SQLAlchemy relationships
-    department: Optional[DepartmentBrief] = None
+    function: Optional[FunctionBrief] = None
     designation: Optional[DesignationBrief] = None
 
     model_config = ConfigDict(from_attributes=True)
@@ -67,7 +67,7 @@ class UserCreate(BaseModel):
     email: str = Field(..., min_length=5, max_length=100)
     phone: Optional[str] = None
     role: str = Field(..., pattern=r"^(Admin|Manager|Principal|Staff)$")
-    department_id: Optional[int] = None
+    function_id: Optional[int] = None
     designation_id: Optional[int] = None
     mentor_id: Optional[int] = None
     password: str = Field(..., min_length=8, max_length=128)
@@ -79,7 +79,7 @@ class UserUpdate(BaseModel):
     phone: Optional[str] = None
     role: Optional[str] = Field(default=None, pattern=r"^(Admin|Manager|Principal|Staff)$")
     employee_code: Optional[str] = Field(default=None, min_length=1, max_length=20)
-    department_id: Optional[int] = None
+    function_id: Optional[int] = None
     designation_id: Optional[int] = None
     mentor_id: Optional[int] = None
 

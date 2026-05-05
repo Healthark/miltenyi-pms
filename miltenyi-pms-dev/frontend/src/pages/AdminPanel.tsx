@@ -8,7 +8,7 @@ import {
   type UserResponse,
   type UserCreatePayload,
   type UserUpdatePayload,
-  type DepartmentBrief,
+  type FunctionBrief,
   type DesignationBrief,
   type SystemSettings,
   type AdminSettingsUpdatePayload,
@@ -38,7 +38,7 @@ type ActiveTab =
 export default function AdminPanel() {
   // ── Data ──────────────────────────────────────────────────────────────────
   const [users, setUsers] = useState<UserResponse[]>([]);
-  const [departments, setDepartments] = useState<DepartmentBrief[]>([]);
+  const [functions, setFunctions] = useState<FunctionBrief[]>([]);
   const [designations, setDesignations] = useState<DesignationBrief[]>([]);
   const [settings, setSettings] = useState<SystemSettings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -76,14 +76,14 @@ export default function AdminPanel() {
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [usersData, deptData, desigData, settingsData] = await Promise.all([
+      const [usersData, funcData, desigData, settingsData] = await Promise.all([
         adminService.getUsers(),
-        adminService.getDepartments(),
+        adminService.getFunctions(),
         adminService.getDesignations(),
         adminService.getSettings(),
       ]);
       setUsers(usersData);
-      setDepartments(deptData);
+      setFunctions(funcData);
       setDesignations(desigData);
       setSettings(settingsData);
       setCycleType((settingsData.cycle_type as CycleType) ?? "half_yearly");
@@ -370,7 +370,7 @@ export default function AdminPanel() {
         onClose={closeUserModal}
         onSave={handleSaveUser}
         editingUser={editingUser}
-        departments={departments}
+        functions={functions}
         designations={designations}
         managers={mentorOptions}
         isSaving={isSaving}

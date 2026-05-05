@@ -93,7 +93,7 @@ class MenteeSummary(BaseModel):
     email: str
     employee_code: str
     phone: Optional[str] = None
-    department_name: Optional[str] = None
+    function_name: Optional[str] = None
     designation_name: Optional[str] = None
     role: str
     is_active: bool

@@ -6,12 +6,12 @@ Changes:
     - expected_end_date instead of end_date
     - reports_to_id on project (senior who reviews the PM, required on create)
     - secondary_evaluator_id on project (single project-level Secondary, optional)
-    - department_id on assignments (auto-filled from user, editable)
+    - function_id on assignments (auto-filled from user, editable)
     - assignment_role auto-filled from user's designation (editable)
     - reports_to_name resolved in responses
     - pm_id/pm_name resolved in responses (Primary evaluator on the project)
     - secondary_evaluator_name resolved in responses
-    - department_name resolved in assignment responses
+    - function_name resolved in assignment responses
 """
 
 from typing import List
@@ -21,7 +21,7 @@ from sqlalchemy import func
 from app.api.dependencies import DbSession, CurrentUser
 from app.models.project_models import Project, ProjectAssignment
 from app.models.user_models import User
-from app.models.reference_models import Department
+from app.models.reference_models import Function
 from app.schemas.project_schemas import (
     ProjectCreate, ProjectUpdate, ProjectResponse, ProjectDetail,
     AssignmentCreate, AssignmentUpdate, AssignmentResponse,
@@ -39,9 +39,9 @@ def _require_admin(current_user: User) -> None:
 
 
 def _build_assignment_response(assignment: ProjectAssignment, db: DbSession) -> AssignmentResponse:
-    """Resolve user name and department name for an assignment."""
+    """Resolve user name and function name for an assignment."""
     user = db.query(User).filter(User.id == assignment.user_id).first()
-    dept = db.query(Department).filter(Department.id == assignment.department_id).first() if assignment.department_id else None
+    func_obj = db.query(Function).filter(Function.id == assignment.function_id).first() if assignment.function_id else None
 
     return AssignmentResponse(
         id=assignment.id,
@@ -49,8 +49,8 @@ def _build_assignment_response(assignment: ProjectAssignment, db: DbSession) -> 
         user_id=assignment.user_id,
         user_name=user.full_name if user else "Unknown",
         assignment_role=assignment.assignment_role,
-        department_id=assignment.department_id,
-        department_name=dept.name if dept else None,
+        function_id=assignment.function_id,
+        function_name=func_obj.name if func_obj else None,
         evaluator_type=assignment.evaluator_type,
         assigned_date=assignment.assigned_date,
         created_at=assignment.created_at,
@@ -99,7 +99,7 @@ def _resolve_project_pm(db: DbSession, project_id: int, org_id: int) -> tuple[in
 
 def _auto_fill_assignment(assignment_in: AssignmentCreate, db: DbSession) -> AssignmentCreate:
     """
-    Auto-fill assignment_role from designation and department_id from user
+    Auto-fill assignment_role from designation and function_id from user
     if not explicitly provided.
     """
     user = db.query(User).filter(User.id == assignment_in.user_id).first()
@@ -112,8 +112,8 @@ def _auto_fill_assignment(assignment_in: AssignmentCreate, db: DbSession) -> Ass
         if desig:
             assignment_in.assignment_role = desig.name
 
-    if not assignment_in.department_id and user.department_id:
-        assignment_in.department_id = user.department_id
+    if not assignment_in.function_id and user.function_id:
+        assignment_in.function_id = user.function_id
 
     return assignment_in
 
@@ -214,7 +214,7 @@ def create_project(
             project_id=new_project.id,
             user_id=assignment_in.user_id,
             assignment_role=assignment_in.assignment_role,
-            department_id=assignment_in.department_id,
+            function_id=assignment_in.function_id,
             evaluator_type=assignment_in.evaluator_type,
             assigned_date=assignment_in.assigned_date,
         ))
@@ -410,7 +410,7 @@ def add_assignment(
     db: DbSession,
     current_user: CurrentUser,
 ):
-    """Add a team member to a project. Auto-fills role and department from user profile."""
+    """Add a team member to a project. Auto-fills role and function from user profile."""
     _require_admin(current_user)
 
     project = db.query(Project).filter(
@@ -461,7 +461,7 @@ def add_assignment(
                 detail="The PM cannot be the same user as the Secondary Evaluator.",
             )
 
-    # Auto-fill role and department from user profile
+    # Auto-fill role and function from user profile
     assignment_in = _auto_fill_assignment(assignment_in, db)
 
     new_assignment = ProjectAssignment(
@@ -469,7 +469,7 @@ def add_assignment(
         project_id=project_id,
         user_id=assignment_in.user_id,
         assignment_role=assignment_in.assignment_role,
-        department_id=assignment_in.department_id,
+        function_id=assignment_in.function_id,
         evaluator_type=assignment_in.evaluator_type,
         assigned_date=assignment_in.assigned_date,
     )
@@ -487,7 +487,7 @@ def update_assignment(
     db: DbSession,
     current_user: CurrentUser,
 ):
-    """Update a member's project role, department, or evaluator type."""
+    """Update a member's project role, function, or evaluator type."""
     _require_admin(current_user)
 
     assignment = db.query(ProjectAssignment).filter(

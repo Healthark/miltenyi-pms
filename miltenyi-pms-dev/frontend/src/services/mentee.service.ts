@@ -68,7 +68,7 @@ export interface MenteeSummary {
   email: string;
   employee_code: string;
   phone: string | null;
-  department_name: string | null;
+  function_name: string | null;
   designation_name: string | null;
   role: string;
   is_active: boolean;

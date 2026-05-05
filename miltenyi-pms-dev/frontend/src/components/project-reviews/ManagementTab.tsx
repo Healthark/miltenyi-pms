@@ -215,9 +215,9 @@ function ProjectCard({
                       </td>
                       <td className="hidden sm:table-cell px-4 py-3 text-text-muted">
                         {m.assignment_role ?? "—"}
-                        {m.department_name && (
+                        {m.function_name && (
                           <span className="ml-1 text-[11px] text-text-muted/70">
-                            ({m.department_name})
+                            ({m.function_name})
                           </span>
                         )}
                       </td>

@@ -528,7 +528,7 @@ export function AnnualGoals() {
                         );
                       })}
                       <p className="text-[10px] text-text-muted pt-1 border-t border-border">
-                        {roleExpectation.department_name} · {roleExpectation.designation_name}
+                        {roleExpectation.function_name} · {roleExpectation.designation_name}
                       </p>
                     </div>
                   )}

@@ -35,13 +35,13 @@ type ViewMode = "grid" | "table";
 type EvalType = "primary" | "secondary";
 
 // ── Sort column config ──────────────────────────────────────────────
-// Employee / Project / Type / Dept are alpha; project_code is alphanumeric;
+// Employee / Project / Type / Function are alpha; project_code is alphanumeric;
 // rating (performance_group) is a 1–5 numeric-like string. Action is not sortable.
 type EvalSortKey =
   | "employee_name"
   | "project_name"
   | "cycle"
-  | "department_name"
+  | "function_name"
   | "review_status"
   | "performance_group";
 
@@ -58,7 +58,7 @@ interface UnifiedEvalRow {
   project_id: number;
   project_name: string;
   project_code: string;
-  department_name: string | null;
+  function_name: string | null;
   designation_name: string | null;
   assignment_role: string | null;
   review_status: string; // "pending" | "reviewed" | "submitted"
@@ -78,7 +78,7 @@ const EVAL_SORT_CONFIG: Record<EvalSortKey, { kind: SortKind; get: (r: UnifiedEv
   employee_name:     { kind: "alpha",   get: (r) => r.employee_name },
   project_name:      { kind: "alpha",   get: (r) => r.project_name },
   cycle:             { kind: "cycle",   get: (r) => r.cycle },
-  department_name:   { kind: "alpha",   get: (r) => r.department_name },
+  function_name:   { kind: "alpha",   get: (r) => r.function_name },
   review_status:     { kind: "alpha",   get: (r) => r.review_status },
   performance_group: { kind: "numeric", get: (r) => r.performance_group },
 };
@@ -138,7 +138,7 @@ function EvalCard({
 
       {isPrimary && (
         <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-text-muted">
-          {row.department_name && <span>Function: <span className="font-medium text-text-main">{row.department_name}</span></span>}
+          {row.function_name && <span>Function: <span className="font-medium text-text-main">{row.function_name}</span></span>}
           {row.designation_name && <span>Desig: <span className="font-medium text-text-main">{row.designation_name}</span></span>}
         </div>
       )}
@@ -178,7 +178,7 @@ export function PMEvaluationTab() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
-  const [deptFilter, setDeptFilter] = useState<string>("all");
+  const [funcFilter, setFuncFilter] = useState<string>("all");
   const [projectFilter, setProjectFilter] = useState<string>("all");
   const [employeeFilter, setEmployeeFilter] = useState<string>("all");
   // Cycle filter — defaults to the active cycle so the page UX matches
@@ -226,7 +226,7 @@ export function PMEvaluationTab() {
       project_id: c.project_id,
       project_name: c.project_name,
       project_code: c.project_code,
-      department_name: c.department_name,
+      function_name: c.function_name,
       designation_name: c.designation_name,
       assignment_role: c.assignment_role,
       review_status: c.review_status === "reviewed" ? "reviewed" : "pending",
@@ -247,7 +247,7 @@ export function PMEvaluationTab() {
       project_id: r.project_id,
       project_name: r.project_name,
       project_code: r.project_code,
-      department_name: null,
+      function_name: null,
       designation_name: null,
       assignment_role: null,
       review_status: myEval ? "submitted" : "pending",
@@ -262,7 +262,7 @@ export function PMEvaluationTab() {
   }
 
   // Dropdown options
-  const availableDepts = Array.from(new Set(unifiedRows.map((r) => r.department_name).filter(Boolean) as string[]));
+  const availableFuncs = Array.from(new Set(unifiedRows.map((r) => r.function_name).filter(Boolean) as string[]));
   const availableEmployees = Array.from(new Set(unifiedRows.map((r) => r.employee_name)));
   const availableCycles = Array.from(new Set(unifiedRows.map((r) => r.cycle).filter((c): c is string => !!c)));
   const availableProjects = Array.from(new Set(unifiedRows.map((r) => r.project_name))).sort();
@@ -280,7 +280,7 @@ export function PMEvaluationTab() {
     if (statusFilter === "draft"
         && (r.review_status !== "pending" || !r.has_draft_content)) return false;
     if (statusFilter === "done" && r.review_status === "pending") return false;
-    if (deptFilter !== "all" && r.department_name !== deptFilter) return false;
+    if (funcFilter !== "all" && r.function_name !== funcFilter) return false;
     if (projectFilter !== "all" && r.project_name !== projectFilter) return false;
     if (employeeFilter !== "all" && r.employee_name !== employeeFilter) return false;
     if (searchQuery.trim()) {
@@ -299,8 +299,8 @@ export function PMEvaluationTab() {
     : filteredRows;
 
   const getExpectation = (row: UnifiedEvalRow): RoleExpectation | null => {
-    if (!row.department_name || !row.designation_name) return null;
-    return expectations.find((e) => e.department_name === row.department_name && e.designation_name === row.designation_name) ?? null;
+    if (!row.function_name || !row.designation_name) return null;
+    return expectations.find((e) => e.function_name === row.function_name && e.designation_name === row.designation_name) ?? null;
   };
 
   // Actions
@@ -441,13 +441,13 @@ export function PMEvaluationTab() {
               <option value="done">Completed</option>
             </select>
           </div>
-          {availableDepts.length > 0 && (
+          {availableFuncs.length > 0 && (
             <div className="flex items-center gap-2">
               <label className="text-[11px] font-bold uppercase tracking-wider text-text-muted">Function</label>
-              <select value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)}
+              <select value={funcFilter} onChange={(e) => setFuncFilter(e.target.value)}
                 className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand min-w-[110px] cursor-pointer">
                 <option value="all">All Functions</option>
-                {availableDepts.map((d) => <option key={d} value={d}>{d}</option>)}
+                {availableFuncs.map((d) => <option key={d} value={d}>{d}</option>)}
               </select>
             </div>
           )}
@@ -498,7 +498,7 @@ export function PMEvaluationTab() {
                   <SortableHeader label="Cycle" columnKey="cycle" sort={sort} onSort={setSort} />
                 </th>
                 <th className="hidden md:table-cell text-left px-4 py-2.5">
-                  <SortableHeader label="Function" columnKey="department_name" sort={sort} onSort={setSort} />
+                  <SortableHeader label="Function" columnKey="function_name" sort={sort} onSort={setSort} />
                 </th>
                 <th className="text-left px-4 py-2.5">
                   <SortableHeader label="Status" columnKey="review_status" sort={sort} onSort={setSort} />
@@ -535,7 +535,7 @@ export function PMEvaluationTab() {
                     <td className="hidden sm:table-cell px-4 py-3 text-text-muted">
                       {r.cycle ?? "—"}
                     </td>
-                    <td className="hidden md:table-cell px-4 py-3 text-text-muted">{r.department_name ?? "—"}</td>
+                    <td className="hidden md:table-cell px-4 py-3 text-text-muted">{r.function_name ?? "—"}</td>
                     <td className="px-4 py-3">
                       {isDone ? (
                         <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-[11px] font-bold uppercase text-green-700">

@@ -34,7 +34,7 @@ from app.models.project_review_models import (
 )
 from app.models.system_settings_models import SystemSettings
 from app.models.user_models import User
-from app.models.reference_models import Department, Designation
+from app.models.reference_models import Function, Designation
 from app.models.role_expectation_models import RoleExpectation
 from app.schemas.project_review_schemas import (
     PMEvaluationSubmit, PMEvaluationDraft,
@@ -194,7 +194,7 @@ def get_my_projects(
         if not project:
             continue
 
-        dept = db.query(Department).filter(Department.id == a.department_id).first() if a.department_id else None
+        func_obj = db.query(Function).filter(Function.id == a.function_id).first() if a.function_id else None
 
         pm_assignment = db.query(ProjectAssignment).filter(
             ProjectAssignment.project_id == a.project_id,
@@ -221,7 +221,7 @@ def get_my_projects(
                 project_expected_end_date=project.expected_end_date,
                 assigned_date=a.assigned_date,
                 assignment_role=a.assignment_role,
-                department_name=dept.name if dept else None,
+                function_name=func_obj.name if func_obj else None,
                 review_status=review.status,
                 performance_group=review.performance_group,
                 pm_name=pm_user.full_name if pm_user else None,
@@ -239,7 +239,7 @@ def get_my_projects(
                 project_expected_end_date=project.expected_end_date,
                 assigned_date=a.assigned_date,
                 assignment_role=a.assignment_role,
-                department_name=dept.name if dept else None,
+                function_name=func_obj.name if func_obj else None,
                 review_status="pending",
                 pm_name=pm_user.full_name if pm_user else None,
                 cycle=current_cycle,
@@ -309,7 +309,7 @@ def get_pm_evaluation_queue(
             if not user or user.is_deleted:
                 continue
 
-            dept = db.query(Department).filter(Department.id == ta.department_id).first() if ta.department_id else None
+            func_obj = db.query(Function).filter(Function.id == ta.function_id).first() if ta.function_id else None
             desig = db.query(Designation).filter(Designation.id == user.designation_id).first() if user.designation_id else None
 
             # All ProjectReview rows for this (team_member, project) across cycles
@@ -336,7 +336,7 @@ def get_pm_evaluation_queue(
                     user_id=ta.user_id,
                     employee_name=user.full_name,
                     assignment_role=ta.assignment_role,
-                    department_name=dept.name if dept else None,
+                    function_name=func_obj.name if func_obj else None,
                     designation_name=desig.name if desig else None,
                     assigned_date=ta.assigned_date,
                     review_status=review.status,
@@ -355,7 +355,7 @@ def get_pm_evaluation_queue(
                     user_id=ta.user_id,
                     employee_name=user.full_name,
                     assignment_role=ta.assignment_role,
-                    department_name=dept.name if dept else None,
+                    function_name=func_obj.name if func_obj else None,
                     designation_name=desig.name if desig else None,
                     assigned_date=ta.assigned_date,
                     review_status=None,
@@ -384,11 +384,11 @@ def get_role_expectations(
 
     results: list[RoleExpectationResponse] = []
     for exp in expectations:
-        dept = db.query(Department).filter(Department.id == exp.department_id).first()
+        func_obj = db.query(Function).filter(Function.id == exp.function_id).first()
         desig = db.query(Designation).filter(Designation.id == exp.designation_id).first()
         results.append(RoleExpectationResponse(
             id=exp.id,
-            department_name=dept.name if dept else "Unknown",
+            function_name=func_obj.name if func_obj else "Unknown",
             designation_name=desig.name if desig else "Unknown",
             exp_task_execution=exp.exp_task_execution,
             exp_ownership=exp.exp_ownership,
@@ -905,7 +905,7 @@ def get_management_overview(
 
     Returns one AdminProjectSummary per project that has non-PM members,
     each containing per-member review status. Uses eager loading to avoid
-    N+1 queries — all project/assignment/user/department data is fetched
+    N+1 queries — all project/assignment/user/function data is fetched
     in a single query, and a review_map dict provides O(1) lookups.
     """
     if current_user.role != "Admin":
@@ -916,12 +916,12 @@ def get_management_overview(
 
     resolved_cycle = cycle if cycle else _get_active_cycle(db, current_user.org_id)
 
-    # Single query: projects + assignments + users + departments
+    # Single query: projects + assignments + users + functions
     projects = (
         db.query(Project)
         .options(
             joinedload(Project.assignments).joinedload(ProjectAssignment.user),
-            joinedload(Project.assignments).joinedload(ProjectAssignment.department),
+            joinedload(Project.assignments).joinedload(ProjectAssignment.function),
         )
         .filter(
             Project.org_id == current_user.org_id,
@@ -969,7 +969,7 @@ def get_management_overview(
                 user_id=a.user_id,
                 employee_name=a.user.full_name,
                 assignment_role=a.assignment_role,
-                department_name=a.department.name if a.department else None,
+                function_name=a.function.name if a.function else None,
                 review_status=review_status,
                 performance_group=review.performance_group if review else None,
             ))

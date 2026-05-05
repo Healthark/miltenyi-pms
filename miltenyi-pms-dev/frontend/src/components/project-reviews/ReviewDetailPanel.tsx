@@ -36,7 +36,7 @@ export function ReviewDetailPanel({
 
   const roleExp = expectations.find(
     (e) =>
-      e.department_name === card.department_name &&
+      e.function_name === card.function_name &&
       e.designation_name === card.assignment_role,
   );
 

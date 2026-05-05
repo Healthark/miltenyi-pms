@@ -406,7 +406,7 @@ export function TeamReviewTab() {
           review={viewTarget}
           title={`${viewTarget.employee_name} · Annual Review`}
           subtitle={`Year: ${formatFyLabel(viewTarget.cycle_name)}${
-            viewTarget.department ? ` · ${viewTarget.department}` : ""
+            viewTarget.function ? ` · ${viewTarget.function}` : ""
           }`}
           onClose={() => setViewTarget(null)}
         />

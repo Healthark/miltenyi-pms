@@ -34,7 +34,7 @@ def get_my_profile(
     Return the authenticated user's full profile for the Profile page.
 
     This is richer than GET /auth/me (which returns minimal identity data).
-    It includes org name, department/designation names, and mentor name —
+    It includes org name, function/designation names, and mentor name —
     all resolved from SQLAlchemy relationships so the frontend doesn't
     need to make separate lookups.
     """
@@ -48,7 +48,7 @@ def get_my_profile(
         phone=current_user.phone,
         role=current_user.role,
         avatar_url=current_user.avatar_url,
-        department=current_user.department.name if current_user.department else None,
+        function=current_user.function.name if current_user.function else None,
         designation=current_user.designation.name if current_user.designation else None,
         mentor_name=current_user.mentor.full_name if current_user.mentor else None,
         created_at=current_user.created_at,
@@ -95,14 +95,14 @@ def get_my_role_expectations(
 ):
     """
     Return the role expectations (8 competencies) specific to the
-    current user's Department and Designation.
+    current user's Function and Designation.
     """
-    dept_name = current_user.department.name if current_user.department else "Unassigned"
+    func_name = current_user.function.name if current_user.function else "Unassigned"
     desig_name = current_user.designation.name if current_user.designation else "Unassigned"
 
     # Default fallback object
     fallback_response = UserRoleExpectationResponse(
-        department_name=dept_name,
+        function_name=func_name,
         designation_name=desig_name,
         exp_task_execution="Role expectation not defined",
         exp_ownership="Role expectation not defined",
@@ -114,14 +114,14 @@ def get_my_role_expectations(
         exp_competency_skills="Role expectation not defined",
     )
 
-    # If the user doesn't have a department or designation, return fallbacks immediately
-    if not current_user.department_id or not current_user.designation_id:
+    # If the user doesn't have a function or designation, return fallbacks immediately
+    if not current_user.function_id or not current_user.designation_id:
         return fallback_response
 
     # Query the database for the specific expectations
     expectation = db.query(RoleExpectation).filter(
         RoleExpectation.org_id == current_user.org_id,
-        RoleExpectation.department_id == current_user.department_id,
+        RoleExpectation.function_id == current_user.function_id,
         RoleExpectation.designation_id == current_user.designation_id,
     ).first()
 
@@ -131,7 +131,7 @@ def get_my_role_expectations(
 
     # Return the mapped expectations
     return UserRoleExpectationResponse(
-        department_name=dept_name,
+        function_name=func_name,
         designation_name=desig_name,
         exp_task_execution=expectation.exp_task_execution or "Role expectation not defined",
         exp_ownership=expectation.exp_ownership or "Role expectation not defined",

@@ -11,7 +11,7 @@ type ExpKey = Extract<keyof RoleExpectation, `exp_${string}`>;
 /**
  * Collapsible panel that surfaces the role-expectation text for one
  * competency. Used inside evaluation modals so the PM can cross-check
- * against the department/designation's canonical expectations.
+ * against the function/designation's canonical expectations.
  */
 export function ExpectationPanel({
   expectation,
@@ -42,7 +42,7 @@ export function ExpectationPanel({
             {text.replace(/ \| /g, "\n• ")}
           </p>
           <p className="mt-1 text-[10px] text-blue-500">
-            {expectation.department_name} / {expectation.designation_name}
+            {expectation.function_name} / {expectation.designation_name}
           </p>
         </div>
       )}

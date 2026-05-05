@@ -67,7 +67,7 @@ def _list_mentees(db: DbSession, mentor: User) -> list[User]:
     """All active users whose mentor_id points at the caller, same tenant."""
     return (
         db.query(User)
-        .options(joinedload(User.department), joinedload(User.designation))
+        .options(joinedload(User.function), joinedload(User.designation))
         .filter(
             User.mentor_id == mentor.id,
             User.org_id == mentor.org_id,
@@ -173,7 +173,7 @@ def _compose_summary(
         email=user.email,
         employee_code=user.employee_code,
         phone=user.phone,
-        department_name=user.department.name if user.department else None,
+        function_name=user.function.name if user.function else None,
         designation_name=user.designation.name if user.designation else None,
         role=user.role,
         is_active=not user.is_deleted,
@@ -286,7 +286,7 @@ def get_mentee_detail(
     """
     mentee = (
         db.query(User)
-        .options(joinedload(User.department), joinedload(User.designation))
+        .options(joinedload(User.function), joinedload(User.designation))
         .filter(
             User.id == mentee_id,
             User.org_id == current_user.org_id,
@@ -307,7 +307,7 @@ def get_mentee_detail(
     annual_goals = (
         db.query(Goal)
         .options(
-            joinedload(Goal.owner).joinedload(User.department),
+            joinedload(Goal.owner).joinedload(User.function),
             joinedload(Goal.owner).joinedload(User.designation),
             joinedload(Goal.manager),
             joinedload(Goal.criteria),
@@ -320,17 +320,17 @@ def get_mentee_detail(
         .order_by(Goal.created_at.desc())
         .all()
     )
-    # Inject owner_name + owner_department_name + owner_designation_name for
+    # Inject owner_name + owner_function_name + owner_designation_name for
     # TeamGoalResponse. Mirrors goal_routes.list_team_goals so the mentor
     # review modal can match the right RoleExpectation row.
-    mentee_dept_name = mentee.department.name if mentee.department else None
+    mentee_func_name = mentee.function.name if mentee.function else None
     mentee_desig_name = mentee.designation.name if mentee.designation else None
     for g in annual_goals:
         g.owner_name = g.owner.full_name if g.owner else mentee.full_name
-        g.owner_department_name = (
-            g.owner.department.name
-            if g.owner and g.owner.department
-            else mentee_dept_name
+        g.owner_function_name = (
+            g.owner.function.name
+            if g.owner and g.owner.function
+            else mentee_func_name
         )
         g.owner_designation_name = (
             g.owner.designation.name

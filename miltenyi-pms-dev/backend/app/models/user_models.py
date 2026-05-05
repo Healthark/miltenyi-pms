@@ -8,20 +8,20 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     org_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
-    
-    department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
+
+    function_id = Column(Integer, ForeignKey("functions.id"), nullable=True)
     designation_id = Column(Integer, ForeignKey("designations.id"), nullable=True)
-    
+
     employee_code = Column(String, nullable=False)
     full_name = Column(String, nullable=False)
     email = Column(String, nullable=False)
     phone = Column(String, nullable=True)
-    
+
     role = Column(String, nullable=False) # Admin, Manager, Practitioner, Staff
-    
+
     # Self-referencing Foreign Key for the Mentoring hierarchy
     mentor_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    
+
     avatar_url = Column(String, nullable=True)
     password_hash = Column(String, nullable=False)
     # Set to True when an admin reset this user's password to a temporary one.
@@ -33,7 +33,7 @@ class User(Base):
     # in the UI, new-user creation does not expose this (admin-managed only).
     is_management = Column(Boolean, nullable=False, default=False, server_default="false")
     is_deleted = Column(Boolean, default=False)
-    
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -44,8 +44,8 @@ class User(Base):
         Index("ix_users_org_empcode", "org_id", "employee_code", unique=True),
     )
 
-    # Relationships (Allows us to easily fetch u.organization or u.department in Python)
+    # Relationships (Allows us to easily fetch u.organization or u.function in Python)
     organization = relationship("Organization")
-    department = relationship("Department")
+    function = relationship("Function")
     designation = relationship("Designation")
     mentor = relationship("User", remote_side=[id]) # Maps the mentor back to a User object

@@ -4,7 +4,7 @@ import apiClient from "./api.client";
 // Response types — mirror backend admin_schemas.py exactly
 // ---------------------------------------------------------------------------
 
-export interface DepartmentBrief {
+export interface FunctionBrief {
   id: number;
   name: string;
 }
@@ -23,12 +23,12 @@ export interface UserResponse {
   email: string;
   phone: string | null;
   role: string;
-  department_id: number | null;
+  function_id: number | null;
   designation_id: number | null;
   mentor_id: number | null;
   is_deleted: boolean;
   created_at: string;
-  department: DepartmentBrief | null;
+  function: FunctionBrief | null;
   designation: DesignationBrief | null;
 }
 
@@ -68,7 +68,7 @@ export interface UserCreatePayload {
   email: string;
   phone?: string;
   role: string;
-  department_id?: number | null;
+  function_id?: number | null;
   designation_id?: number | null;
   mentor_id?: number | null;
   password: string;
@@ -79,7 +79,7 @@ export interface UserUpdatePayload {
   phone?: string;
   role?: string;
   employee_code?: string;
-  department_id?: number | null;
+  function_id?: number | null;
   designation_id?: number | null;
   mentor_id?: number | null;
 }
@@ -123,8 +123,8 @@ export const adminService = {
   },
 
   // Reference data (for form dropdowns)
-  getDepartments: async (): Promise<DepartmentBrief[]> => {
-    const res = await apiClient.get<DepartmentBrief[]>("/admin/departments");
+  getFunctions: async (): Promise<FunctionBrief[]> => {
+    const res = await apiClient.get<FunctionBrief[]>("/admin/functions");
     return res.data;
   },
 

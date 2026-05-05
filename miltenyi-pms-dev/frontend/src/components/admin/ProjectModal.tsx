@@ -9,7 +9,7 @@
  *     project-level — replaces per-member Secondary)
  *   - Members have a single "PM" checkbox (max one across the project);
  *     no more Primary/Secondary dropdown on each row
- *   - Assignment rows include Department dropdown
+ *   - Assignment rows include Function dropdown
  *   - Assignment role auto-fills from user's designation when selected
  *
  * Placement: src/components/admin/ProjectModal.tsx
@@ -27,7 +27,7 @@ import {
 import {
   adminService,
   type UserResponse,
-  type DepartmentBrief,
+  type FunctionBrief,
   type DesignationBrief,
 } from "../../services/admin.service";
 import { getErrorMessage } from "../../utils/errors";
@@ -50,7 +50,7 @@ interface DraftAssignment {
   tempId: string;
   user_id: string;
   assignment_role: string;
-  department_id: string;
+  function_id: string;
   is_pm: boolean;
   assigned_date: string;
 }
@@ -84,7 +84,7 @@ export function ProjectModal({
   const [secondaryEvaluatorId, setSecondaryEvaluatorId] = useState<number | null>(null);
 
   // ── Reference Data ──────────────────────────────────────────────
-  const [departments, setDepartments] = useState<DepartmentBrief[]>([]);
+  const [functions, setFunctions] = useState<FunctionBrief[]>([]);
   const [designations, setDesignations] = useState<DesignationBrief[]>([]);
 
   // ── Assignment State ────────────────────────────────────────────
@@ -103,11 +103,11 @@ export function ProjectModal({
   useEffect(() => {
     const loadRefs = async () => {
       try {
-        const [deptData, desigData] = await Promise.all([
-          adminService.getDepartments(),
+        const [funcData, desigData] = await Promise.all([
+          adminService.getFunctions(),
           adminService.getDesignations(),
         ]);
-        setDepartments(deptData);
+        setFunctions(funcData);
         setDesignations(desigData);
       } catch {
         // dropdowns stay empty
@@ -143,7 +143,7 @@ export function ProjectModal({
         tempId: tempId(),
         user_id: "",
         assignment_role: "",
-        department_id: "",
+        function_id: "",
         is_pm: false,
         assigned_date: "",
       },
@@ -174,7 +174,7 @@ export function ProjectModal({
     );
   };
 
-  /** Auto-fill role and department when user is selected */
+  /** Auto-fill role and function when user is selected */
   const handleUserSelect = (draftId: string, userId: string) => {
     updateDraft(draftId, "user_id", userId);
 
@@ -183,8 +183,8 @@ export function ProjectModal({
     const selectedUser = users.find((u) => u.id === Number(userId));
     if (!selectedUser) return;
 
-    if (selectedUser.department_id) {
-      updateDraft(draftId, "department_id", selectedUser.department_id.toString());
+    if (selectedUser.function_id) {
+      updateDraft(draftId, "function_id", selectedUser.function_id.toString());
     }
     if (selectedUser.designation) {
       updateDraft(draftId, "assignment_role", selectedUser.designation.name);
@@ -285,7 +285,7 @@ export function ProjectModal({
           await projectService.addAssignment(projectId, {
             user_id: Number(draft.user_id),
             assignment_role: draft.assignment_role || null,
-            department_id: draft.department_id ? Number(draft.department_id) : null,
+            function_id: draft.function_id ? Number(draft.function_id) : null,
             evaluator_type: draft.is_pm ? "Primary" : null,
             assigned_date: draft.assigned_date || null,
           });
@@ -296,7 +296,7 @@ export function ProjectModal({
           .map((a) => ({
             user_id: Number(a.user_id),
             assignment_role: a.assignment_role || null,
-            department_id: a.department_id ? Number(a.department_id) : null,
+            function_id: a.function_id ? Number(a.function_id) : null,
             evaluator_type: a.is_pm ? "Primary" : null,
             assigned_date: a.assigned_date || null,
           }));
@@ -441,8 +441,8 @@ export function ProjectModal({
                       <span className="text-sm font-medium text-text-main">{a.user_name}</span>
                       {a.assignment_role && <span className="ml-2 text-xs text-text-muted">({a.assignment_role})</span>}
                     </div>
-                    {a.department_name && (
-                      <span className="text-xs text-text-muted shrink-0">{a.department_name}</span>
+                    {a.function_name && (
+                      <span className="text-xs text-text-muted shrink-0">{a.function_name}</span>
                     )}
                     {a.evaluator_type === "Primary" && (
                       <span className="rounded-full bg-brand-light px-2 py-0.5 text-xs font-medium text-brand shrink-0">PM</span>
@@ -502,16 +502,16 @@ export function ProjectModal({
                         </select>
                       </div>
 
-                      {/* Department — 2 cols */}
+                      {/* Function — 2 cols */}
                       <div className="col-span-2">
-                        <label className={LABEL_CLS}>Department</label>
+                        <label className={LABEL_CLS}>Function</label>
                         <select
                           className={INPUT_CLS}
-                          value={draft.department_id}
-                          onChange={(e) => updateDraft(draft.tempId, "department_id", e.target.value)}
+                          value={draft.function_id}
+                          onChange={(e) => updateDraft(draft.tempId, "function_id", e.target.value)}
                         >
                           <option value="">— Select —</option>
-                          {departments.map((d) => (
+                          {functions.map((d) => (
                             <option key={d.id} value={d.id}>{d.name}</option>
                           ))}
                         </select>

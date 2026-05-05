@@ -52,7 +52,7 @@ type ViewMode = "grid" | "table";
 type MyReviewsSortKey =
   | "project_name"
   | "project_code"
-  | "department_name"
+  | "function_name"
   | "pm_name"
   | "cycle"
   | "review_status"
@@ -64,7 +64,7 @@ const MY_REVIEWS_SORT_CONFIG: Record<
 > = {
   project_name:      { kind: "alpha",   get: (c) => c.project_name },
   project_code:      { kind: "natural", get: (c) => c.project_code },
-  department_name:   { kind: "alpha",   get: (c) => c.department_name },
+  function_name:   { kind: "alpha",   get: (c) => c.function_name },
   pm_name:           { kind: "alpha",   get: (c) => c.pm_name },
   cycle:             { kind: "cycle",   get: (c) => c.cycle },
   review_status:     { kind: "alpha",   get: (c) => c.review_status },
@@ -397,7 +397,7 @@ function renderMyReviewsBody(args: {
             <th className="text-left px-4 py-2.5">
               <SortableHeader
                 label="Function"
-                columnKey="department_name"
+                columnKey="function_name"
                 sort={sort}
                 onSort={onSort}
               />
@@ -464,7 +464,7 @@ function renderMyReviewsBody(args: {
                     {card.project_code}
                   </td>
                   <td className="px-4 py-3 text-text-muted">
-                    {card.department_name ?? "—"}
+                    {card.function_name ?? "—"}
                   </td>
                   <td className="hidden sm:table-cell px-4 py-3 text-text-muted">
                     {card.pm_name ?? "—"}

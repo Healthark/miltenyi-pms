@@ -113,7 +113,7 @@ class CalibrationRow(BaseModel):
     employee_name: str
     employee_email: Optional[str] = None
     mentor_name: Optional[str] = None
-    department: Optional[str] = None
+    function: Optional[str] = None
     designation: Optional[str] = None
     self_performance_rating: Optional[int] = None
     mentor_performance_rating: Optional[int] = None
@@ -126,10 +126,10 @@ class CalibrationRow(BaseModel):
 class MenteeAnnualReview(AnnualReviewResponse):
     """
     A mentee's review enriched with employee display info. Used by the
-    Team Review tab so the mentor can see names, department, and designation
+    Team Review tab so the mentor can see names, function, and designation
     alongside the review state.
     """
     employee_name: str
     employee_email: Optional[str] = None
-    department: Optional[str] = None
+    function: Optional[str] = None
     designation: Optional[str] = None

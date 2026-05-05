@@ -311,7 +311,7 @@ def get_mentee_reviews(
 ):
     """
     All reviews for the current user's direct mentees across every cycle/status.
-    Each row is enriched with employee_name / department / designation.
+    Each row is enriched with employee_name / function / designation.
     Final ratings are nulled when the org-wide visibility flag is off so the
     Mentee Review tab can conditionally hide the Ratings column.
     """
@@ -343,7 +343,7 @@ def get_mentee_reviews(
             **base,
             employee_name=u.full_name if u else f"Employee #{r.user_id}",
             employee_email=u.email if u else None,
-            department=u.department.name if u and u.department else None,
+            function=u.function.name if u and u.function else None,
             designation=u.designation.name if u and u.designation else None,
         ))
     return rows
@@ -482,7 +482,7 @@ def get_calibration_grid(
             employee_name=u.full_name if u else "Unknown",
             employee_email=u.email if u else None,
             mentor_name=m.full_name if m else None,
-            department=u.department.name if u and u.department else None,
+            function=u.function.name if u and u.function else None,
             designation=u.designation.name if u and u.designation else None,
             self_performance_rating=r.self_performance_rating,
             mentor_performance_rating=r.mentor_performance_rating,

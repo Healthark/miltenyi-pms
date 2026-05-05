@@ -353,7 +353,7 @@ export function MenteeProjectsTab({
       employee_name: menteeName,
       project_name: row.project_name,
       project_code: row.project_code,
-      department_name: null,
+      function_name: null,
       review_id: row.review_id,
     }),
     [menteeName],

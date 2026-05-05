@@ -17,7 +17,7 @@ from datetime import date, datetime, timezone
 from app.core.database import SessionLocal
 from app.core.security import get_password_hash
 from app.models.organization_models import Organization
-from app.models.reference_models import Department, Designation
+from app.models.reference_models import Function, Designation
 from app.models.user_models import User
 from app.models.system_settings_models import SystemSettings, CycleType
 from app.models.project_models import Project, ProjectAssignment
@@ -55,13 +55,13 @@ def seed_database():
             print("  [~] Organization 'Miltenyi' already exists, skipping...")
 
         # ================================================================== #
-        # 2. DEPARTMENTS & DESIGNATIONS                                       #
+        # 2. FUNCTIONS & DESIGNATIONS                                         #
         # ================================================================== #
 
-        if db.query(Department).filter(Department.org_id == miltenyi_org.id).count() == 0:
-            dept_rnd = Department(org_id=miltenyi_org.id, name="R&D")
-            dept_mfg = Department(org_id=miltenyi_org.id, name="Manufacturing")
-            dept_com = Department(org_id=miltenyi_org.id, name="Commercial")
+        if db.query(Function).filter(Function.org_id == miltenyi_org.id).count() == 0:
+            func_rnd = Function(org_id=miltenyi_org.id, name="R&D")
+            func_mfg = Function(org_id=miltenyi_org.id, name="Manufacturing")
+            func_com = Function(org_id=miltenyi_org.id, name="Commercial")
 
             desig_scientist    = Designation(org_id=miltenyi_org.id, name="Scientist",        level=1)
             desig_sr_scientist = Designation(org_id=miltenyi_org.id, name="Senior Scientist", level=2)
@@ -69,11 +69,11 @@ def seed_database():
             desig_dir          = Designation(org_id=miltenyi_org.id, name="Director",         level=4)
 
             db.add_all([
-                dept_rnd, dept_mfg, dept_com,
+                func_rnd, func_mfg, func_com,
                 desig_scientist, desig_sr_scientist, desig_lead, desig_dir,
             ])
             db.commit()
-            print("  [+] Created Miltenyi Departments & Designations")
+            print("  [+] Created Miltenyi Functions & Designations")
         else:
             print("  [~] Miltenyi Reference data already exists, skipping...")
 
@@ -83,9 +83,9 @@ def seed_database():
         # 3. USERS                                                            #
         # ================================================================== #
 
-        dept_rnd = db.query(Department).filter_by(org_id=miltenyi_org.id, name="R&D").first()
-        dept_mfg = db.query(Department).filter_by(org_id=miltenyi_org.id, name="Manufacturing").first()
-        dept_com = db.query(Department).filter_by(org_id=miltenyi_org.id, name="Commercial").first()
+        func_rnd = db.query(Function).filter_by(org_id=miltenyi_org.id, name="R&D").first()
+        func_mfg = db.query(Function).filter_by(org_id=miltenyi_org.id, name="Manufacturing").first()
+        func_com = db.query(Function).filter_by(org_id=miltenyi_org.id, name="Commercial").first()
 
         desig_scientist    = db.query(Designation).filter_by(org_id=miltenyi_org.id, name="Scientist").first()
         desig_sr_scientist = db.query(Designation).filter_by(org_id=miltenyi_org.id, name="Senior Scientist").first()
@@ -94,7 +94,7 @@ def seed_database():
 
         if db.query(User).filter(User.org_id == miltenyi_org.id).count() == 0:
             alice_admin = User(
-                org_id=miltenyi_org.id, department_id=dept_com.id, designation_id=desig_dir.id,
+                org_id=miltenyi_org.id, function_id=func_com.id, designation_id=desig_dir.id,
                 employee_code="MIL-000", full_name="Alice Admin", email="admin@miltenyi.com",
                 phone="+49 30 1234 0000",
                 role="Admin", password_hash=pw, is_management=True,
@@ -104,7 +104,7 @@ def seed_database():
             db.refresh(alice_admin)
 
             bob_lead = User(
-                org_id=miltenyi_org.id, department_id=dept_rnd.id, designation_id=desig_lead.id,
+                org_id=miltenyi_org.id, function_id=func_rnd.id, designation_id=desig_lead.id,
                 employee_code="MIL-101", full_name="Bob Builder", email="bob@miltenyi.com",
                 phone="+49 30 1234 1011",
                 role="Staff", password_hash=pw, mentor_id=alice_admin.id,
@@ -114,19 +114,19 @@ def seed_database():
             db.refresh(bob_lead)
 
             charlie = User(
-                org_id=miltenyi_org.id, department_id=dept_rnd.id, designation_id=desig_sr_scientist.id,
+                org_id=miltenyi_org.id, function_id=func_rnd.id, designation_id=desig_sr_scientist.id,
                 employee_code="MIL-102", full_name="Charlie Chemist", email="charlie@miltenyi.com",
                 phone="+49 30 1234 1012",
                 role="Staff", mentor_id=bob_lead.id, password_hash=pw,
             )
             dana = User(
-                org_id=miltenyi_org.id, department_id=dept_rnd.id, designation_id=desig_scientist.id,
+                org_id=miltenyi_org.id, function_id=func_rnd.id, designation_id=desig_scientist.id,
                 employee_code="MIL-103", full_name="Dana DNA", email="dana@miltenyi.com",
                 phone="+49 30 1234 1013",
                 role="Staff", mentor_id=bob_lead.id, password_hash=pw,
             )
             evan_mfg = User(
-                org_id=miltenyi_org.id, department_id=dept_mfg.id, designation_id=desig_lead.id,
+                org_id=miltenyi_org.id, function_id=func_mfg.id, designation_id=desig_lead.id,
                 employee_code="MIL-201", full_name="Evan Engineer", email="evan@miltenyi.com",
                 phone="+49 30 1234 2011",
                 role="Staff", password_hash=pw, mentor_id=alice_admin.id,
@@ -136,7 +136,7 @@ def seed_database():
             db.refresh(evan_mfg)
 
             fiona = User(
-                org_id=miltenyi_org.id, department_id=dept_mfg.id, designation_id=desig_scientist.id,
+                org_id=miltenyi_org.id, function_id=func_mfg.id, designation_id=desig_scientist.id,
                 employee_code="MIL-202", full_name="Fiona Factory", email="fiona@miltenyi.com",
                 phone="+49 30 1234 2012",
                 role="Staff", mentor_id=evan_mfg.id, password_hash=pw,
@@ -172,49 +172,49 @@ def seed_database():
 
         hans = _ensure_mil_user(
             "hans@miltenyi.com",
-            department_id=dept_rnd.id, designation_id=desig_dir.id,
+            function_id=func_rnd.id, designation_id=desig_dir.id,
             employee_code="MIL-F01", full_name="Hans Müller",
             phone="+49 30 1234 0001", role="Admin",
             mentor_id=alice_admin.id, is_management=True,
         )
         greta = _ensure_mil_user(
             "greta@miltenyi.com",
-            department_id=dept_mfg.id, designation_id=desig_dir.id,
+            function_id=func_mfg.id, designation_id=desig_dir.id,
             employee_code="MIL-F02", full_name="Greta Schmidt",
             phone="+49 30 1234 0002", role="Admin",
             mentor_id=alice_admin.id, is_management=True,
         )
         lukas = _ensure_mil_user(
             "lukas@miltenyi.com",
-            department_id=dept_com.id, designation_id=desig_lead.id,
+            function_id=func_com.id, designation_id=desig_lead.id,
             employee_code="MIL-301", full_name="Lukas Lange",
             phone="+49 30 1234 3011", role="Staff",
             mentor_id=alice_admin.id,
         )
         iris = _ensure_mil_user(
             "iris@miltenyi.com",
-            department_id=dept_rnd.id, designation_id=desig_sr_scientist.id,
+            function_id=func_rnd.id, designation_id=desig_sr_scientist.id,
             employee_code="MIL-104", full_name="Iris Immel",
             phone="+49 30 1234 1014", role="Staff",
             mentor_id=bob_lead.id,
         )
         klaus = _ensure_mil_user(
             "klaus@miltenyi.com",
-            department_id=dept_mfg.id, designation_id=desig_scientist.id,
+            function_id=func_mfg.id, designation_id=desig_scientist.id,
             employee_code="MIL-203", full_name="Klaus Köhler",
             phone="+49 30 1234 2013", role="Staff",
             mentor_id=evan_mfg.id,
         )
         mia = _ensure_mil_user(
             "mia@miltenyi.com",
-            department_id=dept_com.id, designation_id=desig_sr_scientist.id,
+            function_id=func_com.id, designation_id=desig_sr_scientist.id,
             employee_code="MIL-302", full_name="Mia Markt",
             phone="+49 30 1234 3012", role="Staff",
             mentor_id=lukas.id,
         )
         nils = _ensure_mil_user(
             "nils@miltenyi.com",
-            department_id=dept_com.id, designation_id=desig_scientist.id,
+            function_id=func_com.id, designation_id=desig_scientist.id,
             employee_code="MIL-303", full_name="Nils Niedermeier",
             phone="+49 30 1234 3013", role="Staff",
             mentor_id=lukas.id,
@@ -268,9 +268,9 @@ def seed_database():
             )
             db.add(proj_cell)
             db.flush()
-            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_cell.id, user_id=bob_lead.id, assignment_role=desig_lead.name,         department_id=dept_rnd.id, evaluator_type="Primary", assigned_date=date(2025, 1, 15)))
-            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_cell.id, user_id=charlie.id,  assignment_role=desig_sr_scientist.name, department_id=dept_rnd.id, evaluator_type=None,      assigned_date=date(2025, 1, 22)))
-            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_cell.id, user_id=dana.id,     assignment_role=desig_scientist.name,    department_id=dept_rnd.id, evaluator_type=None,      assigned_date=date(2025, 2, 1)))
+            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_cell.id, user_id=bob_lead.id, assignment_role=desig_lead.name,         function_id=func_rnd.id, evaluator_type="Primary", assigned_date=date(2025, 1, 15)))
+            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_cell.id, user_id=charlie.id,  assignment_role=desig_sr_scientist.name, function_id=func_rnd.id, evaluator_type=None,      assigned_date=date(2025, 1, 22)))
+            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_cell.id, user_id=dana.id,     assignment_role=desig_scientist.name,    function_id=func_rnd.id, evaluator_type=None,      assigned_date=date(2025, 2, 1)))
             db.commit()
 
             proj_macs = Project(
@@ -283,10 +283,10 @@ def seed_database():
             )
             db.add(proj_macs)
             db.flush()
-            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_macs.id, user_id=evan_mfg.id, assignment_role=desig_lead.name,      department_id=dept_mfg.id, evaluator_type="Primary",   assigned_date=date(2025, 3, 5)))
-            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_macs.id, user_id=fiona.id,    assignment_role=desig_scientist.name, department_id=dept_mfg.id, evaluator_type=None,        assigned_date=date(2025, 3, 5)))
+            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_macs.id, user_id=evan_mfg.id, assignment_role=desig_lead.name,      function_id=func_mfg.id, evaluator_type="Primary",   assigned_date=date(2025, 3, 5)))
+            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_macs.id, user_id=fiona.id,    assignment_role=desig_scientist.name, function_id=func_mfg.id, evaluator_type=None,        assigned_date=date(2025, 3, 5)))
             # Bob is the Secondary evaluator (project-level) but also a project member.
-            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_macs.id, user_id=bob_lead.id, assignment_role="R&D Liaison",        department_id=dept_rnd.id, evaluator_type=None,        assigned_date=date(2025, 3, 18)))
+            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_macs.id, user_id=bob_lead.id, assignment_role="R&D Liaison",        function_id=func_rnd.id, evaluator_type=None,        assigned_date=date(2025, 3, 18)))
             db.commit()
 
             print("  [+] Created Projects for Miltenyi (MIL-PRJ-101..MIL-PRJ-102)")
@@ -309,11 +309,11 @@ def seed_database():
             )
             db.add(proj_validation)
             db.flush()
-            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_validation.id, user_id=bob_lead.id, assignment_role=desig_lead.name,         department_id=dept_rnd.id, evaluator_type="Primary", assigned_date=date(2026, 1, 8)))
-            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_validation.id, user_id=charlie.id,  assignment_role=desig_sr_scientist.name, department_id=dept_rnd.id, evaluator_type=None,      assigned_date=date(2026, 1, 8)))
-            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_validation.id, user_id=iris.id,     assignment_role=desig_sr_scientist.name, department_id=dept_rnd.id, evaluator_type=None,      assigned_date=date(2026, 1, 8)))
-            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_validation.id, user_id=dana.id,     assignment_role=desig_scientist.name,    department_id=dept_rnd.id, evaluator_type=None,      assigned_date=date(2026, 1, 22)))
-            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_validation.id, user_id=evan_mfg.id, assignment_role="Mfg Liaison",           department_id=dept_mfg.id, evaluator_type=None,      assigned_date=date(2026, 1, 15)))
+            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_validation.id, user_id=bob_lead.id, assignment_role=desig_lead.name,         function_id=func_rnd.id, evaluator_type="Primary", assigned_date=date(2026, 1, 8)))
+            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_validation.id, user_id=charlie.id,  assignment_role=desig_sr_scientist.name, function_id=func_rnd.id, evaluator_type=None,      assigned_date=date(2026, 1, 8)))
+            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_validation.id, user_id=iris.id,     assignment_role=desig_sr_scientist.name, function_id=func_rnd.id, evaluator_type=None,      assigned_date=date(2026, 1, 8)))
+            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_validation.id, user_id=dana.id,     assignment_role=desig_scientist.name,    function_id=func_rnd.id, evaluator_type=None,      assigned_date=date(2026, 1, 22)))
+            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_validation.id, user_id=evan_mfg.id, assignment_role="Mfg Liaison",           function_id=func_mfg.id, evaluator_type=None,      assigned_date=date(2026, 1, 15)))
             db.commit()
             print("  [+] Created MIL-PRJ-103 (Cell Therapy Process Validation)")
 
@@ -332,10 +332,10 @@ def seed_database():
             )
             db.add(proj_launch)
             db.flush()
-            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_launch.id, user_id=lukas.id, assignment_role=desig_lead.name,         department_id=dept_com.id, evaluator_type="Primary", assigned_date=date(2026, 1, 5)))
-            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_launch.id, user_id=mia.id,   assignment_role=desig_sr_scientist.name, department_id=dept_com.id, evaluator_type=None,      assigned_date=date(2026, 1, 5)))
-            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_launch.id, user_id=nils.id,  assignment_role=desig_scientist.name,    department_id=dept_com.id, evaluator_type=None,      assigned_date=date(2026, 1, 5)))
-            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_launch.id, user_id=evan_mfg.id, assignment_role="Mfg Advisor",        department_id=dept_mfg.id, evaluator_type=None,      assigned_date=date(2026, 2, 1)))
+            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_launch.id, user_id=lukas.id, assignment_role=desig_lead.name,         function_id=func_com.id, evaluator_type="Primary", assigned_date=date(2026, 1, 5)))
+            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_launch.id, user_id=mia.id,   assignment_role=desig_sr_scientist.name, function_id=func_com.id, evaluator_type=None,      assigned_date=date(2026, 1, 5)))
+            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_launch.id, user_id=nils.id,  assignment_role=desig_scientist.name,    function_id=func_com.id, evaluator_type=None,      assigned_date=date(2026, 1, 5)))
+            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_launch.id, user_id=evan_mfg.id, assignment_role="Mfg Advisor",        function_id=func_mfg.id, evaluator_type=None,      assigned_date=date(2026, 2, 1)))
             db.commit()
             print("  [+] Created MIL-PRJ-104 (Commercial Launch Strategy 2026)")
 
@@ -451,9 +451,9 @@ def seed_database():
 
         if db.query(RoleExpectation).filter(RoleExpectation.org_id == miltenyi_org.id).count() == 0:
             mil_added = 0
-            for dept_name, designations_dict in MIL_EXPECTATIONS.items():
-                _dept = db.query(Department).filter_by(org_id=miltenyi_org.id, name=dept_name).first()
-                if not _dept:
+            for func_name, designations_dict in MIL_EXPECTATIONS.items():
+                _func = db.query(Function).filter_by(org_id=miltenyi_org.id, name=func_name).first()
+                if not _func:
                     continue
                 for desig_name, competencies in designations_dict.items():
                     _desig = db.query(Designation).filter_by(org_id=miltenyi_org.id, name=desig_name).first()
@@ -461,7 +461,7 @@ def seed_database():
                         continue
                     db.add(RoleExpectation(
                         org_id=miltenyi_org.id,
-                        department_id=_dept.id,
+                        function_id=_func.id,
                         designation_id=_desig.id,
                         exp_task_execution=competencies.get("exp_task_execution", ""),
                         exp_ownership=competencies.get("exp_ownership", ""),

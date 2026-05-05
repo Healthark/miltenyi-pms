@@ -3,7 +3,7 @@
  *
  * Kinds:
  *   - "alpha"    → case-insensitive string compare. Use for pure alpha labels
- *                  (Project, PM, Employee, Department).
+ *                  (Project, PM, Employee, Function).
  *   - "natural"  → Intl.Collator with numeric=true, so "PRJ-9" < "PRJ-10".
  *                  Use for mixed alphanumeric keys (project codes, version
  *                  strings). Do NOT use for cycle labels — see "cycle" below.

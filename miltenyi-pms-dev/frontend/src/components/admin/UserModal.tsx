@@ -4,7 +4,7 @@ import type {
   UserResponse,
   UserCreatePayload,
   UserUpdatePayload,
-  DepartmentBrief,
+  FunctionBrief,
   DesignationBrief,
 } from "../../services/admin.service";
 import { UserCombobox } from "../common/UserCombobox";
@@ -19,7 +19,7 @@ interface UserModalProps {
     payload: UserCreatePayload | UserUpdatePayload,
   ) => Promise<void>;
   readonly editingUser: UserResponse | null;
-  readonly departments: DepartmentBrief[];
+  readonly functions: FunctionBrief[];
   readonly designations: DesignationBrief[];
   readonly managers: UserResponse[]; // Consider renaming this prop to 'potentialMentors' in the future
   readonly isSaving: boolean;
@@ -35,7 +35,7 @@ export function UserModal({
   onClose,
   onSave,
   editingUser,
-  departments,
+  functions,
   designations,
   managers,
   isSaving,
@@ -49,7 +49,7 @@ export function UserModal({
     email: "",
     phone: "",
     role: "Staff",
-    department_id: "",
+    function_id: "",
     designation_id: "",
     mentor_id: "",
     password: "",
@@ -64,7 +64,7 @@ export function UserModal({
         phone: editingUser.phone ?? "",
         // Ensure legacy roles default back to Staff when editing
         role: ["Admin", "Staff"].includes(editingUser.role) ? editingUser.role : "Staff",
-        department_id: editingUser.department_id?.toString() ?? "",
+        function_id: editingUser.function_id?.toString() ?? "",
         designation_id: editingUser.designation_id?.toString() ?? "",
         mentor_id: editingUser.mentor_id?.toString() ?? "",
         password: "",
@@ -76,7 +76,7 @@ export function UserModal({
         email: "",
         phone: "",
         role: "Staff",
-        department_id: "",
+        function_id: "",
         designation_id: "",
         mentor_id: "",
         password: "",
@@ -96,7 +96,7 @@ export function UserModal({
         phone: form.phone || undefined,
         role: form.role || undefined,
         employee_code: form.employee_code || undefined,
-        department_id: form.department_id ? Number(form.department_id) : null,
+        function_id: form.function_id ? Number(form.function_id) : null,
         designation_id: form.designation_id
           ? Number(form.designation_id)
           : null,
@@ -109,7 +109,7 @@ export function UserModal({
         email: form.email,
         phone: form.phone || undefined,
         role: form.role,
-        department_id: form.department_id ? Number(form.department_id) : null,
+        function_id: form.function_id ? Number(form.function_id) : null,
         designation_id: form.designation_id
           ? Number(form.designation_id)
           : null,
@@ -224,17 +224,17 @@ export function UserModal({
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label htmlFor="dept" className={LABEL_CLS}>
+              <label htmlFor="func" className={LABEL_CLS}>
                 Function
               </label>
               <select
-                id="dept"
+                id="func"
                 className={INPUT_CLS}
-                value={form.department_id}
-                onChange={(e) => set("department_id", e.target.value)}
+                value={form.function_id}
+                onChange={(e) => set("function_id", e.target.value)}
               >
                 <option value="">— None —</option>
-                {departments.map((d) => (
+                {functions.map((d) => (
                   <option key={d.id} value={d.id}>
                     {d.name}
                   </option>

@@ -148,9 +148,9 @@ export interface GoalSelfReviewPayload {
 /** Extended type for the manager's Team Goals view */
 export interface TeamGoal extends Goal {
   owner_name: string;
-  /** Owner's department / designation — used by the mentor-review modal to
+  /** Owner's function / designation — used by the mentor-review modal to
    *  match the right RoleExpectation row without an extra fetch. */
-  owner_department_name: string | null;
+  owner_function_name: string | null;
   owner_designation_name: string | null;
 }
 

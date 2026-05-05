@@ -8,7 +8,7 @@
  *   - Added pm_id/pm_name on Project (Primary evaluator, resolved server-side)
  *   - Added secondary_evaluator_id/secondary_evaluator_name on Project (single,
  *     project-level Secondary; replaces multi-row Secondary assignments)
- *   - Added department_id/department_name on Assignment
+ *   - Added function_id/function_name on Assignment
  *   - Assignment.evaluator_type: "Primary" | null only
  */
 
@@ -22,8 +22,8 @@ export interface AssignmentResponse {
   user_id: number;
   user_name: string;
   assignment_role: string | null;
-  department_id: number | null;
-  department_name: string | null;
+  function_id: number | null;
+  function_name: string | null;
   evaluator_type: string | null; // "Primary" | "Secondary" | null
   assigned_date: string | null;
   created_at: string;
@@ -32,14 +32,14 @@ export interface AssignmentResponse {
 export interface AssignmentCreatePayload {
   user_id: number;
   assignment_role?: string | null;
-  department_id?: number | null;
+  function_id?: number | null;
   evaluator_type?: "Primary" | null;
   assigned_date?: string | null;
 }
 
 export interface AssignmentUpdatePayload {
   assignment_role?: string | null;
-  department_id?: number | null;
+  function_id?: number | null;
   evaluator_type?: "Primary" | null;
   assigned_date?: string | null;
 }

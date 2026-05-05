@@ -1,10 +1,10 @@
 """
 RoleExpectation Model — Reference Data for PM Evaluations.
 
-Maps Department × Designation to expected behaviors per competency.
+Maps Function × Designation to expected behaviors per competency.
 Example: Strategy × Consultant → 8 competency expectation paragraphs.
 
-3 Departments (Strategy, IDT, RWE) × 3 Designations (Consultant,
+3 Functions (Strategy, IDT, RWE) × 3 Designations (Consultant,
 Senior Consultant, Manager) = 9 rows.
 
 The PM sees these expectations as reference context while evaluating
@@ -24,7 +24,7 @@ class RoleExpectation(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     org_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
-    department_id = Column(Integer, ForeignKey("departments.id"), nullable=False)
+    function_id = Column(Integer, ForeignKey("functions.id"), nullable=False)
     designation_id = Column(Integer, ForeignKey("designations.id"), nullable=False)
 
     # ── 8 Competency Expectations ────────────────────────────────────
@@ -41,15 +41,15 @@ class RoleExpectation(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     __table_args__ = (
-        # One expectation row per department × designation per org
+        # One expectation row per function × designation per org
         Index(
-            "ix_role_exp_org_dept_desig",
-            "org_id", "department_id", "designation_id",
+            "ix_role_exp_org_func_desig",
+            "org_id", "function_id", "designation_id",
             unique=True,
         ),
     )
 
     # Relationships
     organization = relationship("Organization")
-    department = relationship("Department")
+    function = relationship("Function")
     designation = relationship("Designation")

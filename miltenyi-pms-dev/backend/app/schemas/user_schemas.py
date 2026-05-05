@@ -25,7 +25,7 @@ class UserProfile(BaseModel):
     Rich profile payload for the Profile page.
 
     Contains everything the ProfileInfoCard needs to render:
-    identity fields, HR-controlled metadata (department, designation,
+    identity fields, HR-controlled metadata (function, designation,
     mentor), and the org name for context. All of this is read-only
     on the frontend — only password and avatar are user-editable.
     """
@@ -41,7 +41,7 @@ class UserProfile(BaseModel):
     avatar_url: Optional[str] = None
 
     # HR-controlled fields — displayed as read-only text
-    department: Optional[str] = None
+    function: Optional[str] = None
     designation: Optional[str] = None
     mentor_name: Optional[str] = None
 
@@ -49,7 +49,7 @@ class UserProfile(BaseModel):
 
 # Add this to the bottom of app/schemas/user_schemas.py
 class UserRoleExpectationResponse(BaseModel):
-    department_name: str | None
+    function_name: str | None
     designation_name: str | None
     exp_task_execution: str
     exp_ownership: str

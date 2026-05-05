@@ -258,7 +258,7 @@ class GoalResponse(GoalBase):
 class TeamGoalResponse(GoalResponse):
     """Extended response for the manager's Team Goals view."""
     owner_name: str
-    # Owner's department / designation — exposed so the mentor-review modal
+    # Owner's function / designation — exposed so the mentor-review modal
     # can match the right RoleExpectation row without a second round-trip.
-    owner_department_name: Optional[str] = None
+    owner_function_name: Optional[str] = None
     owner_designation_name: Optional[str] = None

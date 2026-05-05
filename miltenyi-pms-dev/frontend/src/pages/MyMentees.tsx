@@ -23,7 +23,7 @@ const MENTEE_TABLE_SORT_CONFIG: Record<
   full_name:             { kind: "alpha",   get: (m) => m.full_name },
   employee_code:         { kind: "natural", get: (m) => m.employee_code },
   email:                 { kind: "alpha",   get: (m) => m.email },
-  department_name:       { kind: "alpha",   get: (m) => m.department_name },
+  function_name:       { kind: "alpha",   get: (m) => m.function_name },
   designation_name:      { kind: "alpha",   get: (m) => m.designation_name },
   pending_actions_count: { kind: "numeric", get: (m) => m.pending_actions_count },
 };

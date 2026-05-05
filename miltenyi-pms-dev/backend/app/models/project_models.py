@@ -7,7 +7,7 @@ Changes from previous version:
     - Added reports_to_id on Project (senior who reviews the PM)
     - Added secondary_evaluator_id on Project (single project-level secondary
       evaluator; replaces the old multi-row "Secondary" ProjectAssignment model)
-    - Added department_id on ProjectAssignment (auto-filled, editable per project)
+    - Added function_id on ProjectAssignment (auto-filled, editable per project)
     - assignment_role auto-fills from designation but is editable
     - ProjectAssignment.evaluator_type is now "Primary" or NULL only.
 """
@@ -72,9 +72,9 @@ class ProjectAssignment(Base):
     # e.g. "Senior Data Engineer" → overridden to "Lead Data Engineer" for this project
     assignment_role = Column(String, nullable=True)
 
-    # Track which department the employee belongs to for this project
-    # Auto-filled from user's department_id but editable per project
-    department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
+    # Track which function the employee belongs to for this project
+    # Auto-filled from user's function_id but editable per project
+    function_id = Column(Integer, ForeignKey("functions.id"), nullable=True)
 
     # "Primary" = Project Manager who evaluates all other members
     # null      = regular team member
@@ -94,4 +94,4 @@ class ProjectAssignment(Base):
     # Relationships
     project = relationship("Project", back_populates="assignments")
     user = relationship("User")
-    department = relationship("Department")
+    function = relationship("Function")

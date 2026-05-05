@@ -24,21 +24,21 @@ export interface UserProfile {
   phone: string | null;
   role: string;
   avatar_url: string | null;
-  department: string | null;
+  function: string | null;
   designation: string | null;
   mentor_name: string | null;
   created_at: string;
 }
 
 /**
- * Resolved role-expectation row for the current user's department × designation.
+ * Resolved role-expectation row for the current user's function × designation.
  * Used by the Goal Self-Review modal to surface Firm Growth and Competency &
  * Skills expectations as a reference panel above the freeform paragraph.
  * Backend fills every field with a "Role expectation not defined" fallback
  * when no mapping exists, so consumers don't have to null-check.
  */
 export interface UserRoleExpectation {
-  department_name: string | null;
+  function_name: string | null;
   designation_name: string | null;
   exp_task_execution: string;
   exp_ownership: string;

@@ -39,7 +39,7 @@ type SortKey =
   | "employee_name"
   | "employee_email"
   | "mentor_name"
-  | "department"
+  | "function"
   | "self_performance_rating"
   | "mentor_performance_rating"
   | "management_performance_rating";
@@ -54,7 +54,7 @@ const COLUMN_DEFS: Array<{ label: string; key: SortKey | null }> = [
   { label: "User",               key: "employee_name" },
   { label: "Email",              key: "employee_email" },
   { label: "Mentor",             key: "mentor_name" },
-  { label: "Function",           key: "department" },
+  { label: "Function",           key: "function" },
   { label: "Self Review",        key: "self_performance_rating" },
   { label: "Mentor Review",      key: "mentor_performance_rating" },
   { label: "Management Rating",  key: "management_performance_rating" },
@@ -67,7 +67,7 @@ export function ManagementReviewTab() {
   const [loadError, setLoadError] = useState("");
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [deptFilter, setDeptFilter] = useState<string>("all");
+  const [funcFilter, setFuncFilter] = useState<string>("all");
   const [mentorFilter, setMentorFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 
@@ -111,10 +111,10 @@ export function ManagementReviewTab() {
     void load();
   }, [load]);
 
-  const availableDepts = useMemo(
+  const availableFuncs = useMemo(
     () =>
       Array.from(
-        new Set(rows.map((r) => r.department).filter((d): d is string => !!d)),
+        new Set(rows.map((r) => r.function).filter((d): d is string => !!d)),
       ).sort((a, b) => a.localeCompare(b)),
     [rows],
   );
@@ -130,7 +130,7 @@ export function ManagementReviewTab() {
   const visibleRows = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     const result = rows.filter((r) => {
-      if (deptFilter !== "all" && (r.department ?? "") !== deptFilter) return false;
+      if (funcFilter !== "all" && (r.function ?? "") !== funcFilter) return false;
       if (mentorFilter !== "all" && (r.mentor_name ?? "") !== mentorFilter) return false;
       if (statusFilter === "pending" && r.management_performance_rating != null) return false;
       if (statusFilter === "rated" && r.management_performance_rating == null) return false;
@@ -139,7 +139,7 @@ export function ManagementReviewTab() {
         r.employee_name.toLowerCase().includes(q) ||
         (r.employee_email ?? "").toLowerCase().includes(q) ||
         (r.mentor_name ?? "").toLowerCase().includes(q) ||
-        (r.department ?? "").toLowerCase().includes(q)
+        (r.function ?? "").toLowerCase().includes(q)
       );
     });
 
@@ -155,7 +155,7 @@ export function ManagementReviewTab() {
           : (av as number) - (bv as number);
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [rows, searchQuery, deptFilter, mentorFilter, statusFilter, sortKey, sortDir]);
+  }, [rows, searchQuery, funcFilter, mentorFilter, statusFilter, sortKey, sortDir]);
 
   const handleSave = async () => {
     if (!editTarget) return;
@@ -230,19 +230,19 @@ export function ManagementReviewTab() {
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2">
             <label
-              htmlFor="mgmt-review-dept-filter"
+              htmlFor="mgmt-review-func-filter"
               className="text-[11px] font-bold uppercase tracking-wider text-text-muted"
             >
               Function
             </label>
             <select
-              id="mgmt-review-dept-filter"
-              value={deptFilter}
-              onChange={(e) => setDeptFilter(e.target.value)}
+              id="mgmt-review-func-filter"
+              value={funcFilter}
+              onChange={(e) => setFuncFilter(e.target.value)}
               className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand min-w-[140px] cursor-pointer"
             >
               <option value="all">All Functions</option>
-              {availableDepts.map((d) => (
+              {availableFuncs.map((d) => (
                 <option key={d} value={d}>
                   {d}
                 </option>
@@ -355,7 +355,7 @@ export function ManagementReviewTab() {
                     {r.mentor_name ?? "—"}
                   </td>
                   <td className="px-5 py-3.5 text-text-muted">
-                    {r.department ?? "—"}
+                    {r.function ?? "—"}
                   </td>
                   <td className="px-5 py-3.5">
                     <PerformanceRatingBadge value={r.self_performance_rating} />
@@ -426,7 +426,7 @@ export function ManagementReviewTab() {
                 </h3>
                 <p className="mt-0.5 text-xs text-text-muted">
                   {editTarget.row.employee_name} ·{" "}
-                  {editTarget.row.department ?? "—"}
+                  {editTarget.row.function ?? "—"}
                 </p>
               </div>
               <button

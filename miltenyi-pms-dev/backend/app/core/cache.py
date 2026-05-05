@@ -3,7 +3,7 @@ Tiny TTL cache for tenant-scoped read-heavy endpoints.
 
 Used on Render free-tier where fractional CPU + 8-10 simultaneous
 dashboard requests cause queueing. Cutting DB roundtrips for static
-reference data (departments, designations) and per-org system settings
+reference data (functions, designations) and per-org system settings
 frees the event loop to handle the genuinely dynamic endpoints.
 
 Single-process by design. With multiple uvicorn workers each process
@@ -47,10 +47,10 @@ class TTLCache:
 
 
 # Per-org caches. Keys are org_id (int).
-# Departments and designations are seeded reference data with no write
+# Functions and designations are seeded reference data with no write
 # endpoints — a 10-minute TTL is generous and means at most one DB hit
 # per org per 10 min per worker.
-departments_cache = TTLCache(ttl_seconds=600)
+functions_cache = TTLCache(ttl_seconds=600)
 designations_cache = TTLCache(ttl_seconds=600)
 # System settings change when an admin saves the cycle config. We invalidate
 # on write, but keep a short TTL as a backstop in case a write path is added

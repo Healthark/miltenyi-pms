@@ -5,7 +5,7 @@
  * Layout:
  *   Top (full-width)  — collapsible role-expectation panels for Firm Growth
  *                       and Competency & Skills, scoped to the mentee's
- *                       (goal owner's) department × designation.
+ *                       (goal owner's) function × designation.
  *   Left panel        — read-only display of the mentee's self-review paragraph.
  *   Right panel       — mentor fills a single paragraph (or views read-only
  *                       when a mentor review already exists for this half).
@@ -117,7 +117,7 @@ export function GoalMentorReviewModal({
 
   // Fetch role-expectation rows once when the modal first opens. The org
   // typically only has 9 of these; cache once and filter client-side by
-  // the owner's department + designation.
+  // the owner's function + designation.
   useEffect(() => {
     if (!isOpen || expectations.length > 0) return;
     let cancelled = false;
@@ -136,11 +136,11 @@ export function GoalMentorReviewModal({
 
   if (!isOpen || !goal || !cycleHalf) return null;
 
-  const { dept, desig } = getOwnerRole(goal);
+  const { func, desig } = getOwnerRole(goal);
   const ownerExpectation: RoleExpectation | null =
-    dept && desig
+    func && desig
       ? expectations.find(
-          (e) => e.department_name === dept && e.designation_name === desig,
+          (e) => e.function_name === func && e.designation_name === desig,
         ) ?? null
       : null;
 

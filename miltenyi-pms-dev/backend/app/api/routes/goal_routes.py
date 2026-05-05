@@ -312,10 +312,10 @@ def list_team_goals(
     query = (
         db.query(Goal)
         .options(
-            # eager-load the owner + their department/designation so we can
+            # eager-load the owner + their function/designation so we can
             # inject those onto each row for the mentor-review modal to match
             # the right RoleExpectation without a follow-up request.
-            joinedload(Goal.owner).joinedload(User.department),
+            joinedload(Goal.owner).joinedload(User.function),
             joinedload(Goal.owner).joinedload(User.designation),
             joinedload(Goal.manager),
             joinedload(Goal.criteria),
@@ -334,13 +334,13 @@ def list_team_goals(
 
     goals = query.order_by(Goal.created_at.desc()).all()
 
-    # Inject owner_name + owner_department_name + owner_designation_name onto
+    # Inject owner_name + owner_function_name + owner_designation_name onto
     # each ORM object so TeamGoalResponse.from_attributes can read them as
     # plain attributes (Pydantic from_attributes mode).
     for g in goals:
         g.owner_name = g.owner.full_name if g.owner else "Unknown"
-        g.owner_department_name = (
-            g.owner.department.name if g.owner and g.owner.department else None
+        g.owner_function_name = (
+            g.owner.function.name if g.owner and g.owner.function else None
         )
         g.owner_designation_name = (
             g.owner.designation.name if g.owner and g.owner.designation else None
