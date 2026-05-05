@@ -35,20 +35,12 @@
     font-size: 87.5%;
   }
 
-  /* Default Theme (Miltenyi Biotec - org_id: 2) */
-  :root, [data-theme="miltenyi"] {
+  /* Miltenyi Biotec Theme */
+  :root {
     --brand: #3C1053; /* Miltenyi Deep Purple */
     --brand-light: #F4EFF8;
     --accent: #F37920; /* Miltenyi Vibrant Orange */
     --background: #FDFCFE;
-  }
-
-  /* Healthark Theme (org_id: 1) */
-  [data-theme="healthark"] {
-    --brand: #315C84;
-    --brand-light: #EBF1F6;
-    --accent: #0EA5E9;
-    --background: #F8FAFC;
   }
 
   body {

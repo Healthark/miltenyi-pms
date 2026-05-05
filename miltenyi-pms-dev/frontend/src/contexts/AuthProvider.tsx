@@ -2,29 +2,6 @@ import { useState, useCallback, useMemo, useEffect, type ReactNode } from "react
 import { AuthContext, type AuthContextType } from "./AuthContext";
 import { authService, type AuthResponse } from "../services/auth.service";
 
-// Maps outside the component and acts as source of truth
-const THEME_MAP: Record<number, string> = {
-  1: "healthark",
-  2: "miltenyi",
-};
-
-/** Browser tab title + favicon per org */
-const BRAND_META: Record<number, { title: string; favicon: string }> = {
-  1: { title: "Healthark PMS",       favicon: "/healtharklogo-small.png" },
-  2: { title: "Miltenyi Biotec PMS", favicon: "/miltenyi-biotech-small.svg" },
-};
-
-/** Helper – create or reuse the <link rel="icon"> element */
-function setFavicon(href: string): void {
-  let link = document.querySelector<HTMLLinkElement>("link[rel='icon']");
-  if (!link) {
-    link = document.createElement("link");
-    link.rel = "icon";
-    document.head.appendChild(link);
-  }
-  link.href = href;
-}
-
 interface AuthProviderProps {
   children: ReactNode;
 }
@@ -132,27 +109,6 @@ export function AuthProvider({ children }: Readonly<AuthProviderProps>) {
     globalThis.addEventListener("storage", handler);
     return () => globalThis.removeEventListener("storage", handler);
   }, []);
-
-  /**
-   * Dynamic Theming Sync
-   * Automatically updates the CSS variables on the root document whenever 
-   * the authenticated organization changes.
-   */
-  useEffect(() => {
-    if (user?.org_id) {
-      const themeKey = THEME_MAP[user.org_id] || "healthark";
-      document.documentElement.setAttribute("data-theme", themeKey);
-
-      const meta = BRAND_META[user.org_id] ?? BRAND_META[1];
-      document.title = meta.title;
-      setFavicon(meta.favicon);
-    } else {
-      document.documentElement.removeAttribute("data-theme");
-      // Reset to Healthark defaults when logged out
-      document.title = "Healthark PMS";
-      setFavicon("/healtharklogo-small.png");
-    }
-  }, [user?.org_id]);
 
   /**
    * The primary Story 1.2 guard. Checks the features array that came

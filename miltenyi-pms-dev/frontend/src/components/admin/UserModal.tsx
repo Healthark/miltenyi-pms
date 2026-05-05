@@ -180,7 +180,7 @@ export function UserModal({
               className={`${INPUT_CLS} ${isEditing ? "cursor-not-allowed opacity-50" : ""}`}
               value={form.email}
               onChange={(e) => set("email", e.target.value)}
-              placeholder="jane@healthark.com"
+              placeholder="jane@miltenyi.com"
               readOnly={isEditing}
             />
             {isEditing && (
