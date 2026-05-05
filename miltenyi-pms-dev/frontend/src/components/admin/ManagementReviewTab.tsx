@@ -13,6 +13,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  ChevronDown,
+  ChevronUp,
+  ChevronsUpDown,
   Eye,
   Loader2,
   Pencil,
@@ -32,21 +35,30 @@ import { useConfirm } from "../../hooks/useConfirm";
 
 type RatingValue = number | "";
 type StatusFilter = "all" | "pending" | "rated";
+type SortKey =
+  | "employee_name"
+  | "employee_email"
+  | "mentor_name"
+  | "department"
+  | "self_performance_rating"
+  | "mentor_performance_rating"
+  | "management_performance_rating";
+type SortDir = "asc" | "desc";
 
 interface EditTarget {
   readonly row: CalibrationRow;
   readonly draft: RatingValue;
 }
 
-const TABLE_HEADERS = [
-  "User",
-  "Email",
-  "Mentor",
-  "Department",
-  "Self Review",
-  "Mentor Review",
-  "Management Rating",
-  "Actions",
+const COLUMN_DEFS: Array<{ label: string; key: SortKey | null }> = [
+  { label: "User",               key: "employee_name" },
+  { label: "Email",              key: "employee_email" },
+  { label: "Mentor",             key: "mentor_name" },
+  { label: "Function",           key: "department" },
+  { label: "Self Review",        key: "self_performance_rating" },
+  { label: "Mentor Review",      key: "mentor_performance_rating" },
+  { label: "Management Rating",  key: "management_performance_rating" },
+  { label: "Actions",            key: null },
 ];
 
 export function ManagementReviewTab() {
@@ -59,11 +71,29 @@ export function ManagementReviewTab() {
   const [mentorFilter, setMentorFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 
+  const [sortKey, setSortKey] = useState<SortKey>("employee_name");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+
   const [viewReviewId, setViewReviewId] = useState<number | null>(null);
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const confirm = useConfirm();
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
+
+  const getSortIcon = (key: SortKey) => {
+    if (sortKey !== key) return <ChevronsUpDown className="h-3 w-3 opacity-40" aria-hidden="true" />;
+    if (sortDir === "asc") return <ChevronUp className="h-3 w-3" aria-hidden="true" />;
+    return <ChevronDown className="h-3 w-3" aria-hidden="true" />;
+  };
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -97,21 +127,35 @@ export function ManagementReviewTab() {
     [rows],
   );
 
-  const filtered = rows.filter((r) => {
-    if (deptFilter !== "all" && (r.department ?? "") !== deptFilter) return false;
-    if (mentorFilter !== "all" && (r.mentor_name ?? "") !== mentorFilter) return false;
-    if (statusFilter === "pending" && r.management_performance_rating != null) return false;
-    if (statusFilter === "rated" && r.management_performance_rating == null) return false;
-
+  const visibleRows = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return true;
-    return (
-      r.employee_name.toLowerCase().includes(q) ||
-      (r.employee_email ?? "").toLowerCase().includes(q) ||
-      (r.mentor_name ?? "").toLowerCase().includes(q) ||
-      (r.department ?? "").toLowerCase().includes(q)
-    );
-  });
+    const result = rows.filter((r) => {
+      if (deptFilter !== "all" && (r.department ?? "") !== deptFilter) return false;
+      if (mentorFilter !== "all" && (r.mentor_name ?? "") !== mentorFilter) return false;
+      if (statusFilter === "pending" && r.management_performance_rating != null) return false;
+      if (statusFilter === "rated" && r.management_performance_rating == null) return false;
+      if (!q) return true;
+      return (
+        r.employee_name.toLowerCase().includes(q) ||
+        (r.employee_email ?? "").toLowerCase().includes(q) ||
+        (r.mentor_name ?? "").toLowerCase().includes(q) ||
+        (r.department ?? "").toLowerCase().includes(q)
+      );
+    });
+
+    return result.sort((a, b) => {
+      const av = a[sortKey];
+      const bv = b[sortKey];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      const cmp =
+        typeof av === "string"
+          ? av.localeCompare(bv as string)
+          : (av as number) - (bv as number);
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+  }, [rows, searchQuery, deptFilter, mentorFilter, statusFilter, sortKey, sortDir]);
 
   const handleSave = async () => {
     if (!editTarget) return;
@@ -189,7 +233,7 @@ export function ManagementReviewTab() {
               htmlFor="mgmt-review-dept-filter"
               className="text-[11px] font-bold uppercase tracking-wider text-text-muted"
             >
-              Dept
+              Function
             </label>
             <select
               id="mgmt-review-dept-filter"
@@ -197,7 +241,7 @@ export function ManagementReviewTab() {
               onChange={(e) => setDeptFilter(e.target.value)}
               className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand min-w-[140px] cursor-pointer"
             >
-              <option value="all">All Depts</option>
+              <option value="all">All Functions</option>
               {availableDepts.map((d) => (
                 <option key={d} value={d}>
                   {d}
@@ -250,7 +294,7 @@ export function ManagementReviewTab() {
       </div>
 
       {/* Table / Empty state */}
-      {filtered.length === 0 ? (
+      {visibleRows.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <ShieldCheck
             className="h-10 w-10 text-text-muted mb-3"
@@ -272,18 +316,31 @@ export function ManagementReviewTab() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-slate-50 text-left">
-                {TABLE_HEADERS.map((h) => (
-                  <th
-                    key={h}
-                    className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-text-muted"
-                  >
-                    {h}
-                  </th>
-                ))}
+                {COLUMN_DEFS.map((col) =>
+                  col.key ? (
+                    <th
+                      key={col.label}
+                      className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-text-muted cursor-pointer select-none hover:text-text-main"
+                      onClick={() => handleSort(col.key)}
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        {col.label}
+                        {getSortIcon(col.key)}
+                      </span>
+                    </th>
+                  ) : (
+                    <th
+                      key={col.label}
+                      className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-text-muted"
+                    >
+                      {col.label}
+                    </th>
+                  )
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {filtered.map((r) => (
+              {visibleRows.map((r) => (
                 <tr
                   key={r.review_id}
                   className="transition-colors hover:bg-slate-50"
