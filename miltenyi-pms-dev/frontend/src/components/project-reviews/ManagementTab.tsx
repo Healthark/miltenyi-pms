@@ -194,7 +194,7 @@ function ProjectCard({
                       Employee
                     </th>
                     <th className="hidden sm:table-cell text-left px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted">
-                      Role / Dept
+                      Role / Function
                     </th>
                     <th className="text-left px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted">
                       Status

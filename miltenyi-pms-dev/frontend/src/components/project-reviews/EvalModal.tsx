@@ -151,7 +151,7 @@ export function EvalModal({
               <span>
                 {card.project_name} ({card.project_code})
               </span>
-              {card.department_name && <span>Dept: {card.department_name}</span>}
+              {card.department_name && <span>Function: {card.department_name}</span>}
             </div>
           </div>
           <button

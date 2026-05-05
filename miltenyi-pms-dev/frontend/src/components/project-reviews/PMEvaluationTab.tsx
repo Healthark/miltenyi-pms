@@ -138,7 +138,7 @@ function EvalCard({
 
       {isPrimary && (
         <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-text-muted">
-          {row.department_name && <span>Dept: <span className="font-medium text-text-main">{row.department_name}</span></span>}
+          {row.department_name && <span>Function: <span className="font-medium text-text-main">{row.department_name}</span></span>}
           {row.designation_name && <span>Desig: <span className="font-medium text-text-main">{row.designation_name}</span></span>}
         </div>
       )}
@@ -443,10 +443,10 @@ export function PMEvaluationTab() {
           </div>
           {availableDepts.length > 0 && (
             <div className="flex items-center gap-2">
-              <label className="text-[11px] font-bold uppercase tracking-wider text-text-muted">Dept</label>
+              <label className="text-[11px] font-bold uppercase tracking-wider text-text-muted">Function</label>
               <select value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)}
                 className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand min-w-[110px] cursor-pointer">
-                <option value="all">All Depts</option>
+                <option value="all">All Functions</option>
                 {availableDepts.map((d) => <option key={d} value={d}>{d}</option>)}
               </select>
             </div>
@@ -498,7 +498,7 @@ export function PMEvaluationTab() {
                   <SortableHeader label="Cycle" columnKey="cycle" sort={sort} onSort={setSort} />
                 </th>
                 <th className="hidden md:table-cell text-left px-4 py-2.5">
-                  <SortableHeader label="Dept" columnKey="department_name" sort={sort} onSort={setSort} />
+                  <SortableHeader label="Function" columnKey="department_name" sort={sort} onSort={setSort} />
                 </th>
                 <th className="text-left px-4 py-2.5">
                   <SortableHeader label="Status" columnKey="review_status" sort={sort} onSort={setSort} />

@@ -217,6 +217,11 @@ export function AnnualGoals() {
     };
   }, []);
 
+  // Auto-switch to the only available tab once auth resolves.
+  useEffect(() => {
+    if (isMentor) setActiveTab("team");
+  }, [isMentor]);
+
   const loadGoals = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -229,8 +234,8 @@ export function AnnualGoals() {
   }, []);
 
   useEffect(() => {
-    void loadGoals();
-  }, [loadGoals]);
+    if (!isMentor) void loadGoals();
+  }, [loadGoals, isMentor]);
 
   // Modal helpers
   const openAdd = () => {
@@ -427,7 +432,7 @@ export function AnnualGoals() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-display text-xl font-semibold text-text-main">
-            Annual Goals
+            Team Goals
             {fyLabel && (
               <span className="ml-2 text-sm font-normal text-text-muted">
                 · {fyLabel}
@@ -435,11 +440,13 @@ export function AnnualGoals() {
             )}
           </h1>
           <p className="mt-0.5 text-sm text-text-muted">
-            Define and track your annual objectives for mentor approval.
+            {isMentor
+              ? "Review and evaluate your team's annual goals."
+              : "Define and track your annual objectives for mentor approval."}
           </p>
         </div>
 
-        {activeTab === "my" &&
+        {!isMentor &&
           (user?.has_mentor === false ? (
             <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
               <Lock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
@@ -466,13 +473,15 @@ export function AnnualGoals() {
       <div className="rounded-xl border border-border bg-surface shadow-sm overflow-hidden">
         {/* Tab bar */}
         <div className="flex border-b border-border px-2">
-          <button
-            type="button"
-            className={tabCls("my")}
-            onClick={() => setActiveTab("my")}
-          >
-            My Goals
-          </button>
+          {!isMentor && (
+            <button
+              type="button"
+              className={tabCls("my")}
+              onClick={() => setActiveTab("my")}
+            >
+              My Goals
+            </button>
+          )}
           {isMentor && (
             <button
               type="button"
@@ -486,7 +495,7 @@ export function AnnualGoals() {
 
         <div className="p-5">
           {/* ── My Goals tab ── */}
-          {activeTab === "my" && (
+          {!isMentor && activeTab === "my" && (
             <div className="space-y-4">
               {/* Role expectations — single collapsible container, all competencies */}
               {roleExpectation && (
@@ -764,7 +773,7 @@ export function AnnualGoals() {
           )}
 
           {/* ── Team Goals tab ── */}
-          {activeTab === "team" && isMentor && <TeamGoalsTab />}
+          {isMentor && activeTab === "team" && <TeamGoalsTab />}
         </div>
       </div>
 

@@ -28,6 +28,7 @@ import {
   type MyProjectCard,
   type RoleExpectation,
 } from "../services/project-review.service";
+import { useAuth } from "../hooks/useAuth";
 import { useSystemSettings } from "../hooks/useSystemSettings";
 import { PMEvaluationTab } from "../components/project-reviews/PMEvaluationTab";
 import { ProjectSummaryCard } from "../components/project-reviews/ProjectSummaryCard";
@@ -73,8 +74,10 @@ const MY_REVIEWS_SORT_CONFIG: Record<
 const cardKey = (c: MyProjectCard) => `${c.project_id}-${c.cycle}`;
 
 export function ProjectReviews() {
+  const { user } = useAuth();
   const { settings } = useSystemSettings();
   const projectRatingsVisible = settings?.project_ratings_visible ?? false;
+  const isMentor = user?.has_mentees ?? false;
 
   const [activeTab, setActiveTab] = useState<ActiveTab>("my");
   const [viewMode, setViewMode] = useState<ViewMode>("table");
@@ -93,22 +96,22 @@ export function ProjectReviews() {
 
   const [cards, setCards] = useState<MyProjectCard[]>([]);
   const [expectations, setExpectations] = useState<RoleExpectation[]>([]);
-  const [showEvaluateTab, setShowEvaluateTab] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Auto-switch to the only available tab once auth resolves.
+  useEffect(() => {
+    if (isMentor) setActiveTab("evaluate");
+  }, [isMentor]);
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [projectsData, expectationsData, pmQueue, secQueue] =
-        await Promise.all([
-          projectReviewService.getMyProjects(),
-          projectReviewService.getRoleExpectations(),
-          projectReviewService.getPMQueue().catch(() => []),
-          projectReviewService.getSecondaryQueue().catch(() => []),
-        ]);
+      const [projectsData, expectationsData] = await Promise.all([
+        projectReviewService.getMyProjects(),
+        projectReviewService.getRoleExpectations(),
+      ]);
       setCards(projectsData);
       setExpectations(expectationsData);
-      setShowEvaluateTab(pmQueue.length > 0 || secQueue.length > 0);
     } catch {
       // Stays empty on error
     } finally {
@@ -117,8 +120,8 @@ export function ProjectReviews() {
   }, []);
 
   useEffect(() => {
-    void loadData();
-  }, [loadData]);
+    if (!isMentor) void loadData();
+  }, [loadData, isMentor]);
 
   // ── Derived filter sources + filtered/sorted cards (memoised) ──────
 
@@ -200,14 +203,16 @@ export function ProjectReviews() {
       {/* ── Main Content Container ── */}
       <div className="rounded-xl border border-border bg-surface shadow-sm overflow-hidden">
         <div className="flex border-b border-border px-2">
-          <button
-            type="button"
-            className={tabCls("my")}
-            onClick={() => setActiveTab("my")}
-          >
-            My Reviews
-          </button>
-          {showEvaluateTab && (
+          {!isMentor && (
+            <button
+              type="button"
+              className={tabCls("my")}
+              onClick={() => setActiveTab("my")}
+            >
+              My Reviews
+            </button>
+          )}
+          {isMentor && (
             <button
               type="button"
               className={tabCls("evaluate")}
@@ -263,7 +268,7 @@ export function ProjectReviews() {
             </div>
           )}
 
-          {activeTab === "evaluate" && showEvaluateTab && <PMEvaluationTab />}
+          {isMentor && activeTab === "evaluate" && <PMEvaluationTab />}
         </div>
       </div>
     </div>
@@ -391,7 +396,7 @@ function renderMyReviewsBody(args: {
             </th>
             <th className="text-left px-4 py-2.5">
               <SortableHeader
-                label="Department"
+                label="Function"
                 columnKey="department_name"
                 sort={sort}
                 onSort={onSort}

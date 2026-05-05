@@ -84,7 +84,7 @@ const NavItem = ({
 
 const MAIN_NAV: NavItemData[] = [
   { id: "dashboard", path: "/dashboard", label: "Dashboard", icon: LayoutDashboard, feature: "dashboard" },
-  { id: "project-reviews", path: "/project-reviews", label: "Evalute Team", icon: Briefcase, feature: "project_reviews" },
+  { id: "project-reviews", path: "/project-reviews", label: "Project Reviews", icon: Briefcase, feature: "project_reviews" },
   { id: "annual-goals", path: "/annual-goals", label: "Annual Goals", icon: Target, feature: "goals" },
   { id: "annual-reviews", path: "/annual-reviews", label: "Annual Reviews", icon: FileText, feature: "annual_reviews" },
   { id: "my-mentees", path: "/my-mentees", label: "My Mentees", icon: Users, feature: "mentoring" },
