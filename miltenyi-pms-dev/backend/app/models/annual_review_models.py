@@ -14,7 +14,7 @@ Lifecycle:
         Status: PENDING_MENTOR → PENDING_MANAGEMENT
 
     Stage 3 — Management Calibration:
-        HR/Leadership reviews both scores, optionally overrides with
+        HR/Leadership reviews both ratings, optionally overrides with
         management_performance_rating, sets final_performance_rating, and
         publishes.
         Status: PENDING_MANAGEMENT → COMPLETED

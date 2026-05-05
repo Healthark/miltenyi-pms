@@ -6,7 +6,7 @@
  *   Status — All | Completed | Pending
  *
  * One collapsible card per project; each card expands to a member table
- * showing review status and performance score.
+ * showing review status and performance rating.
  */
 
 import { useState, useEffect, useCallback } from "react";
@@ -200,7 +200,7 @@ function ProjectCard({
                       Status
                     </th>
                     <th className="hidden md:table-cell text-left px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted">
-                      Score
+                      Rating
                     </th>
                   </tr>
                 </thead>

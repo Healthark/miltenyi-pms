@@ -82,7 +82,7 @@ export function TableExpandedRow({
               <div className="flex items-center gap-2.5 rounded-lg border border-emerald-100 bg-emerald-50/50 px-3 py-2">
                 <Star className="h-3.5 w-3.5 text-emerald-600" />
                 <span className="text-[13px] text-text-main">
-                  Score:{" "}
+                  Rating:{" "}
                   <span className="font-bold text-emerald-700">
                     {details.performance_group ?? "—"}
                   </span>

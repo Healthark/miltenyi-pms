@@ -139,7 +139,7 @@ function renderBody({
           <div className="flex items-center gap-2.5">
             <Star className="h-4 w-4 text-emerald-600" />
             <span className="text-[13.5px] text-text-main">
-              Project Evaluation Score:{" "}
+              Project Evaluation Rating:{" "}
               <span className="font-bold text-emerald-700">
                 {details.performance_group ?? "—"}
               </span>

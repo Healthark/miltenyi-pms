@@ -66,7 +66,7 @@ export function MenteeCard({ mentee }: MenteeCardProps) {
         <InfoRow icon={BadgeCheck} label="Emp Code" value={mentee.employee_code} />
         <InfoRow icon={Mail} label="Email" value={mentee.email} />
         <InfoRow icon={Phone} label="Phone" value={mentee.phone} />
-        <InfoRow icon={Building2} label="Department" value={mentee.department_name} />
+        <InfoRow icon={Building2} label="Function" value={mentee.department_name} />
         <InfoRow icon={Briefcase} label="Designation" value={mentee.designation_name} />
       </div>
 

@@ -49,7 +49,7 @@ export function MenteeTable({ mentees, sort, onSort }: MenteeTableProps) {
             </th>
             <th className={plainThCls}>Phone</th>
             <th className={thCls}>
-              <SortableHeader label="Department" columnKey="department_name" sort={sort} onSort={onSort} />
+              <SortableHeader label="Function" columnKey="department_name" sort={sort} onSort={onSort} />
             </th>
             <th className={thCls}>
               <SortableHeader label="Designation" columnKey="designation_name" sort={sort} onSort={onSort} />

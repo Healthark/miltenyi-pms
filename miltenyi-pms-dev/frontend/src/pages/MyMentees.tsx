@@ -134,59 +134,64 @@ export function MyMentees() {
         </div>
       </div>
 
-      {/* Toolbar */}
-      {!isLoading && mentees.length > 0 && (
-        <MenteeToolbar
-          search={search}
-          onSearchChange={setSearch}
-          onlyPending={onlyPending}
-          onOnlyPendingChange={setOnlyPending}
-          sortKey={sortKey}
-          onSortChange={setSortKey}
-          totalPendingActions={totalPendingActions}
-          viewMode={viewMode}
-          onViewModeChange={setViewMode}
-        />
-      )}
+      {/* Main Content Container */}
+      <div className="rounded-xl border border-border bg-surface shadow-sm overflow-hidden">
+        <div className="p-5 space-y-5">
+          {/* Toolbar */}
+          {!isLoading && mentees.length > 0 && (
+            <MenteeToolbar
+              search={search}
+              onSearchChange={setSearch}
+              onlyPending={onlyPending}
+              onOnlyPendingChange={setOnlyPending}
+              sortKey={sortKey}
+              onSortChange={setSortKey}
+              totalPendingActions={totalPendingActions}
+              viewMode={viewMode}
+              onViewModeChange={setViewMode}
+            />
+          )}
 
-      {/* States */}
-      {error && (
-        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
+          {/* States */}
+          {error && (
+            <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {error}
+            </div>
+          )}
+
+          {isLoading && (
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <CardSkeleton key={i} />
+              ))}
+            </div>
+          )}
+
+          {!isLoading && mentees.length === 0 && !error && <EmptyState />}
+
+          {!isLoading && mentees.length > 0 && visibleMentees.length === 0 && (
+            <div className="rounded-md border border-border bg-surface px-4 py-6 text-center text-sm text-text-muted">
+              No mentees match your filters.
+            </div>
+          )}
+
+          {!isLoading && visibleMentees.length > 0 && (
+            viewMode === "grid" ? (
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {visibleMentees.map((m) => (
+                  <MenteeCard key={m.user_id} mentee={m} />
+                ))}
+              </div>
+            ) : (
+              <MenteeTable
+                mentees={visibleMentees}
+                sort={tableSort}
+                onSort={setTableSort}
+              />
+            )
+          )}
         </div>
-      )}
-
-      {isLoading && (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <CardSkeleton key={i} />
-          ))}
-        </div>
-      )}
-
-      {!isLoading && mentees.length === 0 && !error && <EmptyState />}
-
-      {!isLoading && mentees.length > 0 && visibleMentees.length === 0 && (
-        <div className="rounded-md border border-border bg-surface px-4 py-6 text-center text-sm text-text-muted">
-          No mentees match your filters.
-        </div>
-      )}
-
-      {!isLoading && visibleMentees.length > 0 && (
-        viewMode === "grid" ? (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {visibleMentees.map((m) => (
-              <MenteeCard key={m.user_id} mentee={m} />
-            ))}
-          </div>
-        ) : (
-          <MenteeTable
-            mentees={visibleMentees}
-            sort={tableSort}
-            onSort={setTableSort}
-          />
-        )
-      )}
+      </div>
     </div>
   );
 }
