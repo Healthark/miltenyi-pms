@@ -32,7 +32,7 @@ export function AnnualReviews() {
     ? formatFyLabel(settings.active_cycle_name)
     : null;
 
-  const [activeTab, setActiveTab] = useState<ActiveTab>("my");
+  const [activeTab, setActiveTab] = useState<ActiveTab>(isMentor ? "team" : "my");
 
   const [reviews, setReviews] = useState<AnnualReview[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -168,13 +168,15 @@ export function AnnualReviews() {
       {/* Tab container */}
       <div className="rounded-xl border border-border bg-surface shadow-sm overflow-hidden">
         <div className="flex border-b border-border px-2">
-          <button
-            type="button"
-            className={tabCls("my")}
-            onClick={() => setActiveTab("my")}
-          >
-            My Review
-          </button>
+          {!isMentor && (
+            <button
+              type="button"
+              className={tabCls("my")}
+              onClick={() => setActiveTab("my")}
+            >
+              My Reviews
+            </button>
+          )}
           {isMentor && (
             <button
               type="button"

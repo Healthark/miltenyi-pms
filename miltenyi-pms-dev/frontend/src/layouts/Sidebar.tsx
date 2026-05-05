@@ -23,6 +23,7 @@ interface NavItemData {
   readonly icon: LucideIcon;
   readonly feature?: string;
   readonly requiredRole?: readonly string[];
+  readonly requiresMentees?: boolean;
 }
 
 const ORG_ASSETS = {
@@ -78,7 +79,7 @@ const MAIN_NAV: NavItemData[] = [
   { id: "project-reviews", path: "/project-reviews", label: "Project Reviews", icon: Briefcase, feature: "project_reviews" },
   { id: "annual-goals", path: "/annual-goals", label: "Annual Goals", icon: Target, feature: "goals" },
   { id: "annual-reviews", path: "/annual-reviews", label: "Annual Reviews", icon: FileText, feature: "annual_reviews" },
-  { id: "my-mentees", path: "/my-mentees", label: "My Mentees", icon: Users, feature: "mentoring" },
+  { id: "my-mentees", path: "/my-mentees", label: "My Mentees", icon: Users, feature: "mentoring", requiresMentees: true },
 { id: "admin", path: "/admin", label: "Admin Panel", icon: Settings, feature: "admin", requiredRole: ["Admin"] },
 ];
 
@@ -103,9 +104,8 @@ export function Sidebar() {
 
   const isVisible = (item: NavItemData): boolean => {
     if (item.feature && !hasFeature(item.feature)) return false;
-    if (item.requiredRole && !item.requiredRole.includes(user?.role ?? "")) {
-      return false;
-    }
+    if (item.requiredRole && !item.requiredRole.includes(user?.role ?? "")) return false;
+    if (item.requiresMentees && !user?.has_mentees) return false;
     return true;
   };
 
