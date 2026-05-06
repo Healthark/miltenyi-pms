@@ -75,7 +75,9 @@ const NavItem = ({
 };
 
 // Per-role nav visibility:
-//   Dashboard       — Staff, HR_Miltenyi, HR_MyOrg
+//   Dashboard       — every role (placeholder for now; real per-role
+//                     surfaces are coming. Always show so each user has a
+//                     home page when they land.)
 //   Project Reviews — Staff, PM, HR_Miltenyi, HR_MyOrg
 //   Annual Goals    — Staff, Mentor, HR_MyOrg
 //   Annual Reviews  — Staff, Mentor, HR_MyOrg
@@ -84,7 +86,7 @@ const NavItem = ({
 const MAIN_NAV: NavItemData[] = [
   { id: "dashboard", path: "/dashboard", label: "Dashboard", icon: LayoutDashboard,
     feature: "dashboard",
-    requiredRole: ["Staff", "HR_Miltenyi", "HR_MyOrg"] },
+    requiredRole: ["Staff", "Mentor", "PM", "HR_Miltenyi", "HR_MyOrg"] },
   { id: "project-reviews", path: "/project-reviews", label: "Project Reviews", icon: Briefcase,
     feature: "project_reviews",
     requiredRole: ["Staff", "PM", "HR_Miltenyi", "HR_MyOrg"] },
