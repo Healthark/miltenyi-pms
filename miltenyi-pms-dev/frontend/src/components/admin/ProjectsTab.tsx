@@ -18,7 +18,10 @@ import {
   useMemo,
   type Ref,
 } from "react";
-import { Search, Pencil, Trash2, Users, FolderOpen } from "lucide-react";
+import {
+  Search, Pencil, Trash2, Users, FolderOpen,
+  CheckCircle2, RotateCcw,
+} from "lucide-react";
 import {
   projectService,
   type ProjectResponse,
@@ -52,7 +55,8 @@ type ProjectsSortKey =
   | "expected_end_date"
   | "pm_name"
   | "secondary_evaluator_name"
-  | "member_count";
+  | "member_count"
+  | "status";
 
 const PROJECTS_SORT_CONFIG: Record<
   ProjectsSortKey,
@@ -65,7 +69,10 @@ const PROJECTS_SORT_CONFIG: Record<
   pm_name:           { kind: "alpha",   get: (p) => p.pm_name },
   secondary_evaluator_name: { kind: "alpha", get: (p) => p.secondary_evaluator_name },
   member_count:      { kind: "numeric", get: (p) => p.member_count },
+  status:            { kind: "alpha",   get: (p) => p.status },
 };
+
+type StatusFilter = "active" | "completed" | "all";
 
 const FILTER_LABEL_CLS =
   "text-[11px] font-bold uppercase tracking-wider text-text-muted";
@@ -90,16 +97,19 @@ export function ProjectsTab({ ref }: ProjectsTabProps = {}) {
   const [sort, setSort] = useState<SortState<ProjectsSortKey> | null>(null);
   const [yearFilter, setYearFilter] = useState<string>("all");
   const [pmFilter, setPmFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
 
   const toast = useToast();
   const snackbar = useSnackbar();
   const confirm = useConfirm();
 
+  // Always fetch with include_completed=true so toggling the filter
+  // doesn't require a re-fetch. Client-side filter does the rest.
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
       const [projectsData, usersData] = await Promise.all([
-        projectService.listProjects(),
+        projectService.listProjects(true),
         adminService.getUsers(),
       ]);
       setProjects(projectsData);
@@ -128,6 +138,50 @@ export function ProjectsTab({ ref }: ProjectsTabProps = {}) {
       await projectService.deleteProject(project.id);
       setProjects((prev) => prev.filter((p) => p.id !== project.id));
       toast.success(`"${project.name}" deleted.`);
+    } catch (err: unknown) {
+      snackbar.error(getErrorMessage(err));
+    }
+  };
+
+  const handleMarkComplete = async (project: ProjectResponse) => {
+    const ok = await confirm({
+      title: "Mark project as completed?",
+      message:
+        `"${project.name}" will be archived. ` +
+        (project.member_count > 0
+          ? `Its ${project.member_count} active assignment${project.member_count === 1 ? "" : "s"} ` +
+            "will be end-dated to today. The PM can still finish in-progress " +
+            "reviews for the current cycle; future cycles won't generate " +
+            "new pending reviews."
+          : "No active assignments will be affected — they're already ended."),
+      confirmText: "Mark Complete",
+    });
+    if (!ok) return;
+
+    try {
+      const updated = await projectService.markComplete(project.id);
+      setProjects((prev) => prev.map((p) => (p.id === project.id ? updated : p)));
+      toast.success(`"${project.name}" marked as completed.`);
+    } catch (err: unknown) {
+      snackbar.error(getErrorMessage(err));
+    }
+  };
+
+  const handleReopen = async (project: ProjectResponse) => {
+    const ok = await confirm({
+      title: "Re-open project?",
+      message:
+        `Re-open "${project.name}". The previously end-dated team members ` +
+        "will NOT be auto-restored — re-add anyone who should be on the " +
+        "project from the project edit form.",
+      confirmText: "Re-open",
+    });
+    if (!ok) return;
+
+    try {
+      const updated = await projectService.reopen(project.id);
+      setProjects((prev) => prev.map((p) => (p.id === project.id ? updated : p)));
+      toast.success(`"${project.name}" re-opened.`);
     } catch (err: unknown) {
       snackbar.error(getErrorMessage(err));
     }
@@ -184,6 +238,7 @@ export function ProjectsTab({ ref }: ProjectsTabProps = {}) {
   const visibleProjects = useMemo(() => {
     const q = searchQuery.toLowerCase();
     const filtered = projects.filter((p) => {
+      if (statusFilter !== "all" && p.status !== statusFilter) return false;
       if (q) {
         const matchesSearch =
           p.name.toLowerCase().includes(q) ||
@@ -204,7 +259,7 @@ export function ProjectsTab({ ref }: ProjectsTabProps = {}) {
     return filtered
       .slice()
       .sort((a, b) => compareValues(get(a), get(b), kind, sort.direction));
-  }, [projects, searchQuery, yearFilter, pmFilter, sort]);
+  }, [projects, searchQuery, yearFilter, pmFilter, statusFilter, sort]);
 
   return (
     <div>
@@ -260,6 +315,21 @@ export function ProjectsTab({ ref }: ProjectsTabProps = {}) {
             ))}
           </select>
         </div>
+        <div className="flex items-center gap-2">
+          <label htmlFor="project-status-filter" className={FILTER_LABEL_CLS}>
+            Status
+          </label>
+          <select
+            id="project-status-filter"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+            className={`${FILTER_SELECT_CLS} min-w-[120px]`}
+          >
+            <option value="active">Active</option>
+            <option value="completed">Completed</option>
+            <option value="all">All</option>
+          </select>
+        </div>
       </div>
 
       {isLoading ? (
@@ -306,6 +376,9 @@ export function ProjectsTab({ ref }: ProjectsTabProps = {}) {
                 <th className="px-5 py-3">
                   <SortableHeader label="Members" columnKey="member_count" sort={sort} onSort={setSort} />
                 </th>
+                <th className="px-5 py-3">
+                  <SortableHeader label="Status" columnKey="status" sort={sort} onSort={setSort} />
+                </th>
                 <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-text-muted">
                   Actions
                 </th>
@@ -351,6 +424,28 @@ export function ProjectsTab({ ref }: ProjectsTabProps = {}) {
                     </div>
                   </td>
                   <td className="px-5 py-3.5">
+                    {project.status === "completed" ? (
+                      <span
+                        title={
+                          project.completed_at
+                            ? `Completed ${formatDate(project.completed_at)}` +
+                              (project.completed_by_name
+                                ? ` by ${project.completed_by_name}`
+                                : "")
+                            : "Completed"
+                        }
+                        className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold uppercase text-slate-600"
+                      >
+                        <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
+                        Completed
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-[11px] font-bold uppercase text-green-700">
+                        Active
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-5 py-3.5">
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
@@ -360,6 +455,25 @@ export function ProjectsTab({ ref }: ProjectsTabProps = {}) {
                       >
                         <Pencil className="h-4 w-4" aria-hidden="true" />
                       </button>
+                      {project.status === "active" ? (
+                        <button
+                          type="button"
+                          onClick={() => handleMarkComplete(project)}
+                          title="Mark as completed"
+                          className="rounded-md p-1.5 text-text-muted hover:bg-green-50 hover:text-green-700 transition-colors"
+                        >
+                          <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleReopen(project)}
+                          title="Re-open project"
+                          className="rounded-md p-1.5 text-text-muted hover:bg-amber-50 hover:text-amber-700 transition-colors"
+                        >
+                          <RotateCcw className="h-4 w-4" aria-hidden="true" />
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => handleDelete(project)}

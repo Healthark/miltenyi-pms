@@ -38,7 +38,11 @@ class AssignmentUpdate(BaseModel):
 
 
 class AssignmentResponse(BaseModel):
-    """Assignment with resolved user/function names."""
+    """Assignment with resolved user/function names.
+
+    `end_date` is NULL for active members; set when the user has been
+    removed from the project. Removed members stay in the response
+    (sorted last) so HR can see history."""
     id: int
     project_id: int
     user_id: int
@@ -47,6 +51,8 @@ class AssignmentResponse(BaseModel):
     function_id: Optional[int] = None
     function_name: Optional[str] = None
     assigned_date: Optional[date] = None
+    end_date: Optional[date] = None
+    ended_by_name: Optional[str] = None
     created_at: datetime
 
 
@@ -109,7 +115,11 @@ class ProjectUpdate(BaseModel):
 
 
 class ProjectResponse(BaseModel):
-    """Lightweight project record for list views."""
+    """Lightweight project record for list views.
+
+    `status` is "active" or "completed". A completed project is
+    archived: its team's reviews remain queryable for history but
+    no new cycle placeholders are generated."""
     id: int
     org_id: int
     project_code: str
@@ -121,6 +131,9 @@ class ProjectResponse(BaseModel):
     pm_name: Optional[str] = None
     secondary_evaluator_id: Optional[int] = None
     secondary_evaluator_name: Optional[str] = None
+    status: str = "active"
+    completed_at: Optional[datetime] = None
+    completed_by_name: Optional[str] = None
     is_deleted: bool
     created_at: datetime
     updated_at: Optional[datetime] = None

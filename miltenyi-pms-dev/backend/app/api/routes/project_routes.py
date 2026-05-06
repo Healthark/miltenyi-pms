@@ -19,12 +19,16 @@ Notes:
     - Both HR roles (HR_MyOrg, HR_Miltenyi) can manage projects.
 """
 
+from datetime import date, datetime, timezone
 from typing import List
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import func
 
 from app.api.dependencies import DbSession, CurrentUser
-from app.models.project_models import Project, ProjectAssignment
+from app.models.project_models import (
+    Project, ProjectAssignment,
+    PROJECT_STATUS_ACTIVE, PROJECT_STATUS_COMPLETED,
+)
 from app.models.user_models import User, Role, ADMIN_ROLES
 from app.models.reference_models import Function
 from app.schemas.project_schemas import (
@@ -114,6 +118,10 @@ def _build_assignment_response(assignment: ProjectAssignment, db: DbSession) -> 
         db.query(Function).filter(Function.id == assignment.function_id).first()
         if assignment.function_id else None
     )
+    ended_by = (
+        db.query(User).filter(User.id == assignment.ended_by_id).first()
+        if assignment.ended_by_id else None
+    )
 
     return AssignmentResponse(
         id=assignment.id,
@@ -124,6 +132,8 @@ def _build_assignment_response(assignment: ProjectAssignment, db: DbSession) -> 
         function_id=assignment.function_id,
         function_name=func_obj.name if func_obj else None,
         assigned_date=assignment.assigned_date,
+        end_date=assignment.end_date,
+        ended_by_name=ended_by.full_name if ended_by else None,
         created_at=assignment.created_at,
     )
 
@@ -144,6 +154,7 @@ def _build_project_response(
     resp.member_count = count
     resp.pm_name = _resolve_user_name(db, project.pm_id)
     resp.secondary_evaluator_name = _resolve_user_name(db, project.secondary_evaluator_id)
+    resp.completed_by_name = _resolve_user_name(db, project.completed_by_id)
     return resp
 
 
@@ -173,23 +184,34 @@ def _auto_fill_assignment(assignment_in: AssignmentCreate, db: DbSession) -> Ass
 def list_projects(
     db: DbSession,
     current_user: CurrentUser,
+    include_completed: bool = False,
 ):
-    """List all active projects with member counts."""
+    """List projects with member counts.
+
+    Defaults to active-only. Pass `?include_completed=true` to include
+    archived projects (HR can use this when reviewing or re-opening).
+    `is_deleted` (hard-wipe) rows are always excluded.
+    """
     _require_hr_any(current_user)
 
-    projects = (
-        db.query(Project)
-        .filter(
-            Project.org_id == current_user.org_id,
-            Project.is_deleted == False,  # noqa: E712
-        )
-        .order_by(Project.created_at.desc())
-        .all()
+    q = db.query(Project).filter(
+        Project.org_id == current_user.org_id,
+        Project.is_deleted == False,  # noqa: E712
     )
+    if not include_completed:
+        q = q.filter(Project.status == PROJECT_STATUS_ACTIVE)
 
+    projects = q.order_by(Project.created_at.desc()).all()
+
+    # Member counts only consider active assignments — completed projects
+    # will report 0 here since their members are end-dated. That matches
+    # what the UI wants ("how many people work on this today").
     count_map = dict(
         db.query(ProjectAssignment.project_id, func.count(ProjectAssignment.id))
-        .filter(ProjectAssignment.org_id == current_user.org_id)
+        .filter(
+            ProjectAssignment.org_id == current_user.org_id,
+            ProjectAssignment.end_date.is_(None),
+        )
         .group_by(ProjectAssignment.project_id)
         .all()
     )
@@ -268,6 +290,9 @@ def create_project(
         pm_name=_resolve_user_name(db, new_project.pm_id),
         secondary_evaluator_id=new_project.secondary_evaluator_id,
         secondary_evaluator_name=_resolve_user_name(db, new_project.secondary_evaluator_id),
+        status=new_project.status,
+        completed_at=new_project.completed_at,
+        completed_by_name=_resolve_user_name(db, new_project.completed_by_id),
         is_deleted=new_project.is_deleted,
         created_at=new_project.created_at,
         updated_at=new_project.updated_at,
@@ -293,7 +318,13 @@ def get_project_detail(
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
 
-    assignment_responses = [_build_assignment_response(a, db) for a in project.assignments]
+    # Sort: active assignments first, then end-dated ones (newest end first).
+    sorted_assignments = sorted(
+        project.assignments,
+        key=lambda a: (a.end_date is not None, -(a.end_date.toordinal() if a.end_date else 0)),
+    )
+    assignment_responses = [_build_assignment_response(a, db) for a in sorted_assignments]
+    active_count = sum(1 for a in project.assignments if a.end_date is None)
 
     return ProjectDetail(
         id=project.id,
@@ -307,10 +338,13 @@ def get_project_detail(
         pm_name=_resolve_user_name(db, project.pm_id),
         secondary_evaluator_id=project.secondary_evaluator_id,
         secondary_evaluator_name=_resolve_user_name(db, project.secondary_evaluator_id),
+        status=project.status,
+        completed_at=project.completed_at,
+        completed_by_name=_resolve_user_name(db, project.completed_by_id),
         is_deleted=project.is_deleted,
         created_at=project.created_at,
         updated_at=project.updated_at,
-        member_count=len(assignment_responses),
+        member_count=active_count,
         assignments=assignment_responses,
     )
 
@@ -430,6 +464,12 @@ def add_assignment(
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
 
+    if project.status == PROJECT_STATUS_COMPLETED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot assign members to a completed project. Re-open it first.",
+        )
+
     if assignment_in.user_id == project.pm_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -438,15 +478,18 @@ def add_assignment(
 
     _validate_member_role(db, current_user.org_id, assignment_in.user_id)
 
-    existing = db.query(ProjectAssignment).filter(
+    # Only block when there's an *active* row already. End-dated rows are
+    # historical stints and may coexist with a fresh active row (re-join).
+    existing_active = db.query(ProjectAssignment).filter(
         ProjectAssignment.project_id == project_id,
         ProjectAssignment.user_id == assignment_in.user_id,
         ProjectAssignment.org_id == current_user.org_id,
+        ProjectAssignment.end_date.is_(None),
     ).first()
-    if existing:
+    if existing_active:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="This user is already assigned to this project.",
+            detail="This user is already actively assigned to this project.",
         )
 
     assignment_in = _auto_fill_assignment(assignment_in, db)
@@ -494,14 +537,20 @@ def update_assignment(
 
 
 @router.delete("/assignments/{assignment_id}", status_code=status.HTTP_204_NO_CONTENT)
-def remove_assignment(
+def end_assignment(
     assignment_id: int,
     db: DbSession,
     current_user: CurrentUser,
 ):
-    """Remove a member from a project."""
-    _require_hr_any(current_user)
+    """End a member's assignment on a project (soft-end).
 
+    Sets end_date=today and ended_by_id=current_user. The row is kept so
+    the user keeps seeing their past project reviews under My Reviews,
+    and the PM can still finish in-flight reviews for the cycle the
+    person was removed in.
+
+    Authorization: HR (any) OR the project's PM (their own projects).
+    """
     assignment = db.query(ProjectAssignment).filter(
         ProjectAssignment.id == assignment_id,
         ProjectAssignment.org_id == current_user.org_id,
@@ -509,6 +558,119 @@ def remove_assignment(
     if not assignment:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assignment not found.")
 
-    db.delete(assignment)
+    # PM may end assignments only on their own projects. HR may end any.
+    is_hr = current_user.role in ADMIN_ROLES
+    if not is_hr:
+        project = db.query(Project).filter(Project.id == assignment.project_id).first()
+        if not project or project.pm_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the project's PM or HR can remove a team member.",
+            )
+
+    if assignment.end_date is not None:
+        # Idempotent: already ended.
+        return None
+
+    assignment.end_date = date.today()
+    assignment.ended_by_id = current_user.id
     db.commit()
     return None
+
+
+# =====================================================================
+# PROJECT LIFECYCLE
+# =====================================================================
+
+@router.post("/{project_id}/complete", response_model=ProjectResponse)
+def complete_project(
+    project_id: int,
+    db: DbSession,
+    current_user: CurrentUser,
+):
+    """Mark a project as completed (HR-only).
+
+    Side effect: every active ProjectAssignment on the project is
+    end-dated to today (with ended_by_id=current_user). The PM can
+    still finish in-flight reviews for the cycle that was open at
+    completion; future cycles stop generating placeholders.
+
+    Idempotent: already-completed projects return their current state
+    without re-end-dating anything.
+    """
+    _require_hr_any(current_user)
+
+    project = db.query(Project).filter(
+        Project.id == project_id,
+        Project.org_id == current_user.org_id,
+        Project.is_deleted == False,  # noqa: E712
+    ).first()
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
+
+    if project.status == PROJECT_STATUS_COMPLETED:
+        # Idempotent return — don't re-stamp completed_at or re-end-date.
+        count = db.query(func.count(ProjectAssignment.id)).filter(
+            ProjectAssignment.project_id == project.id,
+            ProjectAssignment.end_date.is_(None),
+        ).scalar() or 0
+        return _build_project_response(project, db, count)
+
+    today = date.today()
+    project.status = PROJECT_STATUS_COMPLETED
+    project.completed_at = datetime.now(timezone.utc)
+    project.completed_by_id = current_user.id
+
+    # Bulk end-date all currently-active assignments.
+    active_assignments = db.query(ProjectAssignment).filter(
+        ProjectAssignment.project_id == project.id,
+        ProjectAssignment.end_date.is_(None),
+    ).all()
+    for a in active_assignments:
+        a.end_date = today
+        a.ended_by_id = current_user.id
+
+    db.commit()
+    db.refresh(project)
+
+    # All active assignments were just end-dated, so live count is 0.
+    return _build_project_response(project, db, 0)
+
+
+@router.post("/{project_id}/reopen", response_model=ProjectResponse)
+def reopen_project(
+    project_id: int,
+    db: DbSession,
+    current_user: CurrentUser,
+):
+    """Re-open a completed project (HR-only).
+
+    Clears status / completed_at / completed_by_id. Does NOT re-open
+    assignments — HR re-adds team members explicitly via the assignment
+    endpoint. Idempotent for already-active projects.
+    """
+    _require_hr_any(current_user)
+
+    project = db.query(Project).filter(
+        Project.id == project_id,
+        Project.org_id == current_user.org_id,
+        Project.is_deleted == False,  # noqa: E712
+    ).first()
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
+
+    if project.status != PROJECT_STATUS_COMPLETED:
+        count = db.query(func.count(ProjectAssignment.id)).filter(
+            ProjectAssignment.project_id == project.id,
+            ProjectAssignment.end_date.is_(None),
+        ).scalar() or 0
+        return _build_project_response(project, db, count)
+
+    project.status = PROJECT_STATUS_ACTIVE
+    project.completed_at = None
+    project.completed_by_id = None
+
+    db.commit()
+    db.refresh(project)
+
+    return _build_project_response(project, db, 0)

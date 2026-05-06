@@ -182,16 +182,27 @@ export function ProjectModal({
 
   const removeExisting = async (assignmentId: number) => {
     try {
-      await projectService.removeAssignment(assignmentId);
-      setExistingAssignments((prev) => prev.filter((a) => a.id !== assignmentId));
+      await projectService.endAssignment(assignmentId);
+      // Reflect the soft-end locally — keep the row but stamp end_date so
+      // the row UI flips to a "removed" presentation.
+      setExistingAssignments((prev) =>
+        prev.map((a) =>
+          a.id === assignmentId
+            ? { ...a, end_date: new Date().toISOString().slice(0, 10) }
+            : a,
+        ),
+      );
     } catch (err: unknown) {
       snackbar.error(getErrorMessage(err));
     }
   };
 
   // ── Computed ────────────────────────────────────────────────────
+  // Only ACTIVE assignments block re-adding a user — end-dated ones
+  // are historical and the same user is allowed to rejoin (soft-end
+  // → fresh active row).
   const assignedUserIds = new Set([
-    ...existingAssignments.map((a) => a.user_id),
+    ...existingAssignments.filter((a) => !a.end_date).map((a) => a.user_id),
     ...draftAssignments.filter((a) => a.user_id).map((a) => Number(a.user_id)),
   ]);
 
@@ -402,24 +413,58 @@ export function ProjectModal({
                   </button>
                 </div>
 
-                {/* Existing Assignments (Edit Mode) */}
-                {existingAssignments.map((a) => (
-                  <div key={a.id} className="flex items-center gap-3 rounded-lg border border-border bg-slate-50 px-3 py-2">
-                    <div className="flex-1 min-w-0">
-                      <span className="text-sm font-medium text-text-main">{a.user_name}</span>
-                      {a.assignment_role && <span className="ml-2 text-xs text-text-muted">({a.assignment_role})</span>}
-                    </div>
-                    {a.function_name && (
-                      <span className="text-xs text-text-muted shrink-0">{a.function_name}</span>
-                    )}
-                    {a.assigned_date && (
-                      <span className="text-xs text-text-muted shrink-0">Joined: {a.assigned_date}</span>
-                    )}
-                    <button type="button" onClick={() => removeExisting(a.id)} className="shrink-0 rounded-md p-1 text-text-muted hover:bg-red-50 hover:text-red-600 transition-colors" aria-label={`Remove ${a.user_name}`}>
-                      <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                    </button>
-                  </div>
-                ))}
+                {/* Existing Assignments (Edit Mode).
+                    Active rows first, then ended ones (most recently ended on top)
+                    rendered greyed-out as historical context. */}
+                {[...existingAssignments]
+                  .sort((a, b) => {
+                    const aEnded = a.end_date != null;
+                    const bEnded = b.end_date != null;
+                    if (aEnded !== bEnded) return aEnded ? 1 : -1;
+                    if (!aEnded) return 0;
+                    return (b.end_date ?? "").localeCompare(a.end_date ?? "");
+                  })
+                  .map((a) => {
+                    const isEnded = a.end_date != null;
+                    return (
+                      <div
+                        key={a.id}
+                        className={
+                          isEnded
+                            ? "flex items-center gap-3 rounded-lg border border-dashed border-border bg-slate-100/60 px-3 py-2 opacity-70"
+                            : "flex items-center gap-3 rounded-lg border border-border bg-slate-50 px-3 py-2"
+                        }
+                      >
+                        <div className="flex-1 min-w-0">
+                          <span className="text-sm font-medium text-text-main">{a.user_name}</span>
+                          {a.assignment_role && <span className="ml-2 text-xs text-text-muted">({a.assignment_role})</span>}
+                          {isEnded && (
+                            <span className="ml-2 inline-flex items-center rounded-full bg-slate-200 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-700">
+                              Ended {a.end_date}
+                              {a.ended_by_name ? ` · by ${a.ended_by_name}` : ""}
+                            </span>
+                          )}
+                        </div>
+                        {a.function_name && (
+                          <span className="text-xs text-text-muted shrink-0">{a.function_name}</span>
+                        )}
+                        {a.assigned_date && (
+                          <span className="text-xs text-text-muted shrink-0">Joined: {a.assigned_date}</span>
+                        )}
+                        {!isEnded && (
+                          <button
+                            type="button"
+                            onClick={() => removeExisting(a.id)}
+                            className="shrink-0 rounded-md p-1 text-text-muted hover:bg-red-50 hover:text-red-600 transition-colors"
+                            aria-label={`End assignment for ${a.user_name}`}
+                            title="End this assignment (soft-end; history is kept)"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
 
                 {/* Draft Assignments */}
                 {draftAssignments.map((draft) => (

@@ -143,6 +143,82 @@ def is_review_window_open(
     return keys.index(target_cycle) <= keys.index(current_code)
 
 
+def cycle_date_range(
+    cycle_code: str,
+    fy_year: int,
+    fiscal_start_month: int = 4,
+) -> tuple[date, date]:
+    """Return (start_date, end_date) of the cycle within its fiscal year.
+
+    `fy_year` is the fiscal-year *start* year — e.g. 2026 for FY2026-27,
+    which begins on `fiscal_start_month` of 2026 and ends the day before
+    that month in 2027.
+
+    Examples (fiscal_start_month=4):
+        cycle_date_range("H1", 2026) -> (2026-04-01, 2026-09-30)
+        cycle_date_range("H2", 2026) -> (2026-10-01, 2027-03-31)
+        cycle_date_range("Q1", 2026) -> (2026-04-01, 2026-06-30)
+        cycle_date_range("Q4", 2026) -> (2027-01-01, 2027-03-31)
+
+    Used by the project-review queue logic to decide whether a given
+    ProjectAssignment overlapped a cycle's window — that's the
+    predicate for "should this person have a review for this cycle?"
+    """
+    keys = cycle_keys_for(cycle_code)
+    idx = keys.index(cycle_code)
+    months_per_cycle = 12 // len(keys)  # 6 for half, 3 for quarter
+
+    start_month_offset = idx * months_per_cycle
+    end_month_offset = start_month_offset + months_per_cycle  # exclusive
+
+    start_month = ((fiscal_start_month - 1) + start_month_offset) % 12 + 1
+    start_year = fy_year + ((fiscal_start_month - 1) + start_month_offset) // 12
+
+    # End date is the last day of the month before `end_month_offset`.
+    end_month = ((fiscal_start_month - 1) + end_month_offset - 1) % 12 + 1
+    end_year = fy_year + ((fiscal_start_month - 1) + end_month_offset - 1) // 12
+
+    start = date(start_year, start_month, 1)
+    # Compute last day of `end_month` in `end_year` without external libs.
+    if end_month == 12:
+        next_month_first = date(end_year + 1, 1, 1)
+    else:
+        next_month_first = date(end_year, end_month + 1, 1)
+    end = date.fromordinal(next_month_first.toordinal() - 1)
+    return (start, end)
+
+
+def parse_cycle_name(cycle_name: str) -> tuple[str, int] | None:
+    """Parse the canonical app-format cycle name into (code, fy_year).
+
+    Examples:
+        "H1 FY26-27"  -> ("H1", 2026)
+        "Q3 FY27-28"  -> ("Q3", 2027)
+        "FY26-27"     -> None  (annual cadence, no review code)
+
+    Returns None when the input doesn't carry a code prefix (annual orgs).
+    """
+    parts = cycle_name.strip().split()
+    if len(parts) < 2:
+        return None
+    code = parts[0].upper()
+    fy_token = parts[1].upper()
+    if not (code.startswith("H") or code.startswith("Q")):
+        return None
+    if not fy_token.startswith("FY"):
+        return None
+    # FY26-27 -> 26 -> 2026  (handle 4-digit "FY2026-27" too)
+    digits = fy_token[2:].split("-")[0]
+    try:
+        n = int(digits)
+    except ValueError:
+        return None
+    if n < 100:
+        # Two-digit year: assume 21st century (2000–2099).
+        n += 2000
+    return (code, n)
+
+
 def extract_fy_label(cycle_name: str) -> str:
     """
     Extract the bare fiscal-year label from any cycle name.

@@ -20,6 +20,10 @@ export interface AssignmentResponse {
   function_id: number | null;
   function_name: string | null;
   assigned_date: string | null;
+  /** When NULL the member is still active. When set, the row is a
+   *  historical stint kept so the user keeps seeing their past reviews. */
+  end_date: string | null;
+  ended_by_name: string | null;
   created_at: string;
 }
 
@@ -36,6 +40,8 @@ export interface AssignmentUpdatePayload {
   assigned_date?: string | null;
 }
 
+export type ProjectStatus = "active" | "completed";
+
 export interface ProjectResponse {
   id: number;
   org_id: number;
@@ -48,9 +54,14 @@ export interface ProjectResponse {
   pm_name: string | null;
   secondary_evaluator_id: number | null;
   secondary_evaluator_name: string | null;
+  status: ProjectStatus;
+  completed_at: string | null;
+  completed_by_name: string | null;
   is_deleted: boolean;
   created_at: string;
   updated_at: string | null;
+  /** Count of *active* assignments (end_date IS NULL). Completed projects
+   *  always report 0 since their team was bulk-end-dated at completion. */
   member_count: number;
 }
 
@@ -86,8 +97,14 @@ export interface ProjectUpdatePayload {
 // ── Service ─────────────────────────────────────────────────────────
 
 export const projectService = {
-  listProjects: async (): Promise<ProjectResponse[]> => {
-    const res = await apiClient.get<ProjectResponse[]>("/projects/");
+  /** Defaults to active projects only. Pass `includeCompleted: true` to
+   *  also see archived projects (HR view). */
+  listProjects: async (
+    includeCompleted: boolean = false,
+  ): Promise<ProjectResponse[]> => {
+    const res = await apiClient.get<ProjectResponse[]>("/projects/", {
+      params: includeCompleted ? { include_completed: true } : undefined,
+    });
     return res.data;
   },
 
@@ -120,7 +137,28 @@ export const projectService = {
     return res.data;
   },
 
-  removeAssignment: async (assignmentId: number): Promise<void> => {
+  /** End an active assignment (soft-end). Sets end_date=today and keeps
+   *  the row so the user still sees their past project reviews.
+   *  Authorization: HR (any) or the project's PM. */
+  endAssignment: async (assignmentId: number): Promise<void> => {
     await apiClient.delete(`/projects/assignments/${assignmentId}`);
+  },
+
+  /** HR-only. Marks the project completed and bulk-end-dates every
+   *  active assignment in one transaction. Idempotent. */
+  markComplete: async (projectId: number): Promise<ProjectResponse> => {
+    const res = await apiClient.post<ProjectResponse>(
+      `/projects/${projectId}/complete`,
+    );
+    return res.data;
+  },
+
+  /** HR-only. Re-opens a completed project. Does NOT auto-restore
+   *  assignments; HR re-adds team members explicitly. Idempotent. */
+  reopen: async (projectId: number): Promise<ProjectResponse> => {
+    const res = await apiClient.post<ProjectResponse>(
+      `/projects/${projectId}/reopen`,
+    );
+    return res.data;
   },
 };
