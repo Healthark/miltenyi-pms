@@ -1,12 +1,16 @@
 /**
- * ProjectReviews.tsx — Project Reviews Page (Revised PM-Centric Flow).
+ * ProjectReviews.tsx — Project Reviews Page (per-role tabs).
  *
- * Two tabs:
- *   My Reviews     — toggle between Card Grid and Table view; both
- *                    expand into a per-review detail (`ReviewDetailPanel`
- *                    in grid mode, `TableExpandedRow` in table mode).
- *   Evaluate Team  — gated on having any pending PM/Secondary work;
- *                    delegates entirely to `PMEvaluationTab`.
+ * Tabs are role-gated:
+ *   My Reviews            — Staff, expands rows into ReviewDetailPanel /
+ *                           TableExpandedRow.
+ *   Primary Evaluation    — PM, owned by `PrimaryEvaluationTab`.
+ *   Secondary Evaluation  — anyone listed as `Project.secondary_evaluator_id`
+ *                           on at least one project (Staff / HR), owned by
+ *                           `SecondaryEvalTab`. Visibility is driven by a
+ *                           lightweight queue probe at mount.
+ *   Mentees' Reviews      — Mentor, read-only over getMenteeReviews().
+ *   All Reviews           — HR_MyOrg / HR_Miltenyi, read-only org-wide.
  *
  * The bulk of presentation logic lives in the extracted components in
  * `components/project-reviews/`. This file owns the page-level state,
@@ -31,7 +35,8 @@ import {
 } from "../services/project-review.service";
 import { useAuth } from "../hooks/useAuth";
 import { useSystemSettings } from "../hooks/useSystemSettings";
-import { PMEvaluationTab } from "../components/project-reviews/PMEvaluationTab";
+import { PrimaryEvaluationTab } from "../components/project-reviews/PrimaryEvaluationTab";
+import { SecondaryEvalTab } from "../components/project-reviews/SecondaryEvalTab";
 import { ProjectSummaryCard } from "../components/project-reviews/ProjectSummaryCard";
 import { ReviewDetailPanel } from "../components/project-reviews/ReviewDetailPanel";
 import { TableExpandedRow } from "../components/project-reviews/TableExpandedRow";
@@ -43,7 +48,7 @@ import {
 import { SortableHeader } from "../components/SortableHeader";
 import { compareValues, type SortKind, type SortState } from "../utils/sort";
 
-type ActiveTab = "my" | "evaluate" | "mentees" | "all-reviews";
+type ActiveTab = "my" | "primary" | "secondary" | "mentees" | "all-reviews";
 type ViewMode = "grid" | "table";
 
 // Sortable columns in the My Reviews table + their value extractors and type.
@@ -109,9 +114,29 @@ export function ProjectReviews() {
   const [expectations, setExpectations] = useState<RoleExpectation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Probe the secondary queue once at mount. Drives visibility of the
+  // "Secondary Evaluation" tab — Staff and HR who are listed as
+  // `Project.secondary_evaluator_id` on at least one project. PMs are
+  // blocked from being Secondary by the route validator, and Mentors
+  // can't be Secondary either, so we skip the call for them.
+  const canBeSecondary = !isPM && !isMentor;
+  const [hasSecondaryWork, setHasSecondaryWork] = useState(false);
+  useEffect(() => {
+    if (!canBeSecondary) {
+      setHasSecondaryWork(false);
+      return;
+    }
+    let cancelled = false;
+    void projectReviewService
+      .getSecondaryQueue()
+      .then((rows) => { if (!cancelled) setHasSecondaryWork(rows.length > 0); })
+      .catch(() => { if (!cancelled) setHasSecondaryWork(false); });
+    return () => { cancelled = true; };
+  }, [canBeSecondary]);
+
   // Auto-switch to the role's primary tab once auth resolves.
   useEffect(() => {
-    if (isPM) setActiveTab("evaluate");
+    if (isPM) setActiveTab("primary");
     else if (isMentor) setActiveTab("mentees");
     else if (isHR) setActiveTab("all-reviews");
     else setActiveTab("my");
@@ -164,7 +189,7 @@ export function ProjectReviews() {
     if (isStaff) void loadStaffData();
     else if (isMentor) void loadMentorData();
     else if (isHR) void loadHRData();
-    else setIsLoading(false); // PM uses PMEvaluationTab which loads itself
+    else setIsLoading(false); // PM uses PrimaryEvaluationTab which loads itself
   }, [isStaff, isMentor, isHR, loadStaffData, loadMentorData, loadHRData]);
 
   // ── Derived filter sources + filtered/sorted cards (memoised) ──────
@@ -232,25 +257,28 @@ export function ProjectReviews() {
         : "border-transparent text-text-muted hover:text-text-main"
     }`;
 
-  // Header text per role:
-  //   PM     → "Evaluate Team" (writes evaluations)
-  //   Mentor → "Mentees Review" (read-only of mentees' project reviews)
-  //   HR     → "All Project Reviews" (read-only org-wide)
-  //   Staff  → "My Project Reviews" (their own per-project status)
-  const headerTitle = isPM
-    ? "Evaluate Team"
-    : isMentor
-      ? "Mentees Review"
-      : isHR
-        ? "All Project Reviews"
-        : "My Project Reviews";
-  const headerSubtitle = isPM
-    ? "Provide feedback for projects and team members."
-    : isMentor
-      ? "View your mentees' project reviews across cycles."
-      : isHR
-        ? "View-only access to every project review across the org."
-        : "Track your project review status across cycles.";
+  // Header text follows the active tab so Staff / HR who flip into the
+  // Secondary tab see context that matches what they're doing.
+  const headerTitle =
+    activeTab === "primary"
+      ? "Primary Evaluation"
+      : activeTab === "secondary"
+        ? "Secondary Evaluation"
+        : activeTab === "mentees"
+          ? "Mentees' Reviews"
+          : activeTab === "all-reviews"
+            ? "All Project Reviews"
+            : "My Project Reviews";
+  const headerSubtitle =
+    activeTab === "primary"
+      ? "Provide feedback for projects and team members."
+      : activeTab === "secondary"
+        ? "Add an impact statement for projects where you are the Secondary evaluator."
+        : activeTab === "mentees"
+          ? "View your mentees' project reviews across cycles."
+          : activeTab === "all-reviews"
+            ? "View-only access to every project review across the org."
+            : "Track your project review status across cycles.";
 
   return (
     <div className="flex flex-col gap-6 pb-10 animate-in fade-in duration-500">
@@ -277,10 +305,10 @@ export function ProjectReviews() {
           {isPM && (
             <button
               type="button"
-              className={tabCls("evaluate")}
-              onClick={() => setActiveTab("evaluate")}
+              className={tabCls("primary")}
+              onClick={() => setActiveTab("primary")}
             >
-              Evaluate Team
+              Primary Evaluation
             </button>
           )}
           {isMentor && (
@@ -299,6 +327,15 @@ export function ProjectReviews() {
               onClick={() => setActiveTab("all-reviews")}
             >
               All Reviews
+            </button>
+          )}
+          {hasSecondaryWork && (
+            <button
+              type="button"
+              className={tabCls("secondary")}
+              onClick={() => setActiveTab("secondary")}
+            >
+              Secondary Evaluation
             </button>
           )}
         </div>
@@ -348,7 +385,9 @@ export function ProjectReviews() {
             </div>
           )}
 
-          {isPM && activeTab === "evaluate" && <PMEvaluationTab />}
+          {isPM && activeTab === "primary" && <PrimaryEvaluationTab />}
+
+          {activeTab === "secondary" && hasSecondaryWork && <SecondaryEvalTab />}
 
           {isMentor && activeTab === "mentees" && (
             <ReadOnlyReviewsList

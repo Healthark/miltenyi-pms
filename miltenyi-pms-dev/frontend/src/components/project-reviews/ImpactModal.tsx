@@ -8,8 +8,9 @@ import type {
 } from "../../services/project-review.service";
 
 /**
- * Minimal header data ImpactModal needs. Both PMEvaluationTab and
- * MenteeProjectsTab satisfy this shape when they build their row objects.
+ * Minimal header data ImpactModal needs. MenteeProjectsTab uses this
+ * shape when surfacing a Secondary impact action against a mentee's
+ * review. (The standalone Secondary tab has its own inline modal.)
  */
 export interface ImpactModalRow {
   employee_name: string;

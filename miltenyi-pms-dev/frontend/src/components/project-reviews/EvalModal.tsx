@@ -12,7 +12,7 @@ import { ExpectationPanel } from "./ExpectationPanel";
 
 /**
  * Minimal header data the modal needs to render its title + context line.
- * Both PMEvaluationTab's UnifiedEvalRow and MenteeProjectsTab's row-builder
+ * Both PrimaryEvaluationTab's row type and MenteeProjectsTab's row-builder
  * satisfy this shape without any adapter code.
  */
 export interface EvalModalCard {
