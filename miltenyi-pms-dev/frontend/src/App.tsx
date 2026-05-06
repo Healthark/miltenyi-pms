@@ -108,12 +108,24 @@ export default function App() {
               <Route path="/dashboard" element={<Dashboard />} />
             </Route>
 
-            <Route element={<ProtectedRoute requiredFeature="goals" />}>
+            <Route
+              element={
+                <ProtectedRoute
+                  requiredFeature="goals"
+                  requiredRole={["Staff", "Mentor", "HR_MyOrg"]}
+                />
+              }
+            >
               <Route path="/annual-goals" element={<AnnualGoals />} />
             </Route>
 
             <Route
-              element={<ProtectedRoute requiredFeature="annual_reviews" />}
+              element={
+                <ProtectedRoute
+                  requiredFeature="annual_reviews"
+                  requiredRole={["Staff", "Mentor", "HR_MyOrg"]}
+                />
+              }
             >
               <Route path="/annual-reviews" element={<AnnualReviews />} />
             </Route>
@@ -122,13 +134,27 @@ export default function App() {
               <Route path="/admin" element={<AdminPanel />} />
             </Route>
 
-            <Route element={<ProtectedRoute requiredFeature="project_reviews" />}>
+            <Route
+              element={
+                <ProtectedRoute
+                  requiredFeature="project_reviews"
+                  requiredRole={["Staff", "PM", "Mentor", "HR_Miltenyi", "HR_MyOrg"]}
+                />
+              }
+            >
               <Route path="/project-reviews" element={<ProjectReviews />} />
             </Route>
             {/* Profile — always visible, no feature gate */}
             <Route path="/profile" element={<Profile />} />
 
-            <Route element={<ProtectedRoute requiredFeature="mentoring" />}>
+            <Route
+              element={
+                <ProtectedRoute
+                  requiredFeature="mentoring"
+                  requiredRole={["Mentor", "HR_MyOrg"]}
+                />
+              }
+            >
               <Route path="/my-mentees" element={<MyMentees />} />
               <Route path="/my-mentees/:id" element={<MenteeDetail />} />
             </Route>

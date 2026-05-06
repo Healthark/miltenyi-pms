@@ -99,6 +99,12 @@ class AnnualReviewResponse(BaseModel):
     final_performance_rating: Optional[int] = None
     final_rating_enabled: bool = False
 
+    # Resolved names — populated only by endpoints that pre-attach them
+    # (e.g. the org-wide /all endpoint). Default None for the per-user
+    # endpoints where the caller is the employee themselves.
+    employee_name: Optional[str] = None
+    mentor_name: Optional[str] = None
+
     # Metadata
     created_at: datetime
     updated_at: Optional[datetime] = None

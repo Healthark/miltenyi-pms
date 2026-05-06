@@ -298,6 +298,51 @@ def get_my_review_history(
     return reviews
 
 
+@router.get("/all", response_model=List[AnnualReviewResponse])
+def get_all_annual_reviews(
+    db: DbSession,
+    current_user: CurrentUser,
+):
+    """HR_MyOrg-only: every annual review across the org, every cycle.
+
+    Powers the view-only "All Reviews" tab on the AnnualReviews page.
+    HR_MyOrg is the management role, so private ratings are NOT stripped —
+    they need to see the full picture for calibration / auditing.
+
+    Resolves `employee_name` and `mentor_name` per row in two batched
+    lookups (no N+1) so the table can render directly.
+    """
+    _require_hr_myorg(current_user)
+    reviews = (
+        db.query(AnnualReview)
+        .filter(AnnualReview.org_id == current_user.org_id)
+        .order_by(
+            AnnualReview.cycle_name.desc(),
+            AnnualReview.created_at.desc(),
+        )
+        .all()
+    )
+
+    user_ids = {r.user_id for r in reviews}
+    user_ids.update(r.mentor_id for r in reviews if r.mentor_id is not None)
+    name_by_id: dict[int, str] = {}
+    if user_ids:
+        rows = (
+            db.query(User.id, User.full_name)
+            .filter(User.id.in_(user_ids))
+            .all()
+        )
+        name_by_id = {uid: name for uid, name in rows}
+
+    for r in reviews:
+        r.employee_name = name_by_id.get(r.user_id)
+        r.mentor_name = (
+            name_by_id.get(r.mentor_id) if r.mentor_id is not None else None
+        )
+
+    return reviews
+
+
 # =====================================================================
 # STAGE 2 — MENTOR EVALUATION
 # =====================================================================

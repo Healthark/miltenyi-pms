@@ -32,6 +32,11 @@ export interface AnnualReview {
   cycle_name: string;
   status: ReviewStatus;
 
+  /** Resolved names — populated by org-wide endpoints (/all). Null on
+   *  per-user endpoints where the caller already knows the names. */
+  employee_name?: string | null;
+  mentor_name?: string | null;
+
   // Stage 1 — employee self-review
   self_overall_review: string | null;
   self_performance_rating: number | null;
@@ -203,6 +208,14 @@ export const annualReviewService = {
     const res = await apiClient.get<AnnualReview>(
       `/annual-reviews/${reviewId}`,
     );
+    return res.data;
+  },
+
+  // ── HR_MyOrg view-only ─────────────────────────────────────────
+  /** Every annual review across the org, every cycle. HR_MyOrg-only;
+   *  the backend 403s any other role. Powers the "All Reviews" tab. */
+  getAllReviews: async (): Promise<AnnualReview[]> => {
+    const res = await apiClient.get<AnnualReview[]>("/annual-reviews/all");
     return res.data;
   },
 };

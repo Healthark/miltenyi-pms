@@ -232,16 +232,34 @@ export function ProjectReviews() {
         : "border-transparent text-text-muted hover:text-text-main"
     }`;
 
+  // Header text per role:
+  //   PM     → "Evaluate Team" (writes evaluations)
+  //   Mentor → "Mentees Review" (read-only of mentees' project reviews)
+  //   HR     → "All Project Reviews" (read-only org-wide)
+  //   Staff  → "My Project Reviews" (their own per-project status)
+  const headerTitle = isPM
+    ? "Evaluate Team"
+    : isMentor
+      ? "Mentees Review"
+      : isHR
+        ? "All Project Reviews"
+        : "My Project Reviews";
+  const headerSubtitle = isPM
+    ? "Provide feedback for projects and team members."
+    : isMentor
+      ? "View your mentees' project reviews across cycles."
+      : isHR
+        ? "View-only access to every project review across the org."
+        : "Track your project review status across cycles.";
+
   return (
     <div className="flex flex-col gap-6 pb-10 animate-in fade-in duration-500">
       {/* ── Page Header ── */}
       <div>
         <h1 className="font-display text-xl font-semibold text-text-main">
-          Evaluate Team
+          {headerTitle}
         </h1>
-        <p className="mt-0.5 text-sm text-text-muted">
-          Provide feedback for projects and team members
-        </p>
+        <p className="mt-0.5 text-sm text-text-muted">{headerSubtitle}</p>
       </div>
 
       {/* ── Main Content Container ── */}

@@ -8,6 +8,7 @@ import {
 import {
   goalService,
   type Goal,
+  type TeamGoal,
   type GoalCreatePayload,
   type GoalUpdatePayload,
   type GoalSelfReviewPayload,
@@ -43,33 +44,17 @@ import { isPostApproved } from "../utils/goalStatus";
 
 type ApprovalFilter = "all" | ApprovalStatus;
 
-/** Build the status filter options. Half-yearly orgs see H1/H2 self/mentor
- *  options; quarterly orgs see Q1..Q4 self/mentor options instead. */
-function buildFilterConfig(
-  cycleType: string | null,
-): { value: ApprovalFilter; label: string }[] {
-  const base: { value: ApprovalFilter; label: string }[] = [
+/** Build the status filter options. Goal cadence is locked to half-yearly
+ *  for every org, so this no longer branches on `cycle_type`. The Q1..Q4
+ *  values stay in the ApprovalStatus enum for backward-compat with any
+ *  legacy rows but aren't surfaced as filter options. */
+function buildFilterConfig(): { value: ApprovalFilter; label: string }[] {
+  return [
     { value: "all", label: "All" },
     { value: "draft", label: "Draft" },
     { value: "pending_approval", label: "Pending Approval" },
     { value: "changes_requested", label: "Changes Requested" },
     { value: "approved", label: "Approved" },
-  ];
-  if (cycleType === "quarterly") {
-    return [
-      ...base,
-      { value: "q1_self_reviewed",   label: "Q1 Self-Reviewed" },
-      { value: "q1_mentor_reviewed", label: "Q1 Mentor-Reviewed" },
-      { value: "q2_self_reviewed",   label: "Q2 Self-Reviewed" },
-      { value: "q2_mentor_reviewed", label: "Q2 Mentor-Reviewed" },
-      { value: "q3_self_reviewed",   label: "Q3 Self-Reviewed" },
-      { value: "q3_mentor_reviewed", label: "Q3 Mentor-Reviewed" },
-      { value: "q4_self_reviewed",   label: "Q4 Self-Reviewed" },
-      { value: "q4_mentor_reviewed", label: "Q4 Mentor-Reviewed" },
-    ];
-  }
-  return [
-    ...base,
     { value: "h1_self_reviewed",   label: "H1 Self-Reviewed" },
     { value: "h1_mentor_reviewed", label: "H1 Mentor-Reviewed" },
     { value: "h2_self_reviewed",   label: "H2 Self-Reviewed" },
@@ -77,7 +62,7 @@ function buildFilterConfig(
   ];
 }
 
-type ActiveTab = "my" | "team";
+type ActiveTab = "my" | "team" | "all";
 type ViewMode = "grid" | "table";
 
 // My Goals table sort config — Goal/Mentor/Status are alpha, Year is numeric.
@@ -165,10 +150,12 @@ export function AnnualGoals() {
   const snackbar = useSnackbar();
   const confirm = useConfirm();
 
-  // A user is treated as a "mentor" purely based on whether other users
-  // report to them via mentor_id — role is not the authority here.
-  // The backend populates has_mentees on the login response.
-  const isMentor = user?.has_mentees ?? false;
+  // Role-based detection (replaces the old `has_mentees` shortcut).
+  // Staff → "My Goals" tab, Mentor → "Team Goals" tab,
+  // HR_MyOrg → view-only "All Goals" tab.
+  const isStaff = user?.role === "Staff";
+  const isMentor = user?.role === "Mentor";
+  const isHRMyOrg = user?.role === "HR_MyOrg";
   const annualGoalsEditEnabled = settings?.annual_goals_edit_enabled ?? false;
 
   // Extract bare FY label ("H1 FY26" → "FY26") for the page header.
@@ -217,25 +204,35 @@ export function AnnualGoals() {
     };
   }, []);
 
-  // Auto-switch to the only available tab once auth resolves.
+  // Auto-switch to the role's primary tab once auth resolves.
   useEffect(() => {
     if (isMentor) setActiveTab("team");
-  }, [isMentor]);
+    else if (isHRMyOrg) setActiveTab("all");
+    else setActiveTab("my");
+  }, [isMentor, isHRMyOrg]);
+
+  const [allGoals, setAllGoals] = useState<TeamGoal[]>([]);
 
   const loadGoals = useCallback(async () => {
     setIsLoading(true);
     try {
-      setGoals(await goalService.getMyGoals("annual"));
+      if (isHRMyOrg) {
+        setAllGoals(await goalService.getAllGoals());
+      } else if (isStaff) {
+        setGoals(await goalService.getMyGoals("annual"));
+      } else {
+        // Mentor: TeamGoalsTab loads its own data
+      }
     } catch {
       /* stays empty */
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [isHRMyOrg, isStaff]);
 
   useEffect(() => {
-    if (!isMentor) void loadGoals();
-  }, [loadGoals, isMentor]);
+    void loadGoals();
+  }, [loadGoals]);
 
   // Modal helpers
   const openAdd = () => {
@@ -426,27 +423,35 @@ export function AnnualGoals() {
         : "text-text-muted hover:bg-slate-100"
     }`;
 
+  // Header text per role.
+  // Staff/Mentor keep the existing "Team Goals" label.
+  // HR_MyOrg gets "All Goals" — distinct view-only org-wide scope.
+  const headerTitle = isHRMyOrg ? "All Goals" : "Team Goals";
+  const headerSubtitle = isHRMyOrg
+    ? "View-only access to every annual goal across the org."
+    : isMentor
+      ? "Review and evaluate your team's annual goals."
+      : "Define and track your annual objectives for mentor approval.";
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-display text-xl font-semibold text-text-main">
-            Team Goals
+            {headerTitle}
             {fyLabel && (
               <span className="ml-2 text-sm font-normal text-text-muted">
                 · {fyLabel}
               </span>
             )}
           </h1>
-          <p className="mt-0.5 text-sm text-text-muted">
-            {isMentor
-              ? "Review and evaluate your team's annual goals."
-              : "Define and track your annual objectives for mentor approval."}
-          </p>
+          <p className="mt-0.5 text-sm text-text-muted">{headerSubtitle}</p>
         </div>
 
-        {!isMentor &&
+        {/* Add Goal button is Staff-only (Mentor has no own goals;
+            HR_MyOrg view-only). Honors the no-mentor + edit-gate rules. */}
+        {isStaff &&
           (user?.has_mentor === false ? (
             <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
               <Lock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
@@ -473,7 +478,7 @@ export function AnnualGoals() {
       <div className="rounded-xl border border-border bg-surface shadow-sm overflow-hidden">
         {/* Tab bar */}
         <div className="flex border-b border-border px-2">
-          {!isMentor && (
+          {isStaff && (
             <button
               type="button"
               className={tabCls("my")}
@@ -491,11 +496,20 @@ export function AnnualGoals() {
               Team Goals
             </button>
           )}
+          {isHRMyOrg && (
+            <button
+              type="button"
+              className={tabCls("all")}
+              onClick={() => setActiveTab("all")}
+            >
+              All Goals
+            </button>
+          )}
         </div>
 
         <div className="p-5">
           {/* ── My Goals tab ── */}
-          {!isMentor && activeTab === "my" && (
+          {isStaff && activeTab === "my" && (
             <div className="space-y-4">
               {/* Role expectations — single collapsible container, all competencies */}
               {roleExpectation && (
@@ -585,7 +599,7 @@ export function AnnualGoals() {
                         onChange={(e) => setApprovalFilter(e.target.value as ApprovalFilter)}
                         className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand min-w-[160px] cursor-pointer"
                       >
-                        {buildFilterConfig(settings?.cycle_type ?? null).map((f) => (
+                        {buildFilterConfig().map((f) => (
                           <option key={f.value} value={f.value}>{f.label}</option>
                         ))}
                       </select>
@@ -774,6 +788,11 @@ export function AnnualGoals() {
 
           {/* ── Team Goals tab ── */}
           {isMentor && activeTab === "team" && <TeamGoalsTab />}
+
+          {/* ── HR_MyOrg view-only "All Goals" tab ── */}
+          {isHRMyOrg && activeTab === "all" && (
+            <AllGoalsTab goals={allGoals} isLoading={isLoading} />
+          )}
         </div>
       </div>
 
@@ -798,6 +817,150 @@ export function AnnualGoals() {
         isDraftSaving={isSelfReviewDraftSaving}
         error={selfReviewError}
       />
+    </div>
+  );
+}
+
+// ── HR_MyOrg "All Goals" view-only table ──────────────────────────
+
+function AllGoalsTab({
+  goals,
+  isLoading,
+}: {
+  readonly goals: TeamGoal[];
+  readonly isLoading: boolean;
+}) {
+  const [statusFilter, setStatusFilter] = useState<ApprovalFilter>("all");
+  const [yearFilter, setYearFilter] = useState<string>("all");
+
+  const years = Array.from(
+    new Set(goals.map((g) => g.fy_year).filter((y): y is number => y !== null)),
+  ).sort((a, b) => b - a);
+
+  const filtered = goals
+    .filter((g) => statusFilter === "all" || g.approval_status === statusFilter)
+    .filter((g) => yearFilter === "all" || g.fy_year === Number(yearFilter));
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-16 text-sm text-text-muted">
+        Loading goals…
+      </div>
+    );
+  }
+  if (goals.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border py-16 text-center bg-background/50">
+        <Target className="h-10 w-10 text-text-muted mb-3" aria-hidden="true" />
+        <p className="font-display text-base font-medium text-text-main">
+          No annual goals recorded
+        </p>
+        <p className="mt-1 text-sm text-text-muted">
+          Goals will appear here once Staff submit them and mentors approve.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center gap-4 flex-wrap">
+        <div className="flex items-center gap-2">
+          <label
+            htmlFor="all-goals-year"
+            className="text-[11px] font-bold uppercase tracking-wider text-text-muted"
+          >
+            Year
+          </label>
+          <select
+            id="all-goals-year"
+            value={yearFilter}
+            onChange={(e) => setYearFilter(e.target.value)}
+            className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand cursor-pointer min-w-[120px]"
+          >
+            <option value="all">All Years</option>
+            {years.map((y) => (
+              <option key={y} value={y}>
+                {formatFyYearSpan(y)}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex items-center gap-2">
+          <label
+            htmlFor="all-goals-status"
+            className="text-[11px] font-bold uppercase tracking-wider text-text-muted"
+          >
+            Status
+          </label>
+          <select
+            id="all-goals-status"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as ApprovalFilter)}
+            className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand cursor-pointer min-w-[160px]"
+          >
+            {buildFilterConfig().map((f) => (
+              <option key={f.value} value={f.value}>
+                {f.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <span className="text-xs text-text-muted">
+          {filtered.length} of {goals.length}
+        </span>
+      </div>
+
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <table className="w-full text-[13px]">
+          <thead>
+            <tr className="bg-slate-50/80 border-b border-border">
+              <th className="text-left px-5 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted">
+                Employee
+              </th>
+              <th className="text-left px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted">
+                Goal
+              </th>
+              <th className="text-left px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted">
+                Mentor
+              </th>
+              <th className="text-left px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted">
+                FY
+              </th>
+              <th className="text-left px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted">
+                Status
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border/50">
+            {filtered.map((g) => (
+              <tr key={g.id} className="hover:bg-slate-50/60 transition-colors">
+                <td className="px-5 py-3 font-medium text-text-main">
+                  {g.owner_name ?? "—"}
+                  {g.owner_function_name && (
+                    <div className="text-[11px] text-text-muted">
+                      {g.owner_function_name}
+                      {g.owner_designation_name
+                        ? ` · ${g.owner_designation_name}`
+                        : ""}
+                    </div>
+                  )}
+                </td>
+                <td className="px-4 py-3 text-text-main">{g.title}</td>
+                <td className="px-4 py-3 text-text-muted">
+                  {g.manager_name ?? "—"}
+                </td>
+                <td className="px-4 py-3 text-text-muted">
+                  {g.fy_year ? formatFyYearSpan(g.fy_year) : "—"}
+                </td>
+                <td className="px-4 py-3">
+                  <ApprovalStatusBadge status={g.approval_status} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
