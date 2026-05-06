@@ -20,10 +20,6 @@ export interface SessionClaims {
   // True when an admin just reset this user's password to a temporary one.
   // The frontend gates all protected routes to /change-password until cleared.
   must_change_password: boolean;
-  // Sub-role of Admin — always implies role === "Admin". Gates the
-  // Management Review tab and its inline rating actions. Backend also
-  // gates the corresponding endpoints so this is purely a UI affordance.
-  is_management: boolean;
 }
 
 // After C12 the JWT lives in an HttpOnly cookie and is NEVER surfaced to JS.

@@ -1,5 +1,9 @@
 # .graphifyignore
 
+# graphify's own outputs — never feed them back into the graph
+graphify-out/
+.graphify_*
+
 # Environments & Modules
 venv/
 .venv/

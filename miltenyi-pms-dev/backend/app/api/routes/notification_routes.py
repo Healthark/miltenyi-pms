@@ -92,8 +92,8 @@ def get_topbar_summary(
         ))
 
     # ── Manager-Only Notifications ───────────────────────────────────
-    # We dynamically check if the user has mentees, rather than checking a "Manager" string role
-    if current_user.role == "Admin":
+    # HR_MyOrg gets a firm-wide view; mentors see only their direct mentees.
+    if current_user.role == "HR_MyOrg":
         mentee_ids = [
             row[0] for row in db.query(User.id).filter(
                 User.org_id == current_user.org_id,

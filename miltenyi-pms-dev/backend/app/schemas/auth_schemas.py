@@ -45,10 +45,6 @@ class SessionResponse(BaseModel):
     # all routes until the user completes the change-password flow, which
     # clears this flag.
     must_change_password: bool = False
-    # Sub-role of Admin — always implies role == "Admin". Gates the
-    # Management Review tab in the admin panel and the finalize/override
-    # actions on annual reviews.
-    is_management: bool = False
 
 
 # 2. The Outgoing Response (What we send back to React)

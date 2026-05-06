@@ -76,23 +76,21 @@ def _get_active_cycle(db: DbSession, org_id: int) -> str:
     return extract_fy_label(_get_settings(db, org_id).active_cycle_name)
 
 
-def _require_admin(current_user: User) -> None:
-    if current_user.role != "Admin":
+def _require_hr_myorg(current_user: User) -> None:
+    """HR_MyOrg-only gate. Used by the management-review override endpoints
+    that finalize/adjust ratings — Miltenyi HR has no business in annual
+    reviews because annual reviews are a MyOrg/Mentor concern."""
+    if current_user.role != "HR_MyOrg":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only administrators can perform this action.",
+            detail="Only the MyOrg HR can perform this action.",
         )
 
 
 def _require_management(current_user: User) -> None:
-    """Management sub-role — always paired with Admin. Gates the Management
-    Review tab's read/write endpoints so that regular admins (HR ops) cannot
-    set or override management ratings."""
-    if current_user.role != "Admin" or not bool(current_user.is_management):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only management users can perform this action.",
-        )
+    """Alias kept for callers that previously required management override —
+    in the new role model this is exactly HR_MyOrg."""
+    _require_hr_myorg(current_user)
 
 
 def _strip_private_ratings(review: AnnualReview, final_visible: bool) -> None:
@@ -564,7 +562,7 @@ def get_review(
 
     is_owner = review.user_id == current_user.id
     is_mentor = review.mentor_id == current_user.id
-    is_admin = current_user.role == "Admin"
+    is_admin = current_user.role == "HR_MyOrg"
 
     if not (is_owner or is_mentor or is_admin):
         raise HTTPException(

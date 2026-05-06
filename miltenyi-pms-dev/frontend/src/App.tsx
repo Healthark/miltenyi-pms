@@ -118,7 +118,7 @@ export default function App() {
               <Route path="/annual-reviews" element={<AnnualReviews />} />
             </Route>
 
-            <Route element={<ProtectedRoute requiredFeature="admin" requiredRole={["Admin"]}/>}>
+            <Route element={<ProtectedRoute requiredFeature="admin" requiredRole={["HR_MyOrg", "HR_Miltenyi"]}/>}>
               <Route path="/admin" element={<AdminPanel />} />
             </Route>
 

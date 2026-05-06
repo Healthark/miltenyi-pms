@@ -203,7 +203,7 @@ def create_goal(
         if not target_user:
             raise HTTPException(status_code=404, detail="Target user not found.")
 
-        if current_user.role != "Admin" and target_user.mentor_id != current_user.id:
+        if current_user.role != "HR_MyOrg" and target_user.mentor_id != current_user.id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You are not authorized to create goals for this user.",
@@ -362,7 +362,7 @@ def get_goal(
     goal = _get_goal_with_relations(db, goal_id, current_user.org_id)
     goal_owner = db.query(User).filter(User.id == goal.user_id).first()
 
-    is_manager = current_user.role == "Admin" or (
+    is_manager = current_user.role == "HR_MyOrg" or (
         goal_owner and goal_owner.mentor_id == current_user.id
     )
     is_owner = goal.user_id == current_user.id
@@ -396,7 +396,7 @@ def update_goal(
     goal = _get_goal_with_relations(db, goal_id, current_user.org_id)
     goal_owner = db.query(User).filter(User.id == goal.user_id).first()
 
-    is_manager = current_user.role == "Admin" or (
+    is_manager = current_user.role == "HR_MyOrg" or (
         goal_owner and goal_owner.mentor_id == current_user.id
     )
     is_owner = goal.user_id == current_user.id
@@ -455,7 +455,7 @@ def delete_goal(
 
     goal_owner = db.query(User).filter(User.id == goal.user_id).first()
 
-    is_manager = current_user.role == "Admin" or (
+    is_manager = current_user.role == "HR_MyOrg" or (
         goal_owner and goal_owner.mentor_id == current_user.id
     )
     is_owner = goal.user_id == current_user.id
@@ -499,7 +499,7 @@ def submit_goal(
     goal = _get_goal_with_relations(db, goal_id, current_user.org_id)
     goal_owner = db.query(User).filter(User.id == goal.user_id).first()
 
-    is_manager = current_user.role == "Admin" or (
+    is_manager = current_user.role == "HR_MyOrg" or (
         goal_owner and goal_owner.mentor_id == current_user.id
     )
     is_owner = goal.user_id == current_user.id

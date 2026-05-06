@@ -2,7 +2,9 @@ import { useMemo, useState } from "react";
 import { Search, Pencil, UserX, UserCheck } from "lucide-react";
 import type { UserResponse } from "../../services/admin.service";
 import { StatusBadge } from "./StatusBadge";
+import { RoleBadge } from "./RoleBadge";
 import { SortableHeader } from "../SortableHeader";
+import { useAuth } from "../../hooks/useAuth";
 import {
   compareValues,
   type SortKind,
@@ -22,17 +24,21 @@ interface UsersTabProps {
 type UsersSortKey =
   | "full_name"
   | "email"
+  | "role"
   | "mentor_name"
   | "function_name"
   | "designation_name"
   | "status";
 
-type RoleFilter = "all" | "Admin" | "Staff";
+type RoleFilter = "all" | "HR_MyOrg" | "HR_Miltenyi" | "Mentor" | "PM" | "Staff";
 type StatusFilter = "all" | "active" | "inactive";
 
 const ROLE_OPTIONS: { value: RoleFilter; label: string }[] = [
   { value: "all", label: "All Roles" },
-  { value: "Admin", label: "Admin" },
+  { value: "HR_MyOrg", label: "HR · MyOrg" },
+  { value: "HR_Miltenyi", label: "HR · Miltenyi" },
+  { value: "Mentor", label: "Mentor" },
+  { value: "PM", label: "PM" },
   { value: "Staff", label: "Staff" },
 ];
 
@@ -42,18 +48,22 @@ const STATUS_OPTIONS: { value: StatusFilter; label: string }[] = [
   { value: "inactive", label: "Inactive" },
 ];
 
+// HR_Miltenyi cannot edit or deactivate Mentor / HR_MyOrg rows (security boundary).
+const PROTECTED_ROLES = new Set<string>(["Mentor", "HR_MyOrg"]);
+
 const USERS_SORT_CONFIG: Record<
   UsersSortKey,
   { kind: SortKind; get: (u: UserResponse, all: readonly UserResponse[]) => unknown }
 > = {
   full_name:        { kind: "alpha", get: (u) => u.full_name },
   email:            { kind: "alpha", get: (u) => u.email },
+  role:             { kind: "alpha", get: (u) => u.role },
   mentor_name:      {
     kind: "alpha",
     get: (u, all) =>
       u.mentor_id ? all.find((x) => x.id === u.mentor_id)?.full_name ?? null : null,
   },
-  function_name:  { kind: "alpha", get: (u) => u.function?.name ?? null },
+  function_name:    { kind: "alpha", get: (u) => u.function?.name ?? null },
   designation_name: { kind: "alpha", get: (u) => u.designation?.name ?? null },
   status:           { kind: "alpha", get: (u) => (u.is_deleted ? "Inactive" : "Active") },
 };
@@ -75,6 +85,16 @@ export function UsersTab({
   const [sort, setSort] = useState<SortState<UsersSortKey> | null>(null);
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+
+  const { user: currentUser } = useAuth();
+  const isViewerMiltenyiHR = currentUser?.role === "HR_Miltenyi";
+
+  /** True if the current viewer is allowed to edit/deactivate this row.
+   *  HR_MyOrg can touch any user; HR_Miltenyi cannot touch Mentor or HR_MyOrg rows. */
+  const canMutateRow = (target: UserResponse): boolean => {
+    if (!isViewerMiltenyiHR) return true;
+    return !PROTECTED_ROLES.has(target.role);
+  };
 
   const visibleUsers = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -122,7 +142,7 @@ export function UsersTab({
             id="user-role-filter"
             value={roleFilter}
             onChange={(e) => setRoleFilter(e.target.value as RoleFilter)}
-            className={`${FILTER_SELECT_CLS} min-w-[120px]`}
+            className={`${FILTER_SELECT_CLS} min-w-[140px]`}
           >
             {ROLE_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
@@ -160,6 +180,9 @@ export function UsersTab({
                 <th className="px-5 py-3">
                   <SortableHeader label="Email" columnKey="email" sort={sort} onSort={setSort} />
                 </th>
+                <th className="px-5 py-3">
+                  <SortableHeader label="Role" columnKey="role" sort={sort} onSort={setSort} />
+                </th>
                 <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-text-muted">
                   Phone
                 </th>
@@ -184,85 +207,95 @@ export function UsersTab({
               {visibleUsers.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={9}
                     className="px-5 py-10 text-center text-text-muted"
                   >
                     No users match your filters.
                   </td>
                 </tr>
               ) : (
-                visibleUsers.map((user) => (
-                  <tr
-                    key={user.id}
-                    className={`transition-colors hover:bg-slate-50 ${user.is_deleted ? "opacity-60" : ""}`}
-                  >
-                    <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-medium text-text-main">
+                visibleUsers.map((user) => {
+                  const mutable = canMutateRow(user);
+                  return (
+                    <tr
+                      key={user.id}
+                      className={`transition-colors hover:bg-slate-50 ${user.is_deleted ? "opacity-60" : ""}`}
+                    >
+                      <td className="px-5 py-3.5">
+                        <div className="font-medium text-text-main">
                           {user.full_name}
-                        </span>
-                        {user.role === "Admin" && (
-                          <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
-                            Admin
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-xs text-text-muted">
-                        {user.employee_code}
-                      </div>
-                    </td>
-                    <td className="px-5 py-3.5 text-text-muted">
-                      {user.email}
-                    </td>
-                    <td className="px-5 py-3.5 text-text-muted">
-                      {user.phone ?? "—"}
-                    </td>
-                    <td className="px-5 py-3.5 text-text-muted">
-                      {users.find((u) => u.id === user.mentor_id)?.full_name ?? "—"}
-                    </td>
-                    <td className="px-5 py-3.5 text-text-muted">
-                      {user.function?.name ?? "—"}
-                    </td>
-                    <td className="px-5 py-3.5 text-text-muted">
-                      {user.designation?.name ?? "—"}
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <StatusBadge isDeleted={user.is_deleted} />
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => onEdit(user)}
-                          title="Edit user"
-                          className="rounded-md p-1.5 text-text-muted hover:bg-brand-light hover:text-brand transition-colors"
-                        >
-                          <Pencil className="h-4 w-4" aria-hidden="true" />
-                        </button>
-                        {!user.is_deleted && (
-                          <button
-                            type="button"
-                            onClick={() => onDeactivate(user)}
-                            title="Deactivate user"
-                            className="rounded-md p-1.5 text-text-muted hover:bg-red-50 hover:text-red-600 transition-colors"
-                          >
-                            <UserX className="h-4 w-4" aria-hidden="true" />
-                          </button>
-                        )}
-                        {user.is_deleted && (
-                          <button
-                            type="button"
-                            onClick={() => onReactivate(user)}
-                            title="Reactivate user"
-                            className="rounded-md p-1.5 text-text-muted hover:bg-green-50 hover:text-green-600 transition-colors"
-                          >
-                            <UserCheck className="h-4 w-4" aria-hidden="true" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                        </div>
+                        <div className="text-xs text-text-muted">
+                          {user.employee_code}
+                        </div>
+                      </td>
+                      <td className="px-5 py-3.5 text-text-muted">
+                        {user.email}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <RoleBadge role={user.role} />
+                      </td>
+                      <td className="px-5 py-3.5 text-text-muted">
+                        {user.phone ?? "—"}
+                      </td>
+                      <td className="px-5 py-3.5 text-text-muted">
+                        {users.find((u) => u.id === user.mentor_id)?.full_name ?? "—"}
+                      </td>
+                      <td className="px-5 py-3.5 text-text-muted">
+                        {user.function?.name ?? "—"}
+                      </td>
+                      <td className="px-5 py-3.5 text-text-muted">
+                        {user.designation?.name ?? "—"}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <StatusBadge isDeleted={user.is_deleted} />
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <div className="flex items-center gap-2">
+                          {mutable ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => onEdit(user)}
+                                title="Edit user"
+                                className="rounded-md p-1.5 text-text-muted hover:bg-brand-light hover:text-brand transition-colors"
+                              >
+                                <Pencil className="h-4 w-4" aria-hidden="true" />
+                              </button>
+                              {!user.is_deleted && (
+                                <button
+                                  type="button"
+                                  onClick={() => onDeactivate(user)}
+                                  title="Deactivate user"
+                                  className="rounded-md p-1.5 text-text-muted hover:bg-red-50 hover:text-red-600 transition-colors"
+                                >
+                                  <UserX className="h-4 w-4" aria-hidden="true" />
+                                </button>
+                              )}
+                              {user.is_deleted && (
+                                <button
+                                  type="button"
+                                  onClick={() => onReactivate(user)}
+                                  title="Reactivate user"
+                                  className="rounded-md p-1.5 text-text-muted hover:bg-green-50 hover:text-green-600 transition-colors"
+                                >
+                                  <UserCheck className="h-4 w-4" aria-hidden="true" />
+                                </button>
+                              )}
+                            </>
+                          ) : (
+                            <span
+                              title="Only MyOrg HR can edit Mentor or MyOrg HR users."
+                              className="text-xs italic text-text-muted"
+                            >
+                              View-only
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

@@ -1,15 +1,14 @@
 """
-Project Models — Revised for PM-centric evaluation flow.
+Project Models — PM-as-project-level field.
 
-Changes from previous version:
-    - Removed allocated_hours from Project
-    - Renamed end_date → expected_end_date
-    - Added reports_to_id on Project (senior who reviews the PM)
-    - Added secondary_evaluator_id on Project (single project-level secondary
-      evaluator; replaces the old multi-row "Secondary" ProjectAssignment model)
-    - Added function_id on ProjectAssignment (auto-filled, editable per project)
-    - assignment_role auto-fills from designation but is editable
-    - ProjectAssignment.evaluator_type is now "Primary" or NULL only.
+Schema:
+    - Project.pm_id            → the PM who reviews team members (Miltenyi PM role).
+                                  Project-level, single FK; NOT in project_assignments.
+    - Project.secondary_evaluator_id → optional senior who adds an impact
+                                       statement after the PM submits.
+    - ProjectAssignment        → only the team members. The PM is excluded.
+                                  Has no evaluator_type — the "Primary" concept
+                                  is replaced by Project.pm_id at the project level.
 """
 
 from sqlalchemy import (
@@ -32,13 +31,14 @@ class Project(Base):
     start_date = Column(Date, nullable=True)
     expected_end_date = Column(Date, nullable=True)
 
-    # The senior person who reviews the PM's own performance on this project.
-    # This is NOT the PM themselves — it's their reporting line for this project.
-    reports_to_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    # The Miltenyi PM who reviews every Staff member assigned to this project.
+    # Required at create time; nullable at the column level only so the FK stays
+    # legal during edits where the PM is being swapped (transient null).
+    pm_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
-    # The single Secondary evaluator for this project. Provides an impact
-    # statement after the PM completes their review. May or may not be a
-    # project member (no ProjectAssignment row required).
+    # Optional Secondary evaluator. Adds an impact statement after the PM has
+    # submitted their review. May or may not be a project member. Cannot be a
+    # PM or Mentor (validated at the route layer).
     secondary_evaluator_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     is_deleted = Column(Boolean, default=False)
@@ -51,7 +51,7 @@ class Project(Base):
 
     # Relationships
     organization = relationship("Organization")
-    reports_to = relationship("User", foreign_keys=[reports_to_id])
+    pm = relationship("User", foreign_keys=[pm_id])
     secondary_evaluator = relationship("User", foreign_keys=[secondary_evaluator_id])
     assignments = relationship(
         "ProjectAssignment",
@@ -61,6 +61,8 @@ class Project(Base):
 
 
 class ProjectAssignment(Base):
+    """One row per team member on a project. The PM is NOT a member —
+    they live at the project level via Project.pm_id."""
     __tablename__ = "project_assignments"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -68,21 +70,13 @@ class ProjectAssignment(Base):
     project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
 
-    # Auto-filled from user's designation.name but editable per project
-    # e.g. "Senior Data Engineer" → overridden to "Lead Data Engineer" for this project
+    # Auto-filled from user's designation.name but editable per project.
     assignment_role = Column(String, nullable=True)
 
-    # Track which function the employee belongs to for this project
-    # Auto-filled from user's function_id but editable per project
+    # Auto-filled from user's function_id but editable per project.
     function_id = Column(Integer, ForeignKey("functions.id"), nullable=True)
 
-    # "Primary" = Project Manager who evaluates all other members
-    # null      = regular team member
-    # The Secondary evaluator is now a project-level field
-    # (Project.secondary_evaluator_id), not a row here.
-    evaluator_type = Column(String, nullable=True)
-
-    # When this employee was assigned to the project
+    # When this employee was assigned to the project.
     assigned_date = Column(Date, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())

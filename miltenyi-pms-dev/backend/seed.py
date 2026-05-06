@@ -1,12 +1,31 @@
 """
-seed.py — Deterministic dev seed (Miltenyi PMS).
+seed.py — Deterministic dev seed for the Miltenyi PMS instance.
+
+Models the new collaborative role taxonomy: MyOrg (Healthark) staffs
+employees to Miltenyi, who manage them on projects.
 
 Accounts (all passwords: password123):
-  Admin:           admin@miltenyi.com   (Alice Admin)
-  Management:     hans@, greta@miltenyi.com
-  R&D:             bob@, charlie@, dana@, iris@miltenyi.com
-  Manufacturing:   evan@, fiona@, klaus@miltenyi.com
-  Commercial:      lukas@, mia@, nils@miltenyi.com
+  HR · MyOrg (Healthark):
+    sarah.patel@healthark.ai      Sarah Patel       (HR_MyOrg, super-admin)
+
+  HR · Miltenyi:
+    karin.weber@miltenyi.com      Karin Weber       (HR_Miltenyi, limited admin)
+
+  Mentors (Healthark — fixed pool of 3):
+    anjali.rao@healthark.ai       Anjali Rao        (mentors Bob, Charlie, Dana)
+    mark.singh@healthark.ai       Mark Singh        (mentors Iris, Evan, Fiona)
+    priya.mehta@healthark.ai      Priya Mehta       (mentors Klaus, Mia, Nils)
+
+  PMs (Miltenyi):
+    hans@miltenyi.com             Hans Müller       (PM)
+    greta@miltenyi.com            Greta Schmidt     (PM)
+    lukas@miltenyi.com            Lukas Lange       (PM)
+    dieter@miltenyi.com           Dieter Becker     (PM, reserve)
+
+  Staff (Healthark employees with Miltenyi-issued accounts):
+    bob@, charlie@, dana@, iris@miltenyi.com               (R&D)
+    evan@, fiona@, klaus@miltenyi.com                       (Manufacturing)
+    mia@, nils@miltenyi.com                                 (Commercial)
 
 Run:
   python seed.py
@@ -18,28 +37,51 @@ from app.core.database import SessionLocal
 from app.core.security import get_password_hash
 from app.models.organization_models import Organization
 from app.models.reference_models import Function, Designation
-from app.models.user_models import User
+from app.models.user_models import User, Role
 from app.models.system_settings_models import SystemSettings, CycleType
 from app.models.project_models import Project, ProjectAssignment
-from app.models.project_review_models import ProjectReview
-from app.models.annual_review_models import AnnualReview
-from app.models.goal_models import Goal
-from app.models.goal_self_review_models import GoalSelfReview
+from app.models.project_review_models import ProjectReview, ProjectReviewStatus
+from app.models.annual_review_models import AnnualReview, ReviewStatus
+from app.models.goal_models import Goal, ApprovalStatus, GoalType
+from app.models.goal_self_review_models import GoalSelfReview, SelfReviewCycleHalf
 from app.models.role_expectation_models import RoleExpectation
 
 
-def seed_database():
+# ── Reusable narrative blocks ──────────────────────────────────────────────────
+
+STRONG_SELF = (
+    "Owned the full workstream end-to-end with clear accountability. "
+    "Delivered client-ready artifacts with minimal rework, planned and "
+    "mitigated risks proactively, and supported peers on methodology and tooling."
+)
+SOLID_SELF = (
+    "Completed assigned tasks reliably and flagged issues early. Quality "
+    "of deliverables improved through the cycle. Picked up new frameworks "
+    "and supported peers during onboarding."
+)
+STRONG_MENTOR = (
+    "Consistently takes charge without prompting. Artifacts land in "
+    "client-ready shape with minimal edits; technical depth and trajectory "
+    "are excellent."
+)
+SOLID_MENTOR = (
+    "Dependable on assigned work; initiative is growing. Artifact quality "
+    "and stakeholder communication are improving cycle over cycle."
+)
+
+
+def seed_database() -> None:
     print("Starting database seeding process...")
     db = SessionLocal()
+    pw = get_password_hash("password123")
 
     try:
-        # ================================================================== #
-        # 1. ORGANIZATIONS                                                    #
-        # ================================================================== #
-
-        miltenyi_org = db.query(Organization).filter(Organization.name == "Miltenyi").first()
-        if not miltenyi_org:
-            miltenyi_org = Organization(
+        # ============================================================ #
+        # 1. ORGANIZATION                                               #
+        # ============================================================ #
+        miltenyi = db.query(Organization).filter(Organization.name == "Miltenyi").first()
+        if not miltenyi:
+            miltenyi = Organization(
                 name="Miltenyi",
                 domain="miltenyi.com",
                 enabled_features=[
@@ -47,339 +89,336 @@ def seed_database():
                     "annual_reviews", "mentoring", "admin",
                 ],
             )
-            db.add(miltenyi_org)
+            db.add(miltenyi)
             db.commit()
-            db.refresh(miltenyi_org)
-            print("  [+] Created Organization: Miltenyi (full suite)")
+            db.refresh(miltenyi)
+            print("  [+] Created Organization: Miltenyi")
         else:
-            print("  [~] Organization 'Miltenyi' already exists, skipping...")
+            print("  [~] Organization 'Miltenyi' already exists; reusing.")
 
-        # ================================================================== #
-        # 2. FUNCTIONS & DESIGNATIONS                                         #
-        # ================================================================== #
-
-        if db.query(Function).filter(Function.org_id == miltenyi_org.id).count() == 0:
-            func_rnd = Function(org_id=miltenyi_org.id, name="R&D")
-            func_mfg = Function(org_id=miltenyi_org.id, name="Manufacturing")
-            func_com = Function(org_id=miltenyi_org.id, name="Commercial")
-
-            desig_scientist    = Designation(org_id=miltenyi_org.id, name="Scientist",        level=1)
-            desig_sr_scientist = Designation(org_id=miltenyi_org.id, name="Senior Scientist", level=2)
-            desig_lead         = Designation(org_id=miltenyi_org.id, name="Team Lead",        level=3)
-            desig_dir          = Designation(org_id=miltenyi_org.id, name="Director",         level=4)
-
+        # ============================================================ #
+        # 2. FUNCTIONS & DESIGNATIONS                                   #
+        # ============================================================ #
+        if db.query(Function).filter(Function.org_id == miltenyi.id).count() == 0:
             db.add_all([
-                func_rnd, func_mfg, func_com,
-                desig_scientist, desig_sr_scientist, desig_lead, desig_dir,
+                Function(org_id=miltenyi.id, name="R&D"),
+                Function(org_id=miltenyi.id, name="Manufacturing"),
+                Function(org_id=miltenyi.id, name="Commercial"),
+                Designation(org_id=miltenyi.id, name="Scientist",        level=1),
+                Designation(org_id=miltenyi.id, name="Senior Scientist", level=2),
+                Designation(org_id=miltenyi.id, name="Team Lead",        level=3),
+                Designation(org_id=miltenyi.id, name="Director",         level=4),
             ])
             db.commit()
-            print("  [+] Created Miltenyi Functions & Designations")
+            print("  [+] Created Functions & Designations")
         else:
-            print("  [~] Miltenyi Reference data already exists, skipping...")
+            print("  [~] Reference data already exists; reusing.")
 
-        pw = get_password_hash("password123")
+        # Resolve handles
+        func_rnd  = db.query(Function).filter_by(org_id=miltenyi.id, name="R&D").first()
+        func_mfg  = db.query(Function).filter_by(org_id=miltenyi.id, name="Manufacturing").first()
+        func_com  = db.query(Function).filter_by(org_id=miltenyi.id, name="Commercial").first()
 
-        # ================================================================== #
-        # 3. USERS                                                            #
-        # ================================================================== #
+        d_sci  = db.query(Designation).filter_by(org_id=miltenyi.id, name="Scientist").first()
+        d_sr   = db.query(Designation).filter_by(org_id=miltenyi.id, name="Senior Scientist").first()
+        d_lead = db.query(Designation).filter_by(org_id=miltenyi.id, name="Team Lead").first()
+        d_dir  = db.query(Designation).filter_by(org_id=miltenyi.id, name="Director").first()
 
-        func_rnd = db.query(Function).filter_by(org_id=miltenyi_org.id, name="R&D").first()
-        func_mfg = db.query(Function).filter_by(org_id=miltenyi_org.id, name="Manufacturing").first()
-        func_com = db.query(Function).filter_by(org_id=miltenyi_org.id, name="Commercial").first()
-
-        desig_scientist    = db.query(Designation).filter_by(org_id=miltenyi_org.id, name="Scientist").first()
-        desig_sr_scientist = db.query(Designation).filter_by(org_id=miltenyi_org.id, name="Senior Scientist").first()
-        desig_lead         = db.query(Designation).filter_by(org_id=miltenyi_org.id, name="Team Lead").first()
-        desig_dir          = db.query(Designation).filter_by(org_id=miltenyi_org.id, name="Director").first()
-
-        if db.query(User).filter(User.org_id == miltenyi_org.id).count() == 0:
-            alice_admin = User(
-                org_id=miltenyi_org.id, function_id=func_com.id, designation_id=desig_dir.id,
-                employee_code="MIL-000", full_name="Alice Admin", email="admin@miltenyi.com",
-                phone="+49 30 1234 0000",
-                role="Admin", password_hash=pw, is_management=True,
-            )
-            db.add(alice_admin)
-            db.commit()
-            db.refresh(alice_admin)
-
-            bob_lead = User(
-                org_id=miltenyi_org.id, function_id=func_rnd.id, designation_id=desig_lead.id,
-                employee_code="MIL-101", full_name="Bob Builder", email="bob@miltenyi.com",
-                phone="+49 30 1234 1011",
-                role="Staff", password_hash=pw, mentor_id=alice_admin.id,
-            )
-            db.add(bob_lead)
-            db.commit()
-            db.refresh(bob_lead)
-
-            charlie = User(
-                org_id=miltenyi_org.id, function_id=func_rnd.id, designation_id=desig_sr_scientist.id,
-                employee_code="MIL-102", full_name="Charlie Chemist", email="charlie@miltenyi.com",
-                phone="+49 30 1234 1012",
-                role="Staff", mentor_id=bob_lead.id, password_hash=pw,
-            )
-            dana = User(
-                org_id=miltenyi_org.id, function_id=func_rnd.id, designation_id=desig_scientist.id,
-                employee_code="MIL-103", full_name="Dana DNA", email="dana@miltenyi.com",
-                phone="+49 30 1234 1013",
-                role="Staff", mentor_id=bob_lead.id, password_hash=pw,
-            )
-            evan_mfg = User(
-                org_id=miltenyi_org.id, function_id=func_mfg.id, designation_id=desig_lead.id,
-                employee_code="MIL-201", full_name="Evan Engineer", email="evan@miltenyi.com",
-                phone="+49 30 1234 2011",
-                role="Staff", password_hash=pw, mentor_id=alice_admin.id,
-            )
-            db.add_all([charlie, dana, evan_mfg])
-            db.commit()
-            db.refresh(evan_mfg)
-
-            fiona = User(
-                org_id=miltenyi_org.id, function_id=func_mfg.id, designation_id=desig_scientist.id,
-                employee_code="MIL-202", full_name="Fiona Factory", email="fiona@miltenyi.com",
-                phone="+49 30 1234 2012",
-                role="Staff", mentor_id=evan_mfg.id, password_hash=pw,
-            )
-            db.add(fiona)
-            db.commit()
-            print("  [+] Created Miltenyi staff users")
-        else:
-            print("  [~] Miltenyi users already exist, skipping...")
-            alice_admin = db.query(User).filter_by(org_id=miltenyi_org.id, email="admin@miltenyi.com").first()
-            bob_lead    = db.query(User).filter_by(org_id=miltenyi_org.id, email="bob@miltenyi.com").first()
-            charlie     = db.query(User).filter_by(org_id=miltenyi_org.id, email="charlie@miltenyi.com").first()
-            dana        = db.query(User).filter_by(org_id=miltenyi_org.id, email="dana@miltenyi.com").first()
-            evan_mfg    = db.query(User).filter_by(org_id=miltenyi_org.id, email="evan@miltenyi.com").first()
-            fiona       = db.query(User).filter_by(org_id=miltenyi_org.id, email="fiona@miltenyi.com").first()
-
-        # ── Backfill: management Admins, third Lead, and additional staff.
-        # Idempotent — runs every seed for DBs that pre-date this expansion.
-        def _ensure_mil_user(email, **kwargs):
-            u = db.query(User).filter_by(
-                org_id=miltenyi_org.id, email=email,
-            ).first()
-            if u:
-                return u
-            u = User(
-                org_id=miltenyi_org.id, password_hash=pw, email=email, **kwargs,
-            )
+        # ============================================================ #
+        # 3. USERS                                                       #
+        # ============================================================ #
+        # Helper: create-or-fetch idempotently. Returns the row.
+        def _ensure_user(email: str, **kwargs) -> User:
+            existing = db.query(User).filter_by(org_id=miltenyi.id, email=email).first()
+            if existing:
+                return existing
+            u = User(org_id=miltenyi.id, email=email, password_hash=pw, **kwargs)
             db.add(u)
             db.commit()
             db.refresh(u)
-            print(f"  [+] Created: {email}")
             return u
 
-        hans = _ensure_mil_user(
+        # ── HR · MyOrg (full super-admin) ─────────────────────────────
+        sarah = _ensure_user(
+            "sarah.patel@healthark.ai",
+            employee_code="HRK-001", full_name="Sarah Patel",
+            phone="+91 98000 00001",
+            role=Role.HR_MYORG.value,
+            function_id=None, designation_id=d_dir.id,
+        )
+
+        # ── HR · Miltenyi (limited admin) ─────────────────────────────
+        karin = _ensure_user(
+            "karin.weber@miltenyi.com",
+            employee_code="MIL-HR-001", full_name="Karin Weber",
+            phone="+49 30 1234 0001",
+            role=Role.HR_MILTENYI.value,
+            function_id=None, designation_id=d_dir.id,
+        )
+
+        # ── Mentors (Healthark — fixed pool of 3) ─────────────────────
+        anjali = _ensure_user(
+            "anjali.rao@healthark.ai",
+            employee_code="HRK-M01", full_name="Anjali Rao",
+            phone="+91 98000 00010",
+            role=Role.MENTOR.value,
+            function_id=None, designation_id=d_dir.id,
+        )
+        mark = _ensure_user(
+            "mark.singh@healthark.ai",
+            employee_code="HRK-M02", full_name="Mark Singh",
+            phone="+91 98000 00011",
+            role=Role.MENTOR.value,
+            function_id=None, designation_id=d_dir.id,
+        )
+        priya = _ensure_user(
+            "priya.mehta@healthark.ai",
+            employee_code="HRK-M03", full_name="Priya Mehta",
+            phone="+91 98000 00012",
+            role=Role.MENTOR.value,
+            function_id=None, designation_id=d_dir.id,
+        )
+
+        # ── PMs (Miltenyi) ────────────────────────────────────────────
+        hans = _ensure_user(
             "hans@miltenyi.com",
-            function_id=func_rnd.id, designation_id=desig_dir.id,
-            employee_code="MIL-F01", full_name="Hans Müller",
-            phone="+49 30 1234 0001", role="Admin",
-            mentor_id=alice_admin.id, is_management=True,
+            employee_code="MIL-PM-01", full_name="Hans Müller",
+            phone="+49 30 1234 1001",
+            role=Role.PM.value,
+            function_id=func_rnd.id, designation_id=d_dir.id,
         )
-        greta = _ensure_mil_user(
+        greta = _ensure_user(
             "greta@miltenyi.com",
-            function_id=func_mfg.id, designation_id=desig_dir.id,
-            employee_code="MIL-F02", full_name="Greta Schmidt",
-            phone="+49 30 1234 0002", role="Admin",
-            mentor_id=alice_admin.id, is_management=True,
+            employee_code="MIL-PM-02", full_name="Greta Schmidt",
+            phone="+49 30 1234 1002",
+            role=Role.PM.value,
+            function_id=func_mfg.id, designation_id=d_dir.id,
         )
-        lukas = _ensure_mil_user(
+        lukas = _ensure_user(
             "lukas@miltenyi.com",
-            function_id=func_com.id, designation_id=desig_lead.id,
-            employee_code="MIL-301", full_name="Lukas Lange",
-            phone="+49 30 1234 3011", role="Staff",
-            mentor_id=alice_admin.id,
+            employee_code="MIL-PM-03", full_name="Lukas Lange",
+            phone="+49 30 1234 1003",
+            role=Role.PM.value,
+            function_id=func_com.id, designation_id=d_lead.id,
         )
-        iris = _ensure_mil_user(
+        dieter = _ensure_user(
+            "dieter@miltenyi.com",
+            employee_code="MIL-PM-04", full_name="Dieter Becker",
+            phone="+49 30 1234 1004",
+            role=Role.PM.value,
+            function_id=func_rnd.id, designation_id=d_lead.id,
+        )
+
+        # ── Staff (Healthark employees, Miltenyi-issued logins) ───────
+        # Mentor pairings:
+        #   Anjali → Bob, Charlie, Dana
+        #   Mark   → Iris, Evan, Fiona
+        #   Priya  → Klaus, Mia, Nils
+        bob = _ensure_user(
+            "bob@miltenyi.com",
+            employee_code="STF-001", full_name="Bob Builder",
+            phone="+49 30 1234 2001",
+            role=Role.STAFF.value, mentor_id=anjali.id,
+            function_id=func_rnd.id, designation_id=d_sr.id,
+        )
+        charlie = _ensure_user(
+            "charlie@miltenyi.com",
+            employee_code="STF-002", full_name="Charlie Chemist",
+            phone="+49 30 1234 2002",
+            role=Role.STAFF.value, mentor_id=anjali.id,
+            function_id=func_rnd.id, designation_id=d_sci.id,
+        )
+        dana = _ensure_user(
+            "dana@miltenyi.com",
+            employee_code="STF-003", full_name="Dana DNA",
+            phone="+49 30 1234 2003",
+            role=Role.STAFF.value, mentor_id=anjali.id,
+            function_id=func_rnd.id, designation_id=d_sci.id,
+        )
+        iris = _ensure_user(
             "iris@miltenyi.com",
-            function_id=func_rnd.id, designation_id=desig_sr_scientist.id,
-            employee_code="MIL-104", full_name="Iris Immel",
-            phone="+49 30 1234 1014", role="Staff",
-            mentor_id=bob_lead.id,
+            employee_code="STF-004", full_name="Iris Immel",
+            phone="+49 30 1234 2004",
+            role=Role.STAFF.value, mentor_id=mark.id,
+            function_id=func_rnd.id, designation_id=d_sr.id,
         )
-        klaus = _ensure_mil_user(
+        evan = _ensure_user(
+            "evan@miltenyi.com",
+            employee_code="STF-005", full_name="Evan Engineer",
+            phone="+49 30 1234 2005",
+            role=Role.STAFF.value, mentor_id=mark.id,
+            function_id=func_mfg.id, designation_id=d_lead.id,
+        )
+        fiona = _ensure_user(
+            "fiona@miltenyi.com",
+            employee_code="STF-006", full_name="Fiona Factory",
+            phone="+49 30 1234 2006",
+            role=Role.STAFF.value, mentor_id=mark.id,
+            function_id=func_mfg.id, designation_id=d_sci.id,
+        )
+        klaus = _ensure_user(
             "klaus@miltenyi.com",
-            function_id=func_mfg.id, designation_id=desig_scientist.id,
-            employee_code="MIL-203", full_name="Klaus Köhler",
-            phone="+49 30 1234 2013", role="Staff",
-            mentor_id=evan_mfg.id,
+            employee_code="STF-007", full_name="Klaus Köhler",
+            phone="+49 30 1234 2007",
+            role=Role.STAFF.value, mentor_id=priya.id,
+            function_id=func_mfg.id, designation_id=d_sci.id,
         )
-        mia = _ensure_mil_user(
+        mia = _ensure_user(
             "mia@miltenyi.com",
-            function_id=func_com.id, designation_id=desig_sr_scientist.id,
-            employee_code="MIL-302", full_name="Mia Markt",
-            phone="+49 30 1234 3012", role="Staff",
-            mentor_id=lukas.id,
+            employee_code="STF-008", full_name="Mia Markt",
+            phone="+49 30 1234 2008",
+            role=Role.STAFF.value, mentor_id=priya.id,
+            function_id=func_com.id, designation_id=d_sr.id,
         )
-        nils = _ensure_mil_user(
+        nils = _ensure_user(
             "nils@miltenyi.com",
-            function_id=func_com.id, designation_id=desig_scientist.id,
-            employee_code="MIL-303", full_name="Nils Niedermeier",
-            phone="+49 30 1234 3013", role="Staff",
-            mentor_id=lukas.id,
+            employee_code="STF-009", full_name="Nils Niedermeier",
+            phone="+49 30 1234 2009",
+            role=Role.STAFF.value, mentor_id=priya.id,
+            function_id=func_com.id, designation_id=d_sci.id,
         )
+        print("  [+] Users (HR×2, Mentors×3, PMs×4, Staff×9)")
 
-        # Reassign Bob → Hans and Evan → Greta so the directors are real
-        # mentors (rather than everyone reporting straight to Alice).
-        if bob_lead and hans and bob_lead.mentor_id != hans.id:
-            bob_lead.mentor_id = hans.id
-        if evan_mfg and greta and evan_mfg.mentor_id != greta.id:
-            evan_mfg.mentor_id = greta.id
-        # Backfill is_management on Hans/Greta if pre-existing rows missed it.
-        for _m in (hans, greta):
-            if _m and not _m.is_management:
-                _m.is_management = True
-        db.commit()
-
-        # ================================================================== #
-        # 5. SYSTEM SETTINGS                                                  #
-        # ================================================================== #
-
-        if not db.query(SystemSettings).filter(SystemSettings.org_id == miltenyi_org.id).first():
+        # ============================================================ #
+        # 4. SYSTEM SETTINGS                                            #
+        # ============================================================ #
+        if not db.query(SystemSettings).filter(SystemSettings.org_id == miltenyi.id).first():
             db.add(SystemSettings(
-                org_id=miltenyi_org.id,
+                org_id=miltenyi.id,
                 active_cycle_name="Q1 FY26-27",
                 cycle_type=CycleType.QUARTERLY.value,
                 fiscal_start_month=4,
                 goals_submission_open=True,
                 reviews_submission_open=True,
                 annual_goals_edit_enabled=True,
-                updated_by_id=alice_admin.id,
+                annual_reviews_enabled=True,
+                updated_by_id=sarah.id,
             ))
             db.commit()
-            print("  [+] Created System Settings for Miltenyi (Q1 FY26-27, Quarterly)")
+            print("  [+] System Settings (quarterly, Q1 FY26-27, MyOrg HR as updater)")
         else:
-            print("  [~] Miltenyi system settings already exist, skipping...")
+            print("  [~] System settings already exist; reusing.")
 
-        # ================================================================== #
-        # 6. PROJECTS                                                         #
-        # ================================================================== #
-
-        if db.query(Project).filter(Project.org_id == miltenyi_org.id).count() == 0 and bob_lead and evan_mfg:
-
-            proj_cell = Project(
-                org_id=miltenyi_org.id, project_code="MIL-PRJ-101",
-                name="Next-Gen CAR-T Workflow Automation",
-                description="Automate end-to-end CAR-T cell processing workflow with new instrumentation.",
-                start_date=date(2025, 1, 15), expected_end_date=date(2025, 8, 15),
-                reports_to_id=alice_admin.id,
-                secondary_evaluator_id=evan_mfg.id,
+        # ============================================================ #
+        # 5. PROJECTS                                                   #
+        # ============================================================ #
+        # PM = Miltenyi PM. Secondary = a non-PM/non-Mentor user (HR or other).
+        # Members are Staff only — the PM is NOT in `assignments`.
+        def _ensure_project(
+            code: str, name: str, description: str,
+            pm: User, secondary: User | None,
+            start: date, end: date,
+            members: list[tuple[User, Designation, Function, date]],
+        ) -> Project:
+            proj = db.query(Project).filter_by(org_id=miltenyi.id, project_code=code).first()
+            if proj:
+                return proj
+            proj = Project(
+                org_id=miltenyi.id,
+                project_code=code, name=name, description=description,
+                start_date=start, expected_end_date=end,
+                pm_id=pm.id,
+                secondary_evaluator_id=secondary.id if secondary else None,
             )
-            db.add(proj_cell)
+            db.add(proj)
             db.flush()
-            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_cell.id, user_id=bob_lead.id, assignment_role=desig_lead.name,         function_id=func_rnd.id, evaluator_type="Primary", assigned_date=date(2025, 1, 15)))
-            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_cell.id, user_id=charlie.id,  assignment_role=desig_sr_scientist.name, function_id=func_rnd.id, evaluator_type=None,      assigned_date=date(2025, 1, 22)))
-            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_cell.id, user_id=dana.id,     assignment_role=desig_scientist.name,    function_id=func_rnd.id, evaluator_type=None,      assigned_date=date(2025, 2, 1)))
+            for user, desig, func_, joined in members:
+                db.add(ProjectAssignment(
+                    org_id=miltenyi.id,
+                    project_id=proj.id,
+                    user_id=user.id,
+                    assignment_role=desig.name,
+                    function_id=func_.id,
+                    assigned_date=joined,
+                ))
             db.commit()
+            db.refresh(proj)
+            return proj
 
-            proj_macs = Project(
-                org_id=miltenyi_org.id, project_code="MIL-PRJ-102",
-                name="MACS Quant Scale-Up Program",
-                description="Scale manufacturing of the next MACS Quant platform for global rollout.",
-                start_date=date(2025, 3, 5), expected_end_date=date(2025, 11, 30),
-                reports_to_id=alice_admin.id,
-                secondary_evaluator_id=bob_lead.id,
-            )
-            db.add(proj_macs)
-            db.flush()
-            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_macs.id, user_id=evan_mfg.id, assignment_role=desig_lead.name,      function_id=func_mfg.id, evaluator_type="Primary",   assigned_date=date(2025, 3, 5)))
-            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_macs.id, user_id=fiona.id,    assignment_role=desig_scientist.name, function_id=func_mfg.id, evaluator_type=None,        assigned_date=date(2025, 3, 5)))
-            # Bob is the Secondary evaluator (project-level) but also a project member.
-            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_macs.id, user_id=bob_lead.id, assignment_role="R&D Liaison",        function_id=func_rnd.id, evaluator_type=None,        assigned_date=date(2025, 3, 18)))
-            db.commit()
+        proj_cell = _ensure_project(
+            "MIL-PRJ-101",
+            "Next-Gen CAR-T Workflow Automation",
+            "Automate end-to-end CAR-T cell processing workflow on the new instrument.",
+            pm=hans, secondary=sarah,
+            start=date(2025, 1, 15), end=date(2025, 8, 15),
+            members=[
+                (bob,     d_sr,  func_rnd, date(2025, 1, 15)),
+                (charlie, d_sci, func_rnd, date(2025, 1, 22)),
+                (dana,    d_sci, func_rnd, date(2025, 2, 1)),
+            ],
+        )
+        proj_macs = _ensure_project(
+            "MIL-PRJ-102",
+            "MACS Quant Scale-Up Program",
+            "Scale manufacturing of the next MACS Quant platform for global rollout.",
+            pm=greta, secondary=karin,
+            start=date(2025, 3, 5), end=date(2025, 11, 30),
+            members=[
+                (evan,  d_lead, func_mfg, date(2025, 3, 5)),
+                (fiona, d_sci,  func_mfg, date(2025, 3, 5)),
+                (klaus, d_sci,  func_mfg, date(2025, 3, 18)),
+            ],
+        )
+        proj_validation = _ensure_project(
+            "MIL-PRJ-103",
+            "Cell Therapy Process Validation",
+            "GMP-grade process validation for the next-gen CAR-T pipeline ahead of clinical hand-off.",
+            pm=hans, secondary=sarah,
+            start=date(2026, 1, 8), end=date(2026, 9, 30),
+            members=[
+                (iris,    d_sr,  func_rnd, date(2026, 1, 8)),
+                (charlie, d_sci, func_rnd, date(2026, 1, 8)),
+                (dana,    d_sci, func_rnd, date(2026, 1, 22)),
+            ],
+        )
+        proj_launch = _ensure_project(
+            "MIL-PRJ-104",
+            "Commercial Launch Strategy 2026",
+            "Cross-functional commercial readiness for the EMEA + APAC launch waves.",
+            pm=lukas, secondary=karin,
+            start=date(2026, 1, 5), end=date(2026, 12, 31),
+            members=[
+                (mia,  d_sr,  func_com, date(2026, 1, 5)),
+                (nils, d_sci, func_com, date(2026, 1, 5)),
+            ],
+        )
+        print("  [+] Projects: MIL-PRJ-101..104")
 
-            print("  [+] Created Projects for Miltenyi (MIL-PRJ-101..MIL-PRJ-102)")
-        else:
-            print("  [~] Miltenyi base projects already exist, skipping...")
-
-        # Idempotent additions for the broader Miltenyi project set.
-        # MIL-PRJ-103 — Cell Therapy Process Validation (R&D, runs into FY26-27).
-        proj_validation = db.query(Project).filter_by(
-            org_id=miltenyi_org.id, project_code="MIL-PRJ-103",
-        ).first()
-        if not proj_validation and bob_lead and iris:
-            proj_validation = Project(
-                org_id=miltenyi_org.id, project_code="MIL-PRJ-103",
-                name="Cell Therapy Process Validation",
-                description="GMP-grade process validation for the next-gen CAR-T pipeline ahead of clinical hand-off.",
-                start_date=date(2026, 1, 8), expected_end_date=date(2026, 9, 30),
-                reports_to_id=hans.id,
-                secondary_evaluator_id=alice_admin.id,
-            )
-            db.add(proj_validation)
-            db.flush()
-            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_validation.id, user_id=bob_lead.id, assignment_role=desig_lead.name,         function_id=func_rnd.id, evaluator_type="Primary", assigned_date=date(2026, 1, 8)))
-            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_validation.id, user_id=charlie.id,  assignment_role=desig_sr_scientist.name, function_id=func_rnd.id, evaluator_type=None,      assigned_date=date(2026, 1, 8)))
-            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_validation.id, user_id=iris.id,     assignment_role=desig_sr_scientist.name, function_id=func_rnd.id, evaluator_type=None,      assigned_date=date(2026, 1, 8)))
-            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_validation.id, user_id=dana.id,     assignment_role=desig_scientist.name,    function_id=func_rnd.id, evaluator_type=None,      assigned_date=date(2026, 1, 22)))
-            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_validation.id, user_id=evan_mfg.id, assignment_role="Mfg Liaison",           function_id=func_mfg.id, evaluator_type=None,      assigned_date=date(2026, 1, 15)))
-            db.commit()
-            print("  [+] Created MIL-PRJ-103 (Cell Therapy Process Validation)")
-
-        # MIL-PRJ-104 — Commercial Launch Strategy (Commercial, runs through FY26-27).
-        proj_launch = db.query(Project).filter_by(
-            org_id=miltenyi_org.id, project_code="MIL-PRJ-104",
-        ).first()
-        if not proj_launch and lukas and mia and nils:
-            proj_launch = Project(
-                org_id=miltenyi_org.id, project_code="MIL-PRJ-104",
-                name="Commercial Launch Strategy 2026",
-                description="Cross-functional commercial readiness for the EMEA + APAC launch waves of the new MACS Quant.",
-                start_date=date(2026, 1, 5), expected_end_date=date(2026, 12, 31),
-                reports_to_id=alice_admin.id,
-                secondary_evaluator_id=greta.id,
-            )
-            db.add(proj_launch)
-            db.flush()
-            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_launch.id, user_id=lukas.id, assignment_role=desig_lead.name,         function_id=func_com.id, evaluator_type="Primary", assigned_date=date(2026, 1, 5)))
-            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_launch.id, user_id=mia.id,   assignment_role=desig_sr_scientist.name, function_id=func_com.id, evaluator_type=None,      assigned_date=date(2026, 1, 5)))
-            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_launch.id, user_id=nils.id,  assignment_role=desig_scientist.name,    function_id=func_com.id, evaluator_type=None,      assigned_date=date(2026, 1, 5)))
-            db.add(ProjectAssignment(org_id=miltenyi_org.id, project_id=proj_launch.id, user_id=evan_mfg.id, assignment_role="Mfg Advisor",        function_id=func_mfg.id, evaluator_type=None,      assigned_date=date(2026, 2, 1)))
-            db.commit()
-            print("  [+] Created MIL-PRJ-104 (Commercial Launch Strategy 2026)")
-
-        # Resolve project handles for downstream sections.
-        proj_cell_mil       = db.query(Project).filter_by(org_id=miltenyi_org.id, project_code="MIL-PRJ-101").first()
-        proj_macs_mil       = db.query(Project).filter_by(org_id=miltenyi_org.id, project_code="MIL-PRJ-102").first()
-        proj_validation_mil = db.query(Project).filter_by(org_id=miltenyi_org.id, project_code="MIL-PRJ-103").first()
-        proj_launch_mil     = db.query(Project).filter_by(org_id=miltenyi_org.id, project_code="MIL-PRJ-104").first()
-
-        # ================================================================== #
-        # 7. ROLE EXPECTATIONS                                                #
-        # ================================================================== #
-
-        # ── Miltenyi role expectations ─────────────────────────────────
-        MIL_EXPECTATIONS = {
+        # ============================================================ #
+        # 6. ROLE EXPECTATIONS                                          #
+        # ============================================================ #
+        # Reference data shown to PMs while evaluating; one row per
+        # (function × designation).
+        EXPECTATIONS: dict[str, dict[str, dict[str, str]]] = {
             "R&D": {
                 "Scientist": {
                     "exp_task_execution": "Executes assigned bench / analytical tasks reliably with guidance from senior scientists.",
-                    "exp_ownership": "Owns small experimental modules end-to-end and flags blockers early.",
+                    "exp_ownership": "Owns small experimental modules end-to-end; flags blockers early.",
                     "exp_project_management": "Tracks experiments in lab notebooks and meets agreed timelines.",
                     "exp_client_deliverables": "Produces clean datasets and well-documented protocols.",
                     "exp_communication": "Clear written summaries; growing comfort presenting in team meetings.",
                     "exp_mentoring": "Supports onboarding of new lab joiners on instruments and SOPs.",
-                    "exp_firm_growth": "Participates in internal seminars and knowledge-sharing sessions | Contributes to lab safety + housekeeping initiatives",
+                    "exp_firm_growth": "Participates in internal seminars and lab safety initiatives.",
                     "exp_competency_skills": "Building proficiency in core wet-lab and analytical assay techniques.",
                 },
                 "Senior Scientist": {
                     "exp_task_execution": "Designs and runs moderately complex experiments independently; troubleshoots assays.",
-                    "exp_ownership": "Owns workstreams across a project and partners cross-functionally with Mfg/Commercial.",
+                    "exp_ownership": "Owns workstreams across a project and partners cross-functionally.",
                     "exp_project_management": "Plans experiment timelines, manages reagent supply, tracks risks.",
                     "exp_client_deliverables": "Authors method documents and study reports to GMP-friendly standards.",
                     "exp_communication": "Leads internal reviews and presents data confidently to senior stakeholders.",
                     "exp_mentoring": "Mentors junior scientists on experimental design and data interpretation.",
-                    "exp_firm_growth": "Contributes to internal best-practice docs | Helps interview new scientists | Drives at least one knowledge-share per year",
+                    "exp_firm_growth": "Contributes to internal best-practice docs; helps interview new scientists.",
                     "exp_competency_skills": "SME in one platform / assay; expanding into adjacent technologies.",
                 },
                 "Team Lead": {
                     "exp_task_execution": "Leads scientific direction and protocol design across the team.",
-                    "exp_ownership": "Accountable for project outcomes; balances scientific rigor with delivery timelines.",
+                    "exp_ownership": "Accountable for project outcomes; balances rigor with delivery timelines.",
                     "exp_project_management": "Owns project plan, milestones, budget, and stakeholder communication.",
                     "exp_client_deliverables": "Reviews and signs off on regulatory-grade deliverables.",
                     "exp_communication": "Represents the team to leadership and external partners.",
                     "exp_mentoring": "Coaches scientists through career growth and structured feedback.",
-                    "exp_firm_growth": "Acts as role model on culture and rigor | Drives R&D capability uplift | Identifies process improvements across the function | Participates in hiring and team-building decisions",
+                    "exp_firm_growth": "Drives R&D capability uplift; identifies process improvements.",
                     "exp_competency_skills": "Recognised expert in the team's platform area; mentors emerging SMEs.",
                 },
             },
@@ -391,7 +430,7 @@ def seed_database():
                     "exp_client_deliverables": "Produces clean batch records and SOP-compliant documentation.",
                     "exp_communication": "Clear shift hand-offs and accurate written status updates.",
                     "exp_mentoring": "Onboards new operators on cleanroom protocols.",
-                    "exp_firm_growth": "Participates in continuous-improvement (Kaizen) sessions | Contributes ideas for safety + waste reduction",
+                    "exp_firm_growth": "Participates in continuous-improvement (Kaizen) sessions.",
                     "exp_competency_skills": "Building proficiency on key production instruments and aseptic technique.",
                 },
                 "Senior Scientist": {
@@ -401,17 +440,17 @@ def seed_database():
                     "exp_client_deliverables": "Authors validation reports and CAPA documentation.",
                     "exp_communication": "Leads cross-functional production review meetings.",
                     "exp_mentoring": "Mentors junior staff on GMP and analytical methods.",
-                    "exp_firm_growth": "Drives at least one continuous-improvement initiative per year | Supports interviewing | Contributes to compliance training material",
-                    "exp_competency_skills": "Deep expertise in one production platform; growing breadth across related lines.",
+                    "exp_firm_growth": "Drives at least one continuous-improvement initiative per year.",
+                    "exp_competency_skills": "Deep expertise in one production platform; growing breadth.",
                 },
                 "Team Lead": {
-                    "exp_task_execution": "Sets manufacturing strategy and ensures regulatory readiness across the line.",
-                    "exp_ownership": "Owns line-level KPIs (throughput, yield, deviation rate, customer complaints).",
-                    "exp_project_management": "Owns multi-site programs end-to-end with budget and milestone accountability.",
+                    "exp_task_execution": "Sets manufacturing strategy and ensures regulatory readiness.",
+                    "exp_ownership": "Owns line-level KPIs (throughput, yield, deviation rate).",
+                    "exp_project_management": "Owns multi-site programs end-to-end with budget accountability.",
                     "exp_client_deliverables": "Final sign-off on validation, CAPA, and audit-ready documentation.",
                     "exp_communication": "Owns regulatory and customer-facing communications for the line.",
                     "exp_mentoring": "Coaches the team on technical depth, GMP rigor, and career growth.",
-                    "exp_firm_growth": "Champions operational excellence | Drives capability investments | Owns hiring plans for the line | Represents Mfg in cross-functional leadership forums",
+                    "exp_firm_growth": "Champions operational excellence; owns hiring plans for the line.",
                     "exp_competency_skills": "Recognised authority on the line's platforms; sets technical standards.",
                 },
             },
@@ -423,7 +462,7 @@ def seed_database():
                     "exp_client_deliverables": "Produces clean pitch decks and customer-ready collateral with guidance.",
                     "exp_communication": "Clear written customer summaries; growing confidence on calls.",
                     "exp_mentoring": "Helps onboard new commercial joiners on tools and processes.",
-                    "exp_firm_growth": "Participates in customer events and knowledge-sharing | Contributes case studies",
+                    "exp_firm_growth": "Participates in customer events and knowledge-sharing.",
                     "exp_competency_skills": "Building proficiency in commercial systems, CRM, and product fundamentals.",
                 },
                 "Senior Scientist": {
@@ -433,7 +472,7 @@ def seed_database():
                     "exp_client_deliverables": "Crafts compelling pitch material and strategy briefs.",
                     "exp_communication": "Leads customer pitches and senior internal reviews.",
                     "exp_mentoring": "Mentors junior commercial staff on customer skills.",
-                    "exp_firm_growth": "Owns at least one launch or commercial initiative per year | Supports recruiting | Builds case studies for eminence",
+                    "exp_firm_growth": "Owns at least one launch or commercial initiative per year.",
                     "exp_competency_skills": "SME in a product line or therapeutic area; growing strategic breadth.",
                 },
                 "Team Lead": {
@@ -443,83 +482,255 @@ def seed_database():
                     "exp_client_deliverables": "Final sign-off on enterprise customer proposals and strategy decks.",
                     "exp_communication": "Owns C-level customer relationships and internal leadership reviews.",
                     "exp_mentoring": "Coaches the team on customer skills, deal craft, and career growth.",
-                    "exp_firm_growth": "Drives go-to-market evolution | Champions cross-functional collaboration | Owns hiring + retention | Represents Commercial in leadership forums",
+                    "exp_firm_growth": "Drives go-to-market evolution; owns hiring + retention.",
                     "exp_competency_skills": "Recognised authority on the region / segment; sets commercial playbooks.",
                 },
             },
         }
 
-        if db.query(RoleExpectation).filter(RoleExpectation.org_id == miltenyi_org.id).count() == 0:
-            mil_added = 0
-            for func_name, designations_dict in MIL_EXPECTATIONS.items():
-                _func = db.query(Function).filter_by(org_id=miltenyi_org.id, name=func_name).first()
-                if not _func:
+        if db.query(RoleExpectation).filter(RoleExpectation.org_id == miltenyi.id).count() == 0:
+            inserted = 0
+            for func_name, by_desig in EXPECTATIONS.items():
+                fn = db.query(Function).filter_by(org_id=miltenyi.id, name=func_name).first()
+                if not fn:
                     continue
-                for desig_name, competencies in designations_dict.items():
-                    _desig = db.query(Designation).filter_by(org_id=miltenyi_org.id, name=desig_name).first()
-                    if not _desig:
+                for desig_name, comp in by_desig.items():
+                    desig = db.query(Designation).filter_by(org_id=miltenyi.id, name=desig_name).first()
+                    if not desig:
                         continue
                     db.add(RoleExpectation(
-                        org_id=miltenyi_org.id,
-                        function_id=_func.id,
-                        designation_id=_desig.id,
-                        exp_task_execution=competencies.get("exp_task_execution", ""),
-                        exp_ownership=competencies.get("exp_ownership", ""),
-                        exp_project_management=competencies.get("exp_project_management", ""),
-                        exp_client_deliverables=competencies.get("exp_client_deliverables", ""),
-                        exp_communication=competencies.get("exp_communication", ""),
-                        exp_mentoring=competencies.get("exp_mentoring", ""),
-                        exp_firm_growth=competencies.get("exp_firm_growth", ""),
-                        exp_competency_skills=competencies.get("exp_competency_skills", ""),
+                        org_id=miltenyi.id,
+                        function_id=fn.id,
+                        designation_id=desig.id,
+                        **comp,
                     ))
-                    mil_added += 1
+                    inserted += 1
             db.commit()
-            print(f"  [+] Seeded {mil_added} Role Expectations for Miltenyi")
+            print(f"  [+] Role Expectations: {inserted} rows")
         else:
-            print("  [~] Miltenyi Role expectations already exist, skipping...")
+            print("  [~] Role expectations already exist; reusing.")
 
-        # ================================================================== #
-        # 8. PROJECT REVIEWS                                                  #
-        # ================================================================== #
-
-
-        # ── Miltenyi Project Reviews ──────────────────────────────────
-        def _pr_mil(user, project, reviewer, cycle, status, pg=None, impact=None, **comments):
-            if not project or not user or not reviewer:
-                return
-            if not db.query(ProjectReview).filter_by(
-                org_id=miltenyi_org.id, user_id=user.id, project_id=project.id, cycle=cycle,
-            ).first():
-                db.add(ProjectReview(
-                    org_id=miltenyi_org.id, user_id=user.id, project_id=project.id,
-                    reviewer_id=reviewer.id, cycle=cycle, status=status,
-                    performance_group=pg, impact_statement=impact, **comments,
+        # ============================================================ #
+        # 7. ANNUAL GOALS + H1 SELF-REVIEWS (Staff only)                #
+        # ============================================================ #
+        # Goals are owned by Staff; the manager_id is the Staff's mentor.
+        def _ensure_goal(
+            owner: User, mentor: User, title: str, description: str,
+            cycle_name: str, approval: str, fy_year: int,
+            with_h1_self_review: bool = False,
+            self_review_text: str = STRONG_SELF,
+        ) -> Goal | None:
+            existing = db.query(Goal).filter_by(
+                org_id=miltenyi.id, user_id=owner.id, title=title, cycle_name=cycle_name,
+            ).first()
+            if existing:
+                return existing
+            approved_at = (
+                datetime(fy_year, 4, 20, tzinfo=timezone.utc)
+                if approval == ApprovalStatus.APPROVED.value else None
+            )
+            g = Goal(
+                org_id=miltenyi.id,
+                user_id=owner.id,
+                manager_id=mentor.id,
+                title=title, description=description,
+                goal_type=GoalType.ANNUAL.value, cycle_name=cycle_name,
+                approval_status=approval,
+                approved_at=approved_at,
+            )
+            db.add(g)
+            db.flush()
+            if with_h1_self_review:
+                db.add(GoalSelfReview(
+                    goal_id=g.id,
+                    org_id=miltenyi.id,
+                    cycle_half=SelfReviewCycleHalf.H1.value,
+                    self_overall_review=self_review_text,
                 ))
+                # Advance the lifecycle so the dashboard shows it correctly.
+                g.approval_status = ApprovalStatus.H1_SELF_REVIEWED.value
+            db.commit()
+            return g
 
-        if proj_cell_mil and proj_macs_mil:
-            # Q4 FY25-26 — completed reviews on the original two projects.
-            _pr_mil(charlie, proj_cell_mil, bob_lead, "Q4 FY25-26", "reviewed", pg="4",
+        if db.query(Goal).filter(Goal.org_id == miltenyi.id).count() == 0:
+            # Bob — strong performer with H1 self-review submitted
+            _ensure_goal(
+                bob, anjali,
+                "CAR-T Workflow Automation Module",
+                "Own the automation of the upstream CAR-T processing workflow on the new instrument.",
+                cycle_name="FY26-27", approval=ApprovalStatus.APPROVED.value, fy_year=2026,
+                with_h1_self_review=True,
+            )
+            # Charlie — pending mentor approval
+            _ensure_goal(
+                charlie, anjali,
+                "Assay Validation for Next-Gen CAR-T",
+                "Design and run validation assays for the next-gen CAR-T platform.",
+                cycle_name="FY26-27", approval=ApprovalStatus.PENDING_APPROVAL.value, fy_year=2026,
+            )
+            # Dana — draft (employee still drafting)
+            _ensure_goal(
+                dana, anjali,
+                "Reagent Optimisation Pipeline",
+                "Reduce turnaround time for the validation reagent prep pipeline by 25%.",
+                cycle_name="FY26-27", approval=ApprovalStatus.DRAFT.value, fy_year=2026,
+            )
+            # Iris — approved, no self-review yet (mid-cycle)
+            _ensure_goal(
+                iris, mark,
+                "Cell Therapy Validation Lead",
+                "Lead protocol design + execution for FY26 validation runs.",
+                cycle_name="FY26-27", approval=ApprovalStatus.APPROVED.value, fy_year=2026,
+            )
+            # Evan — approved with H1 self-review
+            _ensure_goal(
+                evan, mark,
+                "Mfg Throughput +15% Initiative",
+                "Drive a 15% throughput uplift across the MACS Quant line by year-end.",
+                cycle_name="FY26-27", approval=ApprovalStatus.APPROVED.value, fy_year=2026,
+                with_h1_self_review=True, self_review_text=STRONG_SELF,
+            )
+            # Fiona — pending approval
+            _ensure_goal(
+                fiona, mark,
+                "Aseptic Process Documentation",
+                "Author the next revision of the aseptic processing SOPs.",
+                cycle_name="FY26-27", approval=ApprovalStatus.PENDING_APPROVAL.value, fy_year=2026,
+            )
+            # Klaus — draft
+            _ensure_goal(
+                klaus, priya,
+                "Mfg QC Capability Uplift",
+                "Lead QC tooling capability uplift initiative across two product lines.",
+                cycle_name="FY26-27", approval=ApprovalStatus.DRAFT.value, fy_year=2026,
+            )
+            # Mia — approved with H1 self-review
+            _ensure_goal(
+                mia, priya,
+                "EMEA Launch Readiness",
+                "Own EMEA launch readiness for the new MACS Quant product line.",
+                cycle_name="FY26-27", approval=ApprovalStatus.APPROVED.value, fy_year=2026,
+                with_h1_self_review=True,
+            )
+            # Nils — pending approval
+            _ensure_goal(
+                nils, priya,
+                "APAC Customer Discovery",
+                "Run discovery interviews with target accounts across APAC.",
+                cycle_name="FY26-27", approval=ApprovalStatus.PENDING_APPROVAL.value, fy_year=2026,
+            )
+            print("  [+] Annual goals (FY26-27) for all Staff with mixed approval states")
+        else:
+            print("  [~] Goals already exist; reusing.")
+
+        # ============================================================ #
+        # 8. ANNUAL REVIEWS (Staff only, mentor-driven)                 #
+        # ============================================================ #
+        STAFF_BY_MENTOR = [
+            (bob, anjali), (charlie, anjali), (dana, anjali),
+            (iris, mark),  (evan, mark),      (fiona, mark),
+            (klaus, priya), (mia, priya),      (nils, priya),
+        ]
+
+        def _ensure_review(user: User, mentor: User, cycle: str, status: str, **fields) -> None:
+            existing = db.query(AnnualReview).filter_by(
+                org_id=miltenyi.id, user_id=user.id, cycle_name=cycle,
+            ).first()
+            if existing:
+                return
+            db.add(AnnualReview(
+                org_id=miltenyi.id, user_id=user.id, mentor_id=mentor.id,
+                cycle_name=cycle, status=status, **fields,
+            ))
+
+        if db.query(AnnualReview).filter(AnnualReview.org_id == miltenyi.id).count() == 0:
+            # FY25-26 — fully completed history
+            for s, m in STAFF_BY_MENTOR:
+                _ensure_review(s, m, "FY25-26", ReviewStatus.COMPLETED.value,
+                    self_overall_review=SOLID_SELF, self_performance_rating=2,
+                    mentor_overall_review=SOLID_MENTOR, mentor_performance_rating=2,
+                    management_performance_rating=2, final_performance_rating=2,
+                    management_comments="Solid contribution; continue building depth.",
+                    final_rating_enabled=True,
+                )
+            db.commit()
+
+            # FY26-27 — mixed states for demo
+            _ensure_review(bob, anjali, "FY26-27", ReviewStatus.PENDING_MENTOR.value,
+                self_overall_review=STRONG_SELF, self_performance_rating=1,
+            )
+            _ensure_review(charlie, anjali, "FY26-27", ReviewStatus.DRAFT.value,
+                self_overall_review="Drafting — building out the validation narrative.",
+            )
+            _ensure_review(dana, anjali, "FY26-27", ReviewStatus.PENDING_MENTOR.value,
+                self_overall_review=SOLID_SELF, self_performance_rating=2,
+            )
+            _ensure_review(iris, mark, "FY26-27", ReviewStatus.PENDING_MENTOR.value,
+                self_overall_review=STRONG_SELF, self_performance_rating=1,
+            )
+            _ensure_review(evan, mark, "FY26-27", ReviewStatus.PENDING_MANAGEMENT.value,
+                self_overall_review=STRONG_SELF, self_performance_rating=1,
+                mentor_overall_review=STRONG_MENTOR, mentor_performance_rating=1,
+            )
+            _ensure_review(fiona, mark, "FY26-27", ReviewStatus.PENDING_MENTOR.value,
+                self_overall_review=SOLID_SELF, self_performance_rating=2,
+            )
+            _ensure_review(klaus, priya, "FY26-27", ReviewStatus.DRAFT.value,
+                self_overall_review="Will summarise QC initiative wins shortly.",
+            )
+            _ensure_review(mia, priya, "FY26-27", ReviewStatus.PENDING_MENTOR.value,
+                self_overall_review=STRONG_SELF, self_performance_rating=1,
+            )
+            _ensure_review(nils, priya, "FY26-27", ReviewStatus.PENDING_MENTOR.value,
+                self_overall_review=SOLID_SELF, self_performance_rating=2,
+            )
+            db.commit()
+            print("  [+] Annual reviews: FY25-26 completed, FY26-27 mixed states")
+        else:
+            print("  [~] Annual reviews already exist; reusing.")
+
+        # ============================================================ #
+        # 9. PROJECT REVIEWS (Q1 FY26-27, PM-driven)                    #
+        # ============================================================ #
+        active_cycle = "Q1 FY26-27"
+
+        def _ensure_pr(
+            employee: User, project: Project, pm: User,
+            status: str = ProjectReviewStatus.PENDING.value, pg: str | None = None,
+            impact: str | None = None, **comments,
+        ) -> None:
+            existing = db.query(ProjectReview).filter_by(
+                org_id=miltenyi.id, user_id=employee.id, project_id=project.id, cycle=active_cycle,
+            ).first()
+            if existing:
+                return
+            db.add(ProjectReview(
+                org_id=miltenyi.id, user_id=employee.id, project_id=project.id,
+                reviewer_id=pm.id if status != ProjectReviewStatus.PENDING.value else None,
+                cycle=active_cycle, status=status,
+                performance_group=pg, impact_statement=impact, **comments,
+            ))
+
+        if db.query(ProjectReview).filter(ProjectReview.org_id == miltenyi.id).count() == 0:
+            # MIL-PRJ-101 (Hans) — Charlie reviewed, Bob/Dana pending
+            _ensure_pr(
+                charlie, proj_cell, hans, ProjectReviewStatus.REVIEWED.value, pg="4",
                 impact="Charlie drove the upstream automation module with strong technical depth.",
                 comment_task_execution="Independently designed and validated the upstream module.",
                 comment_ownership="Owned the deliverable end-to-end and cleared blockers proactively.",
-                comment_project_management="Tight tracker discipline; risk flags were raised early.",
+                comment_project_management="Tight tracker discipline; risk flags raised early.",
                 comment_client_deliverables="Validation reports were GMP-ready on first review.",
-                comment_communication="Clear with both R&D peers and the Mfg liaison.",
+                comment_communication="Clear with peers and the Mfg liaison.",
                 comment_mentoring="Coached Dana on assay troubleshooting.",
                 comment_competency_skills="Strong cell-therapy assay expertise; growing depth in automation.",
             )
-            _pr_mil(dana, proj_cell_mil, bob_lead, "Q4 FY25-26", "reviewed", pg="3",
-                impact="Dana delivered the assay validation package on time with steady quality.",
-                comment_task_execution="Completed validation runs methodically with light guidance.",
-                comment_ownership="Reliable on assigned modules; growing initiative.",
-                comment_project_management="Met sprint commitments; improving on estimation.",
-                comment_client_deliverables="Documentation quality lifted notably across the quarter.",
-                comment_communication="Improving verbal confidence; written summaries are tight.",
-                comment_mentoring="Active learner in code/protocol reviews.",
-                comment_competency_skills="Foundational cell-therapy assay skill set is solid.",
-            )
-            _pr_mil(fiona, proj_macs_mil, evan_mfg, "Q4 FY25-26", "reviewed", pg="4",
-                impact="Fiona authored the scale-up SOP set and led the validation runs.",
+            _ensure_pr(bob,  proj_cell, hans)
+            _ensure_pr(dana, proj_cell, hans)
+
+            # MIL-PRJ-102 (Greta) — Fiona reviewed, others pending
+            _ensure_pr(
+                fiona, proj_macs, greta, ProjectReviewStatus.REVIEWED.value, pg="4",
+                impact="Fiona authored the scale-up SOP set and led validation runs.",
                 comment_task_execution="Structured the SOP framework end-to-end with strong rigor.",
                 comment_ownership="Took ownership beyond scope on the validation runs.",
                 comment_project_management="Excellent timeline discipline; zero deviations on critical path.",
@@ -528,342 +739,45 @@ def seed_database():
                 comment_mentoring="Supported Klaus on aseptic technique.",
                 comment_competency_skills="Senior Scientist trajectory in production validation.",
             )
-            _pr_mil(bob_lead, proj_macs_mil, evan_mfg, "Q4 FY25-26", "reviewed", pg="3",
-                impact="Bob's R&D liaison support kept the platform tech-transfer on track.",
-                comment_task_execution="Effective bridge between R&D and Mfg context-switching.",
-                comment_ownership="Owned the tech-transfer package across teams.",
-                comment_project_management="Reliable cadence for cross-functional updates.",
-                comment_client_deliverables="Hand-off documentation was tight and audit-ready.",
-                comment_communication="Translated R&D nuance for the Mfg team well.",
-                comment_mentoring="N/A in this scope.",
-                comment_competency_skills="Solid platform-knowledge bridge skills.",
-            )
-            db.commit()
+            _ensure_pr(evan,  proj_macs, greta)
+            _ensure_pr(klaus, proj_macs, greta)
 
-            # Q1 FY26-27 (current) — pending evaluations across all four projects.
-            _pr_mil(charlie, proj_cell_mil,       bob_lead, "Q1 FY26-27", "pending")
-            _pr_mil(dana,    proj_cell_mil,       bob_lead, "Q1 FY26-27", "pending")
-            _pr_mil(fiona,   proj_macs_mil,       evan_mfg, "Q1 FY26-27", "pending")
-            _pr_mil(bob_lead, proj_macs_mil,      evan_mfg, "Q1 FY26-27", "pending")
-            if proj_validation_mil:
-                _pr_mil(charlie, proj_validation_mil, bob_lead, "Q1 FY26-27", "pending")
-                _pr_mil(iris,    proj_validation_mil, bob_lead, "Q1 FY26-27", "pending")
-                _pr_mil(dana,    proj_validation_mil, bob_lead, "Q1 FY26-27", "pending")
-                _pr_mil(evan_mfg, proj_validation_mil, bob_lead, "Q1 FY26-27", "pending")
-            if proj_launch_mil:
-                _pr_mil(mia,    proj_launch_mil, lukas, "Q1 FY26-27", "pending")
-                _pr_mil(nils,   proj_launch_mil, lukas, "Q1 FY26-27", "pending")
-                _pr_mil(evan_mfg, proj_launch_mil, lukas, "Q1 FY26-27", "pending")
-            db.commit()
-            print("  [+] Ensured Miltenyi Project Reviews (Q4 FY25-26 completed, Q1 FY26-27 pending)")
+            # MIL-PRJ-103 (Hans) — all pending
+            _ensure_pr(iris,    proj_validation, hans)
+            _ensure_pr(charlie, proj_validation, hans)
+            _ensure_pr(dana,    proj_validation, hans)
 
-        # ================================================================== #
-        # 9. ANNUAL REVIEWS                                                   #
-        # ================================================================== #
-
-        STRONG_SELF = (
-            "Owned the full workstream end-to-end with clear accountability. "
-            "Delivered client-ready artifacts with minimal rework, structured "
-            "stakeholder updates, planned and mitigated risks proactively, "
-            "coached juniors on methodology, and contributed to firm-level "
-            "initiatives beyond day-to-day project work."
-        )
-        STRONG_MENTOR = (
-            "Consistently takes charge without prompting. Full accountability "
-            "across every workstream I observed — artifacts land in "
-            "client-ready shape with minimal edits, team looks to them for "
-            "guidance, and they contribute visibly to firm initiatives. "
-            "Technical depth and trajectory are excellent."
-        )
-        SOLID_SELF = (
-            "Completed assigned tasks reliably and flagged issues early. "
-            "Quality of deliverables improved through the cycle. Managed my "
-            "workstreams with guidance from my mentor, supported peers during "
-            "tooling onboarding, and picked up new frameworks this cycle."
-        )
-        SOLID_MENTOR = (
-            "Dependable on assigned work; initiative is growing. Artifact "
-            "quality is improving cycle over cycle and communications are "
-            "becoming more proactive. Planning independence is growing and "
-            "early mentoring instincts are starting to show."
-        )
-        DIRECTOR_SELF = (
-            "Led multiple workstreams and practice initiatives in parallel. "
-            "Maintained full accountability across client engagements, coached "
-            "the team on strategic thinking and delivery standards, and drove "
-            "firm-level initiatives on business development and knowledge management."
-        )
-        DIRECTOR_MENTOR = (
-            "Exceptional leadership across all dimensions. Drives outcomes for "
-            "clients and the firm simultaneously, builds team capability "
-            "proactively, and maintains very high standards on every deliverable. "
-            "A clear role model for the practice."
-        )
-
-
-        # ── Miltenyi Annual Reviews ───────────────────────────────────
-        def _ar_mil(user, mentor, cycle, status, **fields):
-            if not user:
-                return
-            if not db.query(AnnualReview).filter_by(
-                org_id=miltenyi_org.id, user_id=user.id, cycle_name=cycle,
-            ).first():
-                db.add(AnnualReview(
-                    org_id=miltenyi_org.id, user_id=user.id,
-                    mentor_id=mentor.id if mentor else None,
-                    cycle_name=cycle, status=status, **fields,
-                ))
-
-        MIL_PAIRS = [
-            (hans, alice_admin),  (greta, alice_admin),  (lukas, alice_admin),
-            (bob_lead, hans),     (evan_mfg, greta),
-            (charlie, bob_lead),  (dana, bob_lead),      (iris, bob_lead),
-            (fiona, evan_mfg),    (klaus, evan_mfg),
-            (mia, lukas),         (nils, lukas),
-        ]
-
-        # FY25-26 — fully completed history for everyone (used for Profile + Mentee summary).
-        for _u, _m in MIL_PAIRS:
-            _ar_mil(_u, _m, "FY25-26", "completed",
-                self_overall_review=SOLID_SELF, self_performance_rating=2,
-                mentor_overall_review=SOLID_MENTOR, mentor_performance_rating=2,
-                management_performance_rating=2, final_performance_rating=2,
-                management_comments="Strong contribution to the platform. Continue building depth.",
-                final_rating_enabled=True,
-            )
-        db.commit()
-
-        # FY26-27 (current) — mixed states for demo.
-        # Hans + Greta + Lukas (Alice's mentees) → pending_management.
-        _ar_mil(hans, alice_admin, "FY26-27", "pending_management",
-            self_overall_review=DIRECTOR_SELF, self_performance_rating=1,
-            mentor_overall_review=DIRECTOR_MENTOR, mentor_performance_rating=1,
-        )
-        _ar_mil(greta, alice_admin, "FY26-27", "pending_management",
-            self_overall_review=DIRECTOR_SELF, self_performance_rating=1,
-            mentor_overall_review=DIRECTOR_MENTOR, mentor_performance_rating=1,
-        )
-        _ar_mil(lukas, alice_admin, "FY26-27", "pending_mentor",
-            self_overall_review=STRONG_SELF, self_performance_rating=2,
-        )
-        # Bob + Evan (under Hans / Greta) → one pending_mentor, one draft.
-        _ar_mil(bob_lead, hans, "FY26-27", "pending_mentor",
-            self_overall_review=STRONG_SELF, self_performance_rating=1,
-        )
-        _ar_mil(evan_mfg, greta, "FY26-27", "draft",
-            self_overall_review="Drafting the year-end self review — leading the MACS Quant scale-up program.",
-        )
-        # Bob's mentees — varied states.
-        _ar_mil(charlie, bob_lead, "FY26-27", "pending_mentor",
-            self_overall_review=STRONG_SELF, self_performance_rating=1,
-        )
-        _ar_mil(dana, bob_lead, "FY26-27", "pending_mentor",
-            self_overall_review=SOLID_SELF, self_performance_rating=2,
-        )
-        _ar_mil(iris, bob_lead, "FY26-27", "draft",
-            self_overall_review="Drafting — strong Q1 with the validation pipeline.",
-        )
-        # Evan's mentees.
-        _ar_mil(fiona, evan_mfg, "FY26-27", "pending_mentor",
-            self_overall_review=STRONG_SELF, self_performance_rating=1,
-        )
-        _ar_mil(klaus, evan_mfg, "FY26-27", "pending_mentor",
-            self_overall_review=SOLID_SELF, self_performance_rating=2,
-        )
-        # Lukas's mentees.
-        _ar_mil(mia, lukas, "FY26-27", "pending_mentor",
-            self_overall_review=STRONG_SELF, self_performance_rating=1,
-        )
-        _ar_mil(nils, lukas, "FY26-27", "draft",
-            self_overall_review="Building my first commercial cycle self review — supporting the EMEA launch.",
-        )
-        db.commit()
-        print("  [+] Ensured Miltenyi Annual Reviews (FY25-26 completed, FY26-27 mixed states)")
-
-        # ================================================================== #
-        # 10. ANNUAL GOALS + PER-HALF SELF REVIEWS                            #
-        # ================================================================== #
-
-        SELF_REVIEW_DEFAULT = (
-            "Delivered all key tasks against the goal with disciplined execution and "
-            "consistent quality checks. Took end-to-end ownership with proactive status "
-            "updates and risk flagging, producing client-ready outputs that required "
-            "minimal iteration post-review. Tracked milestones and dependencies with a "
-            "well-maintained plan and early risk escalation, and supported teammates "
-            "informally on methodology and tooling. The work fed into reusable playbooks "
-            "and noticeably strengthened applicable skills — measurable on the scope and "
-            "complexity handled independently."
-        )
-
-
-        # Miltenyi annual goals
-        if db.query(Goal).filter(Goal.org_id == miltenyi_org.id).count() == 0:
-
-            def _mil_goal(user, manager, title, desc, approval, cycle_name, fy_year,
-                          progress_notes=None, manager_feedback=None, self_reviewed_halves=()):
-                if db.query(Goal).filter_by(
-                    org_id=miltenyi_org.id, user_id=user.id, title=title, cycle_name=cycle_name,
-                ).first():
-                    return
-                approved_at = (
-                    datetime(fy_year, 4, 20, tzinfo=timezone.utc) if approval == "approved" else None
-                )
-                g = Goal(
-                    org_id=miltenyi_org.id, user_id=user.id,
-                    manager_id=manager.id if manager else None,
-                    title=title, description=desc,
-                    goal_type="annual", cycle_name=cycle_name,
-                    approval_status=approval,
-                    progress_notes=progress_notes,
-                    manager_feedback=manager_feedback,
-                    approved_at=approved_at,
-                )
-                db.add(g)
-                db.flush()
-                for half in self_reviewed_halves:
-                    db.add(GoalSelfReview(
-                        goal_id=g.id,
-                        org_id=miltenyi_org.id,
-                        cycle_half=half,
-                        self_overall_review=SELF_REVIEW_DEFAULT,
-                    ))
-                # Advance to the furthest *_self_reviewed milestone present.
-                # Miltenyi runs on the quarterly cadence (Q1..Q4) — pick the
-                # latest Q in the seeded set.
-                if approval == "approved" and self_reviewed_halves:
-                    order = ("Q1", "Q2", "Q3", "Q4", "H1", "H2")
-                    latest = max(self_reviewed_halves, key=order.index)
-                    g.approval_status = f"{latest.lower()}_self_reviewed"
-
-            _mil_goal(charlie, bob_lead, "CAR-T Workflow Automation Module",
-                      "Own the automation of the upstream CAR-T processing workflow on the new instrument.",
-                      approval="approved", cycle_name="H1 2025", fy_year=2025,
-                      progress_notes="Module deployed. Cycle time reduced by ~30%.",
-                      self_reviewed_halves=("Q1", "Q2", "Q3", "Q4"))
-            _mil_goal(dana, bob_lead, "Assay Validation for Next-Gen CAR-T",
-                      "Design and run validation assays for the next-gen CAR-T platform.",
-                      approval="approved", cycle_name="H1 2026", fy_year=2026,
-                      progress_notes="Validation assays underway; first read scheduled.")
-            _mil_goal(fiona, evan_mfg, "MACS Quant Scale-Up Documentation",
-                      "Author the scale-up documentation package for the new MACS Quant platform.",
-                      approval="pending_approval", cycle_name="H1 2026", fy_year=2026)
+            # MIL-PRJ-104 (Lukas) — all pending
+            _ensure_pr(mia,  proj_launch, lukas)
+            _ensure_pr(nils, proj_launch, lukas)
 
             db.commit()
-            print("  [+] Created Miltenyi Annual Goals + Self Reviews")
+            print(f"  [+] Project reviews ({active_cycle}): mix of pending + reviewed")
         else:
-            print("  [~] Miltenyi base goals already exist, ensuring expanded set...")
+            print("  [~] Project reviews already exist; reusing.")
 
-        # Idempotent additions for the expanded Miltenyi goal set so new
-        # staff have something on the Annual Goals tab. `_mil_goal`
-        # checks per-row existence so re-runs are safe.
-        if "_mil_goal" not in dir():
-            # Define a local `_mil_goal` for the case where the outer
-            # block didn't run (existing DBs that already had base goals).
-            def _mil_goal(user, manager, title, desc, approval, cycle_name, fy_year,
-                          progress_notes=None, manager_feedback=None, self_reviewed_halves=()):
-                if not user or not manager:
-                    return
-                if db.query(Goal).filter_by(
-                    org_id=miltenyi_org.id, user_id=user.id, title=title, cycle_name=cycle_name,
-                ).first():
-                    return
-                approved_at = (
-                    datetime(fy_year, 4, 20, tzinfo=timezone.utc) if approval == "approved" else None
-                )
-                g = Goal(
-                    org_id=miltenyi_org.id, user_id=user.id,
-                    manager_id=manager.id,
-                    title=title, description=desc,
-                    goal_type="annual", cycle_name=cycle_name,
-                    approval_status=approval,
-                    progress_notes=progress_notes,
-                    manager_feedback=manager_feedback,
-                    approved_at=approved_at,
-                )
-                db.add(g)
-                db.flush()
-                for half in self_reviewed_halves:
-                    db.add(GoalSelfReview(
-                        goal_id=g.id,
-                        org_id=miltenyi_org.id,
-                        cycle_half=half,
-                        self_overall_review=(
-                            "Delivered on the goal with consistent quality and proactive "
-                            "stakeholder updates."
-                        ),
-                    ))
-                if approval == "approved" and self_reviewed_halves:
-                    order = ("Q1", "Q2", "Q3", "Q4", "H1", "H2")
-                    latest = max(self_reviewed_halves, key=order.index)
-                    g.approval_status = f"{latest.lower()}_self_reviewed"
-
-        # FY26-27 expanded goal set across the new staff.
-        _mil_goal(charlie, bob_lead, "Cell Therapy Validation Lead",
-                  "Lead protocol design + execution for the FY26 validation runs.",
-                  approval="approved", cycle_name="H1 2026", fy_year=2026,
-                  progress_notes="Protocol locked; runs underway.",
-                  self_reviewed_halves=("Q1",))
-        _mil_goal(dana, bob_lead, "Assay Optimisation Pipeline",
-                  "Optimise turnaround time for the validation assay pipeline.",
-                  approval="pending_approval", cycle_name="H1 2026", fy_year=2026)
-        _mil_goal(iris, bob_lead, "Next-Gen Reagent Workstream",
-                  "Drive evaluation + qualification of the next-gen reagents for FY26.",
-                  approval="approved", cycle_name="H1 2026", fy_year=2026,
-                  progress_notes="Vendor screening complete; lab evaluation in progress.")
-        _mil_goal(klaus, evan_mfg, "Aseptic Process Documentation",
-                  "Author the next revision of the aseptic processing SOPs.",
-                  approval="draft", cycle_name="H1 2026", fy_year=2026)
-        _mil_goal(mia, lukas, "EMEA Launch Readiness",
-                  "Own EMEA launch readiness for the new MACS Quant product line.",
-                  approval="approved", cycle_name="H1 2026", fy_year=2026,
-                  progress_notes="Customer outreach kicked off; collateral 80% done.",
-                  self_reviewed_halves=("Q1",))
-        _mil_goal(nils, lukas, "APAC Customer Discovery",
-                  "Run discovery interviews with target accounts across APAC.",
-                  approval="pending_approval", cycle_name="H1 2026", fy_year=2026)
-        _mil_goal(bob_lead, hans, "R&D Capability Uplift",
-                  "Lift the R&D team's automation tooling capability for FY26.",
-                  approval="approved", cycle_name="H1 2026", fy_year=2026,
-                  progress_notes="Two new tooling tracks set up; trainings underway.",
-                  self_reviewed_halves=("Q1",))
-        _mil_goal(evan_mfg, greta, "Mfg Throughput +20%",
-                  "Drive a 20% throughput uplift across the MACS Quant line by year-end.",
-                  approval="pending_approval", cycle_name="H1 2026", fy_year=2026)
-        _mil_goal(lukas, alice_admin, "FY26 Commercial Strategy",
-                  "Own + execute the FY26 commercial strategy across EMEA + APAC.",
-                  approval="approved", cycle_name="H1 2026", fy_year=2026,
-                  progress_notes="Strategy locked; quarterly tracking cadence in place.",
-                  self_reviewed_halves=("Q1",))
-        db.commit()
-        print("  [+] Ensured Miltenyi expanded goal set for FY26-27")
-
-        # ================================================================== #
-        # DONE                                                                #
-        # ================================================================== #
-
-        print("\n" + "=" * 60)
-        print("Database seeding completed successfully!")
-        print("=" * 60)
-        print("--- MILTENYI Accounts (Quarterly Cycle | all passwords: password123) ---")
-        print("  ADMIN:    admin@miltenyi.com      Alice Admin      (Admin, no mentor — top of hierarchy)")
-        print("  ADMIN:    hans@miltenyi.com       Hans Mueller     (Admin, mentor: Alice, mentors Bob)")
-        print("  ADMIN:    greta@miltenyi.com      Greta Schmidt    (Admin, mentor: Alice, mentors Evan)")
-        print("  R&D:      bob@miltenyi.com        Bob Builder      (mentor: Hans, mentors Charlie + Dana + Iris)")
-        print("            charlie@miltenyi.com    Charlie Chemist  (mentor: Bob)")
-        print("            dana@miltenyi.com       Dana DNA         (mentor: Bob)")
-        print("            iris@miltenyi.com       Iris Immel       (mentor: Bob)")
-        print("  MFG:      evan@miltenyi.com       Evan Engineer    (mentor: Greta, mentors Fiona + Klaus)")
-        print("            fiona@miltenyi.com      Fiona Factory    (mentor: Evan)")
-        print("            klaus@miltenyi.com      Klaus Koehler    (mentor: Evan)")
-        print("  COMM:     lukas@miltenyi.com      Lukas Lange      (mentor: Alice, mentors Mia + Nils)")
-        print("            mia@miltenyi.com        Mia Markt        (mentor: Lukas)")
-        print("            nils@miltenyi.com       Nils Niedermeier (mentor: Lukas)")
-        print()
-        print("--- 360 FEEDBACK seeded for Miltenyi (FY26-27) ---")
-        print("  Bob:     4 worked-with + 3 not-worked-with reviews -> both cohorts visible")
-        print("  Charlie: 3 worked-with + 1 not-worked-with review  -> only worked-with shown")
-        print("  Alice:           0   + 4 not-worked-with reviews   -> only not-worked-with shown")
-        print("  Log in as Hans/Greta to demo Org Feedback (Management).")
+        # ============================================================ #
+        # DONE                                                          #
+        # ============================================================ #
+        print("\n" + "=" * 64)
+        print("Database seeding completed.")
+        print("=" * 64)
+        print("\n--- ACCOUNTS (all passwords: password123) ---")
+        print("  HR · MyOrg :   sarah.patel@healthark.ai     Sarah Patel")
+        print("  HR · Miltenyi: karin.weber@miltenyi.com     Karin Weber")
+        print("\n  Mentors (Healthark):")
+        print("    anjali.rao@healthark.ai     Anjali Rao    (Bob, Charlie, Dana)")
+        print("    mark.singh@healthark.ai     Mark Singh    (Iris, Evan, Fiona)")
+        print("    priya.mehta@healthark.ai    Priya Mehta   (Klaus, Mia, Nils)")
+        print("\n  PMs (Miltenyi):")
+        print("    hans@miltenyi.com           Hans Müller   (PRJ-101, PRJ-103)")
+        print("    greta@miltenyi.com          Greta Schmidt (PRJ-102)")
+        print("    lukas@miltenyi.com          Lukas Lange   (PRJ-104)")
+        print("    dieter@miltenyi.com         Dieter Becker (reserve)")
+        print("\n  Staff (Healthark @ Miltenyi):")
+        print("    R&D:        bob@, charlie@, dana@, iris@miltenyi.com")
+        print("    Mfg:        evan@, fiona@, klaus@miltenyi.com")
+        print("    Commercial: mia@, nils@miltenyi.com")
         print()
 
     except Exception as e:

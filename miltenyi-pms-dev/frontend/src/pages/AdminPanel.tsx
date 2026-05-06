@@ -68,10 +68,9 @@ export default function AdminPanel() {
   const projectsTabRef = useRef<ProjectsTabHandle>(null);
 
   const { user } = useAuth();
-  // Sub-role gate. The backend also enforces this on every management
-  // endpoint, so this is purely a UI affordance.
-  const canSeeManagementReview =
-    user?.role === "Admin" && user?.is_management === true;
+  // The Management Review tab is HR_MyOrg-only. The backend also enforces
+  // this on every management endpoint; this gate is just a UI affordance.
+  const canSeeManagementReview = user?.role === "HR_MyOrg";
   // ── Bootstrap ─────────────────────────────────────────────────────────────
   const loadData = useCallback(async () => {
     setIsLoading(true);

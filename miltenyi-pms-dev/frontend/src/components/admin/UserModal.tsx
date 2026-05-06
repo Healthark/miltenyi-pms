@@ -8,9 +8,24 @@ import type {
   DesignationBrief,
 } from "../../services/admin.service";
 import { UserCombobox } from "../common/UserCombobox";
+import { useAuth } from "../../hooks/useAuth";
 
-// UPDATE 1: Restrict available roles to only Admin and Staff
-const ROLES = ["Admin", "Staff"] as const;
+// Role choices in the dropdown — must match the backend Role enum exactly.
+// Labels are display-only; the value is what gets persisted.
+const ROLE_OPTIONS: { value: string; label: string }[] = [
+  { value: "Staff", label: "Staff" },
+  { value: "PM", label: "PM (Miltenyi)" },
+  { value: "Mentor", label: "Mentor (MyOrg)" },
+  { value: "HR_Miltenyi", label: "HR · Miltenyi" },
+  { value: "HR_MyOrg", label: "HR · MyOrg" },
+];
+
+const ALL_ROLE_VALUES = ROLE_OPTIONS.map((r) => r.value);
+
+// HR_Miltenyi cannot create/edit Mentor or HR_MyOrg users (security boundary).
+// Backend enforces this; the UI hides the options too so the constraint is
+// visible up-front instead of as a 403 after submit.
+const PROTECTED_ROLES = new Set(["Mentor", "HR_MyOrg"]);
 
 interface UserModalProps {
   readonly isOpen: boolean;
@@ -42,6 +57,13 @@ export function UserModal({
   error,
 }: UserModalProps) {
   const isEditing = editingUser !== null;
+  const { user: currentUser } = useAuth();
+
+  // HR_Miltenyi can only see/select non-protected roles. HR_MyOrg sees all.
+  const isViewerMiltenyiHR = currentUser?.role === "HR_Miltenyi";
+  const visibleRoleOptions = isViewerMiltenyiHR
+    ? ROLE_OPTIONS.filter((r) => !PROTECTED_ROLES.has(r.value))
+    : ROLE_OPTIONS;
 
   const [form, setForm] = useState({
     employee_code: "",
@@ -62,8 +84,9 @@ export function UserModal({
         full_name: editingUser.full_name,
         email: editingUser.email,
         phone: editingUser.phone ?? "",
-        // Ensure legacy roles default back to Staff when editing
-        role: ["Admin", "Staff"].includes(editingUser.role) ? editingUser.role : "Staff",
+        // Map any legacy/unknown role value back to Staff so the dropdown
+        // doesn't render a value that isn't in ROLE_OPTIONS.
+        role: ALL_ROLE_VALUES.includes(editingUser.role) ? editingUser.role : "Staff",
         function_id: editingUser.function_id?.toString() ?? "",
         designation_id: editingUser.designation_id?.toString() ?? "",
         mentor_id: editingUser.mentor_id?.toString() ?? "",
@@ -213,9 +236,9 @@ export function UserModal({
                 value={form.role}
                 onChange={(e) => set("role", e.target.value)}
               >
-                {ROLES.map((r) => (
-                  <option key={r} value={r}>
-                    {r}
+                {visibleRoleOptions.map((r) => (
+                  <option key={r.value} value={r.value}>
+                    {r.label}
                   </option>
                 ))}
               </select>

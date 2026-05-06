@@ -76,11 +76,11 @@ def initialize_system_settings(
     This is a one-time operation — the unique index on org_id prevents duplicates.
     If settings already exist, we return 409 Conflict rather than silently overwriting.
     """
-    # Layer 3 — Role Authorization
-    if current_user.role != "Admin":
+    # Layer 3 — Role Authorization (both HRs may manage settings)
+    if current_user.role not in ("HR_MyOrg", "HR_Miltenyi"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only administrators can initialize system settings."
+            detail="Only HR users can initialize system settings."
         )
 
     # Guard against duplicate initialization
@@ -128,11 +128,11 @@ def update_system_settings(
     - Open/close goal submission windows
     - Open/close annual review submission windows
     """
-    # Layer 3 — Role Authorization
-    if current_user.role != "Admin":
+    # Layer 3 — Role Authorization (both HRs may manage settings)
+    if current_user.role not in ("HR_MyOrg", "HR_Miltenyi"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only administrators can modify system settings."
+            detail="Only HR users can modify system settings."
         )
 
     # Layer 2 — Tenant Isolation

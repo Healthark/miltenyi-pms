@@ -1,16 +1,10 @@
 /**
- * ProjectModal.tsx — Create/Edit Project with Team Assignments (Revised).
+ * ProjectModal.tsx — Create/Edit Project with Team Assignments.
  *
- * Changes:
- *   - Removed allocated hours
- *   - expected_end_date instead of end_date
- *   - "PM Reports To" is a typeable searchable combobox (required)
- *   - "Secondary Evaluator" is a typeable searchable combobox (optional,
- *     project-level — replaces per-member Secondary)
- *   - Members have a single "PM" checkbox (max one across the project);
- *     no more Primary/Secondary dropdown on each row
- *   - Assignment rows include Function dropdown
- *   - Assignment role auto-fills from user's designation when selected
+ * The PM is a project-level field (combobox at the top), filtered to users
+ * with role=PM. The Secondary Evaluator is also a project-level combobox
+ * (filtered to non-PM, non-Mentor). Team Members are Staff users only —
+ * the PM is NOT in the assignments list.
  *
  * Placement: src/components/admin/ProjectModal.tsx
  */
@@ -51,7 +45,6 @@ interface DraftAssignment {
   user_id: string;
   assignment_role: string;
   function_id: string;
-  is_pm: boolean;
   assigned_date: string;
 }
 
@@ -80,7 +73,7 @@ export function ProjectModal({
   const [description, setDescription] = useState("");
   const [startDate, setStartDate] = useState("");
   const [expectedEndDate, setExpectedEndDate] = useState("");
-  const [reportsToId, setReportsToId] = useState<number | null>(null);
+  const [pmId, setPmId] = useState<number | null>(null);
   const [secondaryEvaluatorId, setSecondaryEvaluatorId] = useState<number | null>(null);
 
   // ── Reference Data ──────────────────────────────────────────────
@@ -98,6 +91,14 @@ export function ProjectModal({
 
   const toast = useToast();
   const snackbar = useSnackbar();
+
+  // Pre-bucket users by role for dropdown filtering. Active users only.
+  const activeUsers = users.filter((u) => !u.is_deleted);
+  const pmCandidates = activeUsers.filter((u) => u.role === "PM");
+  const secondaryCandidates = activeUsers.filter(
+    (u) => u.role !== "PM" && u.role !== "Mentor",
+  );
+  const memberCandidates = activeUsers.filter((u) => u.role === "Staff");
 
   // ── Load reference data + existing project ──────────────────────
   useEffect(() => {
@@ -127,7 +128,7 @@ export function ProjectModal({
         setDescription(detail.description ?? "");
         setStartDate(toDateInput(detail.start_date));
         setExpectedEndDate(toDateInput(detail.expected_end_date));
-        setReportsToId(detail.reports_to_id ?? null);
+        setPmId(detail.pm_id ?? null);
         setSecondaryEvaluatorId(detail.secondary_evaluator_id ?? null);
         setExistingAssignments(detail.assignments);
       })
@@ -144,7 +145,6 @@ export function ProjectModal({
         user_id: "",
         assignment_role: "",
         function_id: "",
-        is_pm: false,
         assigned_date: "",
       },
     ]);
@@ -160,24 +160,9 @@ export function ProjectModal({
     );
   };
 
-  /** Toggle PM flag on a draft. At most one draft can be PM at a time;
-   *  also blocked if an existing assignment is already PM. */
-  const toggleDraftPm = (id: string) => {
-    setDraftAssignments((prev) =>
-      prev.map((a) =>
-        a.tempId === id
-          ? { ...a, is_pm: !a.is_pm }
-          : a.is_pm
-            ? { ...a, is_pm: false }
-            : a,
-      ),
-    );
-  };
-
   /** Auto-fill role and function when user is selected */
   const handleUserSelect = (draftId: string, userId: string) => {
     updateDraft(draftId, "user_id", userId);
-
     if (!userId) return;
 
     const selectedUser = users.find((u) => u.id === Number(userId));
@@ -210,35 +195,19 @@ export function ProjectModal({
     ...draftAssignments.filter((a) => a.user_id).map((a) => Number(a.user_id)),
   ]);
 
-  const existingPrimary = existingAssignments.find((a) => a.evaluator_type === "Primary") ?? null;
-  const draftPrimary = draftAssignments.find((a) => a.is_pm) ?? null;
-  const hasPrimary = !!existingPrimary || !!draftPrimary;
-
-  // Validation requirements (for create + final save):
-  //   - PM checked on exactly one member
-  //   - reports_to_id set
-  //   - reports_to_id != PM (a PM cannot review themselves)
-  //   - secondary_evaluator_id != PM (no self-review)
-  //   - secondary_evaluator_id != reports_to_id (the same person can't
-  //     play both reviewer roles — the secondary should be an outside
-  //     perspective, not the same senior who already reviews the PM)
+  // Validation requirements:
+  //   - pm_id is set
+  //   - pm_id !== secondary_evaluator_id
+  //   - pm_id is not in any assignment row (PMs aren't members)
   //   - expected_end_date >= start_date when both set
-  const pmUserId = existingPrimary?.user_id ?? (draftPrimary && draftPrimary.user_id ? Number(draftPrimary.user_id) : null);
-  const reportsToConflict = pmUserId !== null && reportsToId === pmUserId;
-  const secondaryConflictWithPm = pmUserId !== null && secondaryEvaluatorId === pmUserId;
-  const secondaryConflictWithReportsTo =
-    secondaryEvaluatorId !== null && secondaryEvaluatorId === reportsToId;
-  const endBeforeStart = !!startDate && !!expectedEndDate && expectedEndDate < startDate;
-
-  // Dropdown exclusions — keep the two reviewer-role pickers from
-  // surfacing each other or the PM as candidates.
-  const reportsToExclude: number[] = [];
-  if (pmUserId !== null) reportsToExclude.push(pmUserId);
-  if (secondaryEvaluatorId !== null) reportsToExclude.push(secondaryEvaluatorId);
-
-  const secondaryExclude: number[] = [];
-  if (pmUserId !== null) secondaryExclude.push(pmUserId);
-  if (reportsToId !== null) secondaryExclude.push(reportsToId);
+  const pmInAssignments =
+    pmId !== null &&
+    (existingAssignments.some((a) => a.user_id === pmId) ||
+      draftAssignments.some((a) => a.user_id && Number(a.user_id) === pmId));
+  const secondaryConflictWithPm =
+    pmId !== null && secondaryEvaluatorId === pmId;
+  const endBeforeStart =
+    !!startDate && !!expectedEndDate && expectedEndDate < startDate;
 
   const validationError =
     !projectCode.trim()
@@ -247,17 +216,17 @@ export function ProjectModal({
         ? "Project Name is required."
         : endBeforeStart
           ? "End Date cannot be before Start Date."
-          : !isEditing && !hasPrimary
-            ? "Mark exactly one member as PM."
-            : !isEditing && reportsToId === null
-              ? "PM Reports To is required."
-              : reportsToConflict
-                ? "PM Reports To must be a different user than the PM."
-                : secondaryConflictWithPm
-                  ? "Secondary Evaluator must be a different user than the PM."
-                  : secondaryConflictWithReportsTo
-                    ? "Secondary Evaluator must be a different user than PM Reports To."
-                    : null;
+          : pmId === null
+            ? "PM is required — pick the Miltenyi project manager who reviews the team."
+            : secondaryConflictWithPm
+              ? "Secondary Evaluator must be a different user than the PM."
+              : pmInAssignments
+                ? "The PM cannot also appear in the team members list. Remove them from members."
+                : null;
+
+  // Dropdown exclusion: secondary cannot be the PM
+  const secondaryExclude: number[] = [];
+  if (pmId !== null) secondaryExclude.push(pmId);
 
   // ── Submit ──────────────────────────────────────────────────────
   const handleSubmit = async () => {
@@ -276,7 +245,7 @@ export function ProjectModal({
           description: description || null,
           start_date: startDate || null,
           expected_end_date: expectedEndDate || null,
-          reports_to_id: reportsToId,
+          pm_id: pmId,
           secondary_evaluator_id: secondaryEvaluatorId,
         });
 
@@ -286,7 +255,6 @@ export function ProjectModal({
             user_id: Number(draft.user_id),
             assignment_role: draft.assignment_role || null,
             function_id: draft.function_id ? Number(draft.function_id) : null,
-            evaluator_type: draft.is_pm ? "Primary" : null,
             assigned_date: draft.assigned_date || null,
           });
         }
@@ -297,18 +265,17 @@ export function ProjectModal({
             user_id: Number(a.user_id),
             assignment_role: a.assignment_role || null,
             function_id: a.function_id ? Number(a.function_id) : null,
-            evaluator_type: a.is_pm ? "Primary" : null,
             assigned_date: a.assigned_date || null,
           }));
 
-        // reports_to_id is required by backend; validation above guarantees non-null here.
+        // pm_id is required by backend; validation above guarantees non-null here.
         await projectService.createProject({
           project_code: projectCode,
           name,
           description: description || null,
           start_date: startDate || null,
           expected_end_date: expectedEndDate || null,
-          reports_to_id: reportsToId as number,
+          pm_id: pmId as number,
           secondary_evaluator_id: secondaryEvaluatorId,
           assignments,
         });
@@ -403,17 +370,18 @@ export function ProjectModal({
                 </div>
               </div>
 
+              {/* PM and Secondary Evaluator — both project-level fields */}
               <div className="grid grid-cols-2 gap-4">
                 <UserCombobox
-                  users={users}
-                  value={reportsToId}
-                  onChange={setReportsToId}
-                  label="PM Reports To"
+                  users={pmCandidates}
+                  value={pmId}
+                  onChange={setPmId}
+                  label="Project Manager (Miltenyi)"
                   required
-                  excludeIds={reportsToExclude}
+                  placeholder={pmCandidates.length === 0 ? "No PM users in directory" : "Select a PM"}
                 />
                 <UserCombobox
-                  users={users}
+                  users={secondaryCandidates}
                   value={secondaryEvaluatorId}
                   onChange={setSecondaryEvaluatorId}
                   label="Secondary Evaluator"
@@ -426,7 +394,7 @@ export function ProjectModal({
               <div className="border-t border-border pt-5 space-y-3">
                 <div className="flex items-center justify-between">
                   <p className="text-xs font-semibold text-text-main uppercase tracking-wide">
-                    Team Members
+                    Team Members (Staff)
                   </p>
                   <button type="button" onClick={addDraftAssignment} className="flex items-center gap-1 text-xs font-medium text-brand hover:underline">
                     <UserPlus className="h-3.5 w-3.5" aria-hidden="true" />
@@ -444,9 +412,6 @@ export function ProjectModal({
                     {a.function_name && (
                       <span className="text-xs text-text-muted shrink-0">{a.function_name}</span>
                     )}
-                    {a.evaluator_type === "Primary" && (
-                      <span className="rounded-full bg-brand-light px-2 py-0.5 text-xs font-medium text-brand shrink-0">PM</span>
-                    )}
                     {a.assigned_date && (
                       <span className="text-xs text-text-muted shrink-0">Joined: {a.assigned_date}</span>
                     )}
@@ -457,29 +422,19 @@ export function ProjectModal({
                 ))}
 
                 {/* Draft Assignments */}
-                {draftAssignments.map((draft) => {
-                  const pmDisabled =
-                    !draft.is_pm && (!!existingPrimary || !draft.user_id);
-                  const pmDisabledReason = !draft.is_pm
-                    ? existingPrimary
-                      ? `PM already set: ${existingPrimary.user_name}. Remove that member first.`
-                      : !draft.user_id
-                        ? "Pick an employee first."
-                        : null
-                    : null;
-                  return (
+                {draftAssignments.map((draft) => (
                   <div key={draft.tempId} className="rounded-lg border border-border p-3 space-y-2">
                     <div className="grid grid-cols-12 gap-2 items-end">
-                      {/* Employee — 4 cols */}
-                      <div className="col-span-4">
-                        <label className={LABEL_CLS}>Employee</label>
+                      {/* Employee — 5 cols */}
+                      <div className="col-span-5">
+                        <label className={LABEL_CLS}>Employee (Staff)</label>
                         <select
                           className={INPUT_CLS}
                           value={draft.user_id}
                           onChange={(e) => handleUserSelect(draft.tempId, e.target.value)}
                         >
                           <option value="">Select…</option>
-                          {users
+                          {memberCandidates
                             .filter((u) => !assignedUserIds.has(u.id) || String(u.id) === draft.user_id)
                             .map((u) => (
                               <option key={u.id} value={u.id}>{u.full_name}</option>
@@ -502,8 +457,8 @@ export function ProjectModal({
                         </select>
                       </div>
 
-                      {/* Function — 2 cols */}
-                      <div className="col-span-2">
+                      {/* Function — 3 cols */}
+                      <div className="col-span-3">
                         <label className={LABEL_CLS}>Function</label>
                         <select
                           className={INPUT_CLS}
@@ -515,30 +470,6 @@ export function ProjectModal({
                             <option key={d.id} value={d.id}>{d.name}</option>
                           ))}
                         </select>
-                      </div>
-
-                      {/* PM checkbox — 2 cols. Exactly one member can be PM. */}
-                      <div className="col-span-2">
-                        <label className={LABEL_CLS}>PM</label>
-                        <label
-                          className={`flex h-9 items-center gap-2 rounded-lg border px-2.5 text-sm ${
-                            pmDisabled
-                              ? "border-border bg-slate-50 text-text-muted cursor-not-allowed"
-                              : draft.is_pm
-                                ? "border-brand bg-brand-light text-brand cursor-pointer"
-                                : "border-border bg-white text-text-main cursor-pointer hover:bg-slate-50"
-                          }`}
-                          title={pmDisabledReason ?? undefined}
-                        >
-                          <input
-                            type="checkbox"
-                            className="h-4 w-4 accent-brand"
-                            checked={draft.is_pm}
-                            disabled={pmDisabled}
-                            onChange={() => toggleDraftPm(draft.tempId)}
-                          />
-                          <span>is PM</span>
-                        </label>
                       </div>
 
                       {/* Remove — 1 col */}
@@ -562,8 +493,7 @@ export function ProjectModal({
                       </div>
                     </div>
                   </div>
-                  );
-                })}
+                ))}
 
                 {existingAssignments.length === 0 && draftAssignments.length === 0 && (
                   <p className="text-xs text-text-muted italic text-center py-3">

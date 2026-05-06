@@ -68,7 +68,6 @@ def _build_session(user: User, db: Session) -> dict:
         "has_mentees": has_mentees,
         "has_mentor": has_mentor,
         "must_change_password": bool(user.must_change_password),
-        "is_management": bool(user.is_management) and user.role == "Admin",
     }
 
 

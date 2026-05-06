@@ -74,13 +74,33 @@ const NavItem = ({
   );
 };
 
+// Per-role nav visibility:
+//   Dashboard       — Staff, HR_Miltenyi, HR_MyOrg
+//   Project Reviews — Staff, PM, HR_Miltenyi, HR_MyOrg
+//   Annual Goals    — Staff, Mentor, HR_MyOrg
+//   Annual Reviews  — Staff, Mentor, HR_MyOrg
+//   My Mentees      — Mentor, HR_MyOrg     (gated on has_mentees)
+//   Admin Panel     — HR_Miltenyi, HR_MyOrg
 const MAIN_NAV: NavItemData[] = [
-  { id: "dashboard", path: "/dashboard", label: "Dashboard", icon: LayoutDashboard, feature: "dashboard" },
-  { id: "project-reviews", path: "/project-reviews", label: "Project Reviews", icon: Briefcase, feature: "project_reviews" },
-  { id: "annual-goals", path: "/annual-goals", label: "Annual Goals", icon: Target, feature: "goals" },
-  { id: "annual-reviews", path: "/annual-reviews", label: "Annual Reviews", icon: FileText, feature: "annual_reviews" },
-  { id: "my-mentees", path: "/my-mentees", label: "My Mentees", icon: Users, feature: "mentoring", requiresMentees: true },
-{ id: "admin", path: "/admin", label: "Admin Panel", icon: Settings, feature: "admin", requiredRole: ["Admin"] },
+  { id: "dashboard", path: "/dashboard", label: "Dashboard", icon: LayoutDashboard,
+    feature: "dashboard",
+    requiredRole: ["Staff", "HR_Miltenyi", "HR_MyOrg"] },
+  { id: "project-reviews", path: "/project-reviews", label: "Project Reviews", icon: Briefcase,
+    feature: "project_reviews",
+    requiredRole: ["Staff", "PM", "HR_Miltenyi", "HR_MyOrg"] },
+  { id: "annual-goals", path: "/annual-goals", label: "Annual Goals", icon: Target,
+    feature: "goals",
+    requiredRole: ["Staff", "Mentor", "HR_MyOrg"] },
+  { id: "annual-reviews", path: "/annual-reviews", label: "Annual Reviews", icon: FileText,
+    feature: "annual_reviews",
+    requiredRole: ["Staff", "Mentor", "HR_MyOrg"] },
+  { id: "my-mentees", path: "/my-mentees", label: "My Mentees", icon: Users,
+    feature: "mentoring",
+    requiredRole: ["Mentor", "HR_MyOrg"],
+    requiresMentees: true },
+  { id: "admin", path: "/admin", label: "Admin Panel", icon: Settings,
+    feature: "admin",
+    requiredRole: ["HR_Miltenyi", "HR_MyOrg"] },
 ];
 
 const BOTTOM_NAV: NavItemData[] = [

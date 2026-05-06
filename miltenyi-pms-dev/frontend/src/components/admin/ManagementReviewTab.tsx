@@ -1,14 +1,13 @@
 /**
  * ManagementReviewTab.tsx — Management Review grid for the AdminPanel.
  *
- * Only rendered when the current user is role === "Admin" AND
- * is_management === true. The backend also enforces both via
- * _require_management, so this gate is purely a UI affordance — the API
- * will 403 anyone else.
+ * Only rendered when the current user is role === "HR_MyOrg". The backend
+ * also enforces this via _require_hr_myorg, so this gate is purely a UI
+ * affordance — the API will 403 anyone else.
  *
  * Renders all annual reviews in the active cycle that have cleared the
  * mentor stage (pending_management + completed) as a single table, and
- * lets management set/override the management rating inline via a modal.
+ * lets HR_MyOrg set/override the management rating inline via a modal.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -316,16 +315,20 @@ export function ManagementReviewTab() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-slate-50 text-left">
-                {COLUMN_DEFS.map((col) =>
-                  col.key ? (
+                {COLUMN_DEFS.map((col) => {
+                  // Capture the key once so TS narrows it inside the closure;
+                  // `col.key` is widened back to `SortKey | null` in the
+                  // arrow body and the type guard wouldn't carry through.
+                  const sortKey = col.key;
+                  return sortKey ? (
                     <th
                       key={col.label}
                       className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-text-muted cursor-pointer select-none hover:text-text-main"
-                      onClick={() => handleSort(col.key)}
+                      onClick={() => handleSort(sortKey)}
                     >
                       <span className="inline-flex items-center gap-1">
                         {col.label}
-                        {getSortIcon(col.key)}
+                        {getSortIcon(sortKey)}
                       </span>
                     </th>
                   ) : (
@@ -335,8 +338,8 @@ export function ManagementReviewTab() {
                     >
                       {col.label}
                     </th>
-                  )
-                )}
+                  );
+                })}
               </tr>
             </thead>
             <tbody className="divide-y divide-border">

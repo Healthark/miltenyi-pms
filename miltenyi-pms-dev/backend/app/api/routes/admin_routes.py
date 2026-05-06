@@ -14,8 +14,9 @@ Endpoints:
 Security Layers Applied (ALL endpoints):
     Layer 1 — Authentication:   CurrentUser dependency (JWT validation)
     Layer 2 — Tenant Isolation: Every query filters by current_user.org_id
-    Layer 3 — Role Authorization: Every endpoint requires role == "Admin"
-    Layer 4 — Ownership:        Not applicable (Admin operates on all org data)
+    Layer 3 — Role Authorization: Each endpoint requires HR_MyOrg or HR_Miltenyi
+    Layer 4 — Target Protection: HR_Miltenyi cannot create/edit/deactivate
+                                 Mentor or HR_MyOrg users (security boundary)
 """
 
 import secrets
@@ -33,7 +34,7 @@ from app.core.cache import (
 )
 from app.core.config import settings
 from app.core.security import get_password_hash
-from app.models.user_models import User
+from app.models.user_models import User, Role, ADMIN_ROLES, PROTECTED_USER_ROLES
 from app.models.reference_models import Function, Designation
 from app.models.system_settings_models import SystemSettings, CycleType
 from app.core.cycle_utils import get_current_cycle_info
@@ -64,14 +65,53 @@ def _generate_temp_password(length: int = 12) -> str:
 router = APIRouter()
 
 
-# ── Reusable Admin Guard ─────────────────────────────────────────────
+# ── Reusable Role Guards ─────────────────────────────────────────────
 
-def _require_admin(current_user: User) -> None:
-    """Raise 403 if the caller is not an Admin. Used by every endpoint."""
-    if current_user.role != "Admin":
+def _require_hr_any(current_user: User) -> None:
+    """Raise 403 unless the caller is HR_MyOrg or HR_Miltenyi.
+
+    Both HR roles can hit the read endpoints + most write endpoints; the
+    target-protection check below adds the extra constraint on which rows
+    HR_Miltenyi may mutate.
+    """
+    if current_user.role not in ADMIN_ROLES:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only administrators can access this resource.",
+            detail="Only HR users can access this resource.",
+        )
+
+
+def _require_hr_myorg(current_user: User) -> None:
+    """Raise 403 unless the caller is HR_MyOrg (the full super-admin)."""
+    if current_user.role != Role.HR_MYORG.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the MyOrg HR can access this resource.",
+        )
+
+
+def _authorize_user_mutation(current_user: User, target_role: str | None) -> None:
+    """Enforce the security boundary on user-mutating endpoints.
+
+    HR_MyOrg may create/edit/deactivate any user.
+    HR_Miltenyi may NOT touch a row whose role is Mentor or HR_MyOrg —
+    that's the boundary the user defined: "Miltenyi HR can't edit the 3
+    mentors or the HR from MyOrg as a security measure."
+
+    Also blocks HR_Miltenyi from *promoting* a user TO a protected role
+    (e.g. flipping a Staff row's role to Mentor).
+
+    Pass `target_role=None` when the operation doesn't change the role
+    (e.g. deactivate); we look up the row's existing role at the call site.
+    """
+    if current_user.role == Role.HR_MYORG.value:
+        return  # MyOrg HR has full powers
+    if target_role and target_role in PROTECTED_USER_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Miltenyi HR cannot create or modify Mentors or MyOrg HR users."
+            ),
         )
 
 
@@ -90,7 +130,7 @@ def list_users(
     Uses joinedload to eagerly fetch function + designation in ONE query,
     avoiding the N+1 problem when the table renders 50+ rows.
     """
-    _require_admin(current_user)
+    _require_hr_any(current_user)
 
     users = (
         db.query(User)
@@ -124,7 +164,8 @@ def create_user(
     delivery does NOT roll back the creation — the user row is already
     persisted and the admin can relay the credentials manually.
     """
-    _require_admin(current_user)
+    _require_hr_any(current_user)
+    _authorize_user_mutation(current_user, user_in.role)
 
     # Check for duplicate email within this org
     existing = db.query(User).filter(
@@ -203,7 +244,7 @@ def update_user(
     Email is intentionally NOT updatable — the frontend makes the field
     read-only during edit mode to prevent orphaned JWT tokens.
     """
-    _require_admin(current_user)
+    _require_hr_any(current_user)
 
     user = db.query(User).filter(
         User.id == user_id,
@@ -215,6 +256,13 @@ def update_user(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found.",
         )
+
+    # Security boundary: HR_Miltenyi can't edit a Mentor or HR_MyOrg row
+    # (block based on the existing role) and can't promote anyone TO a
+    # protected role (block based on the incoming role, if changing).
+    _authorize_user_mutation(current_user, user.role)
+    if user_in.role and user_in.role != user.role:
+        _authorize_user_mutation(current_user, user_in.role)
 
     # If employee_code is changing, check for duplicates
     update_data = user_in.model_dump(exclude_unset=True)
@@ -255,7 +303,7 @@ def reactivate_user(
     in with their old password immediately. If admin wants a clean slate,
     they should follow up with a password reset.
     """
-    _require_admin(current_user)
+    _require_hr_any(current_user)
 
     user = db.query(User).filter(
         User.id == user_id,
@@ -267,6 +315,8 @@ def reactivate_user(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found.",
         )
+
+    _authorize_user_mutation(current_user, user.role)
 
     if not user.is_deleted:
         raise HTTPException(
@@ -294,7 +344,7 @@ def deactivate_user(
     it expires, but the CurrentUser dependency checks is_deleted on
     every request, so they are blocked immediately.
     """
-    _require_admin(current_user)
+    _require_hr_any(current_user)
 
     user = db.query(User).filter(
         User.id == user_id,
@@ -306,6 +356,8 @@ def deactivate_user(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found.",
         )
+
+    _authorize_user_mutation(current_user, user.role)
 
     # Guard: Admin should not deactivate themselves
     if user.id == current_user.id:
@@ -330,7 +382,7 @@ def list_functions(
     current_user: CurrentUser,
 ):
     """Return all active functions for the org (powers the <select> dropdown)."""
-    _require_admin(current_user)
+    _require_hr_any(current_user)
 
     def _query() -> List[FunctionBrief]:
         rows = (
@@ -355,7 +407,7 @@ def list_designations(
     current_user: CurrentUser,
 ):
     """Return all active designations for the org, sorted by hierarchy level."""
-    _require_admin(current_user)
+    _require_hr_any(current_user)
 
     def _query() -> List[DesignationBrief]:
         rows = (
@@ -388,7 +440,7 @@ def get_admin_settings(
     the /api/v1/settings/ endpoints. The frontend field name 'active_cycle'
     maps to the database column 'active_cycle_name'.
     """
-    _require_admin(current_user)
+    _require_hr_any(current_user)
 
     def _query() -> AdminSettingsResponse:
         row = db.query(SystemSettings).filter(
@@ -431,7 +483,7 @@ def update_admin_settings(
     Cycle cadence and fiscal month are editable; active_cycle_name is
     recomputed automatically from those two values + today's date.
     """
-    _require_admin(current_user)
+    _require_hr_any(current_user)
 
     settings = db.query(SystemSettings).filter(
         SystemSettings.org_id == current_user.org_id,

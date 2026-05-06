@@ -1,7 +1,39 @@
+from enum import Enum as PyEnum
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Index
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.core.database import Base
+
+
+class Role(str, PyEnum):
+    """User roles — controls every UI surface and every permission check.
+
+    Five distinct values:
+      HR_MyOrg     — full super-admin (the platform owner's HR)
+      HR_Miltenyi  — limited admin (the client's HR; cannot edit Mentors or HR_MyOrg users)
+      Mentor       — fixed mentor; reviews mentee goals + writes annual reviews;
+                     no own goals, never rated, never on a project
+      PM           — Miltenyi project manager; submits per-cycle project reviews
+                     on their team; no goals, never rated
+      Staff        — MyOrg employee assigned to Miltenyi work; sets goals,
+                     self-reviews on goals (H1/H2) and annual reviews,
+                     receives project reviews from PMs and annual reviews from Mentors
+
+    Stored as plain VARCHAR in the DB for portability and human-readable raw
+    queries. The string value (not the Python name) is what hits the column.
+    """
+    HR_MYORG = "HR_MyOrg"
+    HR_MILTENYI = "HR_Miltenyi"
+    MENTOR = "Mentor"
+    PM = "PM"
+    STAFF = "Staff"
+
+
+# Role groupings used by auth guards. Centralised so the routes stay readable
+# and the boundaries can be audited from one place.
+ADMIN_ROLES = frozenset({Role.HR_MYORG.value, Role.HR_MILTENYI.value})
+PROTECTED_USER_ROLES = frozenset({Role.HR_MYORG.value, Role.MENTOR.value})  # HR_Miltenyi cannot edit these
+
 
 class User(Base):
     __tablename__ = "users"
@@ -17,9 +49,11 @@ class User(Base):
     email = Column(String, nullable=False)
     phone = Column(String, nullable=True)
 
-    role = Column(String, nullable=False) # Admin, Manager, Practitioner, Staff
+    # One of the Role enum values above.
+    role = Column(String, nullable=False)
 
-    # Self-referencing Foreign Key for the Mentoring hierarchy
+    # Self-referencing FK for the mentoring hierarchy. Set on Staff users only;
+    # points to a Mentor row. Other roles leave this NULL.
     mentor_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     avatar_url = Column(String, nullable=True)
@@ -28,24 +62,18 @@ class User(Base):
     # The frontend gates the app until the user chooses a new password, and
     # the self-service change-password endpoint clears it on success.
     must_change_password = Column(Boolean, nullable=False, default=False, server_default="false")
-    # Sub-role flag — always implies role == "Admin". Gates the Management Review tab
-    # and the associated finalize/override actions. Set via seed.py for Founders + Amol;
-    # in the UI, new-user creation does not expose this (admin-managed only).
-    is_management = Column(Boolean, nullable=False, default=False, server_default="false")
     is_deleted = Column(Boolean, default=False)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-    # The Architect's Touch: Composite Indexes
-    # Ensures John can be EMP-001 at Healthark, and Sarah can be EMP-001 at PartnerOrg without crashing.
     __table_args__ = (
         Index("ix_users_org_email", "org_id", "email", unique=True),
         Index("ix_users_org_empcode", "org_id", "employee_code", unique=True),
     )
 
-    # Relationships (Allows us to easily fetch u.organization or u.function in Python)
+    # Relationships
     organization = relationship("Organization")
     function = relationship("Function")
     designation = relationship("Designation")
-    mentor = relationship("User", remote_side=[id]) # Maps the mentor back to a User object
+    mentor = relationship("User", remote_side=[id])

@@ -33,7 +33,7 @@ from app.models.project_review_models import (
     ProjectReviewEvaluator, EvaluatorStatus,
 )
 from app.models.system_settings_models import SystemSettings
-from app.models.user_models import User
+from app.models.user_models import User, ADMIN_ROLES
 from app.models.reference_models import Function, Designation
 from app.models.role_expectation_models import RoleExpectation
 from app.schemas.project_review_schemas import (
@@ -196,11 +196,11 @@ def get_my_projects(
 
         func_obj = db.query(Function).filter(Function.id == a.function_id).first() if a.function_id else None
 
-        pm_assignment = db.query(ProjectAssignment).filter(
-            ProjectAssignment.project_id == a.project_id,
-            ProjectAssignment.evaluator_type == "Primary",
-        ).first()
-        pm_user = db.query(User).filter(User.id == pm_assignment.user_id).first() if pm_assignment else None
+        # PM lives on the project, not in assignments
+        pm_user = (
+            db.query(User).filter(User.id == project.pm_id).first()
+            if project.pm_id else None
+        )
 
         # Get ALL reviews for this user on this project (across all cycles)
         reviews = db.query(ProjectReview).filter(
@@ -269,37 +269,31 @@ def get_pm_evaluation_queue(
     """
     active_cycle = _get_active_cycle(db, current_user.org_id)
 
-    # Find projects where current user is Primary
-    pm_assignments = (
-        db.query(ProjectAssignment)
+    # Find projects where current user is the PM (project-level FK).
+    pm_projects = (
+        db.query(Project)
         .filter(
-            ProjectAssignment.org_id == current_user.org_id,
-            ProjectAssignment.user_id == current_user.id,
-            ProjectAssignment.evaluator_type == "Primary",
+            Project.org_id == current_user.org_id,
+            Project.pm_id == current_user.id,
+            Project.is_deleted == False,  # noqa: E712
         )
         .all()
     )
 
-    if not pm_assignments:
+    if not pm_projects:
         return []
 
     cards: list[PMPendingReviewCard] = []
 
-    for pm_a in pm_assignments:
-        project = db.query(Project).filter(
-            Project.id == pm_a.project_id,
-            Project.is_deleted == False,  # noqa: E712
-        ).first()
-        if not project:
-            continue
-
-        # Get all team members on this project (excluding the PM themselves)
+    for project in pm_projects:
+        # Get all team members on this project. The PM is no longer in
+        # assignments at all, so we don't need to exclude them — every
+        # assignment row is a Staff member.
         team_assignments = (
             db.query(ProjectAssignment)
             .filter(
-                ProjectAssignment.project_id == pm_a.project_id,
+                ProjectAssignment.project_id == project.id,
                 ProjectAssignment.org_id == current_user.org_id,
-                ProjectAssignment.user_id != current_user.id,
             )
             .all()
         )
@@ -318,7 +312,7 @@ def get_pm_evaluation_queue(
                 .filter(
                     ProjectReview.org_id == current_user.org_id,
                     ProjectReview.user_id == ta.user_id,
-                    ProjectReview.project_id == pm_a.project_id,
+                    ProjectReview.project_id == project.id,
                     ProjectReview.is_deleted == False,  # noqa: E712
                 )
                 .order_by(ProjectReview.created_at.desc())
@@ -420,15 +414,13 @@ def submit_pm_evaluation(
     """
     cycle = _get_active_cycle(db, current_user.org_id)
 
-    # Verify caller is PM for this project
-    pm_assignment = db.query(ProjectAssignment).filter(
-        ProjectAssignment.org_id == current_user.org_id,
-        ProjectAssignment.project_id == project_id,
-        ProjectAssignment.user_id == current_user.id,
-        ProjectAssignment.evaluator_type == "Primary",
+    # Verify caller is the PM for this project (project-level field).
+    project = db.query(Project).filter(
+        Project.id == project_id,
+        Project.org_id == current_user.org_id,
+        Project.is_deleted == False,  # noqa: E712
     ).first()
-
-    if not pm_assignment:
+    if not project or project.pm_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You are not the Project Manager for this project.",
@@ -528,14 +520,13 @@ def save_pm_evaluation_draft(
     """
     cycle = _get_active_cycle(db, current_user.org_id)
 
-    # Same role gate as submit.
-    pm_assignment = db.query(ProjectAssignment).filter(
-        ProjectAssignment.org_id == current_user.org_id,
-        ProjectAssignment.project_id == project_id,
-        ProjectAssignment.user_id == current_user.id,
-        ProjectAssignment.evaluator_type == "Primary",
+    # Same role gate as submit (PM lives on the project, not in assignments).
+    project = db.query(Project).filter(
+        Project.id == project_id,
+        Project.org_id == current_user.org_id,
+        Project.is_deleted == False,  # noqa: E712
     ).first()
-    if not pm_assignment:
+    if not project or project.pm_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You are not the Project Manager for this project.",
@@ -867,11 +858,15 @@ def get_all_reviews(
     db: DbSession,
     current_user: CurrentUser,
 ):
-    """Admin-only: list all reviews across the org for the active cycle."""
-    if current_user.role != "Admin":
+    """HR-only: list all reviews across the org for the active cycle.
+
+    Both HR_MyOrg and HR_Miltenyi may read this — Miltenyi HR explicitly has
+    visibility into project reviews per the role spec.
+    """
+    if current_user.role not in ADMIN_ROLES:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only administrators can view all reviews.",
+            detail="Only HR users can view all reviews.",
         )
 
     cycle = _get_active_cycle(db, current_user.org_id)
@@ -908,10 +903,10 @@ def get_management_overview(
     N+1 queries — all project/assignment/user/function data is fetched
     in a single query, and a review_map dict provides O(1) lookups.
     """
-    if current_user.role != "Admin":
+    if current_user.role not in ADMIN_ROLES:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin only.",
+            detail="HR only.",
         )
 
     resolved_cycle = cycle if cycle else _get_active_cycle(db, current_user.org_id)
@@ -922,6 +917,7 @@ def get_management_overview(
         .options(
             joinedload(Project.assignments).joinedload(ProjectAssignment.user),
             joinedload(Project.assignments).joinedload(ProjectAssignment.function),
+            joinedload(Project.pm),
         )
         .filter(
             Project.org_id == current_user.org_id,
@@ -948,15 +944,11 @@ def get_management_overview(
     for project in projects:
         members: list[AdminMemberReviewRow] = []
         reviewed_count = 0
-        pm_name: str | None = None
+        pm_name: str | None = project.pm.full_name if project.pm else None
 
         for a in project.assignments:
             if not a.user or a.user.is_deleted:
                 continue
-
-            if a.evaluator_type == "Primary":
-                pm_name = a.user.full_name
-                continue  # PM is excluded from the members list
 
             review = review_map.get((project.id, a.user_id))
             review_status = review.status if review else "not_started"
@@ -1017,13 +1009,13 @@ def update_review(
             detail="Review not found.",
         )
 
-    is_admin = current_user.role == "Admin"
+    is_admin = current_user.role == "HR_MyOrg"  # HR_Miltenyi is read-only on reviews
     is_reviewer = review.reviewer_id == current_user.id
 
     if not (is_reviewer or is_admin):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the PM who submitted this review (or an Admin) may edit it.",
+            detail="Only the PM who submitted this review (or MyOrg HR) may edit it.",
         )
 
     review.comment_task_execution = payload.comment_task_execution
@@ -1066,7 +1058,8 @@ def get_review(
             detail="Review not found.",
         )
 
-    is_admin = current_user.role == "Admin"
+    # Both HR roles may read any review (Miltenyi HR has explicit project-review visibility).
+    is_admin = current_user.role in ADMIN_ROLES
     is_owner = review.user_id == current_user.id
     is_reviewer = review.reviewer_id == current_user.id
 

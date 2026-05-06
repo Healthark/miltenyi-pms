@@ -1,15 +1,10 @@
 /**
- * project.service.ts — Admin/HR Project Management API (Revised).
+ * project.service.ts — Admin/HR Project Management API.
  *
- * Changes:
- *   - Removed allocated_hours
- *   - expected_end_date instead of end_date
- *   - Added reports_to_id/reports_to_name on Project (required on create)
- *   - Added pm_id/pm_name on Project (Primary evaluator, resolved server-side)
- *   - Added secondary_evaluator_id/secondary_evaluator_name on Project (single,
- *     project-level Secondary; replaces multi-row Secondary assignments)
- *   - Added function_id/function_name on Assignment
- *   - Assignment.evaluator_type: "Primary" | null only
+ * PM is now a project-level field (Project.pm_id), restricted to users with
+ * role=PM. The Secondary evaluator (Project.secondary_evaluator_id) cannot
+ * be a PM or Mentor. Project members are Staff only — the PM is NOT in
+ * `assignments` and `assignment.evaluator_type` no longer exists.
  */
 
 import apiClient from "./api.client";
@@ -24,7 +19,6 @@ export interface AssignmentResponse {
   assignment_role: string | null;
   function_id: number | null;
   function_name: string | null;
-  evaluator_type: string | null; // "Primary" | "Secondary" | null
   assigned_date: string | null;
   created_at: string;
 }
@@ -33,14 +27,12 @@ export interface AssignmentCreatePayload {
   user_id: number;
   assignment_role?: string | null;
   function_id?: number | null;
-  evaluator_type?: "Primary" | null;
   assigned_date?: string | null;
 }
 
 export interface AssignmentUpdatePayload {
   assignment_role?: string | null;
   function_id?: number | null;
-  evaluator_type?: "Primary" | null;
   assigned_date?: string | null;
 }
 
@@ -52,8 +44,6 @@ export interface ProjectResponse {
   description: string | null;
   start_date: string | null;
   expected_end_date: string | null;
-  reports_to_id: number | null;
-  reports_to_name: string | null;
   pm_id: number | null;
   pm_name: string | null;
   secondary_evaluator_id: number | null;
@@ -74,10 +64,12 @@ export interface ProjectCreatePayload {
   description?: string | null;
   start_date?: string | null;
   expected_end_date?: string | null;
-  // Required by the backend Pydantic validator.
-  reports_to_id: number;
+  // Required: the Miltenyi PM (user with role=PM) who reviews team members.
+  pm_id: number;
+  // Optional: senior who adds an impact statement after the PM submits.
+  // Cannot be a PM or Mentor.
   secondary_evaluator_id?: number | null;
-  // Must contain exactly one entry with evaluator_type === "Primary".
+  // Staff members assigned to the project. The PM is NOT in this list.
   assignments: AssignmentCreatePayload[];
 }
 
@@ -87,7 +79,7 @@ export interface ProjectUpdatePayload {
   description?: string | null;
   start_date?: string | null;
   expected_end_date?: string | null;
-  reports_to_id?: number | null;
+  pm_id?: number | null;
   secondary_evaluator_id?: number | null;
 }
 

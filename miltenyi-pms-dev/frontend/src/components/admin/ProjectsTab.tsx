@@ -51,7 +51,7 @@ type ProjectsSortKey =
   | "start_date"
   | "expected_end_date"
   | "pm_name"
-  | "reports_to_name"
+  | "secondary_evaluator_name"
   | "member_count";
 
 const PROJECTS_SORT_CONFIG: Record<
@@ -63,7 +63,7 @@ const PROJECTS_SORT_CONFIG: Record<
   start_date:        { kind: "alpha",   get: (p) => p.start_date },
   expected_end_date: { kind: "alpha",   get: (p) => p.expected_end_date },
   pm_name:           { kind: "alpha",   get: (p) => p.pm_name },
-  reports_to_name:   { kind: "alpha",   get: (p) => p.reports_to_name },
+  secondary_evaluator_name: { kind: "alpha", get: (p) => p.secondary_evaluator_name },
   member_count:      { kind: "numeric", get: (p) => p.member_count },
 };
 
@@ -301,7 +301,7 @@ export function ProjectsTab({ ref }: ProjectsTabProps = {}) {
                   <SortableHeader label="PM" columnKey="pm_name" sort={sort} onSort={setSort} />
                 </th>
                 <th className="px-5 py-3">
-                  <SortableHeader label="PM Reports To" columnKey="reports_to_name" sort={sort} onSort={setSort} />
+                  <SortableHeader label="Secondary Evaluator" columnKey="secondary_evaluator_name" sort={sort} onSort={setSort} />
                 </th>
                 <th className="px-5 py-3">
                   <SortableHeader label="Members" columnKey="member_count" sort={sort} onSort={setSort} />
@@ -342,7 +342,7 @@ export function ProjectsTab({ ref }: ProjectsTabProps = {}) {
                     {project.pm_name ?? "—"}
                   </td>
                   <td className="px-5 py-3.5 text-text-muted">
-                    {project.reports_to_name ?? "—"}
+                    {project.secondary_evaluator_name ?? "—"}
                   </td>
                   <td className="px-5 py-3.5">
                     <div className="flex items-center gap-1.5 text-text-muted">

@@ -365,39 +365,10 @@ def get_mentee_detail(
         )
         .all()
     )
-    # Mentor's own evaluator role on each of the mentee's projects — drives
-    # the Projects tab action buttons (Evaluate / Write Impact / View).
-    # "Primary" comes from the mentor's own ProjectAssignment.evaluator_type.
-    # "Secondary" now comes from the project-level Project.secondary_evaluator_id.
-    mentee_project_ids = [a.project_id for a in assignments] if assignments else []
-    mentor_assignments = (
-        db.query(ProjectAssignment)
-        .filter(
-            ProjectAssignment.org_id == current_user.org_id,
-            ProjectAssignment.user_id == current_user.id,
-            ProjectAssignment.project_id.in_(mentee_project_ids),
-        )
-        .all()
-    ) if mentee_project_ids else []
-    mentor_role_by_project: dict[int, Optional[str]] = {
-        ma.project_id: ma.evaluator_type for ma in mentor_assignments
-    }
-    # Overlay project-level Secondary for projects where the mentor is the
-    # designated Secondary evaluator (Secondary takes priority over None,
-    # but we keep an existing Primary if both somehow apply).
-    if mentee_project_ids:
-        secondary_project_ids = (
-            db.query(Project.id)
-            .filter(
-                Project.org_id == current_user.org_id,
-                Project.id.in_(mentee_project_ids),
-                Project.secondary_evaluator_id == current_user.id,
-            )
-            .all()
-        )
-        for (pid,) in secondary_project_ids:
-            if mentor_role_by_project.get(pid) != "Primary":
-                mentor_role_by_project[pid] = "Secondary"
+    # In the new role model, mentors are never project members and cannot be
+    # the project's Secondary evaluator either. So a mentor viewing a mentee's
+    # project always has viewer_evaluator_role = None (read-only).
+    mentor_role_by_project: dict[int, Optional[str]] = {}
     project_reviews = (
         db.query(ProjectReview)
         .filter(
@@ -409,20 +380,17 @@ def get_mentee_detail(
         .all()
     )
 
-    # PM (Primary evaluator) per project — one Primary assignment per project.
-    pm_assignment_rows = (
-        db.query(ProjectAssignment, User)
-        .join(User, ProjectAssignment.user_id == User.id)
+    # PM per project — now a project-level field (Project.pm_id).
+    pm_rows = (
+        db.query(Project.id, User.full_name)
+        .join(User, User.id == Project.pm_id)
         .filter(
-            ProjectAssignment.org_id == current_user.org_id,
-            ProjectAssignment.evaluator_type == "Primary",
-            ProjectAssignment.project_id.in_([a.project_id for a in assignments]),
+            Project.org_id == current_user.org_id,
+            Project.id.in_([a.project_id for a in assignments]),
         )
         .all()
     ) if assignments else []
-    pm_name_by_project: dict[int, str] = {
-        pa.project_id: u.full_name for pa, u in pm_assignment_rows
-    }
+    pm_name_by_project: dict[int, str] = {pid: name for pid, name in pm_rows}
 
     # Bucket reviews by project_id and track which projects have an
     # active-cycle review (so we can emit a placeholder row otherwise).
@@ -442,7 +410,7 @@ def get_mentee_detail(
             project_name=a.project.name,
             project_code=a.project.project_code,
             assignment_role=a.assignment_role,
-            evaluator_type=a.evaluator_type,
+            evaluator_type=None,  # PM is no longer a member; mentees have no evaluator_type
             pm_name=pm_name_by_project.get(a.project_id),
             viewer_evaluator_role=mentor_role_by_project.get(a.project_id),
         )

@@ -60,13 +60,16 @@ class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+_ROLE_PATTERN = r"^(HR_MyOrg|HR_Miltenyi|Mentor|PM|Staff)$"
+
+
 class UserCreate(BaseModel):
     """Payload from the 'Add New User' modal."""
     employee_code: str = Field(..., min_length=1, max_length=20)
     full_name: str = Field(..., min_length=1, max_length=100)
     email: str = Field(..., min_length=5, max_length=100)
     phone: Optional[str] = None
-    role: str = Field(..., pattern=r"^(Admin|Manager|Principal|Staff)$")
+    role: str = Field(..., pattern=_ROLE_PATTERN)
     function_id: Optional[int] = None
     designation_id: Optional[int] = None
     mentor_id: Optional[int] = None
@@ -77,7 +80,7 @@ class UserUpdate(BaseModel):
     """Payload from the 'Edit User' modal — all fields optional (PATCH semantics)."""
     full_name: Optional[str] = Field(default=None, min_length=1, max_length=100)
     phone: Optional[str] = None
-    role: Optional[str] = Field(default=None, pattern=r"^(Admin|Manager|Principal|Staff)$")
+    role: Optional[str] = Field(default=None, pattern=_ROLE_PATTERN)
     employee_code: Optional[str] = Field(default=None, min_length=1, max_length=20)
     function_id: Optional[int] = None
     designation_id: Optional[int] = None
