@@ -31,15 +31,20 @@ function FinalRatingHiddenBadge() {
 }
 
 type ViewMode = "grid" | "table";
-type SortKey = "cycle_name" | "status" | "self_performance_rating";
+type SortKey =
+  | "cycle_name"
+  | "status"
+  | "self_performance_rating"
+  | "final_performance_rating";
 
 const SORT_CONFIG: Record<
   SortKey,
   { kind: SortKind; get: (r: AnnualReview) => unknown }
 > = {
-  cycle_name:              { kind: "alpha",   get: (r) => r.cycle_name },
-  status:                  { kind: "alpha",   get: (r) => r.status },
-  self_performance_rating: { kind: "numeric", get: (r) => r.self_performance_rating },
+  cycle_name:               { kind: "cycle",   get: (r) => r.cycle_name },
+  status:                   { kind: "alpha",   get: (r) => r.status },
+  self_performance_rating:  { kind: "numeric", get: (r) => r.self_performance_rating },
+  final_performance_rating: { kind: "numeric", get: (r) => r.final_performance_rating },
 };
 
 // ── Card ────────────────────────────────────────────────────────────
@@ -292,8 +297,13 @@ export function SelfReviewTab({ reviews, isLoading }: SelfReviewTabProps) {
                     onSort={setSort}
                   />
                 </th>
-                <th className="text-left px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted">
-                  Final Rating
+                <th className="text-left px-4 py-2.5">
+                  <SortableHeader
+                    label="Final Rating"
+                    columnKey="final_performance_rating"
+                    sort={sort}
+                    onSort={setSort}
+                  />
                 </th>
                 <th className="text-left px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted">
                   Actions

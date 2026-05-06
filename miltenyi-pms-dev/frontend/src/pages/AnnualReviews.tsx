@@ -7,6 +7,8 @@ import { useConfirm } from "../hooks/useConfirm";
 import { SelfReviewTab } from "../components/reviews/SelfReviewTab";
 import { TeamReviewTab } from "../components/reviews/TeamReviewTab";
 import { SelfReviewFormModal } from "../components/reviews/SelfReviewFormModal";
+import { SortableHeader } from "../components/SortableHeader";
+import { compareValues, type SortKind, type SortState } from "../utils/sort";
 import {
   annualReviewService,
   type AnnualReview,
@@ -15,6 +17,26 @@ import {
 } from "../services/annual-review.service";
 import { getErrorMessage } from "../utils/errors";
 import { formatFyLabel } from "../utils/fy";
+
+type AllReviewsSortKey =
+  | "employee_name"
+  | "cycle_name"
+  | "status"
+  | "self_performance_rating"
+  | "mentor_performance_rating"
+  | "final_performance_rating";
+
+const ALL_REVIEWS_SORT_CONFIG: Record<
+  AllReviewsSortKey,
+  { kind: SortKind; get: (r: AnnualReview) => unknown }
+> = {
+  employee_name:             { kind: "alpha",   get: (r) => r.employee_name ?? `User #${r.user_id}` },
+  cycle_name:                { kind: "cycle",   get: (r) => r.cycle_name },
+  status:                    { kind: "alpha",   get: (r) => r.status },
+  self_performance_rating:   { kind: "numeric", get: (r) => r.self_performance_rating },
+  mentor_performance_rating: { kind: "numeric", get: (r) => r.mentor_performance_rating },
+  final_performance_rating:  { kind: "numeric", get: (r) => r.final_performance_rating },
+};
 
 type ActiveTab = "my" | "team" | "all";
 
@@ -265,6 +287,7 @@ function AllReviewsTab({
   readonly isLoading: boolean;
 }) {
   const [cycleFilter, setCycleFilter] = useState<string>("all");
+  const [sort, setSort] = useState<SortState<AllReviewsSortKey> | null>(null);
 
   const cycles = Array.from(
     new Set(reviews.map((r) => r.cycle_name).filter(Boolean)),
@@ -274,6 +297,13 @@ function AllReviewsTab({
     cycleFilter === "all"
       ? reviews
       : reviews.filter((r) => r.cycle_name === cycleFilter);
+
+  const sorted = sort
+    ? filtered.slice().sort((a, b) => {
+        const { kind, get } = ALL_REVIEWS_SORT_CONFIG[sort.key];
+        return compareValues(get(a), get(b), kind, sort.direction);
+      })
+    : filtered;
 
   if (isLoading) {
     return (
@@ -327,28 +357,28 @@ function AllReviewsTab({
         <table className="w-full text-[13px]">
           <thead>
             <tr className="bg-slate-50/80 border-b border-border">
-              <th className="text-left px-5 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted">
-                Employee
+              <th className="text-left px-5 py-2.5">
+                <SortableHeader label="Employee" columnKey="employee_name" sort={sort} onSort={setSort} />
               </th>
-              <th className="text-left px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted">
-                Cycle
+              <th className="text-left px-4 py-2.5">
+                <SortableHeader label="Cycle" columnKey="cycle_name" sort={sort} onSort={setSort} />
               </th>
-              <th className="text-left px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted">
-                Status
+              <th className="text-left px-4 py-2.5">
+                <SortableHeader label="Status" columnKey="status" sort={sort} onSort={setSort} />
               </th>
-              <th className="text-left px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted">
-                Self
+              <th className="text-left px-4 py-2.5">
+                <SortableHeader label="Self" columnKey="self_performance_rating" sort={sort} onSort={setSort} />
               </th>
-              <th className="text-left px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted">
-                Mentor
+              <th className="text-left px-4 py-2.5">
+                <SortableHeader label="Mentor" columnKey="mentor_performance_rating" sort={sort} onSort={setSort} />
               </th>
-              <th className="text-left px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted">
-                Final
+              <th className="text-left px-4 py-2.5">
+                <SortableHeader label="Final" columnKey="final_performance_rating" sort={sort} onSort={setSort} />
               </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border/50">
-            {filtered.map((r) => (
+            {sorted.map((r) => (
               <tr key={r.id} className="hover:bg-slate-50/60 transition-colors">
                 <td className="px-5 py-3 font-medium text-text-main">
                   {r.employee_name ?? `User #${r.user_id}`}

@@ -79,6 +79,25 @@ const MY_GOALS_SORT_CONFIG: Record<
   approval_status: { kind: "alpha",   get: (g) => g.approval_status },
 };
 
+// All Goals (HR_MyOrg view-only) sort config.
+type AllGoalsSortKey =
+  | "owner_name"
+  | "title"
+  | "manager_name"
+  | "fy_year"
+  | "approval_status";
+
+const ALL_GOALS_SORT_CONFIG: Record<
+  AllGoalsSortKey,
+  { kind: SortKind; get: (g: TeamGoal) => unknown }
+> = {
+  owner_name:      { kind: "alpha",   get: (g) => g.owner_name },
+  title:           { kind: "alpha",   get: (g) => g.title },
+  manager_name:    { kind: "alpha",   get: (g) => g.manager_name },
+  fy_year:         { kind: "numeric", get: (g) => g.fy_year },
+  approval_status: { kind: "alpha",   get: (g) => g.approval_status },
+};
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -832,6 +851,7 @@ function AllGoalsTab({
 }) {
   const [statusFilter, setStatusFilter] = useState<ApprovalFilter>("all");
   const [yearFilter, setYearFilter] = useState<string>("all");
+  const [sort, setSort] = useState<SortState<AllGoalsSortKey> | null>(null);
 
   const years = Array.from(
     new Set(goals.map((g) => g.fy_year).filter((y): y is number => y !== null)),
@@ -840,6 +860,13 @@ function AllGoalsTab({
   const filtered = goals
     .filter((g) => statusFilter === "all" || g.approval_status === statusFilter)
     .filter((g) => yearFilter === "all" || g.fy_year === Number(yearFilter));
+
+  const sorted = sort
+    ? filtered.slice().sort((a, b) => {
+        const { kind, get } = ALL_GOALS_SORT_CONFIG[sort.key];
+        return compareValues(get(a), get(b), kind, sort.direction);
+      })
+    : filtered;
 
   if (isLoading) {
     return (
@@ -915,25 +942,25 @@ function AllGoalsTab({
         <table className="w-full text-[13px]">
           <thead>
             <tr className="bg-slate-50/80 border-b border-border">
-              <th className="text-left px-5 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted">
-                Employee
+              <th className="text-left px-5 py-2.5">
+                <SortableHeader label="Employee" columnKey="owner_name" sort={sort} onSort={setSort} />
               </th>
-              <th className="text-left px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted">
-                Goal
+              <th className="text-left px-4 py-2.5">
+                <SortableHeader label="Goal" columnKey="title" sort={sort} onSort={setSort} />
               </th>
-              <th className="text-left px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted">
-                Mentor
+              <th className="text-left px-4 py-2.5">
+                <SortableHeader label="Mentor" columnKey="manager_name" sort={sort} onSort={setSort} />
               </th>
-              <th className="text-left px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted">
-                FY
+              <th className="text-left px-4 py-2.5">
+                <SortableHeader label="FY" columnKey="fy_year" sort={sort} onSort={setSort} />
               </th>
-              <th className="text-left px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted">
-                Status
+              <th className="text-left px-4 py-2.5">
+                <SortableHeader label="Status" columnKey="approval_status" sort={sort} onSort={setSort} />
               </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border/50">
-            {filtered.map((g) => (
+            {sorted.map((g) => (
               <tr key={g.id} className="hover:bg-slate-50/60 transition-colors">
                 <td className="px-5 py-3 font-medium text-text-main">
                   {g.owner_name ?? "—"}
