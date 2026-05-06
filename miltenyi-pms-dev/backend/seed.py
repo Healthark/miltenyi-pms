@@ -39,7 +39,10 @@ from app.models.organization_models import Organization
 from app.models.reference_models import Function, Designation
 from app.models.user_models import User, Role
 from app.models.system_settings_models import SystemSettings, CycleType
-from app.models.project_models import Project, ProjectAssignment
+from app.models.project_models import (
+    Project, ProjectAssignment,
+    PROJECT_STATUS_ACTIVE, PROJECT_STATUS_COMPLETED,
+)
 from app.models.project_review_models import ProjectReview, ProjectReviewStatus
 from app.models.annual_review_models import AnnualReview, ReviewStatus
 from app.models.goal_models import Goal, ApprovalStatus, GoalType
@@ -757,6 +760,76 @@ def seed_database() -> None:
             print("  [~] Project reviews already exist; reusing.")
 
         # ============================================================ #
+        # 10. LIFECYCLE TEST DATA                                       #
+        # ============================================================ #
+        # Pre-populate at least one of each new state so the dev env
+        # exercises the Project completion + Assignment soft-end paths.
+        # Each block is idempotent: re-running the seed is a no-op once
+        # the target state is reached.
+        #
+        #   10a. MIL-PRJ-101 → Completed (all 3 assignments end-dated).
+        #        Demonstrates the Completed pill, Re-open button, and
+        #        the PM queue's exclusion of completed projects.
+        #   10b. Charlie's MIL-PRJ-103 stint → ended 2026-04-30 (mid-Q1).
+        #        Demonstrates "PM keeps the in-flight review" — his Q1
+        #        PENDING row stays in Hans's queue so Hans can still
+        #        write up the partial period.
+        #   10c. Charlie re-joins MIL-PRJ-103 with a new active stint
+        #        starting 2026-06-01. Demonstrates two-row coexistence
+        #        per (project, user) after the unique-index drop.
+
+        # 10a — Mark MIL-PRJ-101 completed.
+        if proj_cell.status != PROJECT_STATUS_COMPLETED:
+            proj_cell.status = PROJECT_STATUS_COMPLETED
+            proj_cell.completed_at = datetime(2025, 9, 1, tzinfo=timezone.utc)
+            proj_cell.completed_by_id = sarah.id
+            for a in db.query(ProjectAssignment).filter(
+                ProjectAssignment.project_id == proj_cell.id,
+                ProjectAssignment.end_date.is_(None),
+            ).all():
+                a.end_date = date(2025, 8, 31)
+                a.ended_by_id = sarah.id
+            db.commit()
+            print("  [+] MIL-PRJ-101 marked Completed (3 assignments auto-end-dated)")
+        else:
+            print("  [~] MIL-PRJ-101 already Completed; skipping.")
+
+        # 10b — End Charlie's MIL-PRJ-103 stint mid-Q1.
+        charlie_103_active = db.query(ProjectAssignment).filter(
+            ProjectAssignment.project_id == proj_validation.id,
+            ProjectAssignment.user_id == charlie.id,
+            ProjectAssignment.end_date.is_(None),
+            ProjectAssignment.assigned_date == date(2026, 1, 8),
+        ).first()
+        if charlie_103_active:
+            charlie_103_active.end_date = date(2026, 4, 30)
+            charlie_103_active.ended_by_id = hans.id
+            db.commit()
+            print("  [+] Charlie's MIL-PRJ-103 stint ended 2026-04-30 (Hans)")
+        else:
+            print("  [~] Charlie's original MIL-PRJ-103 stint already ended; skipping.")
+
+        # 10c — Re-join Charlie on MIL-PRJ-103 as a new active stint.
+        charlie_103_rejoin = db.query(ProjectAssignment).filter(
+            ProjectAssignment.project_id == proj_validation.id,
+            ProjectAssignment.user_id == charlie.id,
+            ProjectAssignment.end_date.is_(None),
+        ).first()
+        if not charlie_103_rejoin:
+            db.add(ProjectAssignment(
+                org_id=miltenyi.id,
+                project_id=proj_validation.id,
+                user_id=charlie.id,
+                assignment_role=d_sci.name,
+                function_id=func_rnd.id,
+                assigned_date=date(2026, 6, 1),
+            ))
+            db.commit()
+            print("  [+] Charlie re-joined MIL-PRJ-103 (new active stint from 2026-06-01)")
+        else:
+            print("  [~] Charlie already has an active MIL-PRJ-103 stint; skipping re-join.")
+
+        # ============================================================ #
         # DONE                                                          #
         # ============================================================ #
         print("\n" + "=" * 64)
@@ -778,6 +851,10 @@ def seed_database() -> None:
         print("    R&D:        bob@, charlie@, dana@, iris@miltenyi.com")
         print("    Mfg:        evan@, fiona@, klaus@miltenyi.com")
         print("    Commercial: mia@, nils@miltenyi.com")
+        print("\n--- LIFECYCLE TEST DATA ---")
+        print("  MIL-PRJ-101 → Completed (Sarah, 2025-09-01); 3 historical assignments")
+        print("  MIL-PRJ-103 → Charlie has TWO stints: ended 2026-04-30 + active 2026-06-01")
+        print("    His Q1 PENDING review stays in Hans's queue (in-flight finish).")
         print()
 
     except Exception as e:
