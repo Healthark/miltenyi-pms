@@ -45,7 +45,13 @@ export interface ProjectReviewResponse {
   cycle: string;
   status: ProjectReviewStatus;
   employee_name: string;
+  /** Person who actually submitted the review. NULL while pending. */
   reviewer_name: string | null;
+  /** The project's currently-assigned PM. Populated whenever
+   *  Project.pm_id is set, even on pending rows. Use this for "PM"
+   *  columns in read-only views; reviewer_name is only meaningful
+   *  once a review has been submitted. */
+  pm_name: string | null;
   project_name: string;
   project_code: string;
   comment_task_execution: string | null;

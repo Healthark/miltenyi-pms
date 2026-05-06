@@ -152,6 +152,14 @@ def _build_review_response(
     employee = db.query(User).filter(User.id == review.user_id).first()
     reviewer = db.query(User).filter(User.id == review.reviewer_id).first() if review.reviewer_id else None
     project = db.query(Project).filter(Project.id == review.project_id).first()
+    # The project's currently-assigned PM. Distinct from `reviewer` because
+    # `reviewer_id` is only stamped when a review is submitted, but the PM
+    # exists on the project from creation. Read-only views (Mentor / HR /
+    # Staff "My Reviews") need this so a pending row can still show the PM.
+    pm_user = (
+        db.query(User).filter(User.id == project.pm_id).first()
+        if project and project.pm_id else None
+    )
 
     secondary_responses: list[SecondaryEvalResponse] = []
     for ev in review.secondary_evaluations:
@@ -184,6 +192,7 @@ def _build_review_response(
         status=review.status,
         employee_name=employee.full_name if employee else "Unknown",
         reviewer_name=reviewer.full_name if reviewer else None,
+        pm_name=pm_user.full_name if pm_user else None,
         project_name=project.name if project else "Unknown",
         project_code=project.project_code if project else "???",
         comment_task_execution=review.comment_task_execution,

@@ -108,9 +108,14 @@ class ProjectReviewResponse(BaseModel):
     cycle: str
     status: ProjectReviewStatus
 
-    # Resolved names
+    # Resolved names.
+    #   reviewer_name → who actually submitted the review (null while pending).
+    #   pm_name       → the project's currently-assigned PM (always populated
+    #                   when project.pm_id is set; survives even before any
+    #                   review has been submitted).
     employee_name: str
     reviewer_name: Optional[str] = None
+    pm_name: Optional[str] = None
     project_name: str
     project_code: str
 

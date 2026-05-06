@@ -540,7 +540,7 @@ function ReadOnlyReviewsList({
                     </div>
                   </td>
                   <td className="px-4 py-3 text-text-muted">
-                    {r.reviewer_name ?? "—"}
+                    {r.pm_name ?? r.reviewer_name ?? "—"}
                   </td>
                   <td className="px-4 py-3">
                     <span className="text-[12px] font-semibold text-text-muted bg-slate-100 px-1.5 py-0.5 rounded">
