@@ -643,6 +643,53 @@ def get_secondary_evaluation_queue(
     return [_build_review_response(r, db, viewer_user_id=current_user.id) for r in reviews]
 
 
+# =====================================================================
+# MENTOR ENDPOINTS (read-only view of mentees' project reviews)
+# =====================================================================
+
+@router.get("/mentees", response_model=List[ProjectReviewResponse])
+def get_mentees_project_reviews(
+    db: DbSession,
+    current_user: CurrentUser,
+):
+    """
+    List every ProjectReview row where the reviewee is one of the
+    caller's direct mentees, across ALL cycles. View-only — mentors
+    can read but not submit / edit project reviews.
+
+    Returns both pending and reviewed rows so the mentor can see the
+    full picture (including which evaluations are still outstanding).
+    Pending rows have null PM comments + null performance_group; the
+    frontend renders them as "Pending PM evaluation".
+    """
+    mentee_ids = [
+        uid for (uid,) in db.query(User.id).filter(
+            User.mentor_id == current_user.id,
+            User.org_id == current_user.org_id,
+            User.is_deleted == False,  # noqa: E712
+        ).all()
+    ]
+
+    if not mentee_ids:
+        return []
+
+    reviews = (
+        db.query(ProjectReview)
+        .filter(
+            ProjectReview.org_id == current_user.org_id,
+            ProjectReview.user_id.in_(mentee_ids),
+            ProjectReview.is_deleted == False,  # noqa: E712
+        )
+        .order_by(
+            ProjectReview.cycle.desc(),
+            ProjectReview.created_at.desc(),
+        )
+        .all()
+    )
+
+    return [_build_review_response(r, db, viewer_user_id=current_user.id) for r in reviews]
+
+
 @router.post("/{review_id}/secondary", response_model=SecondaryEvalResponse, status_code=status.HTTP_201_CREATED)
 def submit_secondary_evaluation(
     review_id: int,
@@ -858,10 +905,12 @@ def get_all_reviews(
     db: DbSession,
     current_user: CurrentUser,
 ):
-    """HR-only: list all reviews across the org for the active cycle.
+    """HR-only: list all project reviews across the org, every cycle.
 
-    Both HR_MyOrg and HR_Miltenyi may read this — Miltenyi HR explicitly has
-    visibility into project reviews per the role spec.
+    Both HR_MyOrg and HR_Miltenyi may read this — Miltenyi HR explicitly
+    has visibility into project reviews per the role spec. Returns every
+    cycle so the frontend can render a full read-only history with a
+    cycle filter; previously this was scoped to the active cycle.
     """
     if current_user.role not in ADMIN_ROLES:
         raise HTTPException(
@@ -869,16 +918,16 @@ def get_all_reviews(
             detail="Only HR users can view all reviews.",
         )
 
-    cycle = _get_active_cycle(db, current_user.org_id)
-
     reviews = (
         db.query(ProjectReview)
         .filter(
             ProjectReview.org_id == current_user.org_id,
-            ProjectReview.cycle == cycle,
             ProjectReview.is_deleted == False,  # noqa: E712
         )
-        .order_by(ProjectReview.created_at.desc())
+        .order_by(
+            ProjectReview.cycle.desc(),
+            ProjectReview.created_at.desc(),
+        )
         .all()
     )
 
@@ -1045,7 +1094,8 @@ def get_review(
     - Employee sees their own review (only after PM evaluates)
     - PM sees any review they wrote
     - Secondary sees reviews on their projects
-    - Admin sees everything
+    - Mentor sees reviews of their direct mentees (view-only)
+    - HR (either) sees everything
     """
     review = db.query(ProjectReview).filter(
         ProjectReview.id == review_id,
@@ -1070,7 +1120,11 @@ def get_review(
         ProjectAssignment.org_id == current_user.org_id,
     ).first() is not None
 
-    if not (is_owner or is_reviewer or is_on_project or is_admin):
+    # Check if caller is the mentor of the reviewee (view-only access).
+    owner = db.query(User).filter(User.id == review.user_id).first()
+    is_mentor_of_owner = owner is not None and owner.mentor_id == current_user.id
+
+    if not (is_owner or is_reviewer or is_on_project or is_admin or is_mentor_of_owner):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have access to this review.",

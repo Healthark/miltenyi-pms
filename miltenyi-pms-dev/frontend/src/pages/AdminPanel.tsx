@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
-  UserPlus, Users, Settings, FolderOpen, BarChart2, ShieldCheck, Plus,
+  UserPlus, Users, Settings, FolderOpen, ShieldCheck, Plus,
 } from "lucide-react";
 
 import {
@@ -19,7 +19,6 @@ import { UsersTab } from "../components/admin/UsersTab";
 import { SystemSettingsTab } from "../components/admin/SystemSettingsTab";
 import { ProjectsTab, type ProjectsTabHandle } from "../components/admin/ProjectsTab";
 import { UserModal } from "../components/admin/UserModal";
-import { ManagementTab } from "../components/project-reviews/ManagementTab";
 import { ManagementReviewTab } from "../components/admin/ManagementReviewTab";
 import { useSystemSettings } from "../hooks/useSystemSettings";
 import { useToast } from "../hooks/useToast";
@@ -31,7 +30,6 @@ import { useAuth } from "../hooks/useAuth";
 type ActiveTab =
   | "users"
   | "projects"
-  | "reviews"
   | "management_review"
   | "settings";
 
@@ -290,14 +288,6 @@ export default function AdminPanel() {
             <FolderOpen className="h-4 w-4" aria-hidden="true" />
             Projects
           </button>
-          <button
-            type="button"
-            className={tabCls("reviews")}
-            onClick={() => setActiveTab("reviews")}
-          >
-            <BarChart2 className="h-4 w-4" aria-hidden="true" />
-            Reviews
-          </button>
           {canSeeManagementReview && (
             <button
               type="button"
@@ -331,12 +321,6 @@ export default function AdminPanel() {
         )}
 
         {activeTab === "projects" && <ProjectsTab ref={projectsTabRef} />}
-
-        {activeTab === "reviews" && (
-          <div className="p-5">
-            <ManagementTab />
-          </div>
-        )}
 
         {activeTab === "management_review" && canSeeManagementReview && (
           <ManagementReviewTab />

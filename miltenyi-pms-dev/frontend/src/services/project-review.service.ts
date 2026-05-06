@@ -234,6 +234,14 @@ export const projectReviewService = {
     return res.data;
   },
 
+  // ── Mentor (read-only view of mentees' project reviews) ─────────
+  /** All ProjectReview rows for the caller's direct mentees, across all
+   *  cycles. View-only — mentors cannot submit or edit. */
+  getMenteeReviews: async (): Promise<ProjectReviewResponse[]> => {
+    const res = await apiClient.get<ProjectReviewResponse[]>("/project-reviews/mentees");
+    return res.data;
+  },
+
   /** Submit secondary impact statement. */
   submitSecondaryEval: async (
     reviewId: number,

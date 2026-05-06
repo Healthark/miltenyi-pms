@@ -89,7 +89,7 @@ const MAIN_NAV: NavItemData[] = [
     requiredRole: ["Staff", "Mentor", "PM", "HR_Miltenyi", "HR_MyOrg"] },
   { id: "project-reviews", path: "/project-reviews", label: "Project Reviews", icon: Briefcase,
     feature: "project_reviews",
-    requiredRole: ["Staff", "PM", "HR_Miltenyi", "HR_MyOrg"] },
+    requiredRole: ["Staff", "PM", "Mentor", "HR_Miltenyi", "HR_MyOrg"] },
   { id: "annual-goals", path: "/annual-goals", label: "Annual Goals", icon: Target,
     feature: "goals",
     requiredRole: ["Staff", "Mentor", "HR_MyOrg"] },
