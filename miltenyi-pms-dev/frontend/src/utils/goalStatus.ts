@@ -1,12 +1,15 @@
 /**
  * goalStatus.ts — Goal lifecycle helpers shared across the frontend.
  *
- * Mirrors backend `app/core/cycle_utils.py`. Two cadences are supported:
- *   - Half-yearly orgs use H1 / H2 (two windows per FY).
- *   - Quarterly  orgs use Q1 / Q2 / Q3 / Q4 (four windows per FY).
- * The org's `cycle_type` from SystemSettings decides which family is in
- * play. The cycle code's prefix (`H` vs `Q`) is also a reliable cadence
- * marker on its own — `cycleKeysFor` recovers it without a second arg.
+ * Goal self-review cadence is HALF-YEARLY (H1 / H2) for every org,
+ * independent of the org's `cycle_type`. Project review cadence is
+ * separately driven by `cycle_type` (quarterly or half-yearly) — that
+ * decoupling is intentional: a quarterly project-review org still
+ * reviews goals twice a year.
+ *
+ * The Q1..Q4 cycle codes remain in the type/value space for backwards
+ * compatibility with any persisted rows from the previous cycle-coupled
+ * model, but are no longer produced by the goal-review UI.
  */
 
 import type { ApprovalStatus, SelfReviewCycleHalf } from "../services/goal.service";
@@ -43,35 +46,32 @@ export function isPostApproved(status: ApprovalStatus): boolean {
 const HALF_KEYS:    readonly SelfReviewCycleHalf[] = ["H1", "H2"];
 const QUARTER_KEYS: readonly SelfReviewCycleHalf[] = ["Q1", "Q2", "Q3", "Q4"];
 
-/** Pick the cadence list for an org's `cycle_type`. */
+/**
+ * Goal-review cadence is half-yearly for every org. The function name +
+ * parameter are kept for callsite compatibility, but the result no longer
+ * varies with `cycleType` — it always returns the H1/H2 pair.
+ */
 export function cycleKeysForType(
-  cycleType: string | null | undefined,
+  _cycleType: string | null | undefined,
 ): readonly SelfReviewCycleHalf[] {
-  return cycleType === "quarterly" ? QUARTER_KEYS : HALF_KEYS;
+  return HALF_KEYS;
 }
 
-/** Recover the cadence list from a single cycle code's prefix. */
+/** Recover the cadence list from a single cycle code's prefix.
+ *  Still prefix-driven so legacy Q1..Q4 rows continue to render correctly. */
 export function cycleKeysFor(
   code: SelfReviewCycleHalf,
 ): readonly SelfReviewCycleHalf[] {
   return code.startsWith("Q") ? QUARTER_KEYS : HALF_KEYS;
 }
 
-/**
- * Display label for a cycle code. The data column already stores the
- * appropriate prefix (H/Q) per cadence, so this is mostly a passthrough —
- * but the legacy half-yearly→quarterly translation case (cycle_type
- * "quarterly" with H1/H2 stored values) still flips the display.
- */
+/** Display label for a cycle code — passthrough now that the goal cadence
+ *  is uniformly half-yearly. The previous H1→Q1 translation for quarterly
+ *  orgs is gone. */
 export function halfDisplayLabel(
   half: SelfReviewCycleHalf,
-  cycleType?: string | null,
+  _cycleType?: string | null,
 ): string {
-  // Legacy: H1/H2 stored on a quarterly org → show as Q1/Q2.
-  if (cycleType === "quarterly") {
-    if (half === "H1") return "Q1";
-    if (half === "H2") return "Q2";
-  }
   return half;
 }
 

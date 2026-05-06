@@ -86,6 +86,25 @@ def _get_settings(db: DbSession, org_id: int) -> SystemSettings:
     return settings
 
 
+def _assert_half_cadence(cycle_half: SelfReviewCycleHalf) -> None:
+    """Reject Q1..Q4 cycle codes for goal reviews.
+
+    Goal review cadence is uniformly half-yearly (H1 / H2) regardless of
+    the org's `cycle_type`. Quarterly applies to project reviews only.
+    The SelfReviewCycleHalf enum still includes Q1..Q4 for backwards
+    compatibility with persisted rows from the previous cycle-coupled
+    model — but we don't accept new Q-prefixed submissions.
+    """
+    if not cycle_half.value.startswith("H"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Goal reviews are filed half-yearly (H1 or H2). Quarterly "
+                "cycles are only used for project reviews."
+            ),
+        )
+
+
 def _self_reviewed_state(cycle_code: str) -> str:
     """`{cycle}_self_reviewed` ApprovalStatus value: "h1" → "h1_self_reviewed"."""
     return f"{cycle_code.lower()}_self_reviewed"
@@ -684,6 +703,7 @@ def submit_goal_self_review(
     On success the updated goal is returned with the full self_reviews
     list (so the frontend can re-render both H1 and H2 rows).
     """
+    _assert_half_cadence(cycle_half)
     goal = _get_goal_with_relations(db, goal_id, current_user.org_id)
 
     if goal.user_id != current_user.id:
@@ -771,6 +791,7 @@ def save_goal_self_review_draft(
     NOT advanced. Reopening the form re-uses the draft. The Submit
     endpoint clears ``is_draft`` and advances state.
     """
+    _assert_half_cadence(cycle_half)
     goal = _get_goal_with_relations(db, goal_id, current_user.org_id)
 
     if goal.user_id != current_user.id:
@@ -862,6 +883,7 @@ def submit_goal_mentor_review(
         - One-shot per (goal_id, cycle_half) — DB unique index is the
           final guard.
     """
+    _assert_half_cadence(cycle_half)
     goal = _get_goal_with_relations(db, goal_id, current_user.org_id)
     goal_owner = db.query(User).filter(User.id == goal.user_id).first()
 
@@ -958,6 +980,7 @@ def save_goal_mentor_review_draft(
     is written with ``is_draft=True`` and the goal's ``approval_status``
     is NOT advanced.
     """
+    _assert_half_cadence(cycle_half)
     goal = _get_goal_with_relations(db, goal_id, current_user.org_id)
     goal_owner = db.query(User).filter(User.id == goal.user_id).first()
 
