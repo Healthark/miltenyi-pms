@@ -31,15 +31,24 @@ import { compareValues, type SortKind, type SortState } from "../../utils/sort";
 import { extractFyToken, formatFyLabel } from "../../utils/fy";
 
 type ViewMode = "grid" | "table";
-type SortKey = "employee_name" | "cycle_name" | "status";
+type SortKey =
+  | "employee_name"
+  | "cycle_name"
+  | "status"
+  | "self_performance_rating"
+  | "mentor_performance_rating"
+  | "management_performance_rating";
 
 const SORT_CONFIG: Record<
   SortKey,
   { kind: SortKind; get: (r: MenteeAnnualReview) => unknown }
 > = {
-  employee_name: { kind: "alpha", get: (r) => r.employee_name },
-  cycle_name:    { kind: "alpha", get: (r) => r.cycle_name },
-  status:        { kind: "alpha", get: (r) => r.status },
+  employee_name:                 { kind: "alpha",   get: (r) => r.employee_name },
+  cycle_name:                    { kind: "cycle",   get: (r) => r.cycle_name },
+  status:                        { kind: "alpha",   get: (r) => r.status },
+  self_performance_rating:       { kind: "numeric", get: (r) => r.self_performance_rating },
+  mentor_performance_rating:     { kind: "numeric", get: (r) => r.mentor_performance_rating },
+  management_performance_rating: { kind: "numeric", get: (r) => r.management_performance_rating },
 };
 
 // ── Card ────────────────────────────────────────────────────────────
@@ -309,14 +318,29 @@ export function TeamReviewTab() {
                     onSort={setSort}
                   />
                 </th>
-                <th className="text-left px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted">
-                  Self Rating
+                <th className="text-left px-4 py-2.5">
+                  <SortableHeader
+                    label="Self Rating"
+                    columnKey="self_performance_rating"
+                    sort={sort}
+                    onSort={setSort}
+                  />
                 </th>
-                <th className="text-left px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted">
-                  Your Rating
+                <th className="text-left px-4 py-2.5">
+                  <SortableHeader
+                    label="Your Rating"
+                    columnKey="mentor_performance_rating"
+                    sort={sort}
+                    onSort={setSort}
+                  />
                 </th>
-                <th className="text-left px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted">
-                  Management Rating
+                <th className="text-left px-4 py-2.5">
+                  <SortableHeader
+                    label="Management Rating"
+                    columnKey="management_performance_rating"
+                    sort={sort}
+                    onSort={setSort}
+                  />
                 </th>
                 <th className="text-left px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted">
                   Actions

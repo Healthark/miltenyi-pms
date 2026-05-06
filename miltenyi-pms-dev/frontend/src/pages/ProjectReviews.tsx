@@ -77,6 +77,27 @@ const MY_REVIEWS_SORT_CONFIG: Record<
   performance_group: { kind: "numeric", get: (c) => c.performance_group },
 };
 
+// Read-only review list (Mentor's mentees + HR's all-reviews) sort config.
+type ReadOnlySortKey =
+  | "employee_name"
+  | "project_name"
+  | "pm_name"
+  | "cycle"
+  | "status"
+  | "performance_group";
+
+const READ_ONLY_SORT_CONFIG: Record<
+  ReadOnlySortKey,
+  { kind: SortKind; get: (r: ProjectReviewResponse) => unknown }
+> = {
+  employee_name:     { kind: "alpha",   get: (r) => r.employee_name },
+  project_name:      { kind: "alpha",   get: (r) => r.project_name },
+  pm_name:           { kind: "alpha",   get: (r) => r.pm_name ?? r.reviewer_name },
+  cycle:             { kind: "cycle",   get: (r) => r.cycle },
+  status:            { kind: "alpha",   get: (r) => r.status },
+  performance_group: { kind: "numeric", get: (r) => r.performance_group },
+};
+
 const cardKey = (c: MyProjectCard) => `${c.project_id}-${c.cycle}`;
 
 export function ProjectReviews() {
@@ -438,6 +459,7 @@ function ReadOnlyReviewsList({
   readonly showCycleFilter?: boolean;
 }) {
   const [cycleFilter, setCycleFilter] = useState<string>("all");
+  const [sort, setSort] = useState<SortState<ReadOnlySortKey> | null>(null);
 
   const cycles = useMemo(
     () =>
@@ -451,6 +473,14 @@ function ReadOnlyReviewsList({
     if (!showCycleFilter || cycleFilter === "all") return reviews;
     return reviews.filter((r) => r.cycle === cycleFilter);
   }, [reviews, cycleFilter, showCycleFilter]);
+
+  const sorted = useMemo(() => {
+    if (!sort) return filtered;
+    return filtered.slice().sort((a, b) => {
+      const { kind, get } = READ_ONLY_SORT_CONFIG[sort.key];
+      return compareValues(get(a), get(b), kind, sort.direction);
+    });
+  }, [filtered, sort]);
 
   if (isLoading) {
     return <TableSkeleton />;
@@ -503,28 +533,33 @@ function ReadOnlyReviewsList({
         <table className="w-full text-[13px]">
           <thead>
             <tr className="bg-slate-50/80 border-b border-border">
-              <th className="text-left px-5 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted">
-                {employeeColumnLabel}
+              <th className="text-left px-5 py-2.5">
+                <SortableHeader
+                  label={employeeColumnLabel}
+                  columnKey="employee_name"
+                  sort={sort}
+                  onSort={setSort}
+                />
               </th>
-              <th className="text-left px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted">
-                Project
+              <th className="text-left px-4 py-2.5">
+                <SortableHeader label="Project" columnKey="project_name" sort={sort} onSort={setSort} />
               </th>
-              <th className="text-left px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted">
-                PM
+              <th className="text-left px-4 py-2.5">
+                <SortableHeader label="PM" columnKey="pm_name" sort={sort} onSort={setSort} />
               </th>
-              <th className="text-left px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted">
-                Cycle
+              <th className="text-left px-4 py-2.5">
+                <SortableHeader label="Cycle" columnKey="cycle" sort={sort} onSort={setSort} />
               </th>
-              <th className="text-left px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted">
-                Status
+              <th className="text-left px-4 py-2.5">
+                <SortableHeader label="Status" columnKey="status" sort={sort} onSort={setSort} />
               </th>
-              <th className="text-left px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted">
-                Rating
+              <th className="text-left px-4 py-2.5">
+                <SortableHeader label="Rating" columnKey="performance_group" sort={sort} onSort={setSort} />
               </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border/50">
-            {filtered.map((r) => {
+            {sorted.map((r) => {
               const isReviewed = r.status === "reviewed";
               return (
                 <tr key={r.id} className="hover:bg-slate-50/60 transition-colors">

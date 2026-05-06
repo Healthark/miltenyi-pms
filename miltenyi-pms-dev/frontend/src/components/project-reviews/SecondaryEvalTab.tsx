@@ -19,8 +19,16 @@ import {
 import { getErrorMessage } from "../../utils/errors";
 import { useAuth } from "../../hooks/useAuth";
 import { useToast } from "../../hooks/useToast";
+import { SortableHeader } from "../SortableHeader";
+import { compareValues, type SortKind, type SortState } from "../../utils/sort";
 
 type ViewMode = "grid" | "table";
+
+type SecondarySortKey =
+  | "employee_name"
+  | "project_name"
+  | "cycle"
+  | "submission_status";
 
 const TEXTAREA_CLS =
   "w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-brand resize-none";
@@ -201,6 +209,7 @@ export function SecondaryEvalTab() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [employeeFilter, setEmployeeFilter] = useState<string>("all");
+  const [sort, setSort] = useState<SortState<SecondarySortKey> | null>(null);
 
   const [impactTarget, setImpactTarget] = useState<ProjectReviewResponse | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -243,6 +252,23 @@ export function SecondaryEvalTab() {
     }
     return true;
   });
+
+  const SECONDARY_SORT_CONFIG: Record<
+    SecondarySortKey,
+    { kind: SortKind; get: (r: ProjectReviewResponse) => unknown }
+  > = {
+    employee_name:     { kind: "alpha", get: (r) => r.employee_name },
+    project_name:      { kind: "alpha", get: (r) => r.project_name },
+    cycle:             { kind: "cycle", get: (r) => r.cycle },
+    submission_status: { kind: "alpha", get: (r) => (getMySubmission(r) ? "submitted" : "pending") },
+  };
+
+  const sortedReviews = sort
+    ? filteredReviews.slice().sort((a, b) => {
+        const { kind, get } = SECONDARY_SORT_CONFIG[sort.key];
+        return compareValues(get(a), get(b), kind, sort.direction);
+      })
+    : filteredReviews;
 
   const handleSubmit = async (reviewId: number, payload: SecondaryEvalPayload) => {
     setIsSaving(true);
@@ -357,7 +383,7 @@ export function SecondaryEvalTab() {
       ) : viewMode === "grid" ? (
         /* ── Card View ── */
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {filteredReviews.map((r) => {
+          {sortedReviews.map((r) => {
             const myEval = getMySubmission(r);
             return myEval ? (
               <SubmittedCard key={r.id} review={r} impactStatement={myEval.impact_statement ?? ""} onEdit={openEdit} />
@@ -372,15 +398,23 @@ export function SecondaryEvalTab() {
           <table className="w-full text-[13px]">
             <thead>
               <tr className="bg-slate-50/80 border-b border-border">
-                <th className="text-left px-5 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted">Employee</th>
-                <th className="text-left px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted">Project</th>
-                <th className="hidden sm:table-cell text-left px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted">Cycle</th>
-                <th className="text-left px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted">Status</th>
+                <th className="text-left px-5 py-2.5">
+                  <SortableHeader label="Employee" columnKey="employee_name" sort={sort} onSort={setSort} />
+                </th>
+                <th className="text-left px-4 py-2.5">
+                  <SortableHeader label="Project" columnKey="project_name" sort={sort} onSort={setSort} />
+                </th>
+                <th className="hidden sm:table-cell text-left px-4 py-2.5">
+                  <SortableHeader label="Cycle" columnKey="cycle" sort={sort} onSort={setSort} />
+                </th>
+                <th className="text-left px-4 py-2.5">
+                  <SortableHeader label="Status" columnKey="submission_status" sort={sort} onSort={setSort} />
+                </th>
                 <th className="text-right px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/50">
-              {filteredReviews.map((r) => {
+              {sortedReviews.map((r) => {
                 const myEval = getMySubmission(r);
                 const isSubmitted = !!myEval;
                 return (
