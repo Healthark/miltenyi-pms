@@ -27,7 +27,10 @@ from fastapi import APIRouter, HTTPException, status
 from sqlalchemy.orm import joinedload
 
 from app.api.dependencies import DbSession, CurrentUser
-from app.models.project_models import Project, ProjectAssignment
+from app.core.cycle_utils import cycle_date_range, parse_cycle_name
+from app.models.project_models import (
+    Project, ProjectAssignment, PROJECT_STATUS_COMPLETED,
+)
 from app.models.project_review_models import (
     ProjectReview, ProjectReviewStatus,
     ProjectReviewEvaluator, EvaluatorStatus,
@@ -93,6 +96,44 @@ def _get_active_cycle(db: DbSession, org_id: int) -> str:
         )
 
     return settings.active_cycle_name
+
+
+def _get_fiscal_start_month(db: DbSession, org_id: int) -> int:
+    """Return the org's fiscal_start_month (default 4 if settings missing)."""
+    settings = db.query(SystemSettings).filter(
+        SystemSettings.org_id == org_id
+    ).first()
+    return settings.fiscal_start_month if settings else 4
+
+
+def _assignment_active_for_cycle(
+    assignment: ProjectAssignment,
+    cycle_name: str,
+    fiscal_start_month: int,
+) -> bool:
+    """Did this assignment's stint overlap the cycle's review window?
+
+    True iff:
+        assigned_date is on or before cycle_end, AND
+        end_date is NULL or on or after cycle_start.
+
+    For annual orgs (no cycle code in the name), this is permissive —
+    we have no review window to enforce, so assignment-state-at-now is
+    the only signal.
+    """
+    parsed = parse_cycle_name(cycle_name)
+    if parsed is None:
+        # Annual cadence: no per-cycle window to check. Anyone whose
+        # assignment isn't entirely in the future and isn't already
+        # ended counts as active.
+        return assignment.end_date is None
+    code, fy = parsed
+    cycle_start, cycle_end = cycle_date_range(code, fy, fiscal_start_month)
+    if assignment.assigned_date and assignment.assigned_date > cycle_end:
+        return False
+    if assignment.end_date and assignment.end_date < cycle_start:
+        return False
+    return True
 
 
 def _build_review_response(
@@ -172,10 +213,17 @@ def get_my_projects(
     """
     List all projects the current user is assigned to, with review status
     across ALL cycles. Returns one card per (project, cycle). For the
-    current cycle a 'pending' card is added if no review exists yet.
-    Frontend handles cycle filtering.
+    current cycle a 'pending' card is added if no review exists yet —
+    but only when the assignment is currently active and the project is
+    not completed. Removed-from-project users still see their past
+    reviews; they just don't get fresh placeholders.
+
+    Across stints (re-joined the same project later), each
+    ProjectAssignment row contributes its own pending placeholder for
+    the active cycle if it overlaps that window.
     """
     current_cycle = _get_active_cycle(db, current_user.org_id)
+    fiscal_start = _get_fiscal_start_month(db, current_user.org_id)
 
     assignments = (
         db.query(ProjectAssignment)
@@ -189,6 +237,11 @@ def get_my_projects(
     )
 
     cards: list[MyProjectCard] = []
+    # Reviews are independent of assignment rows (they FK directly to
+    # user_id + project_id), so we only emit each existing review once
+    # per project — even if the user has multiple stints on it.
+    seen_review_ids: set[int] = set()
+
     for a in assignments:
         project = db.query(Project).filter(Project.id == a.project_id).first()
         if not project:
@@ -202,16 +255,17 @@ def get_my_projects(
             if project.pm_id else None
         )
 
-        # Get ALL reviews for this user on this project (across all cycles)
+        # Get ALL reviews for this user on this project (across all cycles).
         reviews = db.query(ProjectReview).filter(
             ProjectReview.org_id == current_user.org_id,
             ProjectReview.user_id == current_user.id,
             ProjectReview.project_id == a.project_id,
         ).all()
 
-        seen_cycles = set()
         for review in reviews:
-            seen_cycles.add(review.cycle)
+            if review.id in seen_review_ids:
+                continue
+            seen_review_ids.add(review.id)
             cards.append(MyProjectCard(
                 review_id=review.id,
                 project_id=project.id,
@@ -228,22 +282,35 @@ def get_my_projects(
                 cycle=review.cycle,
             ))
 
-        # If no review exists for the current cycle, add a pending card
-        if current_cycle not in seen_cycles:
-            cards.append(MyProjectCard(
-                review_id=None,
-                project_id=project.id,
-                project_name=project.name,
-                project_code=project.project_code,
-                project_start_date=project.start_date,
-                project_expected_end_date=project.expected_end_date,
-                assigned_date=a.assigned_date,
-                assignment_role=a.assignment_role,
-                function_name=func_obj.name if func_obj else None,
-                review_status="pending",
-                pm_name=pm_user.full_name if pm_user else None,
-                cycle=current_cycle,
-            ))
+        # Active-cycle placeholder only when:
+        #   - the project is still active (not completed), AND
+        #   - this assignment is currently active (end_date IS NULL), AND
+        #   - this assignment overlaps the current cycle's window, AND
+        #   - no review row exists yet for this (user, project, current_cycle).
+        if project.status == PROJECT_STATUS_COMPLETED:
+            continue
+        if a.end_date is not None:
+            continue
+        if not _assignment_active_for_cycle(a, current_cycle, fiscal_start):
+            continue
+        already_has_review = any(r.cycle == current_cycle for r in reviews)
+        if already_has_review:
+            continue
+
+        cards.append(MyProjectCard(
+            review_id=None,
+            project_id=project.id,
+            project_name=project.name,
+            project_code=project.project_code,
+            project_start_date=project.start_date,
+            project_expected_end_date=project.expected_end_date,
+            assigned_date=a.assigned_date,
+            assignment_role=a.assignment_role,
+            function_name=func_obj.name if func_obj else None,
+            review_status="pending",
+            pm_name=pm_user.full_name if pm_user else None,
+            cycle=current_cycle,
+        ))
 
     return cards
 
@@ -268,14 +335,19 @@ def get_pm_evaluation_queue(
     historical evaluations the PM may want to edit or review.
     """
     active_cycle = _get_active_cycle(db, current_user.org_id)
+    fiscal_start = _get_fiscal_start_month(db, current_user.org_id)
 
     # Find projects where current user is the PM (project-level FK).
+    # Skip completed projects — past reviews remain editable through the
+    # admin All Reviews surface, but the PM's queue should only show
+    # projects that are still operational.
     pm_projects = (
         db.query(Project)
         .filter(
             Project.org_id == current_user.org_id,
             Project.pm_id == current_user.id,
             Project.is_deleted == False,  # noqa: E712
+            Project.status != PROJECT_STATUS_COMPLETED,
         )
         .all()
     )
@@ -286,9 +358,9 @@ def get_pm_evaluation_queue(
     cards: list[PMPendingReviewCard] = []
 
     for project in pm_projects:
-        # Get all team members on this project. The PM is no longer in
-        # assignments at all, so we don't need to exclude them — every
-        # assignment row is a Staff member.
+        # All assignment rows for this project — including end-dated ones,
+        # because the PM may still need to write up the cycle a person was
+        # removed in. We filter the placeholder logic per-row below.
         team_assignments = (
             db.query(ProjectAssignment)
             .filter(
@@ -297,6 +369,8 @@ def get_pm_evaluation_queue(
             )
             .all()
         )
+
+        seen_review_ids: set[int] = set()
 
         for ta in team_assignments:
             user = db.query(User).filter(User.id == ta.user_id).first()
@@ -320,8 +394,13 @@ def get_pm_evaluation_queue(
             )
             cycles_with_review = {r.cycle for r in reviews}
 
-            # One card per existing review (any cycle)
+            # One card per existing review (any cycle). Reviews are FK'd to
+            # (user, project) — independent of which assignment stint, so we
+            # de-dup by review.id across stints.
             for review in reviews:
+                if review.id in seen_review_ids:
+                    continue
+                seen_review_ids.add(review.id)
                 cards.append(PMPendingReviewCard(
                     review_id=review.id,
                     project_id=project.id,
@@ -339,8 +418,18 @@ def get_pm_evaluation_queue(
                     has_draft_content=_pm_review_has_draft_content(review),
                 ))
 
-            # Placeholder for the active cycle when no review row exists yet
-            if active_cycle not in cycles_with_review:
+            # Placeholder for the active cycle is generated only when:
+            #   - this assignment row is currently active (end_date IS NULL),
+            #     so the person is still on the project today; AND
+            #   - this assignment overlapped the active cycle's window; AND
+            #   - no review row exists yet for that cycle.
+            #
+            # End-dated assignments contribute to the PM queue *only* through
+            # their existing review rows above — letting the PM finish a
+            # partial-period review without creating brand new ones.
+            if ta.end_date is None \
+               and _assignment_active_for_cycle(ta, active_cycle, fiscal_start) \
+               and active_cycle not in cycles_with_review:
                 cards.append(PMPendingReviewCard(
                     review_id=None,
                     project_id=project.id,
@@ -413,6 +502,7 @@ def submit_pm_evaluation(
     status to 'reviewed'. The employee can now see the evaluation.
     """
     cycle = _get_active_cycle(db, current_user.org_id)
+    fiscal_start = _get_fiscal_start_month(db, current_user.org_id)
 
     # Verify caller is the PM for this project (project-level field).
     project = db.query(Project).filter(
@@ -426,14 +516,16 @@ def submit_pm_evaluation(
             detail="You are not the Project Manager for this project.",
         )
 
-    # Verify the target user is assigned to this project
-    target_assignment = db.query(ProjectAssignment).filter(
+    # Verify the target user has at least one assignment row for this
+    # project (active or historical). Multiple rows are possible across
+    # re-joins; any one is enough to anchor a review.
+    user_assignments = db.query(ProjectAssignment).filter(
         ProjectAssignment.org_id == current_user.org_id,
         ProjectAssignment.project_id == project_id,
         ProjectAssignment.user_id == user_id,
-    ).first()
+    ).all()
 
-    if not target_assignment:
+    if not user_assignments:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="This employee is not assigned to this project.",
@@ -461,6 +553,27 @@ def submit_pm_evaluation(
             status_code=status.HTTP_409_CONFLICT,
             detail="This employee has already been evaluated for this project this cycle.",
         )
+
+    # Lifecycle gate: refuse to *create* a new review row when the
+    # project is completed or no stint covered this cycle. Editing an
+    # already-existing draft / pending row is always allowed (so the PM
+    # can finish a partial-period review for someone who was removed
+    # mid-cycle, and HR can backfill via the PM after completion).
+    if review is None:
+        if project.status == PROJECT_STATUS_COMPLETED:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Cannot create new reviews on a completed project.",
+            )
+        any_overlap = any(
+            _assignment_active_for_cycle(a, cycle, fiscal_start)
+            for a in user_assignments
+        )
+        if not any_overlap:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This employee was not on the project during this cycle.",
+            )
 
     if review:
         # Promote PENDING / DRAFT row to REVIEWED.
@@ -519,6 +632,7 @@ def save_pm_evaluation_draft(
     left as-is on the row.
     """
     cycle = _get_active_cycle(db, current_user.org_id)
+    fiscal_start = _get_fiscal_start_month(db, current_user.org_id)
 
     # Same role gate as submit (PM lives on the project, not in assignments).
     project = db.query(Project).filter(
@@ -532,12 +646,12 @@ def save_pm_evaluation_draft(
             detail="You are not the Project Manager for this project.",
         )
 
-    target_assignment = db.query(ProjectAssignment).filter(
+    user_assignments = db.query(ProjectAssignment).filter(
         ProjectAssignment.org_id == current_user.org_id,
         ProjectAssignment.project_id == project_id,
         ProjectAssignment.user_id == user_id,
-    ).first()
-    if not target_assignment:
+    ).all()
+    if not user_assignments:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="This employee is not assigned to this project.",
@@ -563,6 +677,24 @@ def save_pm_evaluation_draft(
                 "longer be saved."
             ),
         )
+
+    # Same lifecycle gate as submit_pm_evaluation: don't allow new draft
+    # rows on completed projects or for cycles a stint didn't cover.
+    if review is None:
+        if project.status == PROJECT_STATUS_COMPLETED:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Cannot create new reviews on a completed project.",
+            )
+        any_overlap = any(
+            _assignment_active_for_cycle(a, cycle, fiscal_start)
+            for a in user_assignments
+        )
+        if not any_overlap:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This employee was not on the project during this cycle.",
+            )
 
     if not review:
         review = ProjectReview(

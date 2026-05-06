@@ -6,9 +6,15 @@ Schema:
                                   Project-level, single FK; NOT in project_assignments.
     - Project.secondary_evaluator_id → optional senior who adds an impact
                                        statement after the PM submits.
+    - Project.status / completed_at  → lifecycle. "active" or "completed".
+                                       Completed projects no longer generate
+                                       cycle placeholders for their team.
     - ProjectAssignment        → only the team members. The PM is excluded.
                                   Has no evaluator_type — the "Primary" concept
                                   is replaced by Project.pm_id at the project level.
+    - ProjectAssignment.end_date → soft-end. Active iff NULL. Past stints stay
+                                   in the table so the user keeps seeing their
+                                   own historical reviews.
 """
 
 from sqlalchemy import (
@@ -17,6 +23,12 @@ from sqlalchemy import (
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.core.database import Base
+
+
+# Project lifecycle states. Single string column rather than a DB enum so we
+# stay DB-agnostic and Pydantic-friendly (matches the Role taxonomy pattern).
+PROJECT_STATUS_ACTIVE = "active"
+PROJECT_STATUS_COMPLETED = "completed"
 
 
 class Project(Base):
@@ -41,6 +53,13 @@ class Project(Base):
     # PM or Mentor (validated at the route layer).
     secondary_evaluator_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
+    # Lifecycle. "active" by default. HR flips to "completed" via the dedicated
+    # route — that also bulk-end-dates every active assignment. Re-open clears
+    # completed_at but does NOT auto-restore assignments.
+    status = Column(String, nullable=False, server_default=PROJECT_STATUS_ACTIVE)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    completed_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
     is_deleted = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -53,6 +72,7 @@ class Project(Base):
     organization = relationship("Organization")
     pm = relationship("User", foreign_keys=[pm_id])
     secondary_evaluator = relationship("User", foreign_keys=[secondary_evaluator_id])
+    completed_by = relationship("User", foreign_keys=[completed_by_id])
     assignments = relationship(
         "ProjectAssignment",
         back_populates="project",
@@ -61,8 +81,14 @@ class Project(Base):
 
 
 class ProjectAssignment(Base):
-    """One row per team member on a project. The PM is NOT a member —
-    they live at the project level via Project.pm_id."""
+    """One row per team member on a project, per stint. The PM is NOT a member —
+    they live at the project level via Project.pm_id.
+
+    A user can have multiple rows for the same project over time (re-assignment
+    after a break) — only one of them may have end_date IS NULL at a time.
+    Enforced at the route layer; no DB-level partial unique index so we stay
+    portable. Past stints with end_date set are kept so the user still sees
+    their own review history under My Reviews."""
     __tablename__ = "project_assignments"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -79,13 +105,22 @@ class ProjectAssignment(Base):
     # When this employee was assigned to the project.
     assigned_date = Column(Date, nullable=True)
 
+    # When the employee was removed from the project. NULL = currently active.
+    # Cycles whose review window opens after end_date no longer generate
+    # placeholders for this row.
+    end_date = Column(Date, nullable=True)
+    ended_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (
-        Index("ix_project_assignments_org_proj_user", "org_id", "project_id", "user_id", unique=True),
+        # Non-unique — allow multiple rows for the same (project, user) over
+        # time. Active-row uniqueness is enforced at the route layer.
+        Index("ix_project_assignments_org_proj_user", "org_id", "project_id", "user_id"),
     )
 
     # Relationships
     project = relationship("Project", back_populates="assignments")
-    user = relationship("User")
+    user = relationship("User", foreign_keys=[user_id])
+    ended_by = relationship("User", foreign_keys=[ended_by_id])
     function = relationship("Function")
