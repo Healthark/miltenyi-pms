@@ -85,6 +85,26 @@ export interface MenteeDetail extends MenteeSummary {
   project_assignments: MenteeProjectAssignment[];
 }
 
+// ── HR_MyOrg "All Mentor Pairings" types ──────────────────────────
+
+export interface MenteeBrief {
+  user_id: number;
+  full_name: string;
+  email: string;
+  employee_code: string;
+  function_name: string | null;
+  designation_name: string | null;
+  pending_actions_count: number;
+}
+
+export interface MentorPairingGroup {
+  mentor_id: number;
+  mentor_name: string;
+  mentor_email: string;
+  mentor_employee_code: string;
+  mentees: MenteeBrief[];
+}
+
 export const menteeService = {
   getSummaries: async (): Promise<MenteeSummary[]> => {
     const res = await apiClient.get<MenteeSummary[]>("/mentees/summary");
@@ -93,6 +113,15 @@ export const menteeService = {
 
   getDetail: async (menteeId: number): Promise<MenteeDetail> => {
     const res = await apiClient.get<MenteeDetail>(`/mentees/${menteeId}/detail`);
+    return res.data;
+  },
+
+  /** HR_MyOrg-only: every mentor in the org with their mentees nested.
+   *  Backend 403s any other role. */
+  getAllPairings: async (): Promise<MentorPairingGroup[]> => {
+    const res = await apiClient.get<MentorPairingGroup[]>(
+      "/mentees/all-pairings",
+    );
     return res.data;
   },
 };

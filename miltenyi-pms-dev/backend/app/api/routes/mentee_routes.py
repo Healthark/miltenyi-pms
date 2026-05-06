@@ -30,16 +30,18 @@ from app.models.goal_models import Goal, GoalType, ApprovalStatus, POST_APPROVAL
 from app.models.project_models import Project, ProjectAssignment
 from app.models.project_review_models import ProjectReview, ProjectReviewStatus
 from app.models.system_settings_models import SystemSettings, CycleType
-from app.models.user_models import User
+from app.models.user_models import User, Role
 from app.schemas.annual_review_schemas import AnnualReviewResponse
 from app.schemas.goal_schemas import TeamGoalResponse
 from app.schemas.mentee_schemas import (
+    MenteeBrief,
     MenteeDetail,
     MenteeGoalsStats,
     MenteeProjectAssignment,
     MenteeProjectsStats,
     MenteeReviewStatus,
     MenteeSummary,
+    MentorPairingGroup,
 )
 
 router = APIRouter()
@@ -460,3 +462,120 @@ def get_mentee_detail(
         reviews_list=[AnnualReviewResponse.model_validate(r) for r in reviews_list],
         project_assignments=project_assignments_out,
     )
+
+
+# =====================================================================
+# HR_MyOrg — All mentor pairings, grouped
+# =====================================================================
+
+@router.get("/all-pairings", response_model=List[MentorPairingGroup])
+def list_all_mentor_pairings(
+    db: DbSession,
+    current_user: CurrentUser,
+):
+    """HR_MyOrg-only: every mentor in the org with their direct mentees nested.
+
+    Powers the "All Mentor Pairings" view on the MyMentees page when an
+    HR_MyOrg user navigates there. One section per active Mentor; mentees
+    are filtered to active Staff users that point to that mentor via
+    `mentor_id`. Mentors with no mentees are still included so HR can spot
+    unassigned coaches.
+    """
+    if current_user.role != Role.HR_MYORG.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the MyOrg HR can view org-wide mentor pairings.",
+        )
+
+    mentors = (
+        db.query(User)
+        .filter(
+            User.org_id == current_user.org_id,
+            User.role == Role.MENTOR.value,
+            User.is_deleted == False,  # noqa: E712
+        )
+        .order_by(User.full_name.asc())
+        .all()
+    )
+    if not mentors:
+        return []
+
+    mentor_ids = [m.id for m in mentors]
+
+    mentees = (
+        db.query(User)
+        .options(joinedload(User.function), joinedload(User.designation))
+        .filter(
+            User.org_id == current_user.org_id,
+            User.is_deleted == False,  # noqa: E712
+            User.mentor_id.in_(mentor_ids),
+        )
+        .order_by(User.full_name.asc())
+        .all()
+    )
+    mentees_by_mentor: dict[int, list[User]] = {mid: [] for mid in mentor_ids}
+    for m in mentees:
+        if m.mentor_id is not None:
+            mentees_by_mentor.setdefault(m.mentor_id, []).append(m)
+
+    # Counts of pending actions per mentee — same definition as MenteeSummary:
+    # SUBMITTED annual goals + active-cycle PENDING_MENTOR review.
+    active_cycle = _get_active_cycle(db, current_user.org_id)
+    mentee_ids = [m.id for m in mentees]
+
+    submitted_goal_counts: dict[int, int] = {}
+    if mentee_ids:
+        rows = (
+            db.query(Goal.user_id)
+            .filter(
+                Goal.org_id == current_user.org_id,
+                Goal.user_id.in_(mentee_ids),
+                Goal.goal_type == GoalType.ANNUAL.value,
+                Goal.approval_status == ApprovalStatus.PENDING_APPROVAL.value,
+            )
+            .all()
+        )
+        for (uid,) in rows:
+            submitted_goal_counts[uid] = submitted_goal_counts.get(uid, 0) + 1
+
+    pending_review_user_ids: set[int] = set()
+    if mentee_ids:
+        rows = (
+            db.query(AnnualReview.user_id)
+            .filter(
+                AnnualReview.org_id == current_user.org_id,
+                AnnualReview.user_id.in_(mentee_ids),
+                AnnualReview.cycle_name == active_cycle,
+                AnnualReview.status == ReviewStatus.PENDING_MENTOR.value,
+            )
+            .all()
+        )
+        pending_review_user_ids = {uid for (uid,) in rows}
+
+    def _pending(mentee_id: int) -> int:
+        n = submitted_goal_counts.get(mentee_id, 0)
+        if mentee_id in pending_review_user_ids:
+            n += 1
+        return n
+
+    return [
+        MentorPairingGroup(
+            mentor_id=mentor.id,
+            mentor_name=mentor.full_name,
+            mentor_email=mentor.email,
+            mentor_employee_code=mentor.employee_code,
+            mentees=[
+                MenteeBrief(
+                    user_id=m.id,
+                    full_name=m.full_name,
+                    email=m.email,
+                    employee_code=m.employee_code,
+                    function_name=m.function.name if m.function else None,
+                    designation_name=m.designation.name if m.designation else None,
+                    pending_actions_count=_pending(m.id),
+                )
+                for m in mentees_by_mentor.get(mentor.id, [])
+            ],
+        )
+        for mentor in mentors
+    ]

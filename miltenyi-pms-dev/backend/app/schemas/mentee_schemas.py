@@ -113,3 +113,28 @@ class MenteeDetail(MenteeSummary):
     goals_list: List[TeamGoalResponse] = []
     reviews_list: List[AnnualReviewResponse] = []
     project_assignments: List[MenteeProjectAssignment] = []
+
+
+# =====================================================================
+# HR_MyOrg "All Mentor Pairings" view
+# =====================================================================
+
+class MenteeBrief(BaseModel):
+    """Lightweight mentee row used inside the all-pairings grouped view."""
+    user_id: int
+    full_name: str
+    email: str
+    employee_code: str
+    function_name: Optional[str] = None
+    designation_name: Optional[str] = None
+    pending_actions_count: int = 0
+
+
+class MentorPairingGroup(BaseModel):
+    """One section in the grouped "All Mentor Pairings" page — a Mentor row
+    with their direct mentees nested underneath."""
+    mentor_id: int
+    mentor_name: str
+    mentor_email: str
+    mentor_employee_code: str
+    mentees: List[MenteeBrief] = []

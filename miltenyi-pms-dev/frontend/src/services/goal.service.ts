@@ -319,4 +319,12 @@ export const goalService = {
     });
     return res.data;
   },
+
+  // ── HR_MyOrg view-only ─────────────────────────────────────────
+  /** Every annual goal across the org, every cycle (DRAFT excluded).
+   *  HR_MyOrg-only; backend 403s any other role. Powers the "All Goals" tab. */
+  getAllGoals: async (): Promise<TeamGoal[]> => {
+    const res = await apiClient.get<TeamGoal[]>("/goals/all");
+    return res.data;
+  },
 };

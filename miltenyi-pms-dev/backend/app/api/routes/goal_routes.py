@@ -31,7 +31,7 @@ from app.models.goal_criteria_models import GoalCriterion
 from app.models.goal_self_review_models import GoalSelfReview, SelfReviewCycleHalf
 from app.models.goal_mentor_review_models import GoalMentorReview
 from app.models.system_settings_models import SystemSettings
-from app.models.user_models import User
+from app.models.user_models import User, Role
 from app.schemas.goal_schemas import (
     GoalCreate,
     GoalUpdate,
@@ -356,6 +356,53 @@ def list_team_goals(
     # Inject owner_name + owner_function_name + owner_designation_name onto
     # each ORM object so TeamGoalResponse.from_attributes can read them as
     # plain attributes (Pydantic from_attributes mode).
+    for g in goals:
+        g.owner_name = g.owner.full_name if g.owner else "Unknown"
+        g.owner_function_name = (
+            g.owner.function.name if g.owner and g.owner.function else None
+        )
+        g.owner_designation_name = (
+            g.owner.designation.name if g.owner and g.owner.designation else None
+        )
+
+    return goals
+
+
+@router.get("/all", response_model=List[TeamGoalResponse])
+def list_all_goals(
+    db: DbSession,
+    current_user: CurrentUser,
+):
+    """HR_MyOrg-only: every annual goal across the org, every cycle.
+
+    Powers the view-only "All Goals" tab on the AnnualGoals page. Excludes
+    DRAFT goals — those are the employee's private work-in-progress and
+    not yet visible to anyone else (matching the /team endpoint's rule).
+    Reuses the TeamGoalResponse shape so the table can render owner +
+    function + designation columns without extra lookups.
+    """
+    if current_user.role != Role.HR_MYORG.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the MyOrg HR can view all goals.",
+        )
+
+    goals = (
+        db.query(Goal)
+        .options(
+            joinedload(Goal.owner).joinedload(User.function),
+            joinedload(Goal.owner).joinedload(User.designation),
+            joinedload(Goal.manager),
+            joinedload(Goal.criteria),
+        )
+        .filter(
+            Goal.org_id == current_user.org_id,
+            Goal.approval_status != ApprovalStatus.DRAFT.value,
+        )
+        .order_by(Goal.created_at.desc())
+        .all()
+    )
+
     for g in goals:
         g.owner_name = g.owner.full_name if g.owner else "Unknown"
         g.owner_function_name = (
