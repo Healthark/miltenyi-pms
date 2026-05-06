@@ -542,31 +542,21 @@ def end_assignment(
     db: DbSession,
     current_user: CurrentUser,
 ):
-    """End a member's assignment on a project (soft-end).
+    """End a member's assignment on a project (soft-end). HR-only.
 
     Sets end_date=today and ended_by_id=current_user. The row is kept so
     the user keeps seeing their past project reviews under My Reviews,
     and the PM can still finish in-flight reviews for the cycle the
     person was removed in.
-
-    Authorization: HR (any) OR the project's PM (their own projects).
     """
+    _require_hr_any(current_user)
+
     assignment = db.query(ProjectAssignment).filter(
         ProjectAssignment.id == assignment_id,
         ProjectAssignment.org_id == current_user.org_id,
     ).first()
     if not assignment:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assignment not found.")
-
-    # PM may end assignments only on their own projects. HR may end any.
-    is_hr = current_user.role in ADMIN_ROLES
-    if not is_hr:
-        project = db.query(Project).filter(Project.id == assignment.project_id).first()
-        if not project or project.pm_id != current_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only the project's PM or HR can remove a team member.",
-            )
 
     if assignment.end_date is not None:
         # Idempotent: already ended.
