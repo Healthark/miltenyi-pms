@@ -138,10 +138,18 @@ export const projectService = {
   },
 
   /** End an active assignment (soft-end). Sets end_date=today and keeps
-   *  the row so the user still sees their past project reviews.
-   *  Authorization: HR (any) or the project's PM. */
+   *  the row so the user still sees their past project reviews. HR-only. */
   endAssignment: async (assignmentId: number): Promise<void> => {
     await apiClient.delete(`/projects/assignments/${assignmentId}`);
+  },
+
+  /** Reverse a recent soft-end. Clears end_date / ended_by_id. HR-only.
+   *  Used by the Undo toast surfaced right after `endAssignment`. */
+  restoreAssignment: async (assignmentId: number): Promise<AssignmentResponse> => {
+    const res = await apiClient.post<AssignmentResponse>(
+      `/projects/assignments/${assignmentId}/restore`,
+    );
+    return res.data;
   },
 
   /** HR-only. Marks the project completed and bulk-end-dates every

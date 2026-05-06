@@ -568,6 +568,63 @@ def end_assignment(
     return None
 
 
+@router.post("/assignments/{assignment_id}/restore", response_model=AssignmentResponse)
+def restore_assignment(
+    assignment_id: int,
+    db: DbSession,
+    current_user: CurrentUser,
+):
+    """Undo a recent soft-end. HR-only.
+
+    Clears end_date and ended_by_id. Used by the Undo toast that appears
+    right after end_assignment — gives HR a 6-second window to reverse a
+    misclick without having to re-add the user from scratch.
+
+    Refuses if the parent project is now completed (re-opening must come
+    first), or if a different active assignment for the same user already
+    exists (avoids two simultaneous active rows for one (project, user)).
+    """
+    _require_hr_any(current_user)
+
+    assignment = db.query(ProjectAssignment).filter(
+        ProjectAssignment.id == assignment_id,
+        ProjectAssignment.org_id == current_user.org_id,
+    ).first()
+    if not assignment:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assignment not found.")
+
+    if assignment.end_date is None:
+        # Idempotent: already active.
+        return _build_assignment_response(assignment, db)
+
+    project = db.query(Project).filter(Project.id == assignment.project_id).first()
+    if not project or project.is_deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
+    if project.status == PROJECT_STATUS_COMPLETED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot restore an assignment on a completed project. Re-open the project first.",
+        )
+
+    conflicting_active = db.query(ProjectAssignment).filter(
+        ProjectAssignment.project_id == assignment.project_id,
+        ProjectAssignment.user_id == assignment.user_id,
+        ProjectAssignment.end_date.is_(None),
+        ProjectAssignment.id != assignment.id,
+    ).first()
+    if conflicting_active:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This user already has another active assignment on this project.",
+        )
+
+    assignment.end_date = None
+    assignment.ended_by_id = None
+    db.commit()
+    db.refresh(assignment)
+    return _build_assignment_response(assignment, db)
+
+
 # =====================================================================
 # PROJECT LIFECYCLE
 # =====================================================================

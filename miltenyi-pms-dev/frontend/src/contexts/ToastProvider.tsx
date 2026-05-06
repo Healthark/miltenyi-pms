@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ToastContext, type ToastContextValue, type ToastVariant } from "./ToastContext";
+import {
+  ToastContext, type ToastAction, type ToastContextValue,
+  type ToastOptions, type ToastVariant,
+} from "./ToastContext";
 import { Toast } from "../components/feedback/Toast";
 
 const AUTO_DISMISS_MS = 3000;
@@ -9,6 +12,7 @@ interface ToastState {
   id: number;
   message: string;
   variant: ToastVariant;
+  action?: ToastAction;
 }
 
 interface ToastProviderProps {
@@ -39,24 +43,40 @@ export function ToastProvider({ children }: ToastProviderProps) {
   }, [clearTimer]);
 
   const show = useCallback(
-    (message: string, variant: ToastVariant) => {
+    (message: string, variant: ToastVariant, options?: ToastOptions) => {
       clearTimer();
       seqRef.current += 1;
-      setToast({ id: seqRef.current, message, variant });
+      setToast({ id: seqRef.current, message, variant, action: options?.action });
       timerRef.current = globalThis.setTimeout(() => {
         setToast(null);
         timerRef.current = null;
-      }, AUTO_DISMISS_MS);
+      }, options?.durationMs ?? AUTO_DISMISS_MS);
     },
     [clearTimer],
   );
 
   useEffect(() => clearTimer, [clearTimer]);
 
+  // Wraps an action's onClick so clicking it also dismisses the toast.
+  // Defined here (not inside Toast) so the timer is cleared cleanly.
+  const wrapAction = useCallback(
+    (action: ToastAction | undefined): ToastAction | undefined =>
+      action
+        ? {
+            label: action.label,
+            onClick: () => {
+              action.onClick();
+              dismiss();
+            },
+          }
+        : undefined,
+    [dismiss],
+  );
+
   const value = useMemo<ToastContextValue>(
     () => ({
-      success: (message) => show(message, "success"),
-      info: (message) => show(message, "info"),
+      success: (message, options) => show(message, "success", options),
+      info: (message, options) => show(message, "info", options),
       dismiss,
     }),
     [show, dismiss],
@@ -75,6 +95,7 @@ export function ToastProvider({ children }: ToastProviderProps) {
               key={toast.id}
               message={toast.message}
               variant={toast.variant}
+              action={wrapAction(toast.action)}
               onDismiss={dismiss}
             />
           </div>,

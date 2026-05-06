@@ -27,6 +27,7 @@ import {
 import { getErrorMessage } from "../../utils/errors";
 import { useToast } from "../../hooks/useToast";
 import { useSnackbar } from "../../hooks/useSnackbar";
+import { useConfirm } from "../../hooks/useConfirm";
 import { UserCombobox } from "../common/UserCombobox";
 
 const INPUT_CLS =
@@ -91,6 +92,7 @@ export function ProjectModal({
 
   const toast = useToast();
   const snackbar = useSnackbar();
+  const confirm = useConfirm();
 
   // Pre-bucket users by role for dropdown filtering. Active users only.
   const activeUsers = users.filter((u) => !u.is_deleted);
@@ -180,21 +182,60 @@ export function ProjectModal({
     setDraftAssignments((prev) => prev.filter((a) => a.tempId !== id));
   };
 
-  const removeExisting = async (assignmentId: number) => {
+  const removeExisting = async (assignment: AssignmentResponse) => {
+    const ok = await confirm({
+      title: "End this assignment?",
+      message:
+        `Remove ${assignment.user_name} from the project. ` +
+        "Their existing reviews stay in their history; future cycles " +
+        "won't generate new pending reviews for them on this project. " +
+        "You'll have a few seconds to undo from the toast.",
+      variant: "danger",
+      confirmText: "End Assignment",
+    });
+    if (!ok) return;
+
+    // Optimistically reflect the soft-end. The toast that pops next
+    // gives a 6s Undo window backed by the /restore endpoint — clicking
+    // Undo flips the row back to active. Doing the optimistic update
+    // here (before the network call) keeps the UI feeling snappy.
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const previousState = assignment;
+    setExistingAssignments((prev) =>
+      prev.map((a) =>
+        a.id === assignment.id
+          ? { ...a, end_date: todayIso }
+          : a,
+      ),
+    );
+
     try {
-      await projectService.endAssignment(assignmentId);
-      // Reflect the soft-end locally — keep the row but stamp end_date so
-      // the row UI flips to a "removed" presentation.
-      setExistingAssignments((prev) =>
-        prev.map((a) =>
-          a.id === assignmentId
-            ? { ...a, end_date: new Date().toISOString().slice(0, 10) }
-            : a,
-        ),
-      );
+      await projectService.endAssignment(assignment.id);
     } catch (err: unknown) {
+      // Roll back the optimistic update on failure.
+      setExistingAssignments((prev) =>
+        prev.map((a) => (a.id === assignment.id ? previousState : a)),
+      );
       snackbar.error(getErrorMessage(err));
+      return;
     }
+
+    toast.success(`Removed ${assignment.user_name} from the project.`, {
+      durationMs: 6000,
+      action: {
+        label: "Undo",
+        onClick: async () => {
+          try {
+            const restored = await projectService.restoreAssignment(assignment.id);
+            setExistingAssignments((prev) =>
+              prev.map((a) => (a.id === assignment.id ? restored : a)),
+            );
+          } catch (err: unknown) {
+            snackbar.error(getErrorMessage(err));
+          }
+        },
+      },
+    });
   };
 
   // ── Computed ────────────────────────────────────────────────────
@@ -454,7 +495,7 @@ export function ProjectModal({
                         {!isEnded && (
                           <button
                             type="button"
-                            onClick={() => removeExisting(a.id)}
+                            onClick={() => removeExisting(a)}
                             className="shrink-0 rounded-md p-1 text-text-muted hover:bg-red-50 hover:text-red-600 transition-colors"
                             aria-label={`End assignment for ${a.user_name}`}
                             title="End this assignment (soft-end; history is kept)"

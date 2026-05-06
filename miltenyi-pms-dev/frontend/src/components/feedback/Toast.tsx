@@ -1,10 +1,15 @@
 import { CheckCircle, Info, X } from "lucide-react";
-import type { ToastVariant } from "../../contexts/ToastContext";
+import type { ToastAction, ToastVariant } from "../../contexts/ToastContext";
 
 interface ToastProps {
   readonly message: string;
   readonly variant: ToastVariant;
   readonly onDismiss: () => void;
+  /** Optional inline button shown between the message and the close
+   *  icon — used for Undo flows. The provider already dismisses the
+   *  toast when this is clicked, so onClick only carries the user
+   *  intent (call the restore API, revert UI state, etc.). */
+  readonly action?: ToastAction;
 }
 
 const VARIANT_STYLES: Record<
@@ -30,7 +35,7 @@ const VARIANT_STYLES: Record<
  * by ToastProvider so the same timer can be reset when a new toast replaces
  * the current one.
  */
-export function Toast({ message, variant, onDismiss }: ToastProps) {
+export function Toast({ message, variant, onDismiss, action }: ToastProps) {
   const style = VARIANT_STYLES[variant];
   const Icon = style.icon;
 
@@ -42,6 +47,15 @@ export function Toast({ message, variant, onDismiss }: ToastProps) {
     >
       <Icon className={`h-4 w-4 shrink-0 ${style.text}`} aria-hidden="true" />
       <p className={`flex-1 text-sm font-medium ${style.text}`}>{message}</p>
+      {action && (
+        <button
+          type="button"
+          onClick={action.onClick}
+          className={`${style.text} text-sm font-semibold underline-offset-2 hover:underline transition-all shrink-0`}
+        >
+          {action.label}
+        </button>
+      )}
       <button
         type="button"
         onClick={onDismiss}
