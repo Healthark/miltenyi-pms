@@ -265,7 +265,7 @@ export function ProjectReviews() {
       : activeTab === "secondary"
         ? "Secondary Evaluation"
         : activeTab === "mentees"
-          ? "Mentees' Reviews"
+          ? "Team Review"
           : activeTab === "all-reviews"
             ? "All Project Reviews"
             : "My Project Reviews";
@@ -317,7 +317,7 @@ export function ProjectReviews() {
               className={tabCls("mentees")}
               onClick={() => setActiveTab("mentees")}
             >
-              Mentees' Reviews
+              Team Review
             </button>
           )}
           {isHR && (

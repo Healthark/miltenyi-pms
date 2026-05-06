@@ -139,7 +139,7 @@ export function SelfReviewCycleMenu({
   const triggerLabel =
     mode === "mentor"
       ? mentorReviewedCount > 0
-        ? `Reviews (${mentorReviewedCount}/${submittedCount} reviewed)`
+        ? `Self Reviews (${mentorReviewedCount}/${totalCycles} reviewed)`
         : submittedCount > 0
         ? `Self Reviews (${submittedCount}/${totalCycles})`
         : "Self Reviews"

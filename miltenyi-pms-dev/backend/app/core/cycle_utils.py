@@ -53,20 +53,17 @@ def cycles_before(cycle_code: str) -> tuple[str, ...]:
 
 def get_goal_cycle_name(created_at: datetime, fiscal_start_month: int = 4) -> str:
     """
-    Derive the half-yearly cycle label for an annual goal from its creation timestamp.
+    Derive the FY cycle label for an annual goal from its creation timestamp.
 
-    Returns "H1 YYYY" or "H2 YYYY" where YYYY is the 4-digit fiscal start year.
-
-    Note: annual goals are always stamped with a half-yearly bucket here —
-    quarterly is a *review* cadence, not a goal-creation cadence. The goal
-    still belongs to the whole FY; its review windows are what differ.
+    Returns "FY26-27" — the fiscal-year span the goal belongs to. The H1/H2
+    distinction is per-review, not per-goal: each annual goal is reviewed
+    twice within its FY, and the half is recorded on GoalSelfReview.cycle_half.
+    The "Action" column on review rows composes the half + FY into
+    "H1 FY26-27" for display.
     """
     month = created_at.month
-    year = created_at.year
-    fiscal_year = year if month >= fiscal_start_month else year - 1
-    relative_month = (month - fiscal_start_month) % 12
-    h_num = (relative_month // 6) + 1
-    return f"H{h_num} {fiscal_year}"
+    fiscal_year = created_at.year if month >= fiscal_start_month else created_at.year - 1
+    return _format_fy_span(fiscal_year)
 
 
 def current_half_and_fy(current_date: date, fiscal_start_month: int = 4) -> tuple[str, int]:

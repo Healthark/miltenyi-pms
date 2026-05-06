@@ -145,13 +145,23 @@ def _assert_annual_gate_open(settings: SystemSettings) -> None:
 def _goal_fy_year(goal: Goal) -> Optional[int]:
     """Extract the 4-digit fiscal start year from `goal.cycle_name`.
 
-    Goal cycle names are stamped at creation as "H1 2026" / "H2 2025"
-    (4-digit year, no FY prefix — see get_goal_cycle_name). Returns None
-    when the goal predates this stamping or has no cycle_name.
+    Goals are stamped at creation with the FY span ("FY26-27" → 2026).
+    Legacy "H1 2026" / "H2 2026" stamping is also tolerated for any rows
+    that predate the FY-only convention. Returns None when the goal has
+    no cycle_name or no recognisable year token.
     """
     if not goal.cycle_name:
         return None
-    for token in goal.cycle_name.split():
+    for token in goal.cycle_name.upper().split():
+        # FY span: "FY26-27" → 2026, "FY2026-27" → 2026.
+        if token.startswith("FY"):
+            head = token[2:].split("-", 1)[0]
+            if head.isdigit():
+                if len(head) == 2:
+                    return 2000 + int(head)
+                if len(head) == 4:
+                    return int(head)
+        # Legacy bare 4-digit year token (e.g. "H1 2026").
         if token.isdigit() and len(token) == 4:
             return int(token)
     return None

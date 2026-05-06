@@ -228,13 +228,21 @@ class GoalResponse(GoalBase):
     @property
     def fy_year(self) -> Optional[int]:
         """
-        4-digit fiscal start year extracted from cycle_name ("H1 2026" → 2026).
-        None for regular goals or annual goals created before this field existed.
-        Used by the frontend Year filter on the Annual Goals page.
+        4-digit fiscal start year extracted from cycle_name ("FY26-27" → 2026).
+        Legacy "H1 2026" / "H2 2026" stamping is also tolerated. None for
+        regular goals or annual goals with no cycle_name. Used by the
+        frontend Year filter on the Annual Goals page.
         """
         if not self.cycle_name:
             return None
-        for token in self.cycle_name.split():
+        for token in self.cycle_name.upper().split():
+            if token.startswith("FY"):
+                head = token[2:].split("-", 1)[0]
+                if head.isdigit():
+                    if len(head) == 2:
+                        return 2000 + int(head)
+                    if len(head) == 4:
+                        return int(head)
             if token.isdigit() and len(token) == 4:
                 return int(token)
         return None
