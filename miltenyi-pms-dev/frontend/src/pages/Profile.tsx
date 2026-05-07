@@ -29,15 +29,12 @@ export function Profile() {
         </p>
       </div>
 
-      {/* Two-column layout: info left, settings right */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Left — read-only HR data (1/3 width on desktop) */}
+      {/* Two-column layout: info left, password right — equal widths
+          so both cards are visually balanced and the password form
+          can spread its inputs across the available space. */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <ProfileInfoCard profile={profile} isLoading={isLoading} />
-
-        {/* Right — account settings (2/3 width on desktop) */}
-        <div className="lg:col-span-2 space-y-6">
-          <PasswordChangeCard />
-        </div>
+        <PasswordChangeCard />
       </div>
     </div>
   );

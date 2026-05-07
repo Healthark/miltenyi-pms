@@ -15,6 +15,7 @@ import { profileService } from "../../services/profile.service";
 import { useAuth } from "../../hooks/useAuth";
 import { useToast } from "../../hooks/useToast";
 import { useSnackbar } from "../../hooks/useSnackbar";
+import { useConfirm } from "../../hooks/useConfirm";
 
 const INPUT_CLS =
   "w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-brand pr-10";
@@ -89,6 +90,7 @@ export function PasswordChangeCard() {
   const { refreshSession } = useAuth();
   const toast = useToast();
   const snackbar = useSnackbar();
+  const confirm = useConfirm();
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -107,6 +109,15 @@ export function PasswordChangeCard() {
     !isSaving;
 
   const handleSubmit = useCallback(async () => {
+    const ok = await confirm({
+      title: "Update password?",
+      message:
+        "Your account will use the new password from now on. Make sure you " +
+        "remember it — you'll be asked for it the next time you sign in.",
+      confirmText: "Update Password",
+    });
+    if (!ok) return;
+
     setIsSaving(true);
 
     try {
@@ -128,7 +139,7 @@ export function PasswordChangeCard() {
     } finally {
       setIsSaving(false);
     }
-  }, [currentPassword, newPassword, refreshSession, toast, snackbar]);
+  }, [currentPassword, newPassword, refreshSession, toast, snackbar, confirm]);
 
   return (
     <div className="rounded-xl border border-border bg-surface p-6 shadow-sm">
@@ -147,7 +158,7 @@ export function PasswordChangeCard() {
         </div>
       </div>
 
-      <div className="max-w-sm space-y-4">
+      <div className="space-y-4">
         <PasswordInput
           id="current-password"
           label="Current Password"

@@ -85,6 +85,29 @@ export function UsersTab({
   const [sort, setSort] = useState<SortState<UsersSortKey> | null>(null);
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [functionFilter, setFunctionFilter] = useState<string>("all");
+  const [designationFilter, setDesignationFilter] = useState<string>("all");
+
+  // Dropdown options derived from the loaded users so we never show
+  // a function/designation that has no row to match.
+  const availableFunctions = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          users.map((u) => u.function?.name).filter((n): n is string => !!n),
+        ),
+      ).sort(),
+    [users],
+  );
+  const availableDesignations = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          users.map((u) => u.designation?.name).filter((n): n is string => !!n),
+        ),
+      ).sort(),
+    [users],
+  );
 
   const { user: currentUser } = useAuth();
   const isViewerMiltenyiHR = currentUser?.role === "HR_Miltenyi";
@@ -109,6 +132,8 @@ export function UsersTab({
       if (roleFilter !== "all" && u.role !== roleFilter) return false;
       if (statusFilter === "active" && u.is_deleted) return false;
       if (statusFilter === "inactive" && !u.is_deleted) return false;
+      if (functionFilter !== "all" && u.function?.name !== functionFilter) return false;
+      if (designationFilter !== "all" && u.designation?.name !== designationFilter) return false;
       return true;
     });
     if (!sort) return filtered;
@@ -116,7 +141,7 @@ export function UsersTab({
     return filtered.slice().sort((a, b) =>
       compareValues(get(a, users), get(b, users), kind, sort.direction),
     );
-  }, [users, searchQuery, roleFilter, statusFilter, sort]);
+  }, [users, searchQuery, roleFilter, statusFilter, functionFilter, designationFilter, sort]);
 
   return (
     <div>
@@ -162,6 +187,42 @@ export function UsersTab({
             ))}
           </select>
         </div>
+        {availableFunctions.length > 0 && (
+          <div className="flex items-center gap-2">
+            <label htmlFor="user-function-filter" className={FILTER_LABEL_CLS}>
+              Function
+            </label>
+            <select
+              id="user-function-filter"
+              value={functionFilter}
+              onChange={(e) => setFunctionFilter(e.target.value)}
+              className={`${FILTER_SELECT_CLS} min-w-[140px]`}
+            >
+              <option value="all">All</option>
+              {availableFunctions.map((f) => (
+                <option key={f} value={f}>{f}</option>
+              ))}
+            </select>
+          </div>
+        )}
+        {availableDesignations.length > 0 && (
+          <div className="flex items-center gap-2">
+            <label htmlFor="user-designation-filter" className={FILTER_LABEL_CLS}>
+              Designation
+            </label>
+            <select
+              id="user-designation-filter"
+              value={designationFilter}
+              onChange={(e) => setDesignationFilter(e.target.value)}
+              className={`${FILTER_SELECT_CLS} min-w-[150px]`}
+            >
+              <option value="all">All</option>
+              {availableDesignations.map((d) => (
+                <option key={d} value={d}>{d}</option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
       {/* Table */}

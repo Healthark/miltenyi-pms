@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { Plus } from "lucide-react";
+import { useCallback, useEffect, useState, Fragment } from "react";
+import { ChevronDown, Plus } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { useSystemSettings } from "../hooks/useSystemSettings";
 import { useToast } from "../hooks/useToast";
@@ -8,6 +8,7 @@ import { SelfReviewTab } from "../components/reviews/SelfReviewTab";
 import { TeamReviewTab } from "../components/reviews/TeamReviewTab";
 import { SelfReviewFormModal } from "../components/reviews/SelfReviewFormModal";
 import { PerformanceRatingBadge } from "../components/reviews/PerformanceRatingBadge";
+import { StringCombobox } from "../components/common/StringCombobox";
 import { SortableHeader } from "../components/SortableHeader";
 import { compareValues, type SortKind, type SortState } from "../utils/sort";
 import {
@@ -21,6 +22,8 @@ import { formatFyLabel } from "../utils/fy";
 
 type AllReviewsSortKey =
   | "employee_name"
+  | "function"
+  | "designation"
   | "cycle_name"
   | "status"
   | "self_performance_rating"
@@ -32,12 +35,23 @@ const ALL_REVIEWS_SORT_CONFIG: Record<
   { kind: SortKind; get: (r: AnnualReview) => unknown }
 > = {
   employee_name:             { kind: "alpha",   get: (r) => r.employee_name ?? `User #${r.user_id}` },
+  function:                  { kind: "alpha",   get: (r) => r.function },
+  designation:               { kind: "alpha",   get: (r) => r.designation },
   cycle_name:                { kind: "cycle",   get: (r) => r.cycle_name },
   status:                    { kind: "alpha",   get: (r) => r.status },
   self_performance_rating:   { kind: "numeric", get: (r) => r.self_performance_rating },
   mentor_performance_rating: { kind: "numeric", get: (r) => r.mentor_performance_rating },
   final_performance_rating:  { kind: "numeric", get: (r) => r.final_performance_rating },
 };
+
+// Static lifecycle list keeps the Status dropdown stable even when only
+// some statuses are present in the loaded rows.
+const ALL_REVIEWS_STATUS_OPTIONS: { value: string; label: string }[] = [
+  { value: "draft",              label: "Draft" },
+  { value: "pending_mentor",     label: "Pending Mentor" },
+  { value: "pending_management", label: "Pending Management" },
+  { value: "completed",          label: "Completed" },
+];
 
 type ActiveTab = "my" | "team" | "all";
 
@@ -288,16 +302,44 @@ function AllReviewsTab({
   readonly isLoading: boolean;
 }) {
   const [cycleFilter, setCycleFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [functionFilter, setFunctionFilter] = useState<string>("all");
+  const [designationFilter, setDesignationFilter] = useState<string>("all");
+  // Employee filter is a typeable combobox (StringCombobox) — looks like a
+  // standard scrollable dropdown but accepts free-text typing to narrow
+  // the list. Empty string means "no employee filter applied".
+  const [employeeQuery, setEmployeeQuery] = useState<string>("");
   const [sort, setSort] = useState<SortState<AllReviewsSortKey> | null>(null);
+  // Inline expansion: clicking a row reveals the self + mentor narrative
+  // side-by-side. Only one row at a time; clicking the same row again
+  // collapses it.
+  const [expandedId, setExpandedId] = useState<number | null>(null);
 
   const cycles = Array.from(
     new Set(reviews.map((r) => r.cycle_name).filter(Boolean)),
   ).sort((a, b) => b.localeCompare(a));
+  const employees = Array.from(
+    new Set(
+      reviews.map((r) => r.employee_name).filter((n): n is string => !!n),
+    ),
+  ).sort();
+  const functions = Array.from(
+    new Set(reviews.map((r) => r.function).filter((n): n is string => !!n)),
+  ).sort();
+  const designations = Array.from(
+    new Set(reviews.map((r) => r.designation).filter((n): n is string => !!n)),
+  ).sort();
 
-  const filtered =
-    cycleFilter === "all"
-      ? reviews
-      : reviews.filter((r) => r.cycle_name === cycleFilter);
+  const filtered = reviews.filter((r) => {
+    if (cycleFilter !== "all" && r.cycle_name !== cycleFilter) return false;
+    if (statusFilter !== "all" && r.status !== statusFilter) return false;
+    if (functionFilter !== "all" && r.function !== functionFilter) return false;
+    if (designationFilter !== "all" && r.designation !== designationFilter) return false;
+    // Combobox commits the exact selected name, so an equality check is
+    // both faster and consistent with the other dropdown filters.
+    if (employeeQuery && r.employee_name !== employeeQuery) return false;
+    return true;
+  });
 
   const sorted = sort
     ? filtered.slice().sort((a, b) => {
@@ -327,28 +369,110 @@ function AllReviewsTab({
     );
   }
 
+  const labelCls =
+    "text-[11px] font-bold uppercase tracking-wider text-text-muted";
+  const selectCls =
+    "rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand cursor-pointer";
+
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center gap-2">
-        <label
-          htmlFor="all-rev-cycle"
-          className="text-[11px] font-bold uppercase tracking-wider text-text-muted"
-        >
-          Cycle
-        </label>
-        <select
-          id="all-rev-cycle"
-          value={cycleFilter}
-          onChange={(e) => setCycleFilter(e.target.value)}
-          className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand cursor-pointer"
-        >
-          <option value="all">All Cycles</option>
-          {cycles.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </select>
+      <div className="flex items-center gap-4 flex-wrap">
+        {/* Employee filter — typeable combobox styled like the PM picker
+            in ProjectModal. Typing narrows the suggestion list; clicking
+            an option commits the filter. Click the X to clear. */}
+        <div className="flex items-center gap-2">
+          <label htmlFor="all-rev-employee" className={labelCls}>
+            Employee
+          </label>
+          <StringCombobox
+            id="all-rev-employee"
+            options={employees}
+            value={employeeQuery}
+            onChange={setEmployeeQuery}
+            placeholder="Type a name…"
+          />
+        </div>
+
+        <div className="flex items-center gap-2">
+          <label htmlFor="all-rev-cycle" className={labelCls}>
+            Cycle
+          </label>
+          <select
+            id="all-rev-cycle"
+            value={cycleFilter}
+            onChange={(e) => setCycleFilter(e.target.value)}
+            className={`${selectCls} min-w-[120px]`}
+          >
+            <option value="all">All</option>
+            {cycles.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <label htmlFor="all-rev-status" className={labelCls}>
+            Status
+          </label>
+          <select
+            id="all-rev-status"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className={`${selectCls} min-w-[150px]`}
+          >
+            <option value="all">All</option>
+            {ALL_REVIEWS_STATUS_OPTIONS.map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {functions.length > 0 && (
+          <div className="flex items-center gap-2">
+            <label htmlFor="all-rev-function" className={labelCls}>
+              Function
+            </label>
+            <select
+              id="all-rev-function"
+              value={functionFilter}
+              onChange={(e) => setFunctionFilter(e.target.value)}
+              className={`${selectCls} min-w-[130px]`}
+            >
+              <option value="all">All</option>
+              {functions.map((f) => (
+                <option key={f} value={f}>
+                  {f}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {designations.length > 0 && (
+          <div className="flex items-center gap-2">
+            <label htmlFor="all-rev-designation" className={labelCls}>
+              Designation
+            </label>
+            <select
+              id="all-rev-designation"
+              value={designationFilter}
+              onChange={(e) => setDesignationFilter(e.target.value)}
+              className={`${selectCls} min-w-[150px]`}
+            >
+              <option value="all">All</option>
+              {designations.map((d) => (
+                <option key={d} value={d}>
+                  {d}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         <span className="text-xs text-text-muted">
           {filtered.length} of {reviews.length}
         </span>
@@ -360,6 +484,12 @@ function AllReviewsTab({
             <tr className="bg-slate-50/80 border-b border-border">
               <th className="text-left px-5 py-2.5">
                 <SortableHeader label="Employee" columnKey="employee_name" sort={sort} onSort={setSort} />
+              </th>
+              <th className="text-left px-4 py-2.5">
+                <SortableHeader label="Function" columnKey="function" sort={sort} onSort={setSort} />
+              </th>
+              <th className="text-left px-4 py-2.5">
+                <SortableHeader label="Designation" columnKey="designation" sort={sort} onSort={setSort} />
               </th>
               <th className="text-left px-4 py-2.5">
                 <SortableHeader label="Cycle" columnKey="cycle_name" sort={sort} onSort={setSort} />
@@ -379,32 +509,113 @@ function AllReviewsTab({
             </tr>
           </thead>
           <tbody className="divide-y divide-border/50">
-            {sorted.map((r) => (
-              <tr key={r.id} className="hover:bg-slate-50/60 transition-colors">
-                <td className="px-5 py-3 font-medium text-text-main">
-                  {r.employee_name ?? `User #${r.user_id}`}
-                </td>
-                <td className="px-4 py-3">
-                  <span className="text-[12px] font-semibold text-text-muted bg-slate-100 px-1.5 py-0.5 rounded">
-                    {r.cycle_name}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-text-muted capitalize">
-                  {r.status.replace("_", " ")}
-                </td>
-                <td className="px-4 py-3">
-                  <PerformanceRatingBadge value={r.self_performance_rating} />
-                </td>
-                <td className="px-4 py-3">
-                  <PerformanceRatingBadge value={r.mentor_performance_rating} />
-                </td>
-                <td className="px-4 py-3">
-                  <PerformanceRatingBadge value={r.final_performance_rating} />
+            {sorted.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="px-5 py-10 text-center">
+                  <p className="text-[13px] text-text-main font-medium">
+                    No matching reviews
+                  </p>
+                  <p className="text-[11px] text-text-muted mt-0.5">
+                    Try adjusting your filters or clearing the search.
+                  </p>
                 </td>
               </tr>
-            ))}
+            ) : sorted.map((r) => {
+              const isExpanded = expandedId === r.id;
+              return (
+                <Fragment key={r.id}>
+                  <tr
+                    className={`cursor-pointer transition-colors ${
+                      isExpanded ? "bg-brand/5" : "hover:bg-slate-50/60"
+                    }`}
+                    onClick={() => setExpandedId(isExpanded ? null : r.id)}
+                  >
+                    <td className="px-5 py-3 font-medium text-text-main">
+                      <div className="flex items-center gap-2">
+                        <ChevronDown
+                          className={`h-4 w-4 text-text-muted shrink-0 transition-transform duration-200 ${
+                            isExpanded ? "rotate-180" : ""
+                          }`}
+                          aria-hidden="true"
+                        />
+                        {r.employee_name ?? `User #${r.user_id}`}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-text-muted">
+                      {r.function ?? "—"}
+                    </td>
+                    <td className="px-4 py-3 text-text-muted">
+                      {r.designation ?? "—"}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="text-[12px] font-semibold text-text-muted bg-slate-100 px-1.5 py-0.5 rounded">
+                        {r.cycle_name}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-text-muted capitalize">
+                      {r.status.replace("_", " ")}
+                    </td>
+                    <td className="px-4 py-3">
+                      <PerformanceRatingBadge value={r.self_performance_rating} />
+                    </td>
+                    <td className="px-4 py-3">
+                      <PerformanceRatingBadge value={r.mentor_performance_rating} />
+                    </td>
+                    <td className="px-4 py-3">
+                      <PerformanceRatingBadge value={r.final_performance_rating} />
+                    </td>
+                  </tr>
+                  {isExpanded && (
+                    <tr>
+                      <td
+                        colSpan={8}
+                        className="bg-slate-50/40 border-t border-brand/10 px-5 py-5"
+                      >
+                        <ReviewNarrativePanel review={r} />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
           </tbody>
         </table>
+      </div>
+    </div>
+  );
+}
+
+// ── Inline narrative panel (Self + Mentor side-by-side) ─────────────
+
+function ReviewNarrativePanel({ review }: { readonly review: AnnualReview }) {
+  const empty = (
+    <span className="text-text-muted italic">Not provided yet.</span>
+  );
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="rounded-lg border border-border bg-white overflow-hidden">
+        <div className="bg-slate-100 px-4 py-2 border-b border-border">
+          <p className="text-xs font-semibold text-text-main uppercase tracking-wide">
+            Self Review
+          </p>
+        </div>
+        <div className="p-4">
+          <p className="text-sm text-text-main whitespace-pre-wrap">
+            {review.self_overall_review || empty}
+          </p>
+        </div>
+      </div>
+      <div className="rounded-lg border border-blue-100 bg-white overflow-hidden">
+        <div className="bg-blue-50 px-4 py-2 border-b border-blue-100">
+          <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">
+            Mentor Review
+          </p>
+        </div>
+        <div className="p-4">
+          <p className="text-sm text-blue-900 whitespace-pre-wrap">
+            {review.mentor_overall_review || empty}
+          </p>
+        </div>
       </div>
     </div>
   );

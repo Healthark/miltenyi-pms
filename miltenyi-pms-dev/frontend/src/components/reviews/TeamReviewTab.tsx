@@ -159,6 +159,8 @@ export function TeamReviewTab() {
   const [viewMode, setViewMode] = useState<ViewMode>("table");
   const [searchQuery, setSearchQuery] = useState("");
   const [yearFilter, setYearFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [menteeFilter, setMenteeFilter] = useState("all");
   const [sort, setSort] = useState<SortState<SortKey> | null>(null);
   const [viewTarget, setViewTarget] = useState<MenteeAnnualReview | null>(null);
 
@@ -181,9 +183,31 @@ export function TeamReviewTab() {
     new Set(reviews.map((r) => extractFyToken(r.cycle_name))),
   ).sort((a, b) => b.localeCompare(a));
 
+  // Mentee dropdown options derive from the loaded rows so we never show
+  // a name that has no row to match against.
+  const availableMentees = Array.from(
+    new Set(reviews.map((r) => r.employee_name).filter(Boolean)),
+  ).sort();
+
+  // Status options are the four AnnualReview lifecycle states. We render
+  // them via a static list rather than deriving from rows so the dropdown
+  // is stable even when only some statuses are present in the data.
+  const STATUS_OPTIONS: { value: string; label: string }[] = [
+    { value: "draft",              label: "Draft" },
+    { value: "pending_mentor",     label: "Pending Mentor" },
+    { value: "pending_management", label: "Pending Management" },
+    { value: "completed",          label: "Completed" },
+  ];
+
   const filtered = reviews
     .filter(
       (r) => yearFilter === "all" || extractFyToken(r.cycle_name) === yearFilter,
+    )
+    .filter(
+      (r) => statusFilter === "all" || r.status === statusFilter,
+    )
+    .filter(
+      (r) => menteeFilter === "all" || r.employee_name === menteeFilter,
     )
     .filter(
       (r) =>
@@ -269,6 +293,53 @@ export function TeamReviewTab() {
                 ))}
               </select>
             </div>
+            <div className="flex items-center gap-2">
+              <label
+                htmlFor="team-review-status-filter"
+                className="text-[11px] font-bold uppercase tracking-wider text-text-muted"
+              >
+                Status
+              </label>
+              <select
+                id="team-review-status-filter"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand min-w-[150px] cursor-pointer"
+              >
+                <option value="all">All</option>
+                {STATUS_OPTIONS.map((s) => (
+                  <option key={s.value} value={s.value}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {availableMentees.length > 0 && (
+              <div className="flex items-center gap-2">
+                <label
+                  htmlFor="team-review-mentee-filter"
+                  className="text-[11px] font-bold uppercase tracking-wider text-text-muted"
+                >
+                  Mentee
+                </label>
+                <select
+                  id="team-review-mentee-filter"
+                  value={menteeFilter}
+                  onChange={(e) => setMenteeFilter(e.target.value)}
+                  className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand min-w-[140px] cursor-pointer"
+                >
+                  <option value="all">All</option>
+                  {availableMentees.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <span className="text-xs text-text-muted">
+              {filtered.length} of {reviews.length}
+            </span>
           </div>
         </div>
       )}

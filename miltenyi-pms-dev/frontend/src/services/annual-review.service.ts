@@ -36,6 +36,10 @@ export interface AnnualReview {
    *  per-user endpoints where the caller already knows the names. */
   employee_name?: string | null;
   mentor_name?: string | null;
+  /** Employee's org context — populated by /all so the HR table can
+   *  filter by Function / Designation without per-row lookups. */
+  function?: string | null;
+  designation?: string | null;
 
   // Stage 1 — employee self-review
   self_overall_review: string | null;

@@ -115,8 +115,12 @@ export function AnnualReviewDetailModal({
             </div>
           </div>
 
-          {/* Mentor Overall Review */}
-          {showMentor && review.mentor_overall_review && (
+          {/* Mentor Overall Review.
+              Gate purely on the prose being present — NOT on `showMentor`
+              (rating presence). The backend strips the mentor rating
+              from a staff viewer's payload via `_strip_private_ratings`,
+              but the mentor's narrative is intentionally visible. */}
+          {review.mentor_overall_review && (
             <div className="rounded-lg border border-border overflow-hidden">
               <div className="bg-blue-50 px-4 py-2 border-b border-blue-100">
                 <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">

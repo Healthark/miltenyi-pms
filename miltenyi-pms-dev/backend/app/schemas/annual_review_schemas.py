@@ -104,6 +104,11 @@ class AnnualReviewResponse(BaseModel):
     # endpoints where the caller is the employee themselves.
     employee_name: Optional[str] = None
     mentor_name: Optional[str] = None
+    # Org context for the employee — also pre-attached by /all so the
+    # HR view-only table can group / filter by Function and Designation
+    # without a per-row user lookup.
+    function: Optional[str] = None
+    designation: Optional[str] = None
 
     # Metadata
     created_at: datetime

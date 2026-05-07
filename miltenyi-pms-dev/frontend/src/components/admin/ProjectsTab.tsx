@@ -371,7 +371,7 @@ export function ProjectsTab({ ref }: ProjectsTabProps = {}) {
                   <SortableHeader label="PM" columnKey="pm_name" sort={sort} onSort={setSort} />
                 </th>
                 <th className="px-5 py-3">
-                  <SortableHeader label="Secondary Evaluator" columnKey="secondary_evaluator_name" sort={sort} onSort={setSort} />
+                  <SortableHeader label="Secondary" columnKey="secondary_evaluator_name" sort={sort} onSort={setSort} />
                 </th>
                 <th className="px-5 py-3">
                   <SortableHeader label="Members" columnKey="member_count" sort={sort} onSort={setSort} />

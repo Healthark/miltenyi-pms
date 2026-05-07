@@ -430,7 +430,6 @@ export function ProjectReviews() {
               employeeColumnLabel="Employee"
               emptyTitle="No project reviews recorded"
               emptySubtitle="Reviews will appear here once PMs start evaluating their teams."
-              showCycleFilter
             />
           )}
         </div>
@@ -448,7 +447,6 @@ function ReadOnlyReviewsList({
   employeeColumnLabel,
   emptyTitle,
   emptySubtitle,
-  showCycleFilter = false,
 }: {
   readonly isLoading: boolean;
   readonly reviews: ProjectReviewResponse[];
@@ -456,10 +454,13 @@ function ReadOnlyReviewsList({
   readonly employeeColumnLabel: string;
   readonly emptyTitle: string;
   readonly emptySubtitle: string;
-  /** When true, show a Cycle dropdown above the table (defaults to "all"). */
-  readonly showCycleFilter?: boolean;
 }) {
+  const [searchQuery, setSearchQuery] = useState("");
   const [cycleFilter, setCycleFilter] = useState<string>("all");
+  const [projectFilter, setProjectFilter] = useState<string>("all");
+  const [pmFilter, setPmFilter] = useState<string>("all");
+  const [employeeFilter, setEmployeeFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
   const [sort, setSort] = useState<SortState<ReadOnlySortKey> | null>(null);
 
   const cycles = useMemo(
@@ -469,11 +470,50 @@ function ReadOnlyReviewsList({
       ),
     [reviews],
   );
+  const projects = useMemo(
+    () =>
+      Array.from(
+        new Set(reviews.map((r) => r.project_name).filter(Boolean)),
+      ).sort(),
+    [reviews],
+  );
+  const pms = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          reviews
+            .map((r) => r.pm_name ?? r.reviewer_name ?? null)
+            .filter((n): n is string => !!n),
+        ),
+      ).sort(),
+    [reviews],
+  );
+  const employees = useMemo(
+    () =>
+      Array.from(
+        new Set(reviews.map((r) => r.employee_name).filter(Boolean)),
+      ).sort(),
+    [reviews],
+  );
 
   const filtered = useMemo(() => {
-    if (!showCycleFilter || cycleFilter === "all") return reviews;
-    return reviews.filter((r) => r.cycle === cycleFilter);
-  }, [reviews, cycleFilter, showCycleFilter]);
+    const q = searchQuery.trim().toLowerCase();
+    return reviews.filter((r) => {
+      if (cycleFilter !== "all" && r.cycle !== cycleFilter) return false;
+      if (projectFilter !== "all" && r.project_name !== projectFilter) return false;
+      if (pmFilter !== "all" && (r.pm_name ?? r.reviewer_name) !== pmFilter) return false;
+      if (employeeFilter !== "all" && r.employee_name !== employeeFilter) return false;
+      if (statusFilter !== "all" && r.status !== statusFilter) return false;
+      if (q) {
+        const matchesName = r.employee_name.toLowerCase().includes(q);
+        const matchesProject =
+          r.project_name.toLowerCase().includes(q) ||
+          r.project_code.toLowerCase().includes(q);
+        if (!matchesName && !matchesProject) return false;
+      }
+      return true;
+    });
+  }, [reviews, searchQuery, cycleFilter, projectFilter, pmFilter, employeeFilter, statusFilter]);
 
   const sorted = useMemo(() => {
     if (!sort) return filtered;
@@ -501,49 +541,137 @@ function ReadOnlyReviewsList({
     );
   }
 
+  const filterLabelCls =
+    "text-[11px] font-bold uppercase tracking-wider text-text-muted";
+  const filterSelectCls =
+    "rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand cursor-pointer";
+
   return (
     <div className="flex flex-col gap-4">
-      {showCycleFilter && cycles.length > 0 && (
-        <div className="flex items-center gap-2">
-          <label
-            htmlFor="ro-cycle-filter"
-            className="text-[11px] font-bold uppercase tracking-wider text-text-muted"
-          >
-            Cycle
-          </label>
-          <select
-            id="ro-cycle-filter"
-            value={cycleFilter}
-            onChange={(e) => setCycleFilter(e.target.value)}
-            className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand cursor-pointer"
-          >
-            <option value="all">All Cycles</option>
-            {cycles.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
+      {/* Filter toolbar — search + per-column dropdowns. The same set
+          drives both the Mentor view ("Mentees' Reviews") and the HR
+          view ("All Reviews"); all dropdowns derive their options
+          from the loaded rows so empty options never appear. */}
+      <div className="flex flex-col gap-3">
+        <div className="relative max-w-xs">
+          <Search
+            className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-text-muted pointer-events-none"
+            aria-hidden="true"
+          />
+          <input
+            type="search"
+            placeholder={`Search ${employeeColumnLabel.toLowerCase()} or project…`}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full rounded-lg border border-border bg-white pl-9 pr-3 py-1.5 text-[13px] text-text-main placeholder:text-text-muted outline-none focus:border-brand"
+          />
+        </div>
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex items-center gap-2">
+            <label htmlFor="ro-cycle-filter" className={filterLabelCls}>
+              Cycle
+            </label>
+            <select
+              id="ro-cycle-filter"
+              value={cycleFilter}
+              onChange={(e) => setCycleFilter(e.target.value)}
+              className={`${filterSelectCls} min-w-[120px]`}
+            >
+              <option value="all">All</option>
+              {cycles.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+          {projects.length > 0 && (
+            <div className="flex items-center gap-2">
+              <label htmlFor="ro-project-filter" className={filterLabelCls}>
+                Project
+              </label>
+              <select
+                id="ro-project-filter"
+                value={projectFilter}
+                onChange={(e) => setProjectFilter(e.target.value)}
+                className={`${filterSelectCls} min-w-[180px]`}
+              >
+                <option value="all">All</option>
+                {projects.map((p) => (
+                  <option key={p} value={p}>{p}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          {pms.length > 0 && (
+            <div className="flex items-center gap-2">
+              <label htmlFor="ro-pm-filter" className={filterLabelCls}>
+                PM
+              </label>
+              <select
+                id="ro-pm-filter"
+                value={pmFilter}
+                onChange={(e) => setPmFilter(e.target.value)}
+                className={`${filterSelectCls} min-w-[140px]`}
+              >
+                <option value="all">All</option>
+                {pms.map((n) => (
+                  <option key={n} value={n}>{n}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          {employees.length > 0 && (
+            <div className="flex items-center gap-2">
+              <label htmlFor="ro-employee-filter" className={filterLabelCls}>
+                {employeeColumnLabel}
+              </label>
+              <select
+                id="ro-employee-filter"
+                value={employeeFilter}
+                onChange={(e) => setEmployeeFilter(e.target.value)}
+                className={`${filterSelectCls} min-w-[140px]`}
+              >
+                <option value="all">All</option>
+                {employees.map((n) => (
+                  <option key={n} value={n}>{n}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          <div className="flex items-center gap-2">
+            <label htmlFor="ro-status-filter" className={filterLabelCls}>
+              Status
+            </label>
+            <select
+              id="ro-status-filter"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className={`${filterSelectCls} min-w-[120px]`}
+            >
+              <option value="all">All</option>
+              <option value="pending">Pending PM</option>
+              <option value="reviewed">Reviewed</option>
+            </select>
+          </div>
           <span className="text-xs text-text-muted">
             {filtered.length} of {reviews.length}
           </span>
         </div>
-      )}
+      </div>
 
       <div className="overflow-x-auto rounded-lg border border-border">
         <table className="w-full text-[13px]">
           <thead>
             <tr className="bg-slate-50/80 border-b border-border">
               <th className="text-left px-5 py-2.5">
+                <SortableHeader label="Project" columnKey="project_name" sort={sort} onSort={setSort} />
+              </th>
+              <th className="text-left px-4 py-2.5">
                 <SortableHeader
                   label={employeeColumnLabel}
                   columnKey="employee_name"
                   sort={sort}
                   onSort={setSort}
                 />
-              </th>
-              <th className="text-left px-4 py-2.5">
-                <SortableHeader label="Project" columnKey="project_name" sort={sort} onSort={setSort} />
               </th>
               <th className="text-left px-4 py-2.5">
                 <SortableHeader label="PM" columnKey="pm_name" sort={sort} onSort={setSort} />
@@ -560,20 +688,30 @@ function ReadOnlyReviewsList({
             </tr>
           </thead>
           <tbody className="divide-y divide-border/50">
-            {sorted.map((r) => {
+            {sorted.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="px-5 py-10 text-center">
+                  <Search className="h-6 w-6 text-text-muted mx-auto mb-1" aria-hidden="true" />
+                  <p className="text-[13px] text-text-main font-medium">No matching reviews</p>
+                  <p className="text-[11px] text-text-muted mt-0.5">
+                    Try adjusting your filters or search query.
+                  </p>
+                </td>
+              </tr>
+            ) : sorted.map((r) => {
               const isReviewed = r.status === "reviewed";
               return (
                 <tr key={r.id} className="hover:bg-slate-50/60 transition-colors">
-                  <td className="px-5 py-3 font-medium text-text-main">
-                    {r.employee_name}
-                  </td>
-                  <td className="px-4 py-3">
+                  <td className="px-5 py-3">
                     <div className="font-medium text-text-main">
                       {r.project_name}
                     </div>
                     <div className="font-mono text-[11px] text-text-muted">
                       {r.project_code}
                     </div>
+                  </td>
+                  <td className="px-4 py-3 font-medium text-text-main">
+                    {r.employee_name}
                   </td>
                   <td className="px-4 py-3 text-text-muted">
                     {r.pm_name ?? r.reviewer_name ?? "—"}

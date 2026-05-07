@@ -31,8 +31,9 @@ Security Layers:
                                    are True.
 """
 
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, HTTPException, status
+from sqlalchemy.orm import joinedload
 
 from app.api.dependencies import DbSession, CurrentUser
 from app.core.cycle_utils import extract_fy_label
@@ -326,19 +327,32 @@ def get_all_annual_reviews(
     user_ids = {r.user_id for r in reviews}
     user_ids.update(r.mentor_id for r in reviews if r.mentor_id is not None)
     name_by_id: dict[int, str] = {}
+    # Function + designation are only needed for the *employee* (review.user_id),
+    # not for mentors. Loaded once via a batched user fetch with eager joins
+    # so the table can render with no per-row queries.
+    employee_meta: dict[int, tuple[Optional[str], Optional[str]]] = {}
     if user_ids:
-        rows = (
-            db.query(User.id, User.full_name)
+        users = (
+            db.query(User)
+            .options(joinedload(User.function), joinedload(User.designation))
             .filter(User.id.in_(user_ids))
             .all()
         )
-        name_by_id = {uid: name for uid, name in rows}
+        for u in users:
+            name_by_id[u.id] = u.full_name
+            employee_meta[u.id] = (
+                u.function.name if u.function else None,
+                u.designation.name if u.designation else None,
+            )
 
     for r in reviews:
         r.employee_name = name_by_id.get(r.user_id)
         r.mentor_name = (
             name_by_id.get(r.mentor_id) if r.mentor_id is not None else None
         )
+        meta = employee_meta.get(r.user_id, (None, None))
+        r.function = meta[0]
+        r.designation = meta[1]
 
     return reviews
 
@@ -357,13 +371,31 @@ def get_mentee_reviews(
     Each row is enriched with employee_name / function / designation.
     Final ratings are nulled when the org-wide visibility flag is off so the
     Mentee Review tab can conditionally hide the Ratings column.
+
+    Resolution is by *current* mentor relationship (User.mentor_id), not by
+    the mentor_id snapshot on the review row. The snapshot is still used as
+    the gate for *submitting* an evaluation (a different mentor can read but
+    not submit) — but for listing purposes we want to match what the
+    My Mentees surface shows so historical / pre-migration rows with a
+    NULL mentor_id are still visible.
     """
     settings = _get_settings(db, current_user.org_id)
+
+    mentee_ids = [
+        uid for (uid,) in db.query(User.id).filter(
+            User.mentor_id == current_user.id,
+            User.org_id == current_user.org_id,
+            User.is_deleted == False,  # noqa: E712
+        ).all()
+    ]
+    if not mentee_ids:
+        return []
+
     reviews = (
         db.query(AnnualReview)
         .filter(
             AnnualReview.org_id == current_user.org_id,
-            AnnualReview.mentor_id == current_user.id,
+            AnnualReview.user_id.in_(mentee_ids),
         )
         .order_by(AnnualReview.created_at.desc())
         .all()
@@ -377,7 +409,12 @@ def get_mentee_reviews(
 
     rows: list[MenteeAnnualReview] = []
     for r in reviews:
-        base = AnnualReviewResponse.model_validate(r).model_dump()
+        # Drop any name fields the parent already populated as None — we
+        # provide our own resolved `employee_name` below, and otherwise
+        # Python complains about duplicate kwargs when spreading `base`.
+        base = AnnualReviewResponse.model_validate(r).model_dump(
+            exclude={"employee_name", "mentor_name"},
+        )
         if not settings.annual_review_final_rating_visible:
             base["final_performance_rating"] = None
             base["management_performance_rating"] = None

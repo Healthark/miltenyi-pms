@@ -29,17 +29,19 @@ interface ProfileInfoCardProps {
 /** Skeleton placeholder shown while the profile is loading. */
 function Skeleton() {
   return (
-    <div className="rounded-xl border border-border bg-surface p-6 shadow-sm animate-pulse">
-      <div className="flex flex-col items-center gap-3 mb-6">
-        <div className="h-16 w-16 rounded-full bg-slate-100" />
-        <div className="h-4 w-32 rounded bg-slate-100" />
-        <div className="h-3 w-20 rounded bg-slate-100" />
+    <div className="rounded-xl border border-border bg-surface p-5 shadow-sm animate-pulse">
+      <div className="flex items-center gap-4 pb-4 mb-4 border-b border-border">
+        <div className="h-14 w-14 rounded-full bg-slate-100" />
+        <div className="flex flex-col gap-2">
+          <div className="h-4 w-40 rounded bg-slate-100" />
+          <div className="h-3 w-20 rounded bg-slate-100" />
+        </div>
       </div>
-      <div className="space-y-4">
-        {Array.from({ length: 5 }).map((_, i) => (
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-3.5">
+        {Array.from({ length: 8 }).map((_, i) => (
           <div key={i} className="flex items-center gap-3">
             <div className="h-4 w-4 rounded bg-slate-100" />
-            <div className="h-3 w-full rounded bg-slate-100" />
+            <div className="h-3 flex-1 rounded bg-slate-100" />
           </div>
         ))}
       </div>
@@ -89,17 +91,18 @@ export function ProfileInfoCard({ profile, isLoading }: ProfileInfoCardProps) {
   });
 
   return (
-    <div className="rounded-xl border border-border bg-surface p-6 shadow-sm">
-      {/* Avatar + Name + Role */}
-      <div className="flex flex-col items-center gap-2 mb-6">
+    <div className="rounded-xl border border-border bg-surface p-5 shadow-sm">
+      {/* Avatar + Name + Role — horizontal layout to keep the card short
+          and let the info grid breathe sideways instead of vertically. */}
+      <div className="flex items-center gap-4 pb-4 mb-4 border-b border-border">
         <div
-          className="flex h-16 w-16 items-center justify-center rounded-full bg-brand text-white text-xl font-bold"
+          className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-brand text-white text-lg font-bold"
           aria-label={`Avatar for ${profile.full_name}`}
         >
           {initials}
         </div>
-        <div className="text-center">
-          <h2 className="font-display text-base font-semibold text-text-main">
+        <div className="min-w-0">
+          <h2 className="font-display text-base font-semibold text-text-main truncate">
             {profile.full_name}
           </h2>
           <span className="inline-block mt-1 rounded-full bg-brand-light px-2.5 py-0.5 text-xs font-medium text-brand">
@@ -108,8 +111,10 @@ export function ProfileInfoCard({ profile, isLoading }: ProfileInfoCardProps) {
         </div>
       </div>
 
-      {/* HR-Controlled Info Rows */}
-      <div className="space-y-4 border-t border-border pt-5">
+      {/* HR-Controlled Info Rows — two-column grid on wider screens
+          so the card height roughly matches the password form on the
+          right. Single column on small screens. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-3.5">
         <InfoRow
           icon={BadgeCheck}
           label="Employee Code"
@@ -137,7 +142,7 @@ export function ProfileInfoCard({ profile, isLoading }: ProfileInfoCardProps) {
       </div>
 
       {/* Footer note */}
-      <p className="mt-5 text-xs text-text-muted text-center">
+      <p className="mt-4 text-xs text-text-muted text-center">
         Contact your HR administrator to update these details.
       </p>
     </div>

@@ -29,6 +29,7 @@ import { SelfReviewCycleMenu } from "../components/goals/SelfReviewCycleMenu";
 import { TeamGoalsTab } from "../components/goals/TeamGoalsTab";
 import { ApprovalStatusBadge } from "../components/goals/ApprovalStatusBadge";
 import { CriteriaChecklist } from "../components/goals/CriteriaChecklist";
+import { StringCombobox } from "../components/common/StringCombobox";
 import { SortableHeader } from "../components/SortableHeader";
 import { compareValues, type SortKind, type SortState } from "../utils/sort";
 import { formatFyYearSpan } from "../utils/fy";
@@ -894,6 +895,9 @@ function AllGoalsTab({
 }) {
   const [statusFilter, setStatusFilter] = useState<ApprovalFilter>("all");
   const [yearFilter, setYearFilter] = useState<string>("all");
+  // Employee filter — typeable combobox styled like the PM picker.
+  // Empty string means "no employee filter applied".
+  const [employeeFilter, setEmployeeFilter] = useState<string>("");
   const [sort, setSort] = useState<SortState<AllGoalsSortKey> | null>(null);
   const [expandedUserId, setExpandedUserId] = useState<number | null>(null);
 
@@ -901,9 +905,15 @@ function AllGoalsTab({
     new Set(goals.map((g) => g.fy_year).filter((y): y is number => y !== null)),
   ).sort((a, b) => b - a);
 
+  // Derived from the loaded goals so the suggestions are always real.
+  const employees = Array.from(
+    new Set(goals.map((g) => g.owner_name).filter((n): n is string => !!n)),
+  ).sort();
+
   const filtered = goals
     .filter((g) => statusFilter === "all" || g.approval_status === statusFilter)
-    .filter((g) => yearFilter === "all" || g.fy_year === Number(yearFilter));
+    .filter((g) => yearFilter === "all" || g.fy_year === Number(yearFilter))
+    .filter((g) => !employeeFilter || g.owner_name === employeeFilter);
 
   const groups = buildAllGoalsGroups(filtered);
 
@@ -944,6 +954,21 @@ function AllGoalsTab({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-4 flex-wrap">
+        <div className="flex items-center gap-2">
+          <label
+            htmlFor="all-goals-employee"
+            className="text-[11px] font-bold uppercase tracking-wider text-text-muted"
+          >
+            Employee
+          </label>
+          <StringCombobox
+            id="all-goals-employee"
+            options={employees}
+            value={employeeFilter}
+            onChange={setEmployeeFilter}
+            placeholder="Type a name…"
+          />
+        </div>
         <div className="flex items-center gap-2">
           <label
             htmlFor="all-goals-year"
