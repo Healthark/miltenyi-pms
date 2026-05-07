@@ -79,24 +79,67 @@ const MY_GOALS_SORT_CONFIG: Record<
   approval_status: { kind: "alpha",   get: (g) => g.approval_status },
 };
 
-// All Goals (HR_MyOrg view-only) sort config.
+// All Goals (HR_MyOrg view-only) — flat sortable table styled like the
+// All Reviews tab. The single visible column is "Employee"; clicking the
+// name reveals an inline drop-down listing that employee's goals (Goal,
+// FY, Status, Mentor) without repeating column headers.
+interface AllGoalsEmployeeGroup {
+  user_id: number;
+  owner_name: string;
+  function_name: string | null;
+  designation_name: string | null;
+  /** Latest goal's FY (highest fy_year) — drives the Year column. */
+  latest_fy_year: number | null;
+  /** Mentor on the latest goal — drives the Mentor column. */
+  latest_manager_name: string | null;
+  goals: TeamGoal[];
+}
+
 type AllGoalsSortKey =
   | "owner_name"
-  | "title"
-  | "manager_name"
-  | "fy_year"
-  | "approval_status";
+  | "latest_fy_year"
+  | "latest_manager_name"
+  | "goal_count";
 
 const ALL_GOALS_SORT_CONFIG: Record<
   AllGoalsSortKey,
-  { kind: SortKind; get: (g: TeamGoal) => unknown }
+  { kind: SortKind; get: (g: AllGoalsEmployeeGroup) => unknown }
 > = {
-  owner_name:      { kind: "alpha",   get: (g) => g.owner_name },
-  title:           { kind: "alpha",   get: (g) => g.title },
-  manager_name:    { kind: "alpha",   get: (g) => g.manager_name },
-  fy_year:         { kind: "numeric", get: (g) => g.fy_year },
-  approval_status: { kind: "alpha",   get: (g) => g.approval_status },
+  owner_name:          { kind: "alpha",   get: (g) => g.owner_name },
+  latest_fy_year:      { kind: "numeric", get: (g) => g.latest_fy_year },
+  latest_manager_name: { kind: "alpha",   get: (g) => g.latest_manager_name },
+  goal_count:          { kind: "numeric", get: (g) => g.goals.length },
 };
+
+function buildAllGoalsGroups(goals: readonly TeamGoal[]): AllGoalsEmployeeGroup[] {
+  const map = new Map<number, AllGoalsEmployeeGroup>();
+  for (const g of goals) {
+    const existing = map.get(g.user_id);
+    if (existing) {
+      existing.goals.push(g);
+    } else {
+      map.set(g.user_id, {
+        user_id: g.user_id,
+        owner_name: g.owner_name,
+        function_name: g.owner_function_name,
+        designation_name: g.owner_designation_name,
+        latest_fy_year: null,
+        latest_manager_name: null,
+        goals: [g],
+      });
+    }
+  }
+  // Inner goals: newest FY first so the drop-down reads top-down. After
+  // sorting, the latest goal is goals[0] — its fy_year and mentor populate
+  // the per-employee Year and Mentor columns.
+  for (const group of map.values()) {
+    group.goals.sort((a, b) => (b.fy_year ?? 0) - (a.fy_year ?? 0));
+    const latest = group.goals[0];
+    group.latest_fy_year = latest?.fy_year ?? null;
+    group.latest_manager_name = latest?.manager_name ?? null;
+  }
+  return Array.from(map.values());
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -852,6 +895,7 @@ function AllGoalsTab({
   const [statusFilter, setStatusFilter] = useState<ApprovalFilter>("all");
   const [yearFilter, setYearFilter] = useState<string>("all");
   const [sort, setSort] = useState<SortState<AllGoalsSortKey> | null>(null);
+  const [expandedUserId, setExpandedUserId] = useState<number | null>(null);
 
   const years = Array.from(
     new Set(goals.map((g) => g.fy_year).filter((y): y is number => y !== null)),
@@ -861,12 +905,20 @@ function AllGoalsTab({
     .filter((g) => statusFilter === "all" || g.approval_status === statusFilter)
     .filter((g) => yearFilter === "all" || g.fy_year === Number(yearFilter));
 
-  const sorted = sort
-    ? filtered.slice().sort((a, b) => {
+  const groups = buildAllGoalsGroups(filtered);
+
+  const sortedGroups = sort
+    ? groups.slice().sort((a, b) => {
         const { kind, get } = ALL_GOALS_SORT_CONFIG[sort.key];
         return compareValues(get(a), get(b), kind, sort.direction);
       })
-    : filtered;
+    : groups
+        .slice()
+        .sort((a, b) =>
+          a.owner_name.localeCompare(b.owner_name, undefined, {
+            sensitivity: "base",
+          }),
+        );
 
   if (isLoading) {
     return (
@@ -934,7 +986,8 @@ function AllGoalsTab({
           </select>
         </div>
         <span className="text-xs text-text-muted">
-          {filtered.length} of {goals.length}
+          {sortedGroups.length} {sortedGroups.length === 1 ? "employee" : "employees"} ·{" "}
+          {filtered.length} of {goals.length} goals
         </span>
       </div>
 
@@ -943,48 +996,133 @@ function AllGoalsTab({
           <thead>
             <tr className="bg-slate-50/80 border-b border-border">
               <th className="text-left px-5 py-2.5">
-                <SortableHeader label="Employee" columnKey="owner_name" sort={sort} onSort={setSort} />
+                <SortableHeader
+                  label="Employee"
+                  columnKey="owner_name"
+                  sort={sort}
+                  onSort={setSort}
+                />
               </th>
               <th className="text-left px-4 py-2.5">
-                <SortableHeader label="Goal" columnKey="title" sort={sort} onSort={setSort} />
+                <SortableHeader
+                  label="Year"
+                  columnKey="latest_fy_year"
+                  sort={sort}
+                  onSort={setSort}
+                />
               </th>
               <th className="text-left px-4 py-2.5">
-                <SortableHeader label="Mentor" columnKey="manager_name" sort={sort} onSort={setSort} />
+                <SortableHeader
+                  label="Mentor"
+                  columnKey="latest_manager_name"
+                  sort={sort}
+                  onSort={setSort}
+                />
               </th>
               <th className="text-left px-4 py-2.5">
-                <SortableHeader label="FY" columnKey="fy_year" sort={sort} onSort={setSort} />
-              </th>
-              <th className="text-left px-4 py-2.5">
-                <SortableHeader label="Status" columnKey="approval_status" sort={sort} onSort={setSort} />
+                <SortableHeader
+                  label="Goals"
+                  columnKey="goal_count"
+                  sort={sort}
+                  onSort={setSort}
+                />
               </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border/50">
-            {sorted.map((g) => (
-              <tr key={g.id} className="hover:bg-slate-50/60 transition-colors">
-                <td className="px-5 py-3 font-medium text-text-main">
-                  {g.owner_name ?? "—"}
-                  {g.owner_function_name && (
-                    <div className="text-[11px] text-text-muted">
-                      {g.owner_function_name}
-                      {g.owner_designation_name
-                        ? ` · ${g.owner_designation_name}`
-                        : ""}
-                    </div>
+            {sortedGroups.map((group) => {
+              const isExpanded = expandedUserId === group.user_id;
+              const goalCount = group.goals.length;
+              return (
+                <Fragment key={group.user_id}>
+                  <tr
+                    className={`transition-colors cursor-pointer ${
+                      isExpanded ? "bg-brand/5" : "hover:bg-slate-50/60"
+                    }`}
+                    onClick={() =>
+                      setExpandedUserId(isExpanded ? null : group.user_id)
+                    }
+                  >
+                    <td className="px-5 py-3 font-medium text-text-main">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <ChevronDown
+                          className={`h-4 w-4 text-text-muted shrink-0 transition-transform duration-200 ${
+                            isExpanded ? "rotate-180" : ""
+                          }`}
+                          aria-hidden="true"
+                        />
+                        <div className="min-w-0">
+                          <p className="truncate">{group.owner_name}</p>
+                          {(group.function_name || group.designation_name) && (
+                            <p className="text-[11px] text-text-muted truncate">
+                              {group.function_name ?? ""}
+                              {group.function_name && group.designation_name
+                                ? " · "
+                                : ""}
+                              {group.designation_name ?? ""}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      {group.latest_fy_year ? (
+                        <span className="text-[12px] font-semibold text-text-muted bg-slate-100 px-1.5 py-0.5 rounded">
+                          {formatFyYearSpan(group.latest_fy_year)}
+                        </span>
+                      ) : (
+                        <span className="text-[12px] text-text-muted">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-text-muted">
+                      {group.latest_manager_name ?? "—"}
+                    </td>
+                    <td className="px-4 py-3 text-text-muted">
+                      {goalCount} {goalCount === 1 ? "goal" : "goals"}
+                    </td>
+                  </tr>
+                  {isExpanded && (
+                    <tr className="bg-slate-50/80">
+                      <td colSpan={4} className="p-0">
+                        <table className="w-full text-[13px]">
+                          <thead>
+                            <tr className="text-left text-[11px] font-bold uppercase tracking-wider text-text-muted border-b border-border/40">
+                              <th className="px-10 py-2 font-bold">Goal</th>
+                              <th className="px-4 py-2 font-bold">Description</th>
+                              <th className="px-4 py-2 font-bold">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {group.goals.map((g) => (
+                              <tr
+                                key={g.id}
+                                className="border-t border-border/40"
+                              >
+                                <td className="px-10 py-2.5">
+                                  <span className="font-medium text-text-main">
+                                    {g.title}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-2.5 text-[12.5px] text-text-muted max-w-md">
+                                  {g.description ? (
+                                    <span className="line-clamp-2">{g.description}</span>
+                                  ) : (
+                                    <span>—</span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-2.5">
+                                  <ApprovalStatusBadge status={g.approval_status} />
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </td>
+                    </tr>
                   )}
-                </td>
-                <td className="px-4 py-3 text-text-main">{g.title}</td>
-                <td className="px-4 py-3 text-text-muted">
-                  {g.manager_name ?? "—"}
-                </td>
-                <td className="px-4 py-3 text-text-muted">
-                  {g.fy_year ? formatFyYearSpan(g.fy_year) : "—"}
-                </td>
-                <td className="px-4 py-3">
-                  <ApprovalStatusBadge status={g.approval_status} />
-                </td>
-              </tr>
-            ))}
+                </Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>
