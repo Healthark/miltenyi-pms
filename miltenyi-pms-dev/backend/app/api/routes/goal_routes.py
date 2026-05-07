@@ -394,7 +394,7 @@ def list_all_goals(
     if current_user.role != Role.HR_MYORG.value:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the MyOrg HR can view all goals.",
+            detail="Only the Healthark HR can view all goals.",
         )
 
     goals = (

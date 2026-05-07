@@ -21,7 +21,7 @@ interface RolePlaceholder {
 
 const ROLE_PLACEHOLDERS: Record<string, RolePlaceholder> = {
   HR_MyOrg: {
-    title: "MyOrg HR Dashboard",
+    title: "Healthark HR Dashboard",
     subtitle:
       "Org-wide rollups across staffing, reviews, and mentor pairings will live here.",
   },

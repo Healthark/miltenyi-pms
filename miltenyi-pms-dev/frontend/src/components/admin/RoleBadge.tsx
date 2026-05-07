@@ -10,7 +10,7 @@
  */
 
 const ROLE_LABELS: Record<string, string> = {
-  HR_MyOrg: "HR · MyOrg",
+  HR_MyOrg: "HR · Healthark",
   HR_Miltenyi: "HR · Miltenyi",
   Mentor: "Mentor",
   PM: "PM",

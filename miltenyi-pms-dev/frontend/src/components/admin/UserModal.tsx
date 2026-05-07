@@ -15,9 +15,9 @@ import { useAuth } from "../../hooks/useAuth";
 const ROLE_OPTIONS: { value: string; label: string }[] = [
   { value: "Staff", label: "Staff" },
   { value: "PM", label: "PM (Miltenyi)" },
-  { value: "Mentor", label: "Mentor (MyOrg)" },
+  { value: "Mentor", label: "Mentor (Healthark)" },
   { value: "HR_Miltenyi", label: "HR · Miltenyi" },
-  { value: "HR_MyOrg", label: "HR · MyOrg" },
+  { value: "HR_MyOrg", label: "HR · Healthark" },
 ];
 
 const ALL_ROLE_VALUES = ROLE_OPTIONS.map((r) => r.value);

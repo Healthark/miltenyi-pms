@@ -84,7 +84,7 @@ def _require_hr_myorg(current_user: User) -> None:
     if current_user.role != "HR_MyOrg":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the MyOrg HR can perform this action.",
+            detail="Only the Healthark HR can perform this action.",
         )
 
 

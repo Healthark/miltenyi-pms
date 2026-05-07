@@ -5,7 +5,7 @@ Models the new collaborative role taxonomy: MyOrg (Healthark) staffs
 employees to Miltenyi, who manage them on projects.
 
 Accounts (all passwords: password123):
-  HR · MyOrg (Healthark):
+  HR · Healthark:
     sarah.patel@healthark.ai      Sarah Patel       (HR_MyOrg, super-admin)
 
   HR · Miltenyi:
@@ -141,7 +141,7 @@ def seed_database() -> None:
             db.refresh(u)
             return u
 
-        # ── HR · MyOrg (full super-admin) ─────────────────────────────
+        # ── HR · Healthark (full super-admin) ─────────────────────────
         sarah = _ensure_user(
             "sarah.patel@healthark.ai",
             employee_code="HRK-001", full_name="Sarah Patel",
@@ -298,7 +298,7 @@ def seed_database() -> None:
                 updated_by_id=sarah.id,
             ))
             db.commit()
-            print("  [+] System Settings (quarterly, Q1 FY26-27, MyOrg HR as updater)")
+            print("  [+] System Settings (quarterly, Q1 FY26-27, Healthark HR as updater)")
         else:
             print("  [~] System settings already exist; reusing.")
 
@@ -836,7 +836,7 @@ def seed_database() -> None:
         print("Database seeding completed.")
         print("=" * 64)
         print("\n--- ACCOUNTS (all passwords: password123) ---")
-        print("  HR · MyOrg :   sarah.patel@healthark.ai     Sarah Patel")
+        print("  HR · Healthark : sarah.patel@healthark.ai   Sarah Patel")
         print("  HR · Miltenyi: karin.weber@miltenyi.com     Karin Weber")
         print("\n  Mentors (Healthark):")
         print("    anjali.rao@healthark.ai     Anjali Rao    (Bob, Charlie, Dana)")

@@ -86,7 +86,7 @@ def _require_hr_myorg(current_user: User) -> None:
     if current_user.role != Role.HR_MYORG.value:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the MyOrg HR can access this resource.",
+            detail="Only the Healthark HR can access this resource.",
         )
 
 
@@ -105,12 +105,12 @@ def _authorize_user_mutation(current_user: User, target_role: str | None) -> Non
     (e.g. deactivate); we look up the row's existing role at the call site.
     """
     if current_user.role == Role.HR_MYORG.value:
-        return  # MyOrg HR has full powers
+        return  # Healthark HR has full powers
     if target_role and target_role in PROTECTED_USER_ROLES:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=(
-                "Miltenyi HR cannot create or modify Mentors or MyOrg HR users."
+                "Miltenyi HR cannot create or modify Mentors or Healthark HR users."
             ),
         )
 

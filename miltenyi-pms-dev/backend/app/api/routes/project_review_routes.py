@@ -1205,7 +1205,7 @@ def update_review(
     if not (is_reviewer or is_admin):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the PM who submitted this review (or MyOrg HR) may edit it.",
+            detail="Only the PM who submitted this review (or Healthark HR) may edit it.",
         )
 
     review.comment_task_execution = payload.comment_task_execution

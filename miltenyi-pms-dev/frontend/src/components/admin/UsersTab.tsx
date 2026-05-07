@@ -35,7 +35,7 @@ type StatusFilter = "all" | "active" | "inactive";
 
 const ROLE_OPTIONS: { value: RoleFilter; label: string }[] = [
   { value: "all", label: "All Roles" },
-  { value: "HR_MyOrg", label: "HR · MyOrg" },
+  { value: "HR_MyOrg", label: "HR · Healthark" },
   { value: "HR_Miltenyi", label: "HR · Miltenyi" },
   { value: "Mentor", label: "Mentor" },
   { value: "PM", label: "PM" },
@@ -346,7 +346,7 @@ export function UsersTab({
                             </>
                           ) : (
                             <span
-                              title="Only MyOrg HR can edit Mentor or MyOrg HR users."
+                              title="Only Healthark HR can edit Mentor or Healthark HR users."
                               className="text-xs italic text-text-muted"
                             >
                               View-only
