@@ -37,6 +37,7 @@ import { useAuth } from "../hooks/useAuth";
 import { useSystemSettings } from "../hooks/useSystemSettings";
 import { PrimaryEvaluationTab } from "../components/project-reviews/PrimaryEvaluationTab";
 import { SecondaryEvalTab } from "../components/project-reviews/SecondaryEvalTab";
+import { PerformanceRatingBadge } from "../components/reviews/PerformanceRatingBadge";
 import { ProjectSummaryCard } from "../components/project-reviews/ProjectSummaryCard";
 import { ReviewDetailPanel } from "../components/project-reviews/ReviewDetailPanel";
 import { TableExpandedRow } from "../components/project-reviews/TableExpandedRow";
@@ -598,12 +599,8 @@ function ReadOnlyReviewsList({
                       <span className="inline-flex items-center gap-1 text-[11px] text-text-muted/60">
                         <Lock className="h-3 w-3" /> Hidden
                       </span>
-                    ) : r.performance_group ? (
-                      <span className="font-semibold text-text-main">
-                        {r.performance_group}
-                      </span>
                     ) : (
-                      <span className="text-text-muted">—</span>
+                      <PerformanceRatingBadge value={r.performance_group} />
                     )}
                   </td>
                 </tr>
@@ -848,12 +845,5 @@ function renderRatingCell(card: MyProjectCard, visible: boolean) {
       </span>
     );
   }
-  if (card.performance_group) {
-    return (
-      <span className="font-semibold text-text-main">
-        {card.performance_group}
-      </span>
-    );
-  }
-  return <span className="text-text-muted">—</span>;
+  return <PerformanceRatingBadge value={card.performance_group} />;
 }

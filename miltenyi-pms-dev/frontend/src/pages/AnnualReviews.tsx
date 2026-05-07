@@ -7,6 +7,7 @@ import { useConfirm } from "../hooks/useConfirm";
 import { SelfReviewTab } from "../components/reviews/SelfReviewTab";
 import { TeamReviewTab } from "../components/reviews/TeamReviewTab";
 import { SelfReviewFormModal } from "../components/reviews/SelfReviewFormModal";
+import { PerformanceRatingBadge } from "../components/reviews/PerformanceRatingBadge";
 import { SortableHeader } from "../components/SortableHeader";
 import { compareValues, type SortKind, type SortState } from "../utils/sort";
 import {
@@ -391,14 +392,14 @@ function AllReviewsTab({
                 <td className="px-4 py-3 text-text-muted capitalize">
                   {r.status.replace("_", " ")}
                 </td>
-                <td className="px-4 py-3 text-text-muted">
-                  {r.self_performance_rating ?? "—"}
+                <td className="px-4 py-3">
+                  <PerformanceRatingBadge value={r.self_performance_rating} />
                 </td>
-                <td className="px-4 py-3 text-text-muted">
-                  {r.mentor_performance_rating ?? "—"}
+                <td className="px-4 py-3">
+                  <PerformanceRatingBadge value={r.mentor_performance_rating} />
                 </td>
-                <td className="px-4 py-3 text-text-muted">
-                  {r.final_performance_rating ?? "—"}
+                <td className="px-4 py-3">
+                  <PerformanceRatingBadge value={r.final_performance_rating} />
                 </td>
               </tr>
             ))}

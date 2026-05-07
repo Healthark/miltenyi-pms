@@ -20,6 +20,7 @@ import {
   type AdminMemberReviewRow,
 } from "../../services/project-review.service";
 import { useSystemSettings } from "../../hooks/useSystemSettings";
+import { PerformanceRatingBadge } from "../reviews/PerformanceRatingBadge";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -224,14 +225,8 @@ function ProjectCard({
                       <td className="px-4 py-3">
                         <StatusBadge status={m.review_status} />
                       </td>
-                      <td className="hidden md:table-cell px-4 py-3 text-text-muted">
-                        {m.performance_group ? (
-                          <span className="font-semibold text-text-main">
-                            {m.performance_group}
-                          </span>
-                        ) : (
-                          "—"
-                        )}
+                      <td className="hidden md:table-cell px-4 py-3">
+                        <PerformanceRatingBadge value={m.performance_group} />
                       </td>
                     </tr>
                   ))}

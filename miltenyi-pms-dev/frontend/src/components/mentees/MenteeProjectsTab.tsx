@@ -230,7 +230,7 @@ function EvalCard({
         {row.performance_group && (
           <span className="inline-flex items-center gap-1.5">
             Rating:
-            <PerformanceRatingBadge value={Number(row.performance_group)} />
+            <PerformanceRatingBadge value={row.performance_group} />
           </span>
         )}
       </div>
@@ -716,9 +716,7 @@ export function MenteeProjectsTab({
                     <StatusBadge status={r.review_status} />
                   </td>
                   <td className="hidden md:table-cell px-4 py-3">
-                    <PerformanceRatingBadge
-                      value={r.performance_group ? Number(r.performance_group) : null}
-                    />
+                    <PerformanceRatingBadge value={r.performance_group} />
                   </td>
                   <td className="px-4 py-3 text-right">
                     <ActionButton

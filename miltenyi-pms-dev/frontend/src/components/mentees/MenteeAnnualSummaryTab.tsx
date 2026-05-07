@@ -328,7 +328,7 @@ function ProjectSummaryCard({
         {assignment.performance_group != null ? (
           <>
             <PerformanceRatingBadge
-              value={Number(assignment.performance_group)}
+              value={assignment.performance_group}
               size="md"
             />
             <span className="text-[10px] font-medium uppercase tracking-wide text-text-muted text-center">

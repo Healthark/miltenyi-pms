@@ -1,9 +1,14 @@
 /**
  * Compact numeric badge showing a 1–5 performance rating.
  * Color-codes by rating tier: 1 green → 2 brand → 3 slate → 4 amber → 5 red.
+ *
+ * Accepts both numeric (annual review fields) and string (project review
+ * `performance_group`) inputs — coerces internally so call sites don't
+ * have to. Empty / null / unparseable values render as a muted dash so
+ * the layout column width stays consistent.
  */
 interface PerformanceRatingBadgeProps {
-  readonly value: number | null;
+  readonly value: number | string | null | undefined;
   readonly size?: "sm" | "md";
 }
 
@@ -19,11 +24,18 @@ export function PerformanceRatingBadge({
   value,
   size = "sm",
 }: PerformanceRatingBadgeProps) {
-  if (value == null) {
+  const n =
+    value == null || value === ""
+      ? null
+      : typeof value === "number"
+        ? value
+        : Number(value);
+
+  if (n == null || Number.isNaN(n)) {
     return <span className="text-[12px] text-text-muted">—</span>;
   }
 
-  const cls = TIER[value] ?? TIER[3];
+  const cls = TIER[n] ?? TIER[3];
   const dim =
     size === "md"
       ? "h-7 w-7 text-sm"
@@ -32,9 +44,9 @@ export function PerformanceRatingBadge({
   return (
     <span
       className={`inline-flex items-center justify-center rounded-md border font-bold ${dim} ${cls}`}
-      title={`Performance rating: ${value}`}
+      title={`Performance rating: ${n}`}
     >
-      {value}
+      {n}
     </span>
   );
 }

@@ -26,6 +26,7 @@ import { useToast } from "../../hooks/useToast";
 import { SortableHeader } from "../SortableHeader";
 import { compareValues, type SortKind, type SortState } from "../../utils/sort";
 import { EvalModal } from "./EvalModal";
+import { PerformanceRatingBadge } from "../reviews/PerformanceRatingBadge";
 
 // ── Constants ───────────────────────────────────────────────────────
 
@@ -429,11 +430,7 @@ export function PrimaryEvaluationTab() {
                       )}
                     </td>
                     <td className="hidden md:table-cell px-4 py-3">
-                      {r.performance_group ? (
-                        <span className="font-semibold text-text-main">{r.performance_group}</span>
-                      ) : (
-                        <span className="text-text-muted">—</span>
-                      )}
+                      <PerformanceRatingBadge value={r.performance_group} />
                     </td>
                     <td className="px-4 py-3 text-right">
                       {isDone ? (

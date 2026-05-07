@@ -7,6 +7,7 @@ import { useSystemSettings } from "../../hooks/useSystemSettings";
 import { useReviewDetails } from "../../hooks/useReviewDetails";
 import { CompetencyBlock } from "./CompetencyBlock";
 import { ImpactBlock } from "./ImpactBlock";
+import { PerformanceRatingBadge } from "../reviews/PerformanceRatingBadge";
 
 /**
  * Detail panel rendered below the My Reviews grid when a card is
@@ -138,12 +139,8 @@ function renderBody({
         <div className="flex items-center justify-between gap-4 flex-wrap rounded-lg border border-emerald-100 bg-emerald-50/50 px-4 py-3">
           <div className="flex items-center gap-2.5">
             <Star className="h-4 w-4 text-emerald-600" />
-            <span className="text-[13.5px] text-text-main">
-              Project Evaluation Rating:{" "}
-              <span className="font-bold text-emerald-700">
-                {details.performance_group ?? "—"}
-              </span>
-            </span>
+            <span className="text-[13.5px] text-text-main">Project Evaluation Rating</span>
+            <PerformanceRatingBadge value={details.performance_group} size="md" />
           </div>
           {details.reviewer_name && (
             <div className="flex items-center gap-1.5 text-[12px] text-emerald-800/80 font-medium bg-emerald-100/50 px-2.5 py-1 rounded-md">
