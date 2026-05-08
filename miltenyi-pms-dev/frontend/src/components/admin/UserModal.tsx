@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { createPortal } from "react-dom";
 import type {
   UserResponse,
@@ -65,47 +65,37 @@ export function UserModal({
     ? ROLE_OPTIONS.filter((r) => !PROTECTED_ROLES.has(r.value))
     : ROLE_OPTIONS;
 
-  const [form, setForm] = useState({
-    employee_code: "",
-    full_name: "",
-    email: "",
-    phone: "",
-    role: "Staff",
-    function_id: "",
-    designation_id: "",
-    mentor_id: "",
-    password: "",
-  });
-
-  useEffect(() => {
-    if (editingUser) {
-      setForm({
-        employee_code: editingUser.employee_code,
-        full_name: editingUser.full_name,
-        email: editingUser.email,
-        phone: editingUser.phone ?? "",
-        // Map any legacy/unknown role value back to Staff so the dropdown
-        // doesn't render a value that isn't in ROLE_OPTIONS.
-        role: ALL_ROLE_VALUES.includes(editingUser.role) ? editingUser.role : "Staff",
-        function_id: editingUser.function_id?.toString() ?? "",
-        designation_id: editingUser.designation_id?.toString() ?? "",
-        mentor_id: editingUser.mentor_id?.toString() ?? "",
-        password: "",
-      });
-    } else {
-      setForm({
-        employee_code: "",
-        full_name: "",
-        email: "",
-        phone: "",
-        role: "Staff",
-        function_id: "",
-        designation_id: "",
-        mentor_id: "",
-        password: "",
-      });
-    }
-  }, [editingUser]);
+  // Initialize form state once on mount. AdminPanel passes
+  // `key={editingUser?.id ?? "new"}`, so React remounts this modal
+  // whenever HR switches between Add / Edit / a different user, and
+  // this initializer re-runs with the fresh `editingUser`.
+  const [form, setForm] = useState(() =>
+    editingUser
+      ? {
+          employee_code: editingUser.employee_code,
+          full_name: editingUser.full_name,
+          email: editingUser.email,
+          phone: editingUser.phone ?? "",
+          // Map any legacy/unknown role value back to Staff so the dropdown
+          // doesn't render a value that isn't in ROLE_OPTIONS.
+          role: ALL_ROLE_VALUES.includes(editingUser.role) ? editingUser.role : "Staff",
+          function_id: editingUser.function_id?.toString() ?? "",
+          designation_id: editingUser.designation_id?.toString() ?? "",
+          mentor_id: editingUser.mentor_id?.toString() ?? "",
+          password: "",
+        }
+      : {
+          employee_code: "",
+          full_name: "",
+          email: "",
+          phone: "",
+          role: "Staff",
+          function_id: "",
+          designation_id: "",
+          mentor_id: "",
+          password: "",
+        },
+  );
 
   if (!isOpen) return null;
 

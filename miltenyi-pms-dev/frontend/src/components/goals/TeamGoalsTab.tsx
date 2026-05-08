@@ -820,32 +820,36 @@ export function TeamGoalsTab() {
         />
       )}
 
-      {/* Bulk approve modal */}
-      <BulkApproveModal
-        isOpen={bulkOpen}
-        goals={goals}
-        onClose={() => {
-          setBulkOpen(false);
-          setBulkError("");
-        }}
-        onSubmit={handleBulkApprove}
-        isSaving={bulkSaving}
-        error={bulkError}
-      />
+      {/* Bulk approve modal — conditionally mounted so each open is a
+          fresh React tree and the modal's local state (selection,
+          collapsed groups) is reset by mount, not by an effect. */}
+      {bulkOpen && (
+        <BulkApproveModal
+          goals={goals}
+          onClose={() => {
+            setBulkOpen(false);
+            setBulkError("");
+          }}
+          onSubmit={handleBulkApprove}
+          isSaving={bulkSaving}
+          error={bulkError}
+        />
+      )}
 
       {/* Mentor review modal — editable when no review yet for this half,
           read-only once the mentor's review has been submitted. */}
-      <GoalMentorReviewModal
-        isOpen={reviewGoal !== null && reviewCycle !== null}
-        goal={reviewGoal}
-        cycleHalf={reviewCycle}
-        onClose={closeReview}
-        onSubmit={handleSubmitReview}
-        onSaveDraft={handleSaveReviewDraft}
-        isSaving={isSavingReview}
-        isDraftSaving={isSavingReviewDraft}
-        error={reviewError}
-      />
+      {reviewGoal !== null && reviewCycle !== null && (
+        <GoalMentorReviewModal
+          goal={reviewGoal}
+          cycleHalf={reviewCycle}
+          onClose={closeReview}
+          onSubmit={handleSubmitReview}
+          onSaveDraft={handleSaveReviewDraft}
+          isSaving={isSavingReview}
+          isDraftSaving={isSavingReviewDraft}
+          error={reviewError}
+        />
+      )}
 
     </div>
   );

@@ -348,7 +348,12 @@ export default function AdminPanel() {
       </div>
 
       {/* Modals — rendered outside the card so they overlay the full page */}
+      {/* `key` on (editingUser?.id ?? "new") forces React to remount the
+          modal whenever HR switches between Add / Edit / a different user.
+          That makes the modal's `useState` initializer re-run with the
+          fresh prop, so we don't need a useEffect to sync the form. */}
       <UserModal
+        key={editingUser?.id ?? "new"}
         isOpen={showUserModal}
         onClose={closeUserModal}
         onSave={handleSaveUser}

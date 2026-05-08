@@ -35,7 +35,6 @@ import { ExpectationPanel } from "@/components/project-reviews/ExpectationPanel"
 import { formatFyYearSpan } from "@/utils/fy";
 import { halfDisplayLabel } from "@/utils/goalStatus";
 import { getOwnerRole } from "@/utils/goalOwner";
-import { useSystemSettings } from "@/hooks/useSystemSettings";
 
 const TEXTAREA_CLS =
   "w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-brand resize-none";
@@ -43,16 +42,14 @@ const TEXTAREA_CLS =
 function cycleLabel(
   goal: Goal,
   cycleHalf: SelfReviewCycleHalf,
-  cycleType: string | null,
 ): string {
-  const display = halfDisplayLabel(cycleHalf, cycleType);
+  const display = halfDisplayLabel(cycleHalf);
   return goal.fy_year ? `${display} ${formatFyYearSpan(goal.fy_year)}` : display;
 }
 
 // ── Props ────────────────────────────────────────────────────────────
 
 interface GoalMentorReviewModalProps {
-  readonly isOpen: boolean;
   readonly goal: Goal | null;
   readonly cycleHalf: SelfReviewCycleHalf | null;
   readonly onClose: () => void;
@@ -71,8 +68,13 @@ interface GoalMentorReviewModalProps {
 
 // ── Component ────────────────────────────────────────────────────────
 
+/**
+ * The parent conditionally mounts this modal when (goal, cycleHalf) are
+ * both non-null, so each open is a fresh React mount — `useState`
+ * initializers run with the current existingMentorReview, no effect
+ * needed to re-seed the textarea.
+ */
 export function GoalMentorReviewModal({
-  isOpen,
   goal,
   cycleHalf,
   onClose,
@@ -82,9 +84,6 @@ export function GoalMentorReviewModal({
   isDraftSaving = false,
   error,
 }: GoalMentorReviewModalProps) {
-  const { settings } = useSystemSettings();
-  const cycleType = settings?.cycle_type ?? null;
-
   // Use the mentee's submitted self-review (drafts are owner-only).
   const selfReview =
     goal && cycleHalf
@@ -104,22 +103,16 @@ export function GoalMentorReviewModal({
   const isDraft =
     existingMentorReview !== null && existingMentorReview.is_draft;
 
-  const [overall, setOverall] = useState("");
+  const [overall, setOverall] = useState(() =>
+    existingMentorReview ? existingMentorReview.mentor_overall_review : "",
+  );
   const [expectations, setExpectations] = useState<RoleExpectation[]>([]);
 
-  // Re-seed the textarea whenever the modal opens on a different (goal, half).
+  // Fetch role-expectation rows once on mount. The org typically only
+  // has 9 of these; cache once and filter client-side by the owner's
+  // function + designation.
   useEffect(() => {
-    if (!isOpen) return;
-    setOverall(
-      existingMentorReview ? existingMentorReview.mentor_overall_review : "",
-    );
-  }, [isOpen, goal?.id, cycleHalf, existingMentorReview]);
-
-  // Fetch role-expectation rows once when the modal first opens. The org
-  // typically only has 9 of these; cache once and filter client-side by
-  // the owner's function + designation.
-  useEffect(() => {
-    if (!isOpen || expectations.length > 0) return;
+    if (expectations.length > 0) return;
     let cancelled = false;
     projectReviewService
       .getRoleExpectations()
@@ -132,9 +125,9 @@ export function GoalMentorReviewModal({
     return () => {
       cancelled = true;
     };
-  }, [isOpen, expectations.length]);
+  }, [expectations.length]);
 
-  if (!isOpen || !goal || !cycleHalf) return null;
+  if (!goal || !cycleHalf) return null;
 
   const { func, desig } = getOwnerRole(goal);
   const ownerExpectation: RoleExpectation | null =
@@ -155,7 +148,7 @@ export function GoalMentorReviewModal({
     await onSaveDraft(cycleHalf, { mentor_overall_review: overall });
   };
 
-  const label = cycleLabel(goal, cycleHalf, cycleType);
+  const label = cycleLabel(goal, cycleHalf);
   const titleSuffix = isReadOnly
     ? " (Submitted)"
     : isDraft

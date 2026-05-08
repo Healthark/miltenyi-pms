@@ -15,7 +15,7 @@
  * result so the UI can show "approved 8 of 10" when goals slip state.
  */
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { createPortal } from "react-dom";
 import {
   X,
@@ -29,7 +29,6 @@ import type { TeamGoal } from "@/services/goal.service";
 import { formatFyYearSpan } from "@/utils/fy";
 
 interface BulkApproveModalProps {
-  readonly isOpen: boolean;
   readonly goals: TeamGoal[];
   readonly onClose: () => void;
   /** Returns the count actually approved on success. The parent decides how
@@ -71,8 +70,12 @@ function groupByMentee(goals: TeamGoal[]): MenteeGroup[] {
   );
 }
 
+/**
+ * The parent conditionally mounts this component (`{bulkOpen && <Bulk… />}`)
+ * so each open is a fresh React mount — `useState` initializers run on
+ * every open, no effect needed to reset selection.
+ */
 export function BulkApproveModal({
-  isOpen,
   goals,
   onClose,
   onSubmit,
@@ -91,17 +94,6 @@ export function BulkApproveModal({
   const [collapsedMentees, setCollapsedMentees] = useState<Set<string>>(
     () => new Set(),
   );
-
-  // Reset selection whenever the modal opens; the underlying goals list
-  // may have shifted while the modal was closed.
-  useEffect(() => {
-    if (isOpen) {
-      setSelected(new Set());
-      setCollapsedMentees(new Set());
-    }
-  }, [isOpen]);
-
-  if (!isOpen) return null;
 
   const toggleGoal = (goalId: number) => {
     setSelected((prev) => {

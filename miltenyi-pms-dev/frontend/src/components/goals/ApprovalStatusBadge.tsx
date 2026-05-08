@@ -1,5 +1,4 @@
 import type { ApprovalStatus } from "@/services/goal.service";
-import { useSystemSettings } from "@/hooks/useSystemSettings";
 import { halfDisplayLabel } from "@/utils/goalStatus";
 
 interface ApprovalStatusBadgeProps {
@@ -36,9 +35,6 @@ const REVIEW_STATE_CLS: Record<string, string> = {
 const REVIEW_STATE_RE = /^(h[12]|q[1-4])_(self|mentor)_reviewed$/;
 
 export function ApprovalStatusBadge({ status }: ApprovalStatusBadgeProps) {
-  const { settings } = useSystemSettings();
-  const cycleType = settings?.cycle_type ?? null;
-
   let label: string;
   let cls: string;
 
@@ -50,7 +46,7 @@ export function ApprovalStatusBadge({ status }: ApprovalStatusBadgeProps) {
       const cycle = m[1].toUpperCase() as
         | "H1" | "H2" | "Q1" | "Q2" | "Q3" | "Q4";
       const action = m[2] === "self" ? "Self-Reviewed" : "Mentor-Reviewed";
-      label = `${halfDisplayLabel(cycle, cycleType)} ${action}`;
+      label = `${halfDisplayLabel(cycle)} ${action}`;
       cls = REVIEW_STATE_CLS[status] ?? STATIC_CONFIG.draft!.cls;
     } else {
       ({ label, cls } = { label: "Draft", cls: STATIC_CONFIG.draft!.cls });

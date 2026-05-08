@@ -45,9 +45,8 @@ const MENU_GAP = 4;
 function cycleLabel(
   goal: Goal,
   half: SelfReviewCycleHalf,
-  cycleType: string | null,
 ): string {
-  const display = halfDisplayLabel(half, cycleType);
+  const display = halfDisplayLabel(half);
   return goal.fy_year ? `${display} ${formatFyYearSpan(goal.fy_year)}` : display;
 }
 
@@ -62,11 +61,10 @@ export function SelfReviewCycleMenu({
   const menuRef = useRef<HTMLDivElement>(null);
   const { settings } = useSystemSettings();
   const fiscalStartMonth = settings?.fiscal_start_month ?? 4;
-  const cycleType = settings?.cycle_type ?? null;
-  // For half-yearly orgs the menu shows 2 rows (H1/H2). For quarterly
-  // orgs it shows 4 rows (Q1/Q2/Q3/Q4). The data column carries either
-  // family — we read whichever is configured for the org.
-  const cycles = cycleKeysForType(cycleType);
+  // Goal review cadence is always half-yearly (H1 / H2) regardless of
+  // the org's cycle_type. The function still resolves the cycle list
+  // through `cycleKeysForType` so any future split stays one edit away.
+  const cycles = cycleKeysForType();
   const totalCycles = cycles.length;
 
   // Compute the menu position from the trigger's bounding rect.  Called on
@@ -192,7 +190,7 @@ export function SelfReviewCycleMenu({
           const lockReason = isMentorLocked
             ? "Awaiting mentee self-review for this cycle"
             : !isFirstCycle
-              ? `${halfDisplayLabel(half, cycleType)} window has not opened yet`
+              ? `${halfDisplayLabel(half)} window has not opened yet`
               : "Review window for this fiscal year has closed";
           return (
             <button
@@ -214,7 +212,7 @@ export function SelfReviewCycleMenu({
             >
               <div className="flex flex-col min-w-0">
                 <span className="text-[12px] font-semibold text-text-main">
-                  {cycleLabel(goal, half, cycleType)}
+                  {cycleLabel(goal, half)}
                 </span>
                 <span
                   className={`text-[10px] ${

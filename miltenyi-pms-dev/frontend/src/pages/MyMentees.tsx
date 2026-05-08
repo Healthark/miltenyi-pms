@@ -69,9 +69,13 @@ function MyMenteesView() {
   const [viewMode, setViewMode] = useState<MenteeViewMode>("grid");
   const [tableSort, setTableSort] = useState<SortState<MenteeTableSortKey> | null>(null);
 
+  // One-shot fetch on mount. `isLoading` is initialized to `true` above
+  // (we're going to fetch immediately), so the effect doesn't need to
+  // flip it on synchronously — that would just redundantly set the
+  // value to what it already is, while also tripping the lint rule
+  // about setState inside an effect body.
   useEffect(() => {
     let cancelled = false;
-    setIsLoading(true);
     menteeService
       .getSummaries()
       .then((data) => {
@@ -234,9 +238,10 @@ function AllMentorPairings() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
+  // One-shot fetch on mount. `isLoading` is initialized to `true`, so
+  // we don't need to flip it again synchronously inside the effect.
   useEffect(() => {
     let cancelled = false;
-    setIsLoading(true);
     menteeService
       .getAllPairings()
       .then((data) => {

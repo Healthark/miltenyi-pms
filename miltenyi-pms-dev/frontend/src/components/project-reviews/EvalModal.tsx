@@ -23,7 +23,7 @@ export interface EvalModalCard {
   review_id: number | null;
 }
 
-export const COMPETENCIES = [
+const COMPETENCIES = [
   { key: "task_execution",      label: "Task Execution & Problem Solving",             expKey: "exp_task_execution" },
   { key: "ownership",           label: "Ownership & Accountability",                    expKey: "exp_ownership" },
   { key: "project_management",  label: "Project Management and Risk Mitigation",        expKey: "exp_project_management" },
@@ -33,7 +33,7 @@ export const COMPETENCIES = [
   { key: "competency_skills",   label: "Competency and Skills",                         expKey: "exp_competency_skills" },
 ] as const;
 
-export type CompKey = (typeof COMPETENCIES)[number]["key"];
+type CompKey = (typeof COMPETENCIES)[number]["key"];
 
 const EMPTY_COMMENTS: Record<CompKey, string> = {
   task_execution: "",

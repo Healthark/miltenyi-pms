@@ -11,7 +11,7 @@
  * Placement: src/components/goals/GoalFormModal.tsx
  */
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { createPortal } from "react-dom";
 import type {
   Goal,
@@ -22,7 +22,6 @@ import type {
 import { isPostApproved } from "@/utils/goalStatus";
 
 interface GoalFormModalProps {
-  readonly isOpen: boolean;
   readonly onClose: () => void;
   readonly onSave: (
     payload: GoalCreatePayload | GoalUpdatePayload,
@@ -65,8 +64,13 @@ const INPUT_CLS =
   "w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-brand";
 const LABEL_CLS = "block text-xs font-medium text-text-muted mb-1";
 
+/**
+ * The parent conditionally mounts this component
+ * (`{showModal && <GoalFormModal …>}`) so each open is a fresh React
+ * mount; useState initializers run with the current `editingGoal`,
+ * no useEffect needed to reset the form.
+ */
 export function GoalFormModal({
-  isOpen,
   onClose,
   onSave,
   editingGoal,
@@ -78,29 +82,21 @@ export function GoalFormModal({
     ? isPostApproved(editingGoal.approval_status)
     : false;
 
-  const [form, setForm] = useState<FormState>(EMPTY);
-  const [criteria, setCriteria] = useState<CriterionDraft[]>([]);
-
-  useEffect(() => {
-    if (editingGoal) {
-      setForm({
-        title: editingGoal.title,
-        description: editingGoal.description ?? "",
-        attachment_url: editingGoal.attachment_url ?? "",
-        start_date: toDateInput(editingGoal.start_date),
-        due_date: toDateInput(editingGoal.due_date),
-        progress_notes: editingGoal.progress_notes ?? "",
-      });
-      // Don't populate criteria drafts for edit mode — criteria are
-      // managed in-place via the CriteriaChecklist on the goal row
-      setCriteria([]);
-    } else {
-      setForm(EMPTY);
-      setCriteria([]);
-    }
-  }, [editingGoal, isOpen]);
-
-  if (!isOpen) return null;
+  const [form, setForm] = useState<FormState>(() =>
+    editingGoal
+      ? {
+          title: editingGoal.title,
+          description: editingGoal.description ?? "",
+          attachment_url: editingGoal.attachment_url ?? "",
+          start_date: toDateInput(editingGoal.start_date),
+          due_date: toDateInput(editingGoal.due_date),
+          progress_notes: editingGoal.progress_notes ?? "",
+        }
+      : EMPTY,
+  );
+  // Criteria drafts stay empty for edit mode (criteria are managed
+  // in-place via the CriteriaChecklist on the goal row).
+  const [criteria] = useState<CriterionDraft[]>([]);
 
   const set = (field: keyof FormState, value: string) =>
     setForm((prev) => ({ ...prev, [field]: value }));

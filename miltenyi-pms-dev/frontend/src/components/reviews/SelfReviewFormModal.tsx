@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { createPortal } from "react-dom";
 import { Loader2, Save, Send, X } from "lucide-react";
 import type {
@@ -35,20 +35,16 @@ export function SelfReviewFormModal({
   isDraftSaving = false,
   error,
 }: SelfReviewFormModalProps) {
+  // The parent conditionally mounts this modal (`{showForm && <… />}`),
+  // so each open is a fresh mount and these initializers see the right
+  // `draft`. No re-seed effect needed — if the parent's draft ref ever
+  // changed mid-edit it would clobber the user's typing anyway.
   const [overallReview, setOverallReview] = useState(
     draft?.self_overall_review ?? "",
   );
   const [rating, setRating] = useState<number | "">(
     draft?.self_performance_rating ?? "",
   );
-
-  // If the draft prop arrives async, re-seed the form once.
-  useEffect(() => {
-    if (draft) {
-      setOverallReview(draft.self_overall_review ?? "");
-      setRating(draft.self_performance_rating ?? "");
-    }
-  }, [draft?.id, draft?.self_overall_review, draft?.self_performance_rating]);
 
   const allFilled =
     overallReview.trim().length > 0 && typeof rating === "number";

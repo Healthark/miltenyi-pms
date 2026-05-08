@@ -16,7 +16,7 @@
  * only fires when the user leaves the mentee page entirely.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Briefcase,
   ChevronDown,
@@ -453,10 +453,15 @@ export function MenteeAnnualSummaryTab({
     activeFyToken || availableFys[0] || "",
   );
 
-  // Settings load is async — once active FY arrives, default to it.
-  useEffect(() => {
+  // Settings load is async — once `activeFyToken` arrives (transitions
+  // from "" to a real value) and we haven't picked anything yet, default
+  // to it. Done as a during-render compare instead of a useEffect to
+  // avoid the post-commit re-render the effect form would cause.
+  const [trackedActiveFy, setTrackedActiveFy] = useState(activeFyToken);
+  if (trackedActiveFy !== activeFyToken) {
+    setTrackedActiveFy(activeFyToken);
     if (activeFyToken && !selectedFy) setSelectedFy(activeFyToken);
-  }, [activeFyToken, selectedFy]);
+  }
 
   const selectedReview = selectedFy
     ? reviewByCycle.get(selectedFy) ?? null

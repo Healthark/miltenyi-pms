@@ -24,7 +24,7 @@ import { ExpectationToggle } from "@/components/project-reviews/ExpectationToggl
 type CommentKey = Extract<keyof ProjectReviewResponse, `comment_${string}`>;
 type ExpKey = Extract<keyof RoleExpectation, `exp_${string}`>;
 
-export const PROJECT_COMPETENCIES: ReadonlyArray<{
+const PROJECT_COMPETENCIES: ReadonlyArray<{
   readonly key: string;
   readonly label: string;
   readonly commentKey: CommentKey;

@@ -46,11 +46,17 @@ export function StringCombobox({
   const [query, setQuery] = useState(value);
   const [activeIdx, setActiveIdx] = useState(0);
 
-  // Sync the displayed text when the bound value changes externally
-  // (e.g. parent resets filters to "all").
-  useEffect(() => {
+  // Sync the displayed text with the bound `value` when (a) the parent
+  // changes it externally or (b) the dropdown transitions to closed
+  // (drops any uncommitted typing). React docs recommend doing the
+  // comparison during render instead of in a useEffect — the effect
+  // form would render → effect → setState → render again, while the
+  // during-render compare just renders once with the right value.
+  const [lastSeen, setLastSeen] = useState({ value, open });
+  if (lastSeen.value !== value || lastSeen.open !== open) {
+    setLastSeen({ value, open });
     if (!open) setQuery(value);
-  }, [value, open]);
+  }
 
   // Close on outside click.
   useEffect(() => {

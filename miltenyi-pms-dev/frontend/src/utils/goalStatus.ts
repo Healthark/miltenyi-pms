@@ -46,14 +46,9 @@ export function isPostApproved(status: ApprovalStatus): boolean {
 const HALF_KEYS:    readonly SelfReviewCycleHalf[] = ["H1", "H2"];
 const QUARTER_KEYS: readonly SelfReviewCycleHalf[] = ["Q1", "Q2", "Q3", "Q4"];
 
-/**
- * Goal-review cadence is half-yearly for every org. The function name +
- * parameter are kept for callsite compatibility, but the result no longer
- * varies with `cycleType` — it always returns the H1/H2 pair.
- */
-export function cycleKeysForType(
-  _cycleType: string | null | undefined,
-): readonly SelfReviewCycleHalf[] {
+/** Goal-review cadence is half-yearly for every org — always H1 / H2.
+ *  Exported so callers don't have to import the constant directly. */
+export function cycleKeysForType(): readonly SelfReviewCycleHalf[] {
   return HALF_KEYS;
 }
 
@@ -65,13 +60,11 @@ export function cycleKeysFor(
   return code.startsWith("Q") ? QUARTER_KEYS : HALF_KEYS;
 }
 
-/** Display label for a cycle code — passthrough now that the goal cadence
- *  is uniformly half-yearly. The previous H1→Q1 translation for quarterly
- *  orgs is gone. */
-export function halfDisplayLabel(
-  half: SelfReviewCycleHalf,
-  _cycleType?: string | null,
-): string {
+/** Display label for a cycle code. Pass-through today (the previous
+ *  H1 → Q1 translation for quarterly orgs is gone since goal reviews
+ *  are uniformly half-yearly), but kept as a function so the call sites
+ *  stay stable if we ever add a localisation pass. */
+export function halfDisplayLabel(half: SelfReviewCycleHalf): string {
   return half;
 }
 
