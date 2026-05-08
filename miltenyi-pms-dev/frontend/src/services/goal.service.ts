@@ -8,7 +8,7 @@
  *   - New API calls: addCriterion, updateCriterion
  */
 
-import apiClient from "./api.client";
+import apiClient from "@/services/api.client";
 
 // ── Enums ───────────────────────────────────────────────────────────
 

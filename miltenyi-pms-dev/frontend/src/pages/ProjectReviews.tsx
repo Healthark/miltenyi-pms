@@ -32,22 +32,22 @@ import {
   type MyProjectCard,
   type ProjectReviewResponse,
   type RoleExpectation,
-} from "../services/project-review.service";
-import { useAuth } from "../hooks/useAuth";
-import { useSystemSettings } from "../hooks/useSystemSettings";
-import { PrimaryEvaluationTab } from "../components/project-reviews/PrimaryEvaluationTab";
-import { SecondaryEvalTab } from "../components/project-reviews/SecondaryEvalTab";
-import { PerformanceRatingBadge } from "../components/reviews/PerformanceRatingBadge";
-import { ProjectSummaryCard } from "../components/project-reviews/ProjectSummaryCard";
-import { ReviewDetailPanel } from "../components/project-reviews/ReviewDetailPanel";
-import { TableExpandedRow } from "../components/project-reviews/TableExpandedRow";
-import { MyReviewsToolbar } from "../components/project-reviews/MyReviewsToolbar";
+} from "@/services/project-review.service";
+import { useAuth } from "@/hooks/useAuth";
+import { useSystemSettings } from "@/hooks/useSystemSettings";
+import { PrimaryEvaluationTab } from "@/components/project-reviews/PrimaryEvaluationTab";
+import { SecondaryEvalTab } from "@/components/project-reviews/SecondaryEvalTab";
+import { PerformanceRatingBadge } from "@/components/reviews/PerformanceRatingBadge";
+import { ProjectSummaryCard } from "@/components/project-reviews/ProjectSummaryCard";
+import { ReviewDetailPanel } from "@/components/project-reviews/ReviewDetailPanel";
+import { TableExpandedRow } from "@/components/project-reviews/TableExpandedRow";
+import { MyReviewsToolbar } from "@/components/project-reviews/MyReviewsToolbar";
 import {
   GridSkeleton,
   TableSkeleton,
-} from "../components/project-reviews/MyReviewsSkeletons";
-import { SortableHeader } from "../components/SortableHeader";
-import { compareValues, type SortKind, type SortState } from "../utils/sort";
+} from "@/components/project-reviews/MyReviewsSkeletons";
+import { SortableHeader } from "@/components/SortableHeader";
+import { compareValues, type SortKind, type SortState } from "@/utils/sort";
 
 type ActiveTab = "my" | "primary" | "secondary" | "mentees" | "all-reviews";
 type ViewMode = "grid" | "table";

@@ -1,5 +1,5 @@
 import { Save, Info } from "lucide-react";
-import type { CycleType } from "../../services/system-settings.service";
+import type { CycleType } from "@/services/system-settings.service";
 
 interface SystemSettingsTabProps {
   readonly activeCycleName: string;

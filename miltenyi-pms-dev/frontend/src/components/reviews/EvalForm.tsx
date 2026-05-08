@@ -25,9 +25,9 @@ import type {
   MenteeAnnualReview,
   MentorEvalPayload,
   MentorEvalDraftPayload,
-} from "../../services/annual-review.service";
-import { PerformanceRatingSelect } from "./PerformanceRatingSelect";
-import { formatFyLabel } from "../../utils/fy";
+} from "@/services/annual-review.service";
+import { PerformanceRatingSelect } from "@/components/reviews/PerformanceRatingSelect";
+import { formatFyLabel } from "@/utils/fy";
 
 const TEXTAREA_CLS =
   "w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-brand resize-none";

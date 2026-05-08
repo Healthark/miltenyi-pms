@@ -1,12 +1,12 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { AuthProvider } from "./contexts/AuthProvider";
-import { SystemSettingsProvider } from "./contexts/SystemSettingsProvider";
-import { ToastProvider } from "./contexts/ToastProvider";
-import { SnackbarProvider } from "./contexts/SnackbarProvider";
-import { ConfirmProvider } from "./contexts/ConfirmProvider";
-import App from "./App";
-import "./index.css";
+import { AuthProvider } from "@/contexts/AuthProvider";
+import { SystemSettingsProvider } from "@/contexts/SystemSettingsProvider";
+import { ToastProvider } from "@/contexts/ToastProvider";
+import { SnackbarProvider } from "@/contexts/SnackbarProvider";
+import { ConfirmProvider } from "@/contexts/ConfirmProvider";
+import App from "@/App";
+import "@/index.css";
 
 const root = document.getElementById("root");
 

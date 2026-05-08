@@ -1,24 +1,24 @@
 import { useCallback, useEffect, useState, Fragment } from "react";
 import { ChevronDown, Plus } from "lucide-react";
-import { useAuth } from "../hooks/useAuth";
-import { useSystemSettings } from "../hooks/useSystemSettings";
-import { useToast } from "../hooks/useToast";
-import { useConfirm } from "../hooks/useConfirm";
-import { SelfReviewTab } from "../components/reviews/SelfReviewTab";
-import { TeamReviewTab } from "../components/reviews/TeamReviewTab";
-import { SelfReviewFormModal } from "../components/reviews/SelfReviewFormModal";
-import { PerformanceRatingBadge } from "../components/reviews/PerformanceRatingBadge";
-import { StringCombobox } from "../components/common/StringCombobox";
-import { SortableHeader } from "../components/SortableHeader";
-import { compareValues, type SortKind, type SortState } from "../utils/sort";
+import { useAuth } from "@/hooks/useAuth";
+import { useSystemSettings } from "@/hooks/useSystemSettings";
+import { useToast } from "@/hooks/useToast";
+import { useConfirm } from "@/hooks/useConfirm";
+import { SelfReviewTab } from "@/components/reviews/SelfReviewTab";
+import { TeamReviewTab } from "@/components/reviews/TeamReviewTab";
+import { SelfReviewFormModal } from "@/components/reviews/SelfReviewFormModal";
+import { PerformanceRatingBadge } from "@/components/reviews/PerformanceRatingBadge";
+import { StringCombobox } from "@/components/common/StringCombobox";
+import { SortableHeader } from "@/components/SortableHeader";
+import { compareValues, type SortKind, type SortState } from "@/utils/sort";
 import {
   annualReviewService,
   type AnnualReview,
   type SelfReviewPayload,
   type SelfReviewDraftPayload,
-} from "../services/annual-review.service";
-import { getErrorMessage } from "../utils/errors";
-import { formatFyLabel } from "../utils/fy";
+} from "@/services/annual-review.service";
+import { getErrorMessage } from "@/utils/errors";
+import { formatFyLabel } from "@/utils/fy";
 
 type AllReviewsSortKey =
   | "employee_name"

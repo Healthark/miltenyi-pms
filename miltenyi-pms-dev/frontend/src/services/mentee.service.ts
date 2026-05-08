@@ -8,10 +8,10 @@
  * Response types mirror backend/app/schemas/mentee_schemas.py exactly.
  */
 
-import apiClient from "./api.client";
-import type { TeamGoal } from "./goal.service";
-import type { AnnualReview, ReviewStatus } from "./annual-review.service";
-import type { ProjectReviewResponse } from "./project-review.service";
+import apiClient from "@/services/api.client";
+import type { TeamGoal } from "@/services/goal.service";
+import type { AnnualReview, ReviewStatus } from "@/services/annual-review.service";
+import type { ProjectReviewResponse } from "@/services/project-review.service";
 
 export interface MenteeGoalsStats {
   total: number;

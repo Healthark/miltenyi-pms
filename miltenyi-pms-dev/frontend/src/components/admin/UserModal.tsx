@@ -6,9 +6,9 @@ import type {
   UserUpdatePayload,
   FunctionBrief,
   DesignationBrief,
-} from "../../services/admin.service";
-import { UserCombobox } from "../common/UserCombobox";
-import { useAuth } from "../../hooks/useAuth";
+} from "@/services/admin.service";
+import { UserCombobox } from "@/components/common/UserCombobox";
+import { useAuth } from "@/hooks/useAuth";
 
 // Role choices in the dropdown — must match the backend Role enum exactly.
 // Labels are display-only; the value is what gets persisted.

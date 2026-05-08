@@ -20,11 +20,11 @@ import {
   goalService,
   type Criterion,
   type ApprovalStatus,
-} from "../../services/goal.service";
-import { getErrorMessage } from "../../utils/errors";
-import { useToast } from "../../hooks/useToast";
-import { useSnackbar } from "../../hooks/useSnackbar";
-import { isPostApproved } from "../../utils/goalStatus";
+} from "@/services/goal.service";
+import { getErrorMessage } from "@/utils/errors";
+import { useToast } from "@/hooks/useToast";
+import { useSnackbar } from "@/hooks/useSnackbar";
+import { isPostApproved } from "@/utils/goalStatus";
 
 interface CriteriaChecklistProps {
   readonly criteria: Criterion[];

@@ -1,9 +1,9 @@
 import { UserCircle, Check, RotateCcw, Link } from "lucide-react";
-import type { TeamGoal, SelfReviewCycleHalf } from "../../services/goal.service";
-import { ApprovalStatusBadge } from "./ApprovalStatusBadge";
-import { SelfReviewCycleMenu } from "./SelfReviewCycleMenu";
-import { formatFyYearSpan } from "../../utils/fy";
-import { isPostApproved } from "../../utils/goalStatus";
+import type { TeamGoal, SelfReviewCycleHalf } from "@/services/goal.service";
+import { ApprovalStatusBadge } from "@/components/goals/ApprovalStatusBadge";
+import { SelfReviewCycleMenu } from "@/components/goals/SelfReviewCycleMenu";
+import { formatFyYearSpan } from "@/utils/fy";
+import { isPostApproved } from "@/utils/goalStatus";
 
 interface TeamGoalCardProps {
   readonly goal: TeamGoal;

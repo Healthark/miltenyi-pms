@@ -19,16 +19,16 @@ import {
   type RoleExpectation,
   type SecondaryEvalPayload,
   type SecondaryEvalDraftPayload,
-} from "../../services/project-review.service";
-import type { MenteeProjectAssignment } from "../../services/mentee.service";
-import { getErrorMessage } from "../../utils/errors";
-import { useAuth } from "../../hooks/useAuth";
-import { useToast } from "../../hooks/useToast";
-import { SortableHeader } from "../SortableHeader";
-import { compareValues, type SortKind, type SortState } from "../../utils/sort";
-import { EvalModal, type EvalModalCard } from "../project-reviews/EvalModal";
-import { ImpactModal, type ImpactModalRow } from "../project-reviews/ImpactModal";
-import { PerformanceRatingBadge } from "../reviews/PerformanceRatingBadge";
+} from "@/services/project-review.service";
+import type { MenteeProjectAssignment } from "@/services/mentee.service";
+import { getErrorMessage } from "@/utils/errors";
+import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/useToast";
+import { SortableHeader } from "@/components/SortableHeader";
+import { compareValues, type SortKind, type SortState } from "@/utils/sort";
+import { EvalModal, type EvalModalCard } from "@/components/project-reviews/EvalModal";
+import { ImpactModal, type ImpactModalRow } from "@/components/project-reviews/ImpactModal";
+import { PerformanceRatingBadge } from "@/components/reviews/PerformanceRatingBadge";
 
 // ── Local row shape ────────────────────────────────────────────────
 // Built from MenteeProjectAssignment. Carries the minimum the modals need

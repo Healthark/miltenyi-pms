@@ -7,7 +7,7 @@
  * No raw fetch() or axios imports — we always go through api.client.ts.
  */
 
-import apiClient from "./api.client";
+import apiClient from "@/services/api.client";
 
 // ── TypeScript Interfaces ───────────────────────────────────────────
 // These mirror the Pydantic schemas on the backend exactly.

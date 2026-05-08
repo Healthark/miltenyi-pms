@@ -1,7 +1,7 @@
 import { ListChecks, AlertTriangle, ClipboardCheck, FileEdit, ArrowRight, CheckCircle2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { LucideIcon } from "lucide-react";
-import type { DashboardSummary } from "../../services/dashboard.service";
+import type { DashboardSummary } from "@/services/dashboard.service";
 
 interface ActionItemsWidgetProps {
   readonly summary: DashboardSummary;

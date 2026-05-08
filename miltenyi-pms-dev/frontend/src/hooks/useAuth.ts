@@ -1,5 +1,5 @@
 import { useContext } from "react";
-import { AuthContext, type AuthContextType } from "../contexts/AuthContext";
+import { AuthContext, type AuthContextType } from "@/contexts/AuthContext";
 
 /**
  * Typed hook for consuming auth state. Throws at development time if called

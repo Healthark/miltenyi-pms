@@ -19,14 +19,14 @@ import {
   type PMEvaluationPayload,
   type PMEvaluationDraftPayload,
   type RoleExpectation,
-} from "../../services/project-review.service";
-import { getErrorMessage } from "../../utils/errors";
-import { useSystemSettings } from "../../hooks/useSystemSettings";
-import { useToast } from "../../hooks/useToast";
-import { SortableHeader } from "../SortableHeader";
-import { compareValues, type SortKind, type SortState } from "../../utils/sort";
-import { EvalModal } from "./EvalModal";
-import { PerformanceRatingBadge } from "../reviews/PerformanceRatingBadge";
+} from "@/services/project-review.service";
+import { getErrorMessage } from "@/utils/errors";
+import { useSystemSettings } from "@/hooks/useSystemSettings";
+import { useToast } from "@/hooks/useToast";
+import { SortableHeader } from "@/components/SortableHeader";
+import { compareValues, type SortKind, type SortState } from "@/utils/sort";
+import { EvalModal } from "@/components/project-reviews/EvalModal";
+import { PerformanceRatingBadge } from "@/components/reviews/PerformanceRatingBadge";
 
 // ── Constants ───────────────────────────────────────────────────────
 

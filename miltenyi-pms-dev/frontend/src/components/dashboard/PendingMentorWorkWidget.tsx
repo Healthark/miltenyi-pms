@@ -1,6 +1,6 @@
 import { Inbox, CheckCircle2, ArrowRight } from "lucide-react";
 import { Link } from "react-router-dom";
-import type { DashboardSummary } from "../../services/dashboard.service";
+import type { DashboardSummary } from "@/services/dashboard.service";
 
 interface PendingMentorWorkWidgetProps {
   readonly summary: DashboardSummary;

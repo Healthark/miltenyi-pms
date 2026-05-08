@@ -1,4 +1,4 @@
-import apiClient from "./api.client";
+import apiClient from "@/services/api.client";
 
 /**
  * Live auth claims — mirrors backend SessionResponse. Same fields as the

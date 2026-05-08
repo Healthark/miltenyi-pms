@@ -7,7 +7,7 @@
  */
 
 import { createContext } from "react";
-import type { SystemSettingsResponse } from "../services/system-settings.service";
+import type { SystemSettingsResponse } from "@/services/system-settings.service";
 
 export interface SystemSettingsContextType {
   /** The current org's settings, or null if still loading / not configured. */

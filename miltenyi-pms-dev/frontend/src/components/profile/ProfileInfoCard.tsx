@@ -19,7 +19,7 @@ import {
   Mail,
   Phone,
 } from "lucide-react";
-import type { UserProfile } from "../../services/profile.service";
+import type { UserProfile } from "@/services/profile.service";
 
 interface ProfileInfoCardProps {
   readonly profile: UserProfile | null;

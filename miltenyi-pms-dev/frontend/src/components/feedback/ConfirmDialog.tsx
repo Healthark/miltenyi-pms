@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { AlertTriangle } from "lucide-react";
-import type { ConfirmVariant } from "../../contexts/ConfirmContext";
+import type { ConfirmVariant } from "@/contexts/ConfirmContext";
 
 interface ConfirmDialogProps {
   readonly title: string;

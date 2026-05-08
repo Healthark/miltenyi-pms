@@ -1,4 +1,4 @@
-import type { Goal } from "../services/goal.service";
+import type { Goal } from "@/services/goal.service";
 
 /**
  * Pull the goal owner's function/designation off the runtime object.

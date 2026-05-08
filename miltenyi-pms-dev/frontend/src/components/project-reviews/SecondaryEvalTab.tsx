@@ -15,12 +15,12 @@ import {
   projectReviewService,
   type ProjectReviewResponse,
   type SecondaryEvalPayload,
-} from "../../services/project-review.service";
-import { getErrorMessage } from "../../utils/errors";
-import { useAuth } from "../../hooks/useAuth";
-import { useToast } from "../../hooks/useToast";
-import { SortableHeader } from "../SortableHeader";
-import { compareValues, type SortKind, type SortState } from "../../utils/sort";
+} from "@/services/project-review.service";
+import { getErrorMessage } from "@/utils/errors";
+import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/useToast";
+import { SortableHeader } from "@/components/SortableHeader";
+import { compareValues, type SortKind, type SortState } from "@/utils/sort";
 
 type ViewMode = "grid" | "table";
 

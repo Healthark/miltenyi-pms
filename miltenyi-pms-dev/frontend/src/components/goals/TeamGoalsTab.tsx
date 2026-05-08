@@ -19,22 +19,22 @@ import {
   type ApprovalStatus,
   type SelfReviewCycleHalf,
   type GoalMentorReviewPayload,
-} from "../../services/goal.service";
-import { getErrorMessage } from "../../utils/errors";
-import { useToast } from "../../hooks/useToast";
-import { useSnackbar } from "../../hooks/useSnackbar";
-import { useConfirm } from "../../hooks/useConfirm";
-import { TeamGoalCard } from "./TeamGoalCard";
-import { ApprovalStatusBadge } from "./ApprovalStatusBadge";
-import { CriteriaChecklist } from "./CriteriaChecklist";
-import { GoalMentorReviewModal } from "./GoalMentorReviewModal";
-import { SelfReviewCycleMenu } from "./SelfReviewCycleMenu";
-import { BulkApproveModal } from "./BulkApproveModal";
-import { SortableHeader } from "../SortableHeader";
-import { compareValues, type SortKind, type SortState } from "../../utils/sort";
-import { formatFyYearSpan } from "../../utils/fy";
-import { halfDisplayLabel, isPostApproved } from "../../utils/goalStatus";
-import { useSystemSettings } from "../../hooks/useSystemSettings";
+} from "@/services/goal.service";
+import { getErrorMessage } from "@/utils/errors";
+import { useToast } from "@/hooks/useToast";
+import { useSnackbar } from "@/hooks/useSnackbar";
+import { useConfirm } from "@/hooks/useConfirm";
+import { TeamGoalCard } from "@/components/goals/TeamGoalCard";
+import { ApprovalStatusBadge } from "@/components/goals/ApprovalStatusBadge";
+import { CriteriaChecklist } from "@/components/goals/CriteriaChecklist";
+import { GoalMentorReviewModal } from "@/components/goals/GoalMentorReviewModal";
+import { SelfReviewCycleMenu } from "@/components/goals/SelfReviewCycleMenu";
+import { BulkApproveModal } from "@/components/goals/BulkApproveModal";
+import { SortableHeader } from "@/components/SortableHeader";
+import { compareValues, type SortKind, type SortState } from "@/utils/sort";
+import { formatFyYearSpan } from "@/utils/fy";
+import { halfDisplayLabel, isPostApproved } from "@/utils/goalStatus";
+import { useSystemSettings } from "@/hooks/useSystemSettings";
 
 // ---------------------------------------------------------------------------
 // FeedbackModal — "Request Changes" portal

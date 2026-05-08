@@ -4,8 +4,8 @@ import {
   SnackbarContext,
   type SnackbarContextValue,
   type SnackbarVariant,
-} from "./SnackbarContext";
-import { Snackbar } from "../components/feedback/Snackbar";
+} from "@/contexts/SnackbarContext";
+import { Snackbar } from "@/components/feedback/Snackbar";
 
 const AUTO_DISMISS_MS = 6000;
 

@@ -5,7 +5,7 @@ import type {
   ProjectReviewResponse,
   SecondaryEvalPayload,
   SecondaryEvalDraftPayload,
-} from "../../services/project-review.service";
+} from "@/services/project-review.service";
 
 /**
  * Minimal header data ImpactModal needs. MenteeProjectsTab uses this

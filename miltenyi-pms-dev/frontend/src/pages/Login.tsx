@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { ArrowLeft, CheckCircle2, Loader2, Lock, Mail } from "lucide-react";
-import { authService } from "../services/auth.service";
-import { useAuth } from "../hooks/useAuth";
+import { authService } from "@/services/auth.service";
+import { useAuth } from "@/hooks/useAuth";
 
 // ─── Types & Configuration ───────────────────────────────────────────────────
 

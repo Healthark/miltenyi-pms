@@ -1,5 +1,5 @@
 import { AlertCircle, AlertTriangle, X } from "lucide-react";
-import type { SnackbarVariant } from "../../contexts/SnackbarContext";
+import type { SnackbarVariant } from "@/contexts/SnackbarContext";
 
 interface SnackbarProps {
   readonly message: string;

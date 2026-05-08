@@ -10,7 +10,7 @@
  * Placement: src/components/reviews/ReviewStatusBadge.tsx
  */
 
-import type { ReviewStatus } from "../../services/annual-review.service";
+import type { ReviewStatus } from "@/services/annual-review.service";
 
 interface ReviewStatusBadgeProps {
   readonly status: ReviewStatus;

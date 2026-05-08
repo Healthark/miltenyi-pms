@@ -15,29 +15,29 @@ import {
   type SelfReviewCycleHalf,
   type Criterion,
   type ApprovalStatus,
-} from "../services/goal.service";
-import { useAuth } from "../hooks/useAuth";
-import { useSystemSettings } from "../hooks/useSystemSettings";
-import { useToast } from "../hooks/useToast";
-import { useSnackbar } from "../hooks/useSnackbar";
-import { useConfirm } from "../hooks/useConfirm";
-import { getErrorMessage } from "../utils/errors";
-import { AnnualGoalCard } from "../components/goals/AnnualGoalCard";
-import { GoalFormModal } from "../components/goals/GoalFormModal";
-import { GoalSelfReviewModal } from "../components/goals/GoalSelfReviewModal";
-import { SelfReviewCycleMenu } from "../components/goals/SelfReviewCycleMenu";
-import { TeamGoalsTab } from "../components/goals/TeamGoalsTab";
-import { ApprovalStatusBadge } from "../components/goals/ApprovalStatusBadge";
-import { CriteriaChecklist } from "../components/goals/CriteriaChecklist";
-import { StringCombobox } from "../components/common/StringCombobox";
-import { SortableHeader } from "../components/SortableHeader";
-import { compareValues, type SortKind, type SortState } from "../utils/sort";
-import { formatFyYearSpan } from "../utils/fy";
+} from "@/services/goal.service";
+import { useAuth } from "@/hooks/useAuth";
+import { useSystemSettings } from "@/hooks/useSystemSettings";
+import { useToast } from "@/hooks/useToast";
+import { useSnackbar } from "@/hooks/useSnackbar";
+import { useConfirm } from "@/hooks/useConfirm";
+import { getErrorMessage } from "@/utils/errors";
+import { AnnualGoalCard } from "@/components/goals/AnnualGoalCard";
+import { GoalFormModal } from "@/components/goals/GoalFormModal";
+import { GoalSelfReviewModal } from "@/components/goals/GoalSelfReviewModal";
+import { SelfReviewCycleMenu } from "@/components/goals/SelfReviewCycleMenu";
+import { TeamGoalsTab } from "@/components/goals/TeamGoalsTab";
+import { ApprovalStatusBadge } from "@/components/goals/ApprovalStatusBadge";
+import { CriteriaChecklist } from "@/components/goals/CriteriaChecklist";
+import { StringCombobox } from "@/components/common/StringCombobox";
+import { SortableHeader } from "@/components/SortableHeader";
+import { compareValues, type SortKind, type SortState } from "@/utils/sort";
+import { formatFyYearSpan } from "@/utils/fy";
 import {
   profileService,
   type UserRoleExpectation,
-} from "../services/profile.service";
-import { isPostApproved } from "../utils/goalStatus";
+} from "@/services/profile.service";
+import { isPostApproved } from "@/utils/goalStatus";
 
 // ---------------------------------------------------------------------------
 // Constants

@@ -1,15 +1,15 @@
 import { useMemo, useState } from "react";
 import { Search, Pencil, UserX, UserCheck } from "lucide-react";
-import type { UserResponse } from "../../services/admin.service";
-import { StatusBadge } from "./StatusBadge";
-import { RoleBadge } from "./RoleBadge";
-import { SortableHeader } from "../SortableHeader";
-import { useAuth } from "../../hooks/useAuth";
+import type { UserResponse } from "@/services/admin.service";
+import { StatusBadge } from "@/components/admin/StatusBadge";
+import { RoleBadge } from "@/components/admin/RoleBadge";
+import { SortableHeader } from "@/components/SortableHeader";
+import { useAuth } from "@/hooks/useAuth";
 import {
   compareValues,
   type SortKind,
   type SortState,
-} from "../../utils/sort";
+} from "@/utils/sort";
 
 interface UsersTabProps {
   readonly users: UserResponse[];

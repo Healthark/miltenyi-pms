@@ -3,10 +3,10 @@ import { X } from "lucide-react";
 import type {
   AnnualReview,
   MenteeAnnualReview,
-} from "../../services/annual-review.service";
-import { ReviewStatusBadge } from "./ReviewStatusBadge";
-import { PerformanceRatingBadge } from "./PerformanceRatingBadge";
-import { formatFyLabel } from "../../utils/fy";
+} from "@/services/annual-review.service";
+import { ReviewStatusBadge } from "@/components/reviews/ReviewStatusBadge";
+import { PerformanceRatingBadge } from "@/components/reviews/PerformanceRatingBadge";
+import { formatFyLabel } from "@/utils/fy";
 
 /**
  * Read-only detail for an AnnualReview. Renders the ratings summary, the

@@ -21,20 +21,20 @@ import type {
   Goal,
   GoalSelfReviewPayload,
   SelfReviewCycleHalf,
-} from "../../services/goal.service";
+} from "@/services/goal.service";
 import {
   profileService,
   type UserRoleExpectation,
-} from "../../services/profile.service";
+} from "@/services/profile.service";
 import {
   projectReviewService,
   type RoleExpectation,
-} from "../../services/project-review.service";
-import { ExpectationPanel } from "../project-reviews/ExpectationPanel";
-import { formatFyYearSpan } from "../../utils/fy";
-import { getOwnerRole, getOwnerName } from "../../utils/goalOwner";
-import { halfDisplayLabel } from "../../utils/goalStatus";
-import { useSystemSettings } from "../../hooks/useSystemSettings";
+} from "@/services/project-review.service";
+import { ExpectationPanel } from "@/components/project-reviews/ExpectationPanel";
+import { formatFyYearSpan } from "@/utils/fy";
+import { getOwnerRole, getOwnerName } from "@/utils/goalOwner";
+import { halfDisplayLabel } from "@/utils/goalStatus";
+import { useSystemSettings } from "@/hooks/useSystemSettings";
 
 const INPUT_CLS =
   "w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-brand resize-none";

@@ -28,22 +28,22 @@ import {
 import {
   type AnnualReview,
   type ReviewStatus,
-} from "../../services/annual-review.service";
-import type { MenteeDetail } from "../../services/mentee.service";
+} from "@/services/annual-review.service";
+import type { MenteeDetail } from "@/services/mentee.service";
 import type {
   TeamGoal,
   GoalSelfReview,
   GoalMentorReview,
   SelfReviewCycleHalf,
-} from "../../services/goal.service";
-import type { MenteeProjectAssignment } from "../../services/mentee.service";
-import { PerformanceRatingBadge } from "../reviews/PerformanceRatingBadge";
-import { useSystemSettings } from "../../hooks/useSystemSettings";
+} from "@/services/goal.service";
+import type { MenteeProjectAssignment } from "@/services/mentee.service";
+import { PerformanceRatingBadge } from "@/components/reviews/PerformanceRatingBadge";
+import { useSystemSettings } from "@/hooks/useSystemSettings";
 import {
   extractFyToken,
   formatFyLabel,
   fyTokenToStartYear,
-} from "../../utils/fy";
+} from "@/utils/fy";
 
 interface MenteeAnnualSummaryTabProps {
   readonly mentee: MenteeDetail;

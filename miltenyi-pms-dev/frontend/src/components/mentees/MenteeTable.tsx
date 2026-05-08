@@ -1,8 +1,8 @@
 import { ArrowRight, AlertTriangle } from "lucide-react";
 import { Link } from "react-router-dom";
-import type { MenteeSummary } from "../../services/mentee.service";
-import { SortableHeader } from "../SortableHeader";
-import type { SortState } from "../../utils/sort";
+import type { MenteeSummary } from "@/services/mentee.service";
+import { SortableHeader } from "@/components/SortableHeader";
+import type { SortState } from "@/utils/sort";
 
 export type MenteeTableSortKey =
   | "full_name"

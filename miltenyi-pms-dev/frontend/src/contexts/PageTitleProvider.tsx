@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { PageTitleContext } from "./PageTitleContext";
+import { PageTitleContext } from "@/contexts/PageTitleContext";
 
 export function PageTitleProvider({ children }: { readonly children: ReactNode }) {
   const [override, setOverride] = useState<string | null>(null);

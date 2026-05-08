@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import type {
   AnnualReviewStatus,
   DashboardSummary,
-} from "../../services/dashboard.service";
+} from "@/services/dashboard.service";
 
 interface MyAnnualReviewWidgetProps {
   readonly summary: DashboardSummary;

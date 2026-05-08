@@ -1,6 +1,6 @@
-import type { ApprovalStatus } from "../../services/goal.service";
-import { useSystemSettings } from "../../hooks/useSystemSettings";
-import { halfDisplayLabel } from "../../utils/goalStatus";
+import type { ApprovalStatus } from "@/services/goal.service";
+import { useSystemSettings } from "@/hooks/useSystemSettings";
+import { halfDisplayLabel } from "@/utils/goalStatus";
 
 interface ApprovalStatusBadgeProps {
   readonly status: ApprovalStatus;

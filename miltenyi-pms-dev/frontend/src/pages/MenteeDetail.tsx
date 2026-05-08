@@ -15,24 +15,24 @@ import {
 import {
   menteeService,
   type MenteeDetail as MenteeDetailData,
-} from "../services/mentee.service";
+} from "@/services/mentee.service";
 import {
   annualReviewService,
   type AnnualReview,
   type MenteeAnnualReview,
   type MentorEvalPayload,
   type MentorEvalDraftPayload,
-} from "../services/annual-review.service";
-import { MenteeGoalsTab } from "../components/mentees/MenteeGoalsTab";
-import { MenteeReviewTab } from "../components/mentees/MenteeReviewTab";
-import { MenteeProjectsTab } from "../components/mentees/MenteeProjectsTab";
-import { MenteeAnnualSummaryTab } from "../components/mentees/MenteeAnnualSummaryTab";
-import { EvalDrawer } from "../components/reviews/EvalDrawer";
-import { usePageTitleOverride } from "../hooks/usePageTitleOverride";
-import { useConfirm } from "../hooks/useConfirm";
-import { useToast } from "../hooks/useToast";
-import { getErrorMessage } from "../utils/errors";
-import { extractFyToken, formatFyLabel } from "../utils/fy";
+} from "@/services/annual-review.service";
+import { MenteeGoalsTab } from "@/components/mentees/MenteeGoalsTab";
+import { MenteeReviewTab } from "@/components/mentees/MenteeReviewTab";
+import { MenteeProjectsTab } from "@/components/mentees/MenteeProjectsTab";
+import { MenteeAnnualSummaryTab } from "@/components/mentees/MenteeAnnualSummaryTab";
+import { EvalDrawer } from "@/components/reviews/EvalDrawer";
+import { usePageTitleOverride } from "@/hooks/usePageTitleOverride";
+import { useConfirm } from "@/hooks/useConfirm";
+import { useToast } from "@/hooks/useToast";
+import { getErrorMessage } from "@/utils/errors";
+import { extractFyToken, formatFyLabel } from "@/utils/fy";
 
 type TabKey = "summary" | "projects" | "goals" | "review";
 

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { BookOpen, ChevronDown, ChevronUp } from "lucide-react";
-import type { RoleExpectation } from "../../services/project-review.service";
+import type { RoleExpectation } from "@/services/project-review.service";
 
 // The "exp_*" keys are exactly the role-expectation columns on
 // `RoleExpectation`; constraining the prop to that subset removes the

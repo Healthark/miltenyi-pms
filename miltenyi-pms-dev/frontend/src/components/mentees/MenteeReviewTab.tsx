@@ -19,11 +19,11 @@
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Eye, FileText } from "lucide-react";
-import type { AnnualReview } from "../../services/annual-review.service";
-import { ReviewStatusBadge } from "../reviews/ReviewStatusBadge";
-import { PerformanceRatingBadge } from "../reviews/PerformanceRatingBadge";
-import { AnnualReviewDetailModal } from "../reviews/AnnualReviewDetailModal";
-import { extractFyToken, formatFyLabel } from "../../utils/fy";
+import type { AnnualReview } from "@/services/annual-review.service";
+import { ReviewStatusBadge } from "@/components/reviews/ReviewStatusBadge";
+import { PerformanceRatingBadge } from "@/components/reviews/PerformanceRatingBadge";
+import { AnnualReviewDetailModal } from "@/components/reviews/AnnualReviewDetailModal";
+import { extractFyToken, formatFyLabel } from "@/utils/fy";
 
 interface MenteeReviewTabProps {
   readonly reviews: AnnualReview[];

@@ -7,7 +7,7 @@
  * `assignments` and `assignment.evaluator_type` no longer exists.
  */
 
-import apiClient from "./api.client";
+import apiClient from "@/services/api.client";
 
 // ── Types ───────────────────────────────────────────────────────────
 

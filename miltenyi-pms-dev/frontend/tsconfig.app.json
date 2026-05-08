@@ -15,6 +15,13 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
+    /* Path aliases — `@/foo` resolves to `src/foo`. Mirrors Vite's
+       resolve.alias so TypeScript and the bundler agree. Patterns are
+       resolved relative to this tsconfig file (TS 5+, no baseUrl needed). */
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+
     /* Linting */
     "noUnusedLocals": true,
     "noUnusedParameters": true,

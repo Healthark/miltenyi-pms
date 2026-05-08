@@ -26,16 +26,16 @@ import type {
   Goal,
   GoalMentorReviewPayload,
   SelfReviewCycleHalf,
-} from "../../services/goal.service";
+} from "@/services/goal.service";
 import {
   projectReviewService,
   type RoleExpectation,
-} from "../../services/project-review.service";
-import { ExpectationPanel } from "../project-reviews/ExpectationPanel";
-import { formatFyYearSpan } from "../../utils/fy";
-import { halfDisplayLabel } from "../../utils/goalStatus";
-import { getOwnerRole } from "../../utils/goalOwner";
-import { useSystemSettings } from "../../hooks/useSystemSettings";
+} from "@/services/project-review.service";
+import { ExpectationPanel } from "@/components/project-reviews/ExpectationPanel";
+import { formatFyYearSpan } from "@/utils/fy";
+import { halfDisplayLabel } from "@/utils/goalStatus";
+import { getOwnerRole } from "@/utils/goalOwner";
+import { useSystemSettings } from "@/hooks/useSystemSettings";
 
 const TEXTAREA_CLS =
   "w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-brand resize-none";

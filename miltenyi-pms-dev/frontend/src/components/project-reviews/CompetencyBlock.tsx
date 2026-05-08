@@ -2,8 +2,8 @@ import { MessageSquare } from "lucide-react";
 import type {
   ProjectReviewResponse,
   RoleExpectation,
-} from "../../services/project-review.service";
-import { ExpectationToggle } from "./ExpectationToggle";
+} from "@/services/project-review.service";
+import { ExpectationToggle } from "@/components/project-reviews/ExpectationToggle";
 
 /**
  * Renders the 7 PM-evaluation competency blocks for a reviewed

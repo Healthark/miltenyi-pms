@@ -13,14 +13,14 @@ import {
   Eye, LayoutGrid, Loader2, Lock, Search, Table2, UserCircle,
   ClipboardCheck,
 } from "lucide-react";
-import type { AnnualReview } from "../../services/annual-review.service";
-import { ReviewStatusBadge } from "./ReviewStatusBadge";
-import { PerformanceRatingBadge } from "./PerformanceRatingBadge";
-import { AnnualReviewDetailModal } from "./AnnualReviewDetailModal";
-import { SortableHeader } from "../SortableHeader";
-import { compareValues, type SortKind, type SortState } from "../../utils/sort";
-import { extractFyToken, formatFyLabel } from "../../utils/fy";
-import { useSystemSettings } from "../../hooks/useSystemSettings";
+import type { AnnualReview } from "@/services/annual-review.service";
+import { ReviewStatusBadge } from "@/components/reviews/ReviewStatusBadge";
+import { PerformanceRatingBadge } from "@/components/reviews/PerformanceRatingBadge";
+import { AnnualReviewDetailModal } from "@/components/reviews/AnnualReviewDetailModal";
+import { SortableHeader } from "@/components/SortableHeader";
+import { compareValues, type SortKind, type SortState } from "@/utils/sort";
+import { extractFyToken, formatFyLabel } from "@/utils/fy";
+import { useSystemSettings } from "@/hooks/useSystemSettings";
 
 function FinalRatingHiddenBadge() {
   return (

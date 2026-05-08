@@ -8,7 +8,7 @@ import {
   Briefcase,
 } from "lucide-react";
 import { Link } from "react-router-dom";
-import type { MenteeSummary } from "../../services/mentee.service";
+import type { MenteeSummary } from "@/services/mentee.service";
 
 interface MenteeCardProps {
   readonly mentee: MenteeSummary;
