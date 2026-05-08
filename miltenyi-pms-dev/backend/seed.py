@@ -295,10 +295,14 @@ def seed_database() -> None:
                 reviews_submission_open=True,
                 annual_goals_edit_enabled=True,
                 annual_reviews_enabled=True,
+                # Dev convenience: bypass the H1/H2 calendar gate so we can
+                # test both halves' goal reviews in one session without
+                # waiting for October. Production should leave this False.
+                cycle_window_override=True,
                 updated_by_id=sarah.id,
             ))
             db.commit()
-            print("  [+] System Settings (quarterly, Q1 FY26-27, Healthark HR as updater)")
+            print("  [+] System Settings (quarterly, Q1 FY26-27, Healthark HR as updater, H1/H2 review window bypass on)")
         else:
             print("  [~] System settings already exist; reusing.")
 

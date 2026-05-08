@@ -1,0 +1,24 @@
+--- ACCOUNTS (all passwords: password123) ---
+  HR · Healthark : sarah.patel@healthark.ai   Sarah Patel
+  HR · Miltenyi: karin.weber@miltenyi.com     Karin Weber
+
+  Mentors (Healthark):
+    anjali.rao@healthark.ai     Anjali Rao    (Bob, Charlie, Dana)
+    mark.singh@healthark.ai     Mark Singh    (Iris, Evan, Fiona)
+    priya.mehta@healthark.ai    Priya Mehta   (Klaus, Mia, Nils)
+
+  PMs (Miltenyi):
+    hans@miltenyi.com           Hans Müller   (PRJ-101, PRJ-103)
+    greta@miltenyi.com          Greta Schmidt (PRJ-102)
+    lukas@miltenyi.com          Lukas Lange   (PRJ-104)
+    dieter@miltenyi.com         Dieter Becker (reserve)
+
+  Staff (Healthark @ Miltenyi):
+    R&D:        bob@, charlie@, dana@, iris@miltenyi.com
+    Mfg:        evan@, fiona@, klaus@miltenyi.com
+    Commercial: mia@, nils@miltenyi.com
+
+--- LIFECYCLE TEST DATA ---
+  MIL-PRJ-101 → Completed (Sarah, 2025-09-01); 3 historical assignments
+  MIL-PRJ-103 → Charlie has TWO stints: ended 2026-04-30 + active 2026-06-01
+    His Q1 PENDING review stays in Hans's queue (in-flight finish).
