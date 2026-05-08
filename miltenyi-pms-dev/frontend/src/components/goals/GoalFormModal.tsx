@@ -18,8 +18,8 @@ import type {
   GoalCreatePayload,
   GoalUpdatePayload,
   CriterionCreatePayload,
-} from "../../services/goal.service";
-import { isPostApproved } from "../../utils/goalStatus";
+} from "@/services/goal.service";
+import { isPostApproved } from "@/utils/goalStatus";
 
 interface GoalFormModalProps {
   readonly isOpen: boolean;

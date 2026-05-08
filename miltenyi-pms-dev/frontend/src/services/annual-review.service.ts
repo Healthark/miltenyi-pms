@@ -12,7 +12,7 @@
  * same guide as Project Review).
  */
 
-import apiClient from "./api.client";
+import apiClient from "@/services/api.client";
 
 // ── Enums ───────────────────────────────────────────────────────────
 

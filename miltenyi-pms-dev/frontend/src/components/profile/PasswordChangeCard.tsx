@@ -11,11 +11,11 @@
 
 import { useState, useCallback } from "react";
 import { Lock, Eye, EyeOff } from "lucide-react";
-import { profileService } from "../../services/profile.service";
-import { useAuth } from "../../hooks/useAuth";
-import { useToast } from "../../hooks/useToast";
-import { useSnackbar } from "../../hooks/useSnackbar";
-import { useConfirm } from "../../hooks/useConfirm";
+import { profileService } from "@/services/profile.service";
+import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/useToast";
+import { useSnackbar } from "@/hooks/useSnackbar";
+import { useConfirm } from "@/hooks/useConfirm";
 
 const INPUT_CLS =
   "w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-brand pr-10";

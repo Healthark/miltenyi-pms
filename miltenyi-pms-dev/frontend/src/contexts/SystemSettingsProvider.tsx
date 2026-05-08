@@ -27,10 +27,10 @@ import {
 import {
   SystemSettingsContext,
   type SystemSettingsContextType,
-} from "./SystemSettingsContext";
-import { systemSettingsService } from "../services/system-settings.service";
-import type { SystemSettingsResponse } from "../services/system-settings.service";
-import { useAuth } from "../hooks/useAuth";
+} from "@/contexts/SystemSettingsContext";
+import { systemSettingsService } from "@/services/system-settings.service";
+import type { SystemSettingsResponse } from "@/services/system-settings.service";
+import { useAuth } from "@/hooks/useAuth";
 
 export function SystemSettingsProvider({
   children,

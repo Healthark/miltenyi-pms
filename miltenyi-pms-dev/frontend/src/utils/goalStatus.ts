@@ -12,7 +12,7 @@
  * model, but are no longer produced by the goal-review UI.
  */
 
-import type { ApprovalStatus, SelfReviewCycleHalf } from "../services/goal.service";
+import type { ApprovalStatus, SelfReviewCycleHalf } from "@/services/goal.service";
 
 /** Goals in any of these states are locked from employee editing and
  *  count as "approved" in dashboard / mentee-stat rollups. Covers both

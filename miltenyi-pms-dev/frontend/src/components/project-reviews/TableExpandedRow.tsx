@@ -2,12 +2,12 @@ import { Clock, Loader2, Star } from "lucide-react";
 import type {
   MyProjectCard,
   RoleExpectation,
-} from "../../services/project-review.service";
-import { useSystemSettings } from "../../hooks/useSystemSettings";
-import { useReviewDetails } from "../../hooks/useReviewDetails";
-import { CompetencyBlock } from "./CompetencyBlock";
-import { ImpactBlock } from "./ImpactBlock";
-import { PerformanceRatingBadge } from "../reviews/PerformanceRatingBadge";
+} from "@/services/project-review.service";
+import { useSystemSettings } from "@/hooks/useSystemSettings";
+import { useReviewDetails } from "@/hooks/useReviewDetails";
+import { CompetencyBlock } from "@/components/project-reviews/CompetencyBlock";
+import { ImpactBlock } from "@/components/project-reviews/ImpactBlock";
+import { PerformanceRatingBadge } from "@/components/reviews/PerformanceRatingBadge";
 
 const TABLE_COLSPAN = 7;
 

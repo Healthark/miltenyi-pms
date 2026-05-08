@@ -25,8 +25,8 @@ import {
   UserCircle,
   AlertTriangle,
 } from "lucide-react";
-import type { TeamGoal } from "../../services/goal.service";
-import { formatFyYearSpan } from "../../utils/fy";
+import type { TeamGoal } from "@/services/goal.service";
+import { formatFyYearSpan } from "@/utils/fy";
 
 interface BulkApproveModalProps {
   readonly isOpen: boolean;

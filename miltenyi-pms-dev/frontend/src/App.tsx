@@ -5,25 +5,25 @@ import {
   Navigate,
   Outlet,
 } from "react-router-dom";
-import { ProtectedRoute } from "./components/ProtectedRoute";
-import { Sidebar } from "./layouts/Sidebar";
-import { Topbar } from "./layouts/Topbar";
-import { Login } from "./pages/Login";
-import { Dashboard } from "./pages/Dashboard";
-import { AnnualGoals } from "./pages/AnnualGoals";
-import AdminPanel from "./pages/AdminPanel";
-import { Profile } from "./pages/Profile";
-import Unauthorized from "./pages/Unauthorized";
-import { AnnualReviews } from "./pages/AnnualReviews";
-import { ProjectReviews } from "./pages/ProjectReviews";
-import { MyMentees } from "./pages/MyMentees";
-import { MenteeDetail } from "./pages/MenteeDetail";
-import { ChangePassword } from "./pages/ChangePassword";
-import { ResetPassword } from "./pages/ResetPassword";
-import { PageTitleProvider } from "./contexts/PageTitleProvider";
-import { SidebarProvider } from "./contexts/SidebarProvider";
-import { useSidebar } from "./hooks/useSidebar";
-import { useAuth } from "./hooks/useAuth";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { Sidebar } from "@/layouts/Sidebar";
+import { Topbar } from "@/layouts/Topbar";
+import { Login } from "@/pages/Login";
+import { Dashboard } from "@/pages/Dashboard";
+import { AnnualGoals } from "@/pages/AnnualGoals";
+import AdminPanel from "@/pages/AdminPanel";
+import { Profile } from "@/pages/Profile";
+import Unauthorized from "@/pages/Unauthorized";
+import { AnnualReviews } from "@/pages/AnnualReviews";
+import { ProjectReviews } from "@/pages/ProjectReviews";
+import { MyMentees } from "@/pages/MyMentees";
+import { MenteeDetail } from "@/pages/MenteeDetail";
+import { ChangePassword } from "@/pages/ChangePassword";
+import { ResetPassword } from "@/pages/ResetPassword";
+import { PageTitleProvider } from "@/contexts/PageTitleProvider";
+import { SidebarProvider } from "@/contexts/SidebarProvider";
+import { useSidebar } from "@/hooks/useSidebar";
+import { useAuth } from "@/hooks/useAuth";
 
 /**
  * Wraps the route content. Reads `rightInsetPx` from the layout context so

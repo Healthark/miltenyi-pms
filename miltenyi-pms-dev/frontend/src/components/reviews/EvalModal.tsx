@@ -10,7 +10,7 @@
  */
 
 import { createPortal } from "react-dom";
-import { EvalForm, type EvalFormProps } from "./EvalForm";
+import { EvalForm, type EvalFormProps } from "@/components/reviews/EvalForm";
 
 export function EvalModal(props: EvalFormProps) {
   return createPortal(

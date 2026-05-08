@@ -1,5 +1,5 @@
 import { useContext, useEffect } from "react";
-import { PageTitleContext } from "../contexts/PageTitleContext";
+import { PageTitleContext } from "@/contexts/PageTitleContext";
 
 /**
  * Pushes a dynamic page title into the Topbar for the current page, and

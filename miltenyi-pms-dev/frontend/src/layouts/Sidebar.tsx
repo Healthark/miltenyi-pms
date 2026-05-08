@@ -13,8 +13,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { NavLink, useNavigate } from "react-router-dom";
-import { useAuth } from "../hooks/useAuth";
-import { useSidebar } from "../hooks/useSidebar";
+import { useAuth } from "@/hooks/useAuth";
+import { useSidebar } from "@/hooks/useSidebar";
 
 interface NavItemData {
   readonly id: string;

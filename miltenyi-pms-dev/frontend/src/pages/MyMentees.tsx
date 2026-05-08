@@ -1,22 +1,22 @@
 import { useEffect, useMemo, useState } from "react";
 import { Users, AlertTriangle } from "lucide-react";
-import { useAuth } from "../hooks/useAuth";
-import { MenteeCard } from "../components/mentees/MenteeCard";
+import { useAuth } from "@/hooks/useAuth";
+import { MenteeCard } from "@/components/mentees/MenteeCard";
 import {
   MenteeTable,
   type MenteeTableSortKey,
-} from "../components/mentees/MenteeTable";
+} from "@/components/mentees/MenteeTable";
 import {
   MenteeToolbar,
   type MenteeSortKey,
   type MenteeViewMode,
-} from "../components/mentees/MenteeToolbar";
+} from "@/components/mentees/MenteeToolbar";
 import {
   menteeService,
   type MenteeSummary,
   type MentorPairingGroup,
-} from "../services/mentee.service";
-import { compareValues, type SortKind, type SortState } from "../utils/sort";
+} from "@/services/mentee.service";
+import { compareValues, type SortKind, type SortState } from "@/utils/sort";
 
 const MENTEE_TABLE_SORT_CONFIG: Record<
   MenteeTableSortKey,

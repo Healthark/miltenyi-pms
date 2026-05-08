@@ -9,12 +9,12 @@ import type {
   Goal,
   Criterion,
   SelfReviewCycleHalf,
-} from "../../services/goal.service";
-import { ApprovalStatusBadge } from "./ApprovalStatusBadge";
-import { CriteriaChecklist } from "./CriteriaChecklist";
-import { SelfReviewCycleMenu } from "./SelfReviewCycleMenu";
-import { formatFyYearSpan } from "../../utils/fy";
-import { isPostApproved } from "../../utils/goalStatus";
+} from "@/services/goal.service";
+import { ApprovalStatusBadge } from "@/components/goals/ApprovalStatusBadge";
+import { CriteriaChecklist } from "@/components/goals/CriteriaChecklist";
+import { SelfReviewCycleMenu } from "@/components/goals/SelfReviewCycleMenu";
+import { formatFyYearSpan } from "@/utils/fy";
+import { isPostApproved } from "@/utils/goalStatus";
 
 interface AnnualGoalCardProps {
   readonly goal: Goal;

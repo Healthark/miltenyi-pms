@@ -16,21 +16,21 @@ import {
   type TeamGoal,
   type ApprovalStatus,
   type SelfReviewCycleHalf,
-} from "../../services/goal.service";
-import { getErrorMessage } from "../../utils/errors";
-import { formatFyYearSpan } from "../../utils/fy";
-import { isPostApproved } from "../../utils/goalStatus";
-import { useToast } from "../../hooks/useToast";
-import { useSnackbar } from "../../hooks/useSnackbar";
-import { useConfirm } from "../../hooks/useConfirm";
-import { useSystemSettings } from "../../hooks/useSystemSettings";
-import { TeamGoalCard } from "../goals/TeamGoalCard";
-import { ApprovalStatusBadge } from "../goals/ApprovalStatusBadge";
-import { CriteriaChecklist } from "../goals/CriteriaChecklist";
-import { GoalSelfReviewModal } from "../goals/GoalSelfReviewModal";
-import { SelfReviewCycleMenu } from "../goals/SelfReviewCycleMenu";
-import { SortableHeader } from "../SortableHeader";
-import { compareValues, type SortKind, type SortState } from "../../utils/sort";
+} from "@/services/goal.service";
+import { getErrorMessage } from "@/utils/errors";
+import { formatFyYearSpan } from "@/utils/fy";
+import { isPostApproved } from "@/utils/goalStatus";
+import { useToast } from "@/hooks/useToast";
+import { useSnackbar } from "@/hooks/useSnackbar";
+import { useConfirm } from "@/hooks/useConfirm";
+import { useSystemSettings } from "@/hooks/useSystemSettings";
+import { TeamGoalCard } from "@/components/goals/TeamGoalCard";
+import { ApprovalStatusBadge } from "@/components/goals/ApprovalStatusBadge";
+import { CriteriaChecklist } from "@/components/goals/CriteriaChecklist";
+import { GoalSelfReviewModal } from "@/components/goals/GoalSelfReviewModal";
+import { SelfReviewCycleMenu } from "@/components/goals/SelfReviewCycleMenu";
+import { SortableHeader } from "@/components/SortableHeader";
+import { compareValues, type SortKind, type SortState } from "@/utils/sort";
 
 // ---------------------------------------------------------------------------
 // Feedback modal (Portal) — duplicated from TeamGoalsTab so the two views can

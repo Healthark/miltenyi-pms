@@ -2,7 +2,7 @@ import { useEffect, useReducer } from "react";
 import {
   projectReviewService,
   type ProjectReviewResponse,
-} from "../services/project-review.service";
+} from "@/services/project-review.service";
 
 /**
  * Fetches a single ProjectReview by id, exposing an atomic

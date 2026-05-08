@@ -7,7 +7,7 @@
  *   the <SystemSettingsProvider>.
  *
  * Usage:
- *   import { useSystemSettings } from "../hooks/useSystemSettings";
+ *   import { useSystemSettings } from "@/hooks/useSystemSettings";
  *   const { settings, isLoading } = useSystemSettings();
  */
 
@@ -15,7 +15,7 @@ import { useContext } from "react";
 import {
   SystemSettingsContext,
   type SystemSettingsContextType,
-} from "../contexts/SystemSettingsContext";
+} from "@/contexts/SystemSettingsContext";
 
 export function useSystemSettings(): SystemSettingsContextType {
   const context = useContext(SystemSettingsContext);

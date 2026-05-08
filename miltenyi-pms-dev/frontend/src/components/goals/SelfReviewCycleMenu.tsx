@@ -23,14 +23,14 @@ import {
   CheckCircle2,
   Eye,
 } from "lucide-react";
-import type { Goal, SelfReviewCycleHalf } from "../../services/goal.service";
-import { formatFyYearSpan } from "../../utils/fy";
+import type { Goal, SelfReviewCycleHalf } from "@/services/goal.service";
+import { formatFyYearSpan } from "@/utils/fy";
 import {
   cycleKeysForType,
   halfDisplayLabel,
   isHalfWindowOpen,
-} from "../../utils/goalStatus";
-import { useSystemSettings } from "../../hooks/useSystemSettings";
+} from "@/utils/goalStatus";
+import { useSystemSettings } from "@/hooks/useSystemSettings";
 
 interface SelfReviewCycleMenuProps {
   readonly goal: Goal;

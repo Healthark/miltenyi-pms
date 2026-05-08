@@ -3,8 +3,8 @@ import { createPortal } from "react-dom";
 import {
   ToastContext, type ToastAction, type ToastContextValue,
   type ToastOptions, type ToastVariant,
-} from "./ToastContext";
-import { Toast } from "../components/feedback/Toast";
+} from "@/contexts/ToastContext";
+import { Toast } from "@/components/feedback/Toast";
 
 const AUTO_DISMISS_MS = 3000;
 

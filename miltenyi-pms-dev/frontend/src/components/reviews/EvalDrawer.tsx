@@ -25,8 +25,8 @@
 
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { useSidebar } from "../../hooks/useSidebar";
-import { EvalForm, type EvalFormProps } from "./EvalForm";
+import { useSidebar } from "@/hooks/useSidebar";
+import { EvalForm, type EvalFormProps } from "@/components/reviews/EvalForm";
 
 export function EvalDrawer(props: EvalFormProps) {
   const { collapsed, setCollapsed, setRightInsetPx } = useSidebar();

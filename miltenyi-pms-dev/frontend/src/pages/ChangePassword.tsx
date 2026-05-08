@@ -1,7 +1,7 @@
 import { Navigate } from "react-router-dom";
 import { KeyRound } from "lucide-react";
-import { useAuth } from "../hooks/useAuth";
-import { PasswordChangeCard } from "../components/profile/PasswordChangeCard";
+import { useAuth } from "@/hooks/useAuth";
+import { PasswordChangeCard } from "@/components/profile/PasswordChangeCard";
 
 /**
  * Forced change-password screen shown when an admin has reset the user's

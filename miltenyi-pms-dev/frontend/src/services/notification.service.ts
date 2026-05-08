@@ -1,4 +1,4 @@
-import apiClient from "./api.client";
+import apiClient from "@/services/api.client";
 
 export interface NotificationItem {
   type: string;

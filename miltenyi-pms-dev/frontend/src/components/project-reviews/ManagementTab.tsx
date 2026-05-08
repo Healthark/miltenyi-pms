@@ -18,9 +18,9 @@ import {
   projectReviewService,
   type AdminProjectSummary,
   type AdminMemberReviewRow,
-} from "../../services/project-review.service";
-import { useSystemSettings } from "../../hooks/useSystemSettings";
-import { PerformanceRatingBadge } from "../reviews/PerformanceRatingBadge";
+} from "@/services/project-review.service";
+import { useSystemSettings } from "@/hooks/useSystemSettings";
+import { PerformanceRatingBadge } from "@/components/reviews/PerformanceRatingBadge";
 
 // ── Types ────────────────────────────────────────────────────────────
 

@@ -1,5 +1,5 @@
 import { CheckCircle2, Clock, User } from "lucide-react";
-import type { MyProjectCard } from "../../services/project-review.service";
+import type { MyProjectCard } from "@/services/project-review.service";
 
 /**
  * Compact card rendered in the My Reviews grid view. Selectable — the

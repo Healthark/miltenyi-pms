@@ -1,5 +1,5 @@
 import { MessageSquare, User, UserCircle } from "lucide-react";
-import type { ProjectReviewResponse } from "../../services/project-review.service";
+import type { ProjectReviewResponse } from "@/services/project-review.service";
 
 /**
  * Renders the PM's overall impact statement plus any submitted

@@ -17,18 +17,18 @@ import {
   type ProjectDetail,
   type AssignmentResponse,
   type AssignmentCreatePayload,
-} from "../../services/project.service";
+} from "@/services/project.service";
 import {
   adminService,
   type UserResponse,
   type FunctionBrief,
   type DesignationBrief,
-} from "../../services/admin.service";
-import { getErrorMessage } from "../../utils/errors";
-import { useToast } from "../../hooks/useToast";
-import { useSnackbar } from "../../hooks/useSnackbar";
-import { useConfirm } from "../../hooks/useConfirm";
-import { UserCombobox } from "../common/UserCombobox";
+} from "@/services/admin.service";
+import { getErrorMessage } from "@/utils/errors";
+import { useToast } from "@/hooks/useToast";
+import { useSnackbar } from "@/hooks/useSnackbar";
+import { useConfirm } from "@/hooks/useConfirm";
+import { UserCombobox } from "@/components/common/UserCombobox";
 
 const INPUT_CLS =
   "w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-brand";

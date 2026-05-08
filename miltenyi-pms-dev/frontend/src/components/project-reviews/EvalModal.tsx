@@ -7,8 +7,8 @@ import {
   type PMEvaluationDraftPayload,
   type PerformanceGroup,
   type RoleExpectation,
-} from "../../services/project-review.service";
-import { ExpectationPanel } from "./ExpectationPanel";
+} from "@/services/project-review.service";
+import { ExpectationPanel } from "@/components/project-reviews/ExpectationPanel";
 
 /**
  * Minimal header data the modal needs to render its title + context line.

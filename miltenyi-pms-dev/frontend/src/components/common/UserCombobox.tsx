@@ -17,7 +17,7 @@ import {
 } from "react";
 import type { KeyboardEvent } from "react";
 import { ChevronDown, Check, X } from "lucide-react";
-import type { UserResponse } from "../../services/admin.service";
+import type { UserResponse } from "@/services/admin.service";
 
 const INPUT_CLS =
   "w-full rounded-lg border border-border bg-white px-3 py-2 pr-8 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-brand";

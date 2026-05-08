@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { AlertTriangle, Info, CheckCircle, BellDot } from "lucide-react";
-import type { NotificationItem, UserNotificationItem } from "../../services/notification.service";
+import type { NotificationItem, UserNotificationItem } from "@/services/notification.service";
 
 interface NotificationDropdownProps {
   readonly notifications: NotificationItem[];

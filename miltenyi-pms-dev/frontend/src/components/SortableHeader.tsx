@@ -14,8 +14,8 @@
  */
 
 import { ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
-import type { SortState } from "../utils/sort";
-import { toggleSort } from "../utils/sort";
+import type { SortState } from "@/utils/sort";
+import { toggleSort } from "@/utils/sort";
 
 interface SortableHeaderProps<K extends string> {
   readonly label: string;

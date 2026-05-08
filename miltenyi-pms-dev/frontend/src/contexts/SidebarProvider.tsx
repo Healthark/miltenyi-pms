@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState, type ReactNode } from "react";
-import { SidebarContext, type SidebarContextValue } from "./SidebarContext";
+import { SidebarContext, type SidebarContextValue } from "@/contexts/SidebarContext";
 
 interface SidebarProviderProps {
   readonly children: ReactNode;

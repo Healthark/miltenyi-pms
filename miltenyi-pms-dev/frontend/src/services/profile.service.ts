@@ -10,7 +10,7 @@
  * Bearer token injection and global 401 redirects automatically.
  */
 
-import apiClient from "./api.client";
+import apiClient from "@/services/api.client";
 
 // ── Response Types ──────────────────────────────────────────────────
 

@@ -1,5 +1,5 @@
 import { CalendarDays } from "lucide-react";
-import type { DashboardSummary } from "../../services/dashboard.service";
+import type { DashboardSummary } from "@/services/dashboard.service";
 
 interface ActiveCycleWidgetProps {
   readonly summary: DashboardSummary;

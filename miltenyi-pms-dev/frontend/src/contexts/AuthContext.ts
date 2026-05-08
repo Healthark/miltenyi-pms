@@ -1,5 +1,5 @@
 import { createContext } from "react";
-import type { AuthResponse } from "../services/auth.service";
+import type { AuthResponse } from "@/services/auth.service";
 
 /**
  * Describes everything a consumer can read from or do with auth state.

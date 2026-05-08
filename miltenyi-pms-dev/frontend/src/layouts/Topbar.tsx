@@ -1,14 +1,14 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { Bell, CalendarDays, Target } from "lucide-react";
-import { useAuth } from "../hooks/useAuth";
-import { useSystemSettings } from "../hooks/useSystemSettings";
+import { useAuth } from "@/hooks/useAuth";
+import { useSystemSettings } from "@/hooks/useSystemSettings";
 import {
   notificationService,
   type TopbarSummary,
-} from "../services/notification.service";
-import { NotificationDropdown } from "../components/layout/NotificationDropdown";
-import { currentHalfAndFy } from "../utils/goalStatus";
-import { formatFyYearSpan } from "../utils/fy";
+} from "@/services/notification.service";
+import { NotificationDropdown } from "@/components/layout/NotificationDropdown";
+import { currentHalfAndFy } from "@/utils/goalStatus";
+import { formatFyYearSpan } from "@/utils/fy";
 
 export function Topbar() {
   const { user } = useAuth();

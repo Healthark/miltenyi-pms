@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
-import { profileService, type UserProfile } from "../services/profile.service";
-import { ProfileInfoCard } from "../components/profile/ProfileInfoCard";
-import { PasswordChangeCard } from "../components/profile/PasswordChangeCard";
+import { profileService, type UserProfile } from "@/services/profile.service";
+import { ProfileInfoCard } from "@/components/profile/ProfileInfoCard";
+import { PasswordChangeCard } from "@/components/profile/PasswordChangeCard";
 
 export function Profile() {
   const [profile, setProfile] = useState<UserProfile | null>(null);

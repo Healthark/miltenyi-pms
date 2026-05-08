@@ -1,4 +1,4 @@
-import apiClient from "./api.client";
+import apiClient from "@/services/api.client";
 
 // ---------------------------------------------------------------------------
 // Response types — mirror backend admin_schemas.py exactly

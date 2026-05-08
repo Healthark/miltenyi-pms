@@ -25,12 +25,12 @@ import {
 import {
   annualReviewService,
   type CalibrationRow,
-} from "../../services/annual-review.service";
-import { PerformanceRatingBadge } from "../reviews/PerformanceRatingBadge";
-import { PerformanceRatingSelect } from "../reviews/PerformanceRatingSelect";
-import { AnnualReviewDetailModal } from "../reviews/AnnualReviewDetailModal";
-import { getErrorMessage } from "../../utils/errors";
-import { useConfirm } from "../../hooks/useConfirm";
+} from "@/services/annual-review.service";
+import { PerformanceRatingBadge } from "@/components/reviews/PerformanceRatingBadge";
+import { PerformanceRatingSelect } from "@/components/reviews/PerformanceRatingSelect";
+import { AnnualReviewDetailModal } from "@/components/reviews/AnnualReviewDetailModal";
+import { getErrorMessage } from "@/utils/errors";
+import { useConfirm } from "@/hooks/useConfirm";
 
 type RatingValue = number | "";
 type StatusFilter = "all" | "pending" | "rated";

@@ -1,5 +1,5 @@
 import { CheckCircle, Info, X } from "lucide-react";
-import type { ToastAction, ToastVariant } from "../../contexts/ToastContext";
+import type { ToastAction, ToastVariant } from "@/contexts/ToastContext";
 
 interface ToastProps {
   readonly message: string;

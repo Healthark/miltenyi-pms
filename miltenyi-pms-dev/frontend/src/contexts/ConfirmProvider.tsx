@@ -3,8 +3,8 @@ import {
   ConfirmContext,
   type ConfirmContextValue,
   type ConfirmOptions,
-} from "./ConfirmContext";
-import { ConfirmDialog } from "../components/feedback/ConfirmDialog";
+} from "@/contexts/ConfirmContext";
+import { ConfirmDialog } from "@/components/feedback/ConfirmDialog";
 
 interface ConfirmProviderProps {
   readonly children: ReactNode;

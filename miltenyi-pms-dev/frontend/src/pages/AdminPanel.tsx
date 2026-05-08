@@ -12,19 +12,19 @@ import {
   type DesignationBrief,
   type SystemSettings,
   type AdminSettingsUpdatePayload,
-} from "../services/admin.service";
-import type { CycleType } from "../services/system-settings.service";
-import { getErrorMessage } from "../utils/errors";
-import { UsersTab } from "../components/admin/UsersTab";
-import { SystemSettingsTab } from "../components/admin/SystemSettingsTab";
-import { ProjectsTab, type ProjectsTabHandle } from "../components/admin/ProjectsTab";
-import { UserModal } from "../components/admin/UserModal";
-import { ManagementReviewTab } from "../components/admin/ManagementReviewTab";
-import { useSystemSettings } from "../hooks/useSystemSettings";
-import { useToast } from "../hooks/useToast";
-import { useSnackbar } from "../hooks/useSnackbar";
-import { useConfirm } from "../hooks/useConfirm";
-import { useAuth } from "../hooks/useAuth";
+} from "@/services/admin.service";
+import type { CycleType } from "@/services/system-settings.service";
+import { getErrorMessage } from "@/utils/errors";
+import { UsersTab } from "@/components/admin/UsersTab";
+import { SystemSettingsTab } from "@/components/admin/SystemSettingsTab";
+import { ProjectsTab, type ProjectsTabHandle } from "@/components/admin/ProjectsTab";
+import { UserModal } from "@/components/admin/UserModal";
+import { ManagementReviewTab } from "@/components/admin/ManagementReviewTab";
+import { useSystemSettings } from "@/hooks/useSystemSettings";
+import { useToast } from "@/hooks/useToast";
+import { useSnackbar } from "@/hooks/useSnackbar";
+import { useConfirm } from "@/hooks/useConfirm";
+import { useAuth } from "@/hooks/useAuth";
 
 
 type ActiveTab =

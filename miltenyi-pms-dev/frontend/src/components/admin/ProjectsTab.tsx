@@ -25,19 +25,19 @@ import {
 import {
   projectService,
   type ProjectResponse,
-} from "../../services/project.service";
-import { adminService, type UserResponse } from "../../services/admin.service";
-import { getErrorMessage } from "../../utils/errors";
-import { ProjectModal } from "./ProjectModal";
-import { useToast } from "../../hooks/useToast";
-import { useSnackbar } from "../../hooks/useSnackbar";
-import { useConfirm } from "../../hooks/useConfirm";
-import { SortableHeader } from "../SortableHeader";
+} from "@/services/project.service";
+import { adminService, type UserResponse } from "@/services/admin.service";
+import { getErrorMessage } from "@/utils/errors";
+import { ProjectModal } from "@/components/admin/ProjectModal";
+import { useToast } from "@/hooks/useToast";
+import { useSnackbar } from "@/hooks/useSnackbar";
+import { useConfirm } from "@/hooks/useConfirm";
+import { SortableHeader } from "@/components/SortableHeader";
 import {
   compareValues,
   type SortKind,
   type SortState,
-} from "../../utils/sort";
+} from "@/utils/sort";
 
 function formatDate(dateStr: string | null): string {
   if (!dateStr) return "—";
