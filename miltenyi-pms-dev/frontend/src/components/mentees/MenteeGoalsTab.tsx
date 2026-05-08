@@ -584,16 +584,17 @@ export function MenteeGoalsTab({ goals, menteeName, onReload }: MenteeGoalsTabPr
       )}
 
       {/* Read-only view of the mentee's self-review */}
-      <GoalSelfReviewModal
-        isOpen={viewSelfReviewGoal !== null && viewSelfReviewCycle !== null}
-        goal={viewSelfReviewGoal}
-        cycleHalf={viewSelfReviewCycle}
-        onClose={closeMenteeSelfReview}
-        onSubmit={async () => {}}
-        isSaving={false}
-        error=""
-        readOnly
-      />
+      {viewSelfReviewGoal !== null && viewSelfReviewCycle !== null && (
+        <GoalSelfReviewModal
+          goal={viewSelfReviewGoal}
+          cycleHalf={viewSelfReviewCycle}
+          onClose={closeMenteeSelfReview}
+          onSubmit={async () => {}}
+          isSaving={false}
+          error=""
+          readOnly
+        />
+      )}
     </div>
   );
 }

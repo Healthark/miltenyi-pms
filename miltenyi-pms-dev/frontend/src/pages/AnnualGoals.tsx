@@ -859,27 +859,30 @@ export function AnnualGoals() {
         </div>
       </div>
 
-      {/* Create / Edit modal */}
-      <GoalFormModal
-        isOpen={showModal}
-        onClose={closeModal}
-        onSave={handleSave}
-        editingGoal={editingGoal}
-        isSaving={isSaving}
-        error={modalError}
-      />
+      {/* Create / Edit modal — conditionally mounted so the form's
+          local state initialises fresh on every open. */}
+      {showModal && (
+        <GoalFormModal
+          onClose={closeModal}
+          onSave={handleSave}
+          editingGoal={editingGoal}
+          isSaving={isSaving}
+          error={modalError}
+        />
+      )}
 
-      <GoalSelfReviewModal
-        isOpen={selfReviewGoal !== null && selfReviewCycle !== null}
-        goal={selfReviewGoal}
-        cycleHalf={selfReviewCycle}
-        onClose={closeSelfReview}
-        onSubmit={handleSelfReviewSubmit}
-        onSaveDraft={handleSelfReviewSaveDraft}
-        isSaving={isSelfReviewSaving}
-        isDraftSaving={isSelfReviewDraftSaving}
-        error={selfReviewError}
-      />
+      {selfReviewGoal !== null && selfReviewCycle !== null && (
+        <GoalSelfReviewModal
+          goal={selfReviewGoal}
+          cycleHalf={selfReviewCycle}
+          onClose={closeSelfReview}
+          onSubmit={handleSelfReviewSubmit}
+          onSaveDraft={handleSelfReviewSaveDraft}
+          isSaving={isSelfReviewSaving}
+          isDraftSaving={isSelfReviewDraftSaving}
+          error={selfReviewError}
+        />
+      )}
     </div>
   );
 }

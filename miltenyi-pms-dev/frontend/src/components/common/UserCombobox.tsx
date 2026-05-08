@@ -63,11 +63,17 @@ export function UserCombobox({
     [users, value],
   );
 
-  // When `value` changes externally (e.g. form reset, edit mode hydrate),
-  // keep the displayed text in sync.
-  useEffect(() => {
+  // Sync the displayed text with `selected` when (a) the parent changes
+  // it externally (form reset, edit-mode hydrate) or (b) the dropdown
+  // transitions to closed (drops any uncommitted typing). Done during
+  // render rather than in a useEffect — the effect form would cost an
+  // extra render per update and is exactly what react-hooks/set-state-
+  // in-effect is designed to flag.
+  const [lastSeen, setLastSeen] = useState({ selected, open });
+  if (lastSeen.selected !== selected || lastSeen.open !== open) {
+    setLastSeen({ selected, open });
     if (!open) setQuery(selected ? userLabel(selected) : "");
-  }, [selected, open]);
+  }
 
   // Close on outside click.
   useEffect(() => {

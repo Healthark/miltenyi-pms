@@ -81,32 +81,45 @@ export function EvalForm({
     latestRef.current = { mentorReview, rating };
   }, [mentorReview, rating]);
 
-  // Re-seed when the review prop changes (different mentee).
+  // Re-seed form state when the review prop changes (different mentee).
+  // Two halves:
+  //   1. setState happens during render via the trackedReviewId compare —
+  //      this is the React-recommended way to reset state on a prop change
+  //      (avoids the render → effect → setState → re-render cascade).
+  //   2. Ref writes (baselineRef, bypassAutoSaveRef) happen in a follow-up
+  //      effect, because writing refs during render is unsafe under
+  //      concurrent rendering — a discarded render's writes would persist.
+  //
+  // Keying both halves on `review.id` makes a per-prop-identity reset; the
+  // original effect's deps included the draft fields too but that would
+  // clobber user typing on a parent refetch — id-only is the right scope.
+  const [trackedReviewId, setTrackedReviewId] = useState(review.id);
+  if (trackedReviewId !== review.id) {
+    setTrackedReviewId(review.id);
+    setMentorReview(review.mentor_overall_review_draft ?? "");
+    setRating(
+      (review.mentor_performance_rating_draft ?? "") as number | "",
+    );
+  }
   useEffect(() => {
-    const seededReview = review.mentor_overall_review_draft ?? "";
-    const seededRating = (review.mentor_performance_rating_draft ?? "") as
-      | number
-      | "";
-    setMentorReview(seededReview);
-    setRating(seededRating);
     baselineRef.current = {
-      mentorReview: seededReview,
-      rating: seededRating,
+      mentorReview: review.mentor_overall_review_draft ?? "",
+      rating: (review.mentor_performance_rating_draft ?? "") as number | "",
     };
     bypassAutoSaveRef.current = false;
-  }, [
-    review.id,
-    review.mentor_overall_review_draft,
-    review.mentor_performance_rating_draft,
-  ]);
+  }, [review.id, review.mentor_overall_review_draft, review.mentor_performance_rating_draft]);
 
   // Auto-save-on-unmount. Captures `review.id` and `onSaveDraft` so the
   // cleanup can call into the latest references after the parent has
-  // already begun unmounting.
+  // already begun unmounting. The ref writes live in an effect (not the
+  // render body) so concurrent rendering can't leak a discarded render's
+  // value — the refs are updated only after a render actually commits.
   const reviewIdRef = useRef(review.id);
-  reviewIdRef.current = review.id;
   const saveDraftRef = useRef(onSaveDraft);
-  saveDraftRef.current = onSaveDraft;
+  useEffect(() => {
+    reviewIdRef.current = review.id;
+    saveDraftRef.current = onSaveDraft;
+  });
   useEffect(() => {
     return () => {
       if (bypassAutoSaveRef.current) return;

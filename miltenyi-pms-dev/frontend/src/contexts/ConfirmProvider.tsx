@@ -1,4 +1,11 @@
-import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   ConfirmContext,
   type ConfirmContextValue,
@@ -25,9 +32,14 @@ interface PendingConfirm {
 export function ConfirmProvider({ children }: ConfirmProviderProps) {
   const [pending, setPending] = useState<PendingConfirm | null>(null);
   // A ref so the resolve handler closure always sees the latest pending
-  // promise even inside handlers captured by React's effect deps.
+  // promise even inside handlers captured by React's effect deps. The
+  // assignment lives in an effect (not the render body) so React's
+  // concurrent rendering can't write a value from a discarded render —
+  // the ref only updates *after* a render commits to the DOM.
   const pendingRef = useRef<PendingConfirm | null>(null);
-  pendingRef.current = pending;
+  useEffect(() => {
+    pendingRef.current = pending;
+  }, [pending]);
 
   const confirm = useCallback(
     (options: ConfirmOptions): Promise<boolean> =>

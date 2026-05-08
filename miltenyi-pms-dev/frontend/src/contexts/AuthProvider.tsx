@@ -81,7 +81,14 @@ export function AuthProvider({ children }: Readonly<AuthProviderProps>) {
     }
   }, []);
 
+  // App-bootstrap session refresh. `react-hooks/set-state-in-effect`
+  // flags any setState reachable from an effect body, but here that's
+  // exactly what we want: on first mount, ask the server who the user
+  // is and populate the auth context. There is no "render the right
+  // UI without doing a fetch" alternative — the page has just loaded
+  // and we don't yet know whether the user is authenticated.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void refreshSession();
   }, [refreshSession]);
 

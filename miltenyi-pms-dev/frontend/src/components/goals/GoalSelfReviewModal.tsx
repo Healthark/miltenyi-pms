@@ -34,7 +34,6 @@ import { ExpectationPanel } from "@/components/project-reviews/ExpectationPanel"
 import { formatFyYearSpan } from "@/utils/fy";
 import { getOwnerRole, getOwnerName } from "@/utils/goalOwner";
 import { halfDisplayLabel } from "@/utils/goalStatus";
-import { useSystemSettings } from "@/hooks/useSystemSettings";
 
 const INPUT_CLS =
   "w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-brand resize-none";
@@ -42,10 +41,9 @@ const INPUT_CLS =
 function cycleLabel(
   goal: Goal,
   cycleHalf: SelfReviewCycleHalf,
-  cycleType: string | null,
 ): string {
-  // "H1/Q1 FY 2026-27" — display token varies with org cycle_type.
-  const display = halfDisplayLabel(cycleHalf, cycleType);
+  // "H1 FY 2026-27" — goal cadence is uniformly half-yearly.
+  const display = halfDisplayLabel(cycleHalf);
   return goal.fy_year
     ? `${display} ${formatFyYearSpan(goal.fy_year)}`
     : display;
@@ -73,7 +71,6 @@ function asRoleExpectation(u: UserRoleExpectation | null): RoleExpectation | nul
 // ── Props ───────────────────────────────────────────────────────────
 
 interface GoalSelfReviewModalProps {
-  readonly isOpen: boolean;
   readonly goal: Goal | null;
   readonly cycleHalf: SelfReviewCycleHalf | null;
   readonly onClose: () => void;
@@ -96,8 +93,13 @@ interface GoalSelfReviewModalProps {
 
 // ── Component ───────────────────────────────────────────────────────
 
+/**
+ * The parent conditionally mounts this modal when (goal, cycleHalf) are
+ * both non-null, so each open is a fresh React mount — useState
+ * initializers run with the right `existing` review and we don't need
+ * an effect to re-seed the textarea.
+ */
 export function GoalSelfReviewModal({
-  isOpen,
   goal,
   cycleHalf,
   onClose,
@@ -108,9 +110,6 @@ export function GoalSelfReviewModal({
   error,
   readOnly = false,
 }: GoalSelfReviewModalProps) {
-  const { settings } = useSystemSettings();
-  const cycleType = settings?.cycle_type ?? null;
-
   const existing =
     goal && cycleHalf
       ? goal.self_reviews.find((sr) => sr.cycle_half === cycleHalf) ?? null
@@ -120,22 +119,18 @@ export function GoalSelfReviewModal({
   const isLocked = readOnly || (existing !== null && !existing.is_draft);
   const isDraft = existing !== null && existing.is_draft;
 
-  const [overall, setOverall] = useState("");
+  const [overall, setOverall] = useState(() =>
+    existing ? existing.self_overall_review : "",
+  );
   // Fetched only when readOnly=false (mentee writing their own review).
   const [myExpectation, setMyExpectation] = useState<UserRoleExpectation | null>(null);
   // Fetched only when readOnly=true (mentor viewing): all org expectations,
   // then filtered client-side by the goal owner's func + desig.
   const [orgExpectations, setOrgExpectations] = useState<RoleExpectation[]>([]);
 
-  // Re-seed the textarea whenever the modal opens on a different (goal, half).
-  useEffect(() => {
-    if (!isOpen) return;
-    setOverall(existing ? existing.self_overall_review : "");
-  }, [isOpen, goal?.id, cycleHalf, existing]);
-
   // Mentee path: fetch the *current user's* expectations.
   useEffect(() => {
-    if (!isOpen || readOnly || myExpectation) return;
+    if (readOnly || myExpectation) return;
     let cancelled = false;
     profileService
       .getMyExpectations()
@@ -148,11 +143,11 @@ export function GoalSelfReviewModal({
     return () => {
       cancelled = true;
     };
-  }, [isOpen, readOnly, myExpectation]);
+  }, [readOnly, myExpectation]);
 
   // Mentor-view path: fetch all org expectations once; filter by goal owner.
   useEffect(() => {
-    if (!isOpen || !readOnly || orgExpectations.length > 0) return;
+    if (!readOnly || orgExpectations.length > 0) return;
     let cancelled = false;
     projectReviewService
       .getRoleExpectations()
@@ -165,9 +160,9 @@ export function GoalSelfReviewModal({
     return () => {
       cancelled = true;
     };
-  }, [isOpen, readOnly, orgExpectations.length]);
+  }, [readOnly, orgExpectations.length]);
 
-  if (!isOpen || !goal || !cycleHalf) return null;
+  if (!goal || !cycleHalf) return null;
 
   const allFilled = overall.trim().length > 0;
 
@@ -187,7 +182,7 @@ export function GoalSelfReviewModal({
       : isDraft
         ? " (Draft)"
         : "";
-  const title = `Self Review · ${cycleLabel(goal, cycleHalf, cycleType)}${titleSuffix}`;
+  const title = `Self Review · ${cycleLabel(goal, cycleHalf)}${titleSuffix}`;
 
   // Pick the right expectation source for the rubric panels.
   let expectationForPanel: RoleExpectation | null;
@@ -282,7 +277,7 @@ export function GoalSelfReviewModal({
           {!isLocked && (
             <p className="text-xs text-text-muted">
               Reflect on your delivery against this goal for{" "}
-              <strong>{cycleLabel(goal, cycleHalf, cycleType)}</strong> in a single
+              <strong>{cycleLabel(goal, cycleHalf)}</strong> in a single
               paragraph. Use the role expectations above as a guide. Once
               submitted, your mentor will review this entry.
             </p>
