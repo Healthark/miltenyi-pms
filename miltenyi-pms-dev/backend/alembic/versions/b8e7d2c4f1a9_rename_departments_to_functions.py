@@ -21,6 +21,14 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+def _is_postgres() -> bool:
+    """ALTER INDEX RENAME and ALTER TABLE RENAME CONSTRAINT are Postgres-
+    specific. SQLite renames indexes implicitly when the underlying table
+    is recreated by batch_alter_table, and constraints don't carry
+    independent names there, so on SQLite we simply skip these calls."""
+    return op.get_bind().dialect.name == "postgresql"
+
+
 def upgrade() -> None:
     # 1. Rename the table itself
     op.rename_table("departments", "functions")
@@ -32,37 +40,41 @@ def upgrade() -> None:
     # 3. Rename column on role_expectations + the composite index
     with op.batch_alter_table("role_expectations") as batch_op:
         batch_op.alter_column("department_id", new_column_name="function_id")
-    op.execute(
-        "ALTER INDEX IF EXISTS ix_role_exp_org_dept_desig "
-        "RENAME TO ix_role_exp_org_func_desig"
-    )
+    if _is_postgres():
+        op.execute(
+            "ALTER INDEX IF EXISTS ix_role_exp_org_dept_desig "
+            "RENAME TO ix_role_exp_org_func_desig"
+        )
 
     # 4. Rename column on project_assignments
     with op.batch_alter_table("project_assignments") as batch_op:
         batch_op.alter_column("department_id", new_column_name="function_id")
 
     # 5. Rename index + unique constraint on the renamed table
-    op.execute("ALTER INDEX IF EXISTS ix_departments_id RENAME TO ix_functions_id")
-    op.execute(
-        "ALTER TABLE functions RENAME CONSTRAINT uix_org_department_name "
-        "TO uix_org_function_name"
-    )
+    if _is_postgres():
+        op.execute("ALTER INDEX IF EXISTS ix_departments_id RENAME TO ix_functions_id")
+        op.execute(
+            "ALTER TABLE functions RENAME CONSTRAINT uix_org_department_name "
+            "TO uix_org_function_name"
+        )
 
 
 def downgrade() -> None:
-    op.execute(
-        "ALTER TABLE functions RENAME CONSTRAINT uix_org_function_name "
-        "TO uix_org_department_name"
-    )
-    op.execute("ALTER INDEX IF EXISTS ix_functions_id RENAME TO ix_departments_id")
+    if _is_postgres():
+        op.execute(
+            "ALTER TABLE functions RENAME CONSTRAINT uix_org_function_name "
+            "TO uix_org_department_name"
+        )
+        op.execute("ALTER INDEX IF EXISTS ix_functions_id RENAME TO ix_departments_id")
 
     with op.batch_alter_table("project_assignments") as batch_op:
         batch_op.alter_column("function_id", new_column_name="department_id")
 
-    op.execute(
-        "ALTER INDEX IF EXISTS ix_role_exp_org_func_desig "
-        "RENAME TO ix_role_exp_org_dept_desig"
-    )
+    if _is_postgres():
+        op.execute(
+            "ALTER INDEX IF EXISTS ix_role_exp_org_func_desig "
+            "RENAME TO ix_role_exp_org_dept_desig"
+        )
     with op.batch_alter_table("role_expectations") as batch_op:
         batch_op.alter_column("function_id", new_column_name="department_id")
 

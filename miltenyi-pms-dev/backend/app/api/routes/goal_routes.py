@@ -789,7 +789,10 @@ def submit_goal_self_review(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Goal has no fiscal year on record; cannot submit reviews.",
         )
-    if not is_review_window_open(half, fy_year, date.today(), settings.fiscal_start_month):
+    if not is_review_window_open(
+        half, fy_year, date.today(), settings.fiscal_start_month,
+        override=settings.cycle_window_override,
+    ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
@@ -875,7 +878,10 @@ def save_goal_self_review_draft(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Goal has no fiscal year on record; cannot draft reviews.",
         )
-    if not is_review_window_open(half, fy_year, date.today(), settings.fiscal_start_month):
+    if not is_review_window_open(
+        half, fy_year, date.today(), settings.fiscal_start_month,
+        override=settings.cycle_window_override,
+    ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
@@ -970,7 +976,10 @@ def submit_goal_mentor_review(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Goal has no fiscal year on record; cannot submit reviews.",
         )
-    if not is_review_window_open(half, fy_year, date.today(), settings.fiscal_start_month):
+    if not is_review_window_open(
+        half, fy_year, date.today(), settings.fiscal_start_month,
+        override=settings.cycle_window_override,
+    ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
@@ -1066,7 +1075,10 @@ def save_goal_mentor_review_draft(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Goal has no fiscal year on record; cannot draft reviews.",
         )
-    if not is_review_window_open(half, fy_year, date.today(), settings.fiscal_start_month):
+    if not is_review_window_open(
+        half, fy_year, date.today(), settings.fiscal_start_month,
+        override=settings.cycle_window_override,
+    ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(

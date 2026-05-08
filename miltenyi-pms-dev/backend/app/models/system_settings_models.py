@@ -86,6 +86,13 @@ class SystemSettings(Base):
     # reviews. Mentors still see their own mentor_performance_rating while
     # evaluating (that's required for the workflow).
     annual_review_final_rating_visible = Column(Boolean, default=False, nullable=False)
+    # Demo-only escape hatch. When True, the date-based H1/H2 review-window
+    # gate (`cycle_utils.is_review_window_open`) is skipped, so a Staff /
+    # Mentor pair can submit BOTH the H1 and the H2 reviews in the same
+    # session — useful when stakeholders are testing the system before H2
+    # has actually started in real time. Production should always leave
+    # this False so the calendar gate enforces ordering.
+    cycle_window_override = Column(Boolean, default=False, nullable=False, server_default="false")
 
     # ── Audit Trail ──────────────────────────────────────────────────
     updated_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)

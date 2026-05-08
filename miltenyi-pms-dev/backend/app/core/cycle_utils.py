@@ -114,6 +114,8 @@ def is_review_window_open(
     target_fy_year: int,
     current_date: date,
     fiscal_start_month: int = 4,
+    *,
+    override: bool = False,
 ) -> bool:
     """True iff the (target_cycle, target_fy_year) review window is open.
 
@@ -123,6 +125,13 @@ def is_review_window_open(
           through the end of the FY (so any earlier cycle can be backfilled
           while the FY is still in flight).
 
+    Demo escape hatch: if `override=True` (driven by the SystemSettings
+    `cycle_window_override` flag), this returns True unconditionally so
+    stakeholders can fill both H1 and H2 reviews in a single session
+    even when calendar time hasn't reached H2 yet. Production should
+    always pass override=False; the flag is meant for non-production
+    test instances only.
+
     Examples (fiscal_start_month=4):
         is_review_window_open("H1", 2026, date(2026, 5, 1)) → True   (H1 of FY26)
         is_review_window_open("H2", 2026, date(2026, 5, 1)) → False  (H2 not yet)
@@ -131,7 +140,10 @@ def is_review_window_open(
         is_review_window_open("Q3", 2026, date(2026, 11, 1)) → True  (Q3 of FY26)
         is_review_window_open("Q4", 2026, date(2026, 11, 1)) → False (Q4 not yet)
         is_review_window_open("H1", 2026, date(2027, 5, 1))  → False (FY ended)
+        is_review_window_open("H2", 2026, date(2026, 5, 1), override=True) → True
     """
+    if override:
+        return True
     keys = cycle_keys_for(target_cycle)
     # Pick the matching cadence's "current cycle" reading.
     if keys == HALF_KEYS:
