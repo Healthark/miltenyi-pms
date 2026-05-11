@@ -1252,7 +1252,22 @@ def get_review(
     # Both HR roles may read any review (Miltenyi HR has explicit project-review visibility).
     is_admin = current_user.role in ADMIN_ROLES
     is_owner = review.user_id == current_user.id
+    # `reviewer_id` is only set once the PM submits the review — on
+    # PENDING rows it stays NULL. The canonical PM authority is
+    # `Project.pm_id` (project-level field), and Secondary evaluator
+    # is similarly `Project.secondary_evaluator_id`. Without these
+    # checks a PM clicking "Evaluate" on a fresh pending review would
+    # be 403'd because none of the per-row identity checks match
+    # them yet.
     is_reviewer = review.reviewer_id == current_user.id
+    project = (
+        db.query(Project).filter(Project.id == review.project_id).first()
+    )
+    is_project_pm = project is not None and project.pm_id == current_user.id
+    is_project_secondary = (
+        project is not None
+        and project.secondary_evaluator_id == current_user.id
+    )
 
     # Check if caller is assigned to same project
     is_on_project = db.query(ProjectAssignment).filter(
@@ -1265,7 +1280,15 @@ def get_review(
     owner = db.query(User).filter(User.id == review.user_id).first()
     is_mentor_of_owner = owner is not None and owner.mentor_id == current_user.id
 
-    if not (is_owner or is_reviewer or is_on_project or is_admin or is_mentor_of_owner):
+    if not (
+        is_owner
+        or is_reviewer
+        or is_project_pm
+        or is_project_secondary
+        or is_on_project
+        or is_admin
+        or is_mentor_of_owner
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have access to this review.",

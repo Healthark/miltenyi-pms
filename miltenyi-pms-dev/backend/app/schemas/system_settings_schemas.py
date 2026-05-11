@@ -37,6 +37,11 @@ class SystemSettingsResponse(BaseModel):
     project_ratings_visible: bool
     annual_reviews_enabled: bool
     annual_review_final_rating_visible: bool
+    # Demo-only escape hatch — bypasses the date-based H1/H2 review-window
+    # gate (see `cycle_utils.is_review_window_open`). When True the
+    # frontend should ALSO unlock the calendar-gated menus so stakeholders
+    # can drive the whole cycle in one session.
+    cycle_window_override: bool
 
     updated_by_id: Optional[int] = None
     created_at: datetime
@@ -97,3 +102,4 @@ class SystemSettingsUpdate(BaseModel):
     project_ratings_visible: Optional[bool] = None
     annual_reviews_enabled: Optional[bool] = None
     annual_review_final_rating_visible: Optional[bool] = None
+    cycle_window_override: Optional[bool] = None
