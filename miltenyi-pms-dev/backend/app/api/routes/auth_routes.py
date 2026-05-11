@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, timezone
 
 from app.core.database import get_db
-from app.core.security import verify_password, create_access_token, get_password_hash
+from app.core.security import verify_password, get_password_hash
 from app.core.config import settings
 from app.models.user_models import User
 from app.models.organization_models import Organization
@@ -21,7 +21,7 @@ from app.schemas.auth_schemas import (
     ForgotPasswordRequest,
 )
 from app.schemas.user_schemas import UserProfile as UserProfileResponse
-from app.api.dependencies import CurrentUser
+from app.api.dependencies import CurrentUser, issue_auth_cookies
 from app.services.send_email import is_smtp_configured, send_password_reset_email
 
 router = APIRouter()
@@ -97,42 +97,12 @@ def login(
 
     session = _build_session(user, db)
 
-    token_payload = {
-        "sub": user.email,
-        "user_id": user.id,
-        "org_id": user.org_id,
-        "role": user.role,
-    }
-    access_token = create_access_token(
-        data=token_payload,
-        expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
-    )
-
-    # The JWT rides in an HttpOnly cookie so JS (and therefore XSS) cannot
-    # read it. The CSRF token rides in a parallel non-HttpOnly cookie so the
-    # frontend can copy it into the X-CSRF-Token header (double-submit).
-    # The same value is also returned in the response body — cross-origin
-    # deployments (Vercel → Render) cannot read a cookie set by a different
-    # domain, so they fall back to reading it from the body and storing it in
-    # localStorage. Same-origin dev uses the cookie path unchanged.
-    max_age = settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
-    cookie_kwargs = settings.cookie_kwargs()
-    csrf_token_value = secrets.token_urlsafe(32)
-
-    response.set_cookie(
-        key=settings.ACCESS_COOKIE_NAME,
-        value=access_token,
-        httponly=True,
-        max_age=max_age,
-        **cookie_kwargs,
-    )
-    response.set_cookie(
-        key=settings.CSRF_COOKIE_NAME,
-        value=csrf_token_value,
-        httponly=False,
-        max_age=max_age,
-        **cookie_kwargs,
-    )
+    # Mint a fresh JWT + new CSRF and stamp both as cookies on the outgoing
+    # response. The CSRF value is also returned in the body for cross-origin
+    # clients (Vercel → Render) that can't read cookies set on a different
+    # domain — those store it in localStorage and copy it into the
+    # X-CSRF-Token header on mutating requests.
+    _, csrf_token_value = issue_auth_cookies(response, user)
 
     return {**session, "csrf_token": csrf_token_value}
 
