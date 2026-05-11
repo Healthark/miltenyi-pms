@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
-import { ArrowLeft, CheckCircle2, Loader2, Lock, Mail } from "lucide-react";
+import { AlertTriangle, ArrowLeft, CheckCircle2, Info, Loader2, Lock, Mail } from "lucide-react";
 import { authService } from "@/services/auth.service";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -47,6 +47,14 @@ export function Login() {
 
   const intendedPath =
     (location.state as LocationState | null)?.from?.pathname ?? "/dashboard";
+
+  // Why-was-I-bounced banner. forceLogout() in api.client.ts redirects to
+  // `/login?reason=expired` (sliding JWT timed out) or `/login?reason=deactivated`
+  // (account revoked while logged in). Anything else falls through to no banner,
+  // which is the right UX for user-initiated sign-out and direct /login visits.
+  const reason = new URLSearchParams(location.search).get("reason");
+  const logoutReason: "expired" | "deactivated" | null =
+    reason === "expired" || reason === "deactivated" ? reason : null;
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -180,6 +188,29 @@ export function Login() {
 
           {mode === "login" && (
             <form className="space-y-6" onSubmit={handleLogin} noValidate>
+              {logoutReason === "expired" && !error && (
+                <div
+                  role="status"
+                  className="flex items-start gap-2 bg-blue-50 border border-blue-200 text-blue-800 text-sm p-3 rounded-lg animate-[fadeIn_0.3s_ease-in-out]"
+                >
+                  <Info className="h-4 w-4 shrink-0 mt-0.5" aria-hidden="true" />
+                  <span>
+                    Your session expired due to inactivity. Please sign in again.
+                  </span>
+                </div>
+              )}
+              {logoutReason === "deactivated" && !error && (
+                <div
+                  role="status"
+                  className="flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-800 text-sm p-3 rounded-lg animate-[fadeIn_0.3s_ease-in-out]"
+                >
+                  <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" aria-hidden="true" />
+                  <span>
+                    Your account has been deactivated. Contact your administrator
+                    if you believe this is a mistake.
+                  </span>
+                </div>
+              )}
               {error && (
                 <div
                   role="alert"

@@ -50,7 +50,12 @@ apiClient.interceptors.request.use((config) => {
   return config;
 });
 
-function forceLogout(): void {
+/** Logout reason — flows through to /login as ?reason=… so the login page
+ *  can explain why the user was bounced. Omit for user-initiated sign-out
+ *  (no banner shown). */
+type LogoutReason = "expired" | "deactivated";
+
+function forceLogout(reason?: LogoutReason): void {
   // Ask the server to clear the HttpOnly cookies it set. Fire-and-forget —
   // a failure here doesn't change the fact that we want the local session
   // gone. Use `fetch` (not apiClient) to avoid being re-intercepted.
@@ -68,12 +73,15 @@ function forceLogout(): void {
   });
   localStorage.removeItem("user");
   if (!PUBLIC_AUTH_PATHS.has(globalThis.location.pathname)) {
-    globalThis.location.href = "/login";
+    const suffix = reason ? `?reason=${reason}` : "";
+    globalThis.location.href = `/login${suffix}`;
   }
 }
 
-// Treat 401 as "invalid/expired token" and 403 with a deactivation message as
-// "account revoked after login" — both require clearing local session state.
+// Treat 401 as "session expired" (the sliding JWT in dependencies.py has
+// timed out) and 403 with a deactivation message as "account revoked after
+// login" — both require clearing local session state. Each path passes its
+// own reason so the login page can surface the right banner.
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -84,8 +92,10 @@ apiClient.interceptors.response.use(
       typeof detail === "string" &&
       detail.toLowerCase().includes("deactivated");
 
-    if (status === 401 || isDeactivated) {
-      forceLogout();
+    if (status === 401) {
+      forceLogout("expired");
+    } else if (isDeactivated) {
+      forceLogout("deactivated");
     }
     return Promise.reject(error);
   },

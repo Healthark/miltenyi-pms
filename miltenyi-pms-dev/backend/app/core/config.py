@@ -6,7 +6,12 @@ class Settings(BaseSettings):
 
     # Security
     SECRET_KEY: str
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7 # 7 days
+    # 30-minute sliding session — every authenticated API call re-issues the
+    # cookie via issue_auth_cookies() in dependencies.py, so the window is
+    # "30 min from last activity", not 30 min from login. A user who idles
+    # past this window is silently logged out on their next request (the
+    # 401 → forceLogout('expired') path on the frontend).
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
     # Database
     DATABASE_URL: str
