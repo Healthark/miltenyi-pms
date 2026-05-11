@@ -16,11 +16,11 @@ import {
   type MenteeSummary,
   type MentorPairingGroup,
 } from "@/services/mentee.service";
-import { compareValues, type SortKind, type SortState } from "@/utils/sort";
+import { compareValues, type SortKind, type SortState, type SortValue } from "@/utils/sort";
 
 const MENTEE_TABLE_SORT_CONFIG: Record<
   MenteeTableSortKey,
-  { kind: SortKind; get: (m: MenteeSummary) => unknown }
+  { kind: SortKind; get: (m: MenteeSummary) => SortValue }
 > = {
   full_name:             { kind: "alpha",   get: (m) => m.full_name },
   employee_code:         { kind: "natural", get: (m) => m.employee_code },

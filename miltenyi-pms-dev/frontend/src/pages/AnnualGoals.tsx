@@ -31,7 +31,7 @@ import { ApprovalStatusBadge } from "@/components/goals/ApprovalStatusBadge";
 import { CriteriaChecklist } from "@/components/goals/CriteriaChecklist";
 import { StringCombobox } from "@/components/common/StringCombobox";
 import { SortableHeader } from "@/components/SortableHeader";
-import { compareValues, type SortKind, type SortState } from "@/utils/sort";
+import { compareValues, type SortKind, type SortState, type SortValue } from "@/utils/sort";
 import { formatFyYearSpan } from "@/utils/fy";
 import {
   profileService,
@@ -72,7 +72,7 @@ type MyGoalsSortKey = "title" | "manager_name" | "fy_year" | "approval_status";
 
 const MY_GOALS_SORT_CONFIG: Record<
   MyGoalsSortKey,
-  { kind: SortKind; get: (g: Goal) => unknown }
+  { kind: SortKind; get: (g: Goal) => SortValue }
 > = {
   title:           { kind: "alpha",   get: (g) => g.title },
   manager_name:    { kind: "alpha",   get: (g) => g.manager_name },
@@ -104,7 +104,7 @@ type AllGoalsSortKey =
 
 const ALL_GOALS_SORT_CONFIG: Record<
   AllGoalsSortKey,
-  { kind: SortKind; get: (g: AllGoalsEmployeeGroup) => unknown }
+  { kind: SortKind; get: (g: AllGoalsEmployeeGroup) => SortValue }
 > = {
   owner_name:          { kind: "alpha",   get: (g) => g.owner_name },
   latest_fy_year:      { kind: "numeric", get: (g) => g.latest_fy_year },

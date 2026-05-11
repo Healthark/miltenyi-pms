@@ -25,7 +25,7 @@ import { getErrorMessage } from "@/utils/errors";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/useToast";
 import { SortableHeader } from "@/components/SortableHeader";
-import { compareValues, type SortKind, type SortState } from "@/utils/sort";
+import { compareValues, type SortKind, type SortState, type SortValue } from "@/utils/sort";
 import { EvalModal, type EvalModalCard } from "@/components/project-reviews/EvalModal";
 import { ImpactModal, type ImpactModalRow } from "@/components/project-reviews/ImpactModal";
 import { PerformanceRatingBadge } from "@/components/reviews/PerformanceRatingBadge";
@@ -61,7 +61,7 @@ type SortKey =
   | "review_status"
   | "performance_group";
 
-const SORT_CONFIG: Record<SortKey, { kind: SortKind; get: (r: MenteeEvalRow) => unknown }> = {
+const SORT_CONFIG: Record<SortKey, { kind: SortKind; get: (r: MenteeEvalRow) => SortValue }> = {
   project_name:      { kind: "alpha",   get: (r) => r.project_name },
   pm_name:           { kind: "alpha",   get: (r) => r.pm_name },
   cycle:             { kind: "cycle",   get: (r) => r.cycle },

@@ -9,6 +9,7 @@ import {
   compareValues,
   type SortKind,
   type SortState,
+  type SortValue,
 } from "@/utils/sort";
 
 interface UsersTabProps {
@@ -53,7 +54,7 @@ const PROTECTED_ROLES = new Set<string>(["Mentor", "HR_MyOrg"]);
 
 const USERS_SORT_CONFIG: Record<
   UsersSortKey,
-  { kind: SortKind; get: (u: UserResponse, all: readonly UserResponse[]) => unknown }
+  { kind: SortKind; get: (u: UserResponse, all: readonly UserResponse[]) => SortValue }
 > = {
   full_name:        { kind: "alpha", get: (u) => u.full_name },
   email:            { kind: "alpha", get: (u) => u.email },

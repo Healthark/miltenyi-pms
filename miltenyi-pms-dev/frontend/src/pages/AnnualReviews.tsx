@@ -10,7 +10,7 @@ import { SelfReviewFormModal } from "@/components/reviews/SelfReviewFormModal";
 import { PerformanceRatingBadge } from "@/components/reviews/PerformanceRatingBadge";
 import { StringCombobox } from "@/components/common/StringCombobox";
 import { SortableHeader } from "@/components/SortableHeader";
-import { compareValues, type SortKind, type SortState } from "@/utils/sort";
+import { compareValues, type SortKind, type SortState, type SortValue } from "@/utils/sort";
 import {
   annualReviewService,
   type AnnualReview,
@@ -32,7 +32,7 @@ type AllReviewsSortKey =
 
 const ALL_REVIEWS_SORT_CONFIG: Record<
   AllReviewsSortKey,
-  { kind: SortKind; get: (r: AnnualReview) => unknown }
+  { kind: SortKind; get: (r: AnnualReview) => SortValue }
 > = {
   employee_name:             { kind: "alpha",   get: (r) => r.employee_name ?? `User #${r.user_id}` },
   function:                  { kind: "alpha",   get: (r) => r.function },

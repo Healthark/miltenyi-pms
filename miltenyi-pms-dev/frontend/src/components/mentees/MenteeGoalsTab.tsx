@@ -30,7 +30,7 @@ import { CriteriaChecklist } from "@/components/goals/CriteriaChecklist";
 import { GoalSelfReviewModal } from "@/components/goals/GoalSelfReviewModal";
 import { SelfReviewCycleMenu } from "@/components/goals/SelfReviewCycleMenu";
 import { SortableHeader } from "@/components/SortableHeader";
-import { compareValues, type SortKind, type SortState } from "@/utils/sort";
+import { compareValues, type SortKind, type SortState, type SortValue } from "@/utils/sort";
 
 // ---------------------------------------------------------------------------
 // Feedback modal (Portal) — duplicated from TeamGoalsTab so the two views can
@@ -155,7 +155,7 @@ type MenteeGoalsSortKey = "title" | "fy_year" | "approval_status";
 
 const SORT_CONFIG: Record<
   MenteeGoalsSortKey,
-  { kind: SortKind; get: (g: TeamGoal) => unknown }
+  { kind: SortKind; get: (g: TeamGoal) => SortValue }
 > = {
   title:           { kind: "alpha",   get: (g) => g.title },
   fy_year:         { kind: "numeric", get: (g) => g.fy_year },

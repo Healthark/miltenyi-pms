@@ -37,6 +37,7 @@ import {
   compareValues,
   type SortKind,
   type SortState,
+  type SortValue,
 } from "@/utils/sort";
 
 function formatDate(dateStr: string | null): string {
@@ -60,7 +61,7 @@ type ProjectsSortKey =
 
 const PROJECTS_SORT_CONFIG: Record<
   ProjectsSortKey,
-  { kind: SortKind; get: (p: ProjectResponse) => unknown }
+  { kind: SortKind; get: (p: ProjectResponse) => SortValue }
 > = {
   name:              { kind: "alpha",   get: (p) => p.name },
   project_code:      { kind: "natural", get: (p) => p.project_code },
