@@ -3,18 +3,10 @@
  * a single half (H1 / H2) of an approved annual goal.
  *
  * Form shape mirrors the Annual Review self-appraisal: one freeform
- * paragraph capturing the reflection. Above the textarea, two collapsible
- * panels surface the role expectations for **Firm Growth** and **Competency
- * & Skills** as a reference rubric — scoped to whichever role the *goal
- * owner* holds:
- *   - readOnly=false (mentee filling their own self-review):
- *       fetch via /users/me/expectations.
- *   - readOnly=true  (mentor viewing the mentee's submission):
- *       fetch all org role expectations and filter by the goal owner's
- *       function + designation injected on the goal payload.
+ * paragraph capturing the reflection.
  */
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { createPortal } from "react-dom";
 import { ClipboardCheck, Send, Loader2, Save, X } from "lucide-react";
 import type {
@@ -22,17 +14,7 @@ import type {
   GoalSelfReviewPayload,
   SelfReviewCycleHalf,
 } from "@/services/goal.service";
-import {
-  profileService,
-  type UserRoleExpectation,
-} from "@/services/profile.service";
-import {
-  projectReviewService,
-  type RoleExpectation,
-} from "@/services/project-review.service";
-import { ExpectationPanel } from "@/components/project-reviews/ExpectationPanel";
 import { formatFyYearSpan } from "@/utils/fy";
-import { getOwnerRole, getOwnerName } from "@/utils/goalOwner";
 import { halfDisplayLabel } from "@/utils/goalStatus";
 
 const INPUT_CLS =
@@ -47,25 +29,6 @@ function cycleLabel(
   return goal.fy_year
     ? `${display} ${formatFyYearSpan(goal.fy_year)}`
     : display;
-}
-
-/** Adapt the /users/me/expectations payload into the shape ExpectationPanel
- *  expects (it shares its interface with the Project Review forms). */
-function asRoleExpectation(u: UserRoleExpectation | null): RoleExpectation | null {
-  if (!u) return null;
-  return {
-    id: 0,
-    function_name: u.function_name ?? "",
-    designation_name: u.designation_name ?? "",
-    exp_task_execution: u.exp_task_execution,
-    exp_ownership: u.exp_ownership,
-    exp_project_management: u.exp_project_management,
-    exp_client_deliverables: u.exp_client_deliverables,
-    exp_communication: u.exp_communication,
-    exp_mentoring: u.exp_mentoring,
-    exp_firm_growth: u.exp_firm_growth,
-    exp_competency_skills: u.exp_competency_skills,
-  };
 }
 
 // ── Props ───────────────────────────────────────────────────────────
@@ -122,45 +85,6 @@ export function GoalSelfReviewModal({
   const [overall, setOverall] = useState(() =>
     existing ? existing.self_overall_review : "",
   );
-  // Fetched only when readOnly=false (mentee writing their own review).
-  const [myExpectation, setMyExpectation] = useState<UserRoleExpectation | null>(null);
-  // Fetched only when readOnly=true (mentor viewing): all org expectations,
-  // then filtered client-side by the goal owner's func + desig.
-  const [orgExpectations, setOrgExpectations] = useState<RoleExpectation[]>([]);
-
-  // Mentee path: fetch the *current user's* expectations.
-  useEffect(() => {
-    if (readOnly || myExpectation) return;
-    let cancelled = false;
-    profileService
-      .getMyExpectations()
-      .then((exp) => {
-        if (!cancelled) setMyExpectation(exp);
-      })
-      .catch(() => {
-        // Non-fatal: panels just won't render. The modal still works.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [readOnly, myExpectation]);
-
-  // Mentor-view path: fetch all org expectations once; filter by goal owner.
-  useEffect(() => {
-    if (!readOnly || orgExpectations.length > 0) return;
-    let cancelled = false;
-    projectReviewService
-      .getRoleExpectations()
-      .then((rows) => {
-        if (!cancelled) setOrgExpectations(rows);
-      })
-      .catch(() => {
-        // Non-fatal — panels just won't render.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [readOnly, orgExpectations.length]);
 
   if (!goal || !cycleHalf) return null;
 
@@ -183,24 +107,6 @@ export function GoalSelfReviewModal({
         ? " (Draft)"
         : "";
   const title = `Self Review · ${cycleLabel(goal, cycleHalf)}${titleSuffix}`;
-
-  // Pick the right expectation source for the rubric panels.
-  let expectationForPanel: RoleExpectation | null;
-  if (readOnly) {
-    const { func, desig } = getOwnerRole(goal);
-    expectationForPanel =
-      func && desig
-        ? orgExpectations.find(
-            (e) => e.function_name === func && e.designation_name === desig,
-          ) ?? null
-        : null;
-  } else {
-    expectationForPanel = asRoleExpectation(myExpectation);
-  }
-
-  const expectationsHeading = readOnly
-    ? `Refer to ${getOwnerName(goal)}'s role expectations`
-    : "Refer to your role expectations";
 
   return createPortal(
     <div
@@ -247,39 +153,11 @@ export function GoalSelfReviewModal({
             </p>
           )}
 
-          {/* Role-expectation reference panels */}
-          {expectationForPanel && (
-            <div className="space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">
-                {expectationsHeading}
-              </p>
-              <div>
-                <p className="text-[11px] font-semibold text-text-main mb-0.5">
-                  Firm Growth
-                </p>
-                <ExpectationPanel
-                  expectation={expectationForPanel}
-                  expKey="exp_firm_growth"
-                />
-              </div>
-              <div>
-                <p className="text-[11px] font-semibold text-text-main mb-0.5">
-                  Competency &amp; Skills
-                </p>
-                <ExpectationPanel
-                  expectation={expectationForPanel}
-                  expKey="exp_competency_skills"
-                />
-              </div>
-            </div>
-          )}
-
           {!isLocked && (
             <p className="text-xs text-text-muted">
               Reflect on your delivery against this goal for{" "}
               <strong>{cycleLabel(goal, cycleHalf)}</strong> in a single
-              paragraph. Use the role expectations above as a guide. Once
-              submitted, your mentor will review this entry.
+              paragraph. Once submitted, your mentor will review this entry.
             </p>
           )}
 

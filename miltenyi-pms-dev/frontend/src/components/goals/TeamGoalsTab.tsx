@@ -28,7 +28,7 @@ import { TeamGoalCard } from "@/components/goals/TeamGoalCard";
 import { ApprovalStatusBadge } from "@/components/goals/ApprovalStatusBadge";
 import { CriteriaChecklist } from "@/components/goals/CriteriaChecklist";
 import { GoalMentorReviewModal } from "@/components/goals/GoalMentorReviewModal";
-import { SelfReviewCycleMenu } from "@/components/goals/SelfReviewCycleMenu";
+import { MentorReviewHalfChips } from "@/components/goals/MentorReviewHalfChips";
 import { BulkApproveModal } from "@/components/goals/BulkApproveModal";
 import { SortableHeader } from "@/components/SortableHeader";
 import { compareValues, type SortKind, type SortState, type SortValue } from "@/utils/sort";
@@ -735,13 +735,13 @@ export function TeamGoalsTab() {
                             </>
                           )}
                           {isApproved && (
-                            // Per-half mentor review entry. The modal handles
-                            // both editable (no mentor review yet) and read-
-                            // only (already submitted) modes; the menu itself
-                            // disables halves where no self-review exists yet.
-                            <SelfReviewCycleMenu
+                            // Per-half mentor review entry. Each chip shows
+                            // the exact state for H1 and H2 (review now /
+                            // resume draft / awaiting self-review / done),
+                            // so the mentor doesn't have to decode a
+                            // fraction like "1/2".
+                            <MentorReviewHalfChips
                               goal={goal}
-                              mode="mentor"
                               onSelect={(half) => openReview(goal, half)}
                             />
                           )}
