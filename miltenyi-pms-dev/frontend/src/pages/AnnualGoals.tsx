@@ -99,6 +99,8 @@ interface AllGoalsEmployeeGroup {
 
 type AllGoalsSortKey =
   | "owner_name"
+  | "function_name"
+  | "designation_name"
   | "latest_fy_year"
   | "latest_manager_name"
   | "goal_count";
@@ -108,6 +110,8 @@ const ALL_GOALS_SORT_CONFIG: Record<
   { kind: SortKind; get: (g: AllGoalsEmployeeGroup) => SortValue }
 > = {
   owner_name:          { kind: "alpha",   get: (g) => g.owner_name },
+  function_name:       { kind: "alpha",   get: (g) => g.function_name },
+  designation_name:    { kind: "alpha",   get: (g) => g.designation_name },
   latest_fy_year:      { kind: "numeric", get: (g) => g.latest_fy_year },
   latest_manager_name: { kind: "alpha",   get: (g) => g.latest_manager_name },
   goal_count:          { kind: "numeric", get: (g) => g.goals.length },
@@ -892,6 +896,8 @@ function AllGoalsTab({
 }) {
   const [statusFilter, setStatusFilter] = useState<ApprovalFilter>("all");
   const [yearFilter, setYearFilter] = useState<string>("all");
+  const [functionFilter, setFunctionFilter] = useState<string>("all");
+  const [designationFilter, setDesignationFilter] = useState<string>("all");
   // Employee filter — typeable combobox styled like the PM picker.
   // Empty string means "no employee filter applied".
   const [employeeFilter, setEmployeeFilter] = useState<string>("");
@@ -906,10 +912,30 @@ function AllGoalsTab({
   const employees = Array.from(
     new Set(goals.map((g) => g.owner_name).filter((n): n is string => !!n)),
   ).sort();
+  const functions = Array.from(
+    new Set(
+      goals.map((g) => g.owner_function_name).filter((f): f is string => !!f),
+    ),
+  ).sort();
+  const designations = Array.from(
+    new Set(
+      goals
+        .map((g) => g.owner_designation_name)
+        .filter((d): d is string => !!d),
+    ),
+  ).sort();
 
   const filtered = goals
     .filter((g) => statusFilter === "all" || g.approval_status === statusFilter)
     .filter((g) => yearFilter === "all" || g.fy_year === Number(yearFilter))
+    .filter(
+      (g) => functionFilter === "all" || g.owner_function_name === functionFilter,
+    )
+    .filter(
+      (g) =>
+        designationFilter === "all" ||
+        g.owner_designation_name === designationFilter,
+    )
     .filter((g) => !employeeFilter || g.owner_name === employeeFilter);
 
   const groups = buildAllGoalsGroups(filtered);
@@ -989,6 +1015,48 @@ function AllGoalsTab({
         </div>
         <div className="flex items-center gap-2">
           <label
+            htmlFor="all-goals-function"
+            className="text-[11px] font-bold uppercase tracking-wider text-text-muted"
+          >
+            Function
+          </label>
+          <select
+            id="all-goals-function"
+            value={functionFilter}
+            onChange={(e) => setFunctionFilter(e.target.value)}
+            className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand cursor-pointer min-w-[140px]"
+          >
+            <option value="all">All Functions</option>
+            {functions.map((f) => (
+              <option key={f} value={f}>
+                {f}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex items-center gap-2">
+          <label
+            htmlFor="all-goals-designation"
+            className="text-[11px] font-bold uppercase tracking-wider text-text-muted"
+          >
+            Designation
+          </label>
+          <select
+            id="all-goals-designation"
+            value={designationFilter}
+            onChange={(e) => setDesignationFilter(e.target.value)}
+            className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand cursor-pointer min-w-[140px]"
+          >
+            <option value="all">All Designations</option>
+            {designations.map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex items-center gap-2">
+          <label
             htmlFor="all-goals-status"
             className="text-[11px] font-bold uppercase tracking-wider text-text-muted"
           >
@@ -1021,6 +1089,22 @@ function AllGoalsTab({
                 <SortableHeader
                   label="Employee"
                   columnKey="owner_name"
+                  sort={sort}
+                  onSort={setSort}
+                />
+              </th>
+              <th className="text-left px-4 py-2.5">
+                <SortableHeader
+                  label="Function"
+                  columnKey="function_name"
+                  sort={sort}
+                  onSort={setSort}
+                />
+              </th>
+              <th className="text-left px-4 py-2.5">
+                <SortableHeader
+                  label="Designation"
+                  columnKey="designation_name"
                   sort={sort}
                   onSort={setSort}
                 />
@@ -1073,19 +1157,14 @@ function AllGoalsTab({
                           }`}
                           aria-hidden="true"
                         />
-                        <div className="min-w-0">
-                          <p className="truncate">{group.owner_name}</p>
-                          {(group.function_name || group.designation_name) && (
-                            <p className="text-[11px] text-text-muted truncate">
-                              {group.function_name ?? ""}
-                              {group.function_name && group.designation_name
-                                ? " · "
-                                : ""}
-                              {group.designation_name ?? ""}
-                            </p>
-                          )}
-                        </div>
+                        <span className="truncate">{group.owner_name}</span>
                       </div>
+                    </td>
+                    <td className="px-4 py-3 text-text-muted">
+                      {group.function_name ?? "—"}
+                    </td>
+                    <td className="px-4 py-3 text-text-muted">
+                      {group.designation_name ?? "—"}
                     </td>
                     <td className="px-4 py-3">
                       {group.latest_fy_year ? (
@@ -1105,7 +1184,7 @@ function AllGoalsTab({
                   </tr>
                   {isExpanded && (
                     <tr className="bg-slate-50/80">
-                      <td colSpan={4} className="p-0">
+                      <td colSpan={6} className="p-0">
                         <table className="w-full text-[13px]">
                           <thead>
                             <tr className="text-left text-[11px] font-bold uppercase tracking-wider text-text-muted border-b border-border/40">
