@@ -229,6 +229,15 @@ export function GoalMentorReviewModal({
               </span>
             </div>
             <div className="overflow-y-auto px-3 py-3 space-y-2.5">
+              {ownerExpectation && (
+                <p className="px-1 text-[11px] font-medium text-text-main">
+                  {ownerExpectation.function_name ?? "—"}
+                  <span className="text-text-muted">
+                    {" · "}
+                    {ownerExpectation.designation_name ?? "—"}
+                  </span>
+                </p>
+              )}
               {ownerExpectation ? (
                 ROLE_EXP_FIELDS.map(({ expKey, label: fieldLabel }, idx) => {
                   const text = ownerExpectation[expKey];

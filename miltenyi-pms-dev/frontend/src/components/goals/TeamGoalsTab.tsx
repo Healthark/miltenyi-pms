@@ -2,16 +2,11 @@ import { useState, useEffect, useCallback, Fragment } from "react";
 import { createPortal } from "react-dom";
 import {
   Users,
-  Search,
-  LayoutGrid,
-  Table2,
   ChevronDown,
-  UserCircle,
   Check,
   CheckCheck,
   RotateCcw,
   Link as LinkIcon,
-  MessageSquare,
 } from "lucide-react";
 import {
   goalService,
@@ -24,20 +19,19 @@ import { getErrorMessage } from "@/utils/errors";
 import { useToast } from "@/hooks/useToast";
 import { useSnackbar } from "@/hooks/useSnackbar";
 import { useConfirm } from "@/hooks/useConfirm";
-import { TeamGoalCard } from "@/components/goals/TeamGoalCard";
 import { ApprovalStatusBadge } from "@/components/goals/ApprovalStatusBadge";
-import { CriteriaChecklist } from "@/components/goals/CriteriaChecklist";
 import { GoalMentorReviewModal } from "@/components/goals/GoalMentorReviewModal";
 import { MentorReviewHalfChips } from "@/components/goals/MentorReviewHalfChips";
 import { BulkApproveModal } from "@/components/goals/BulkApproveModal";
 import { SortableHeader } from "@/components/SortableHeader";
+import { StringCombobox } from "@/components/common/StringCombobox";
 import { compareValues, type SortKind, type SortState, type SortValue } from "@/utils/sort";
 import { formatFyYearSpan } from "@/utils/fy";
 import { halfDisplayLabel, isPostApproved } from "@/utils/goalStatus";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
 
 // ---------------------------------------------------------------------------
-// FeedbackModal — "Request Changes" portal
+// FeedbackModal — "Request Changes" portal (unchanged)
 // ---------------------------------------------------------------------------
 
 interface FeedbackModalProps {
@@ -128,7 +122,6 @@ function FeedbackModal({
 // ---------------------------------------------------------------------------
 
 type StatusFilter = "all" | ApprovalStatus;
-type ViewMode = "grid" | "table";
 
 function buildStatusFilters(
   cycleType: string | null,
@@ -161,38 +154,64 @@ function buildStatusFilters(
   ];
 }
 
-type TeamGoalsSortKey = "title" | "owner_name" | "fy_year" | "approval_status";
+// ---------------------------------------------------------------------------
+// Mentee-grouped row model (mirrors All Goals tab)
+// ---------------------------------------------------------------------------
+
+interface TeamGoalsEmployeeGroup {
+  user_id: number;
+  owner_name: string;
+  function_name: string | null;
+  designation_name: string | null;
+  /** Latest goal's FY (highest fy_year) — drives the Year column. */
+  latest_fy_year: number | null;
+  goals: TeamGoal[];
+}
+
+type TeamGoalsSortKey =
+  | "owner_name"
+  | "function_name"
+  | "designation_name"
+  | "latest_fy_year"
+  | "goal_count";
 
 const TEAM_GOALS_SORT_CONFIG: Record<
   TeamGoalsSortKey,
-  { kind: SortKind; get: (g: TeamGoal) => SortValue }
+  { kind: SortKind; get: (g: TeamGoalsEmployeeGroup) => SortValue }
 > = {
-  title:           { kind: "alpha",   get: (g) => g.title },
-  owner_name:      { kind: "alpha",   get: (g) => g.owner_name },
-  fy_year:         { kind: "numeric", get: (g) => g.fy_year },
-  approval_status: { kind: "alpha",   get: (g) => g.approval_status },
+  owner_name:       { kind: "alpha",   get: (g) => g.owner_name },
+  function_name:    { kind: "alpha",   get: (g) => g.function_name },
+  designation_name: { kind: "alpha",   get: (g) => g.designation_name },
+  latest_fy_year:   { kind: "numeric", get: (g) => g.latest_fy_year },
+  goal_count:       { kind: "numeric", get: (g) => g.goals.length },
 };
 
-// ---------------------------------------------------------------------------
-// Skeleton
-// ---------------------------------------------------------------------------
-
-function TeamGoalsSkeleton() {
-  return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 animate-pulse">
-      {[1, 2, 3].map((n) => (
-        <div
-          key={n}
-          className="h-44 rounded-lg border border-border bg-surface p-4"
-        >
-          <div className="h-3 w-1/3 rounded bg-slate-100 mb-3" />
-          <div className="h-3 w-3/4 rounded bg-slate-100 mb-3" />
-          <div className="h-2.5 w-full rounded bg-slate-100" />
-          <div className="h-2.5 w-2/3 rounded bg-slate-100 mt-1.5" />
-        </div>
-      ))}
-    </div>
-  );
+function buildTeamGoalsGroups(
+  goals: readonly TeamGoal[],
+): TeamGoalsEmployeeGroup[] {
+  const map = new Map<number, TeamGoalsEmployeeGroup>();
+  for (const g of goals) {
+    const existing = map.get(g.user_id);
+    if (existing) {
+      existing.goals.push(g);
+    } else {
+      map.set(g.user_id, {
+        user_id: g.user_id,
+        owner_name: g.owner_name,
+        function_name: g.owner_function_name,
+        designation_name: g.owner_designation_name,
+        latest_fy_year: null,
+        goals: [g],
+      });
+    }
+  }
+  // Newest FY first inside each mentee's drop-down so the latest goal reads
+  // at the top. The first entry's FY drives the per-mentee Year column.
+  for (const group of map.values()) {
+    group.goals.sort((a, b) => (b.fy_year ?? 0) - (a.fy_year ?? 0));
+    group.latest_fy_year = group.goals[0]?.fy_year ?? null;
+  }
+  return Array.from(map.values());
 }
 
 // ---------------------------------------------------------------------------
@@ -210,13 +229,15 @@ export function TeamGoalsTab() {
   const [isLoading, setIsLoading] = useState(true);
   const [isActing, setIsActing] = useState(false);
 
-  const [searchQuery, setSearchQuery] = useState("");
-  const [sort, setSort] = useState<SortState<TeamGoalsSortKey> | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>("table");
+  // Filters
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [yearFilter, setYearFilter] = useState("all");
-  const [menteeFilter, setMenteeFilter] = useState("all");
-  const [expandedGoalId, setExpandedGoalId] = useState<number | null>(null);
+  const [functionFilter, setFunctionFilter] = useState("all");
+  const [designationFilter, setDesignationFilter] = useState("all");
+  // Empty string means "no mentee filter" (StringCombobox convention).
+  const [menteeFilter, setMenteeFilter] = useState("");
+  const [sort, setSort] = useState<SortState<TeamGoalsSortKey> | null>(null);
+  const [expandedUserId, setExpandedUserId] = useState<number | null>(null);
 
   // "Request Changes" modal state
   const [feedbackTarget, setFeedbackTarget] = useState<TeamGoal | null>(null);
@@ -227,9 +248,7 @@ export function TeamGoalsTab() {
   const [bulkSaving, setBulkSaving] = useState(false);
   const [bulkError, setBulkError] = useState("");
 
-  // Mentor review modal state — opens for any post-approval half. The modal
-  // itself decides editable vs read-only based on whether a mentor review
-  // for this (goal, half) already exists.
+  // Mentor review modal state
   const [reviewGoal, setReviewGoal] = useState<TeamGoal | null>(null);
   const [reviewCycle, setReviewCycle] = useState<SelfReviewCycleHalf | null>(null);
   const [isSavingReview, setIsSavingReview] = useState(false);
@@ -348,7 +367,6 @@ export function TeamGoalsTab() {
     setBulkError("");
     try {
       const result = await goalService.bulkApprove(goalIds);
-      // Optimistically refresh the goal rows that were approved.
       if (result.approved_ids.length > 0) {
         const approvedSet = new Set(result.approved_ids);
         setGoals((prev) =>
@@ -359,8 +377,6 @@ export function TeamGoalsTab() {
           ),
         );
       }
-      // Close on full success; surface partials inline so the mentor sees
-      // exactly which goals slipped state.
       if (result.failures.length === 0) {
         toast.success(
           `Approved ${result.approved_ids.length} goal${
@@ -409,52 +425,83 @@ export function TeamGoalsTab() {
     }
   };
 
-  // Derived filter options
+  // ── Derived filter options ────────────────────────────────────────
   const availableYears = Array.from(
     new Set(goals.map((g) => g.fy_year).filter((y): y is number => y !== null)),
   ).sort((a, b) => b - a);
 
-  // Count goals currently awaiting approval — drives the toolbar badge.
+  const availableMentees = Array.from(
+    new Set(goals.map((g) => g.owner_name).filter((n): n is string => !!n)),
+  ).sort();
+
+  const availableFunctions = Array.from(
+    new Set(
+      goals.map((g) => g.owner_function_name).filter((f): f is string => !!f),
+    ),
+  ).sort();
+
+  const availableDesignations = Array.from(
+    new Set(
+      goals
+        .map((g) => g.owner_designation_name)
+        .filter((d): d is string => !!d),
+    ),
+  ).sort();
+
+  // Bulk-approve badge counts pending across ALL loaded goals, not the
+  // filtered subset — the modal's selection list shows the full pool.
   const pendingApprovalCount = goals.filter(
     (g) => g.approval_status === "pending_approval",
   ).length;
 
-  const availableMentees = Array.from(
-    new Set(goals.map((g) => g.owner_name).filter((n): n is string => Boolean(n))),
-  ).sort((a, b) => a.localeCompare(b));
-
   const filtered = goals
     .filter((g) => statusFilter === "all" || g.approval_status === statusFilter)
     .filter((g) => yearFilter === "all" || g.fy_year === Number(yearFilter))
-    .filter((g) => menteeFilter === "all" || g.owner_name === menteeFilter)
-    .filter((g) => {
-      const q = searchQuery.trim().toLowerCase();
-      if (q === "") return true;
-      return (
-        g.title.toLowerCase().includes(q) ||
-        g.owner_name.toLowerCase().includes(q)
-      );
-    });
+    .filter(
+      (g) =>
+        functionFilter === "all" || g.owner_function_name === functionFilter,
+    )
+    .filter(
+      (g) =>
+        designationFilter === "all" ||
+        g.owner_designation_name === designationFilter,
+    )
+    .filter((g) => !menteeFilter || g.owner_name === menteeFilter);
 
-  const sortedGoals = sort
-    ? filtered.slice().sort((a, b) => {
+  const groups = buildTeamGoalsGroups(filtered);
+
+  const sortedGroups = sort
+    ? groups.slice().sort((a, b) => {
         const { kind, get } = TEAM_GOALS_SORT_CONFIG[sort.key];
         return compareValues(get(a), get(b), kind, sort.direction);
       })
-    : filtered;
+    : groups
+        .slice()
+        .sort((a, b) =>
+          a.owner_name.localeCompare(b.owner_name, undefined, {
+            sensitivity: "base",
+          }),
+        );
 
   useEffect(() => {
-    setExpandedGoalId(null);
-  }, [statusFilter, yearFilter, menteeFilter, searchQuery, viewMode]);
+    setExpandedUserId(null);
+  }, [
+    statusFilter,
+    yearFilter,
+    functionFilter,
+    designationFilter,
+    menteeFilter,
+  ]);
 
-  const viewBtnCls = (mode: ViewMode) =>
-    `flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] font-medium transition-colors ${
-      viewMode === mode
-        ? "bg-brand/10 text-brand"
-        : "text-text-muted hover:bg-slate-100"
-    }`;
+  // ── Render ────────────────────────────────────────────────────────
 
-  if (isLoading) return <TeamGoalsSkeleton />;
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-16 text-sm text-text-muted">
+        Loading goals…
+      </div>
+    );
+  }
 
   if (goals.length === 0) {
     return (
@@ -471,333 +518,350 @@ export function TeamGoalsTab() {
   }
 
   return (
-    <div className="space-y-4">
-      {/* Toolbar */}
-      <div className="flex flex-col gap-3">
-        {/* Row 1: Search + View Toggle */}
-        <div className="flex items-center justify-between gap-3">
-          <div className="relative flex-1 max-w-xs">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-text-muted pointer-events-none" />
-            <input
-              type="text"
-              placeholder="Search by goal or mentee..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full rounded-lg border border-border bg-white pl-9 pr-3 py-1.5 text-[13px] text-text-main placeholder:text-text-muted outline-none focus:border-brand"
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setBulkError("");
-                setBulkOpen(true);
-              }}
-              disabled={pendingApprovalCount === 0}
-              className="flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-1.5 text-[12px] font-medium text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              title={
-                pendingApprovalCount === 0
-                  ? "No goals are currently awaiting approval"
-                  : `Bulk approve ${pendingApprovalCount} pending goal${
-                      pendingApprovalCount === 1 ? "" : "s"
-                    }`
-              }
-            >
-              <CheckCheck className="h-3.5 w-3.5" />
-              Bulk Approve
-              {pendingApprovalCount > 0 && (
-                <span className="rounded-full bg-white/20 px-1.5 text-[10px] font-semibold">
-                  {pendingApprovalCount}
-                </span>
-              )}
-            </button>
-            <div className="flex items-center gap-1 rounded-lg border border-border bg-white p-0.5">
-              <button
-                type="button"
-                className={viewBtnCls("grid")}
-                onClick={() => setViewMode("grid")}
-              >
-                <LayoutGrid className="h-3.5 w-3.5" /> Cards
-              </button>
-              <button
-                type="button"
-                className={viewBtnCls("table")}
-                onClick={() => setViewMode("table")}
-              >
-                <Table2 className="h-3.5 w-3.5" /> Table
-              </button>
-            </div>
-          </div>
+    <div className="flex flex-col gap-4">
+      {/* Toolbar — filters + bulk approve all on one wrap row */}
+      <div className="flex items-center gap-4 flex-wrap">
+        <div className="flex items-center gap-2">
+          <label
+            htmlFor="team-mentee-filter"
+            className="text-[11px] font-bold uppercase tracking-wider text-text-muted"
+          >
+            Mentee
+          </label>
+          <StringCombobox
+            id="team-mentee-filter"
+            options={availableMentees}
+            value={menteeFilter}
+            onChange={setMenteeFilter}
+            placeholder="Type a name…"
+          />
         </div>
-
-        {/* Row 2: Filters */}
-        <div className="flex items-center gap-4 flex-wrap">
-          <div className="flex items-center gap-2">
-            <label
-              htmlFor="team-year-filter"
-              className="text-[11px] font-bold uppercase tracking-wider text-text-muted"
-            >
-              Year
-            </label>
-            <select
-              id="team-year-filter"
-              value={yearFilter}
-              onChange={(e) => setYearFilter(e.target.value)}
-              className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand min-w-[120px] cursor-pointer"
-            >
-              <option value="all">All Years</option>
-              {availableYears.map((y) => (
-                <option key={y} value={y}>
-                  {y}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <label
-              htmlFor="team-mentee-filter"
-              className="text-[11px] font-bold uppercase tracking-wider text-text-muted"
-            >
-              Mentee
-            </label>
-            <select
-              id="team-mentee-filter"
-              value={menteeFilter}
-              onChange={(e) => setMenteeFilter(e.target.value)}
-              className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand min-w-[160px] cursor-pointer"
-            >
-              <option value="all">All Mentees</option>
-              {availableMentees.map((name) => (
-                <option key={name} value={name}>
-                  {name} ({goals.filter((g) => g.owner_name === name).length})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <label
-              htmlFor="team-status-filter"
-              className="text-[11px] font-bold uppercase tracking-wider text-text-muted"
-            >
-              Status
-            </label>
-            <select
-              id="team-status-filter"
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-              className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand min-w-[160px] cursor-pointer"
-            >
-              {buildStatusFilters(cycleType).map((f) => (
-                <option key={f.value} value={f.value}>
-                  {f.label}
-                  {f.value !== "all" &&
-                    ` (${goals.filter((g) => g.approval_status === f.value).length})`}
-                </option>
-              ))}
-            </select>
-          </div>
+        <div className="flex items-center gap-2">
+          <label
+            htmlFor="team-year-filter"
+            className="text-[11px] font-bold uppercase tracking-wider text-text-muted"
+          >
+            Year
+          </label>
+          <select
+            id="team-year-filter"
+            value={yearFilter}
+            onChange={(e) => setYearFilter(e.target.value)}
+            className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand cursor-pointer min-w-[120px]"
+          >
+            <option value="all">All Years</option>
+            {availableYears.map((y) => (
+              <option key={y} value={y}>
+                {formatFyYearSpan(y)}
+              </option>
+            ))}
+          </select>
         </div>
+        <div className="flex items-center gap-2">
+          <label
+            htmlFor="team-function-filter"
+            className="text-[11px] font-bold uppercase tracking-wider text-text-muted"
+          >
+            Function
+          </label>
+          <select
+            id="team-function-filter"
+            value={functionFilter}
+            onChange={(e) => setFunctionFilter(e.target.value)}
+            className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand cursor-pointer min-w-[140px]"
+          >
+            <option value="all">All Functions</option>
+            {availableFunctions.map((f) => (
+              <option key={f} value={f}>
+                {f}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex items-center gap-2">
+          <label
+            htmlFor="team-designation-filter"
+            className="text-[11px] font-bold uppercase tracking-wider text-text-muted"
+          >
+            Designation
+          </label>
+          <select
+            id="team-designation-filter"
+            value={designationFilter}
+            onChange={(e) => setDesignationFilter(e.target.value)}
+            className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand cursor-pointer min-w-[140px]"
+          >
+            <option value="all">All Designations</option>
+            {availableDesignations.map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex items-center gap-2">
+          <label
+            htmlFor="team-status-filter"
+            className="text-[11px] font-bold uppercase tracking-wider text-text-muted"
+          >
+            Status
+          </label>
+          <select
+            id="team-status-filter"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+            className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand cursor-pointer min-w-[160px]"
+          >
+            {buildStatusFilters(cycleType).map((f) => (
+              <option key={f.value} value={f.value}>
+                {f.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <span className="text-xs text-text-muted">
+          {sortedGroups.length}{" "}
+          {sortedGroups.length === 1 ? "mentee" : "mentees"} ·{" "}
+          {filtered.length} of {goals.length} goals
+        </span>
+        <button
+          type="button"
+          onClick={() => {
+            setBulkError("");
+            setBulkOpen(true);
+          }}
+          disabled={pendingApprovalCount === 0}
+          className="ml-auto flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-1.5 text-[12px] font-medium text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          title={
+            pendingApprovalCount === 0
+              ? "No goals are currently awaiting approval"
+              : `Bulk approve ${pendingApprovalCount} pending goal${
+                  pendingApprovalCount === 1 ? "" : "s"
+                }`
+          }
+        >
+          <CheckCheck className="h-3.5 w-3.5" />
+          Bulk Approve
+          {pendingApprovalCount > 0 && (
+            <span className="rounded-full bg-white/20 px-1.5 text-[10px] font-semibold">
+              {pendingApprovalCount}
+            </span>
+          )}
+        </button>
       </div>
 
-      {/* Content */}
+      {/* Table */}
       {filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border py-12 text-center bg-background/50">
-          <Search className="h-8 w-8 text-text-muted mb-2" aria-hidden="true" />
+          <Users className="h-8 w-8 text-text-muted mb-2" aria-hidden="true" />
           <p className="font-display text-sm font-medium text-text-main">
             No goals match this filter
           </p>
           <p className="mt-1 text-xs text-text-muted">
-            Try adjusting your search or filter options.
+            Try adjusting your filter options.
           </p>
         </div>
-      ) : viewMode === "grid" ? (
-        /* ── Card / Grid View ── */
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {sortedGoals.map((goal) => (
-            <TeamGoalCard
-              key={goal.id}
-              goal={goal}
-              onApprove={handleApprove}
-              onRequestChanges={(g) => {
-                setModalError("");
-                setFeedbackTarget(g);
-              }}
-              onSelectHalf={openReview}
-              isActing={isActing}
-            />
-          ))}
-        </div>
       ) : (
-        /* ── Table View ── */
         <div className="overflow-x-auto rounded-lg border border-border">
           <table className="w-full text-[13px]">
             <thead>
               <tr className="bg-slate-50/80 border-b border-border">
                 <th className="text-left px-5 py-2.5">
-                  <SortableHeader label="Goal" columnKey="title" sort={sort} onSort={setSort} />
+                  <SortableHeader
+                    label="Mentee"
+                    columnKey="owner_name"
+                    sort={sort}
+                    onSort={setSort}
+                  />
                 </th>
                 <th className="text-left px-4 py-2.5">
-                  <SortableHeader label="Mentee" columnKey="owner_name" sort={sort} onSort={setSort} />
+                  <SortableHeader
+                    label="Function"
+                    columnKey="function_name"
+                    sort={sort}
+                    onSort={setSort}
+                  />
                 </th>
                 <th className="text-left px-4 py-2.5">
-                  <SortableHeader label="Year" columnKey="fy_year" sort={sort} onSort={setSort} />
+                  <SortableHeader
+                    label="Designation"
+                    columnKey="designation_name"
+                    sort={sort}
+                    onSort={setSort}
+                  />
                 </th>
                 <th className="text-left px-4 py-2.5">
-                  <SortableHeader label="Status" columnKey="approval_status" sort={sort} onSort={setSort} />
+                  <SortableHeader
+                    label="Year"
+                    columnKey="latest_fy_year"
+                    sort={sort}
+                    onSort={setSort}
+                  />
                 </th>
-                <th className="text-left px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted">
-                  Actions
+                <th className="text-left px-4 py-2.5">
+                  <SortableHeader
+                    label="Goals"
+                    columnKey="goal_count"
+                    sort={sort}
+                    onSort={setSort}
+                  />
                 </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/50">
-              {sortedGoals.map((goal) => {
-                const isExpanded = expandedGoalId === goal.id;
-                const isSubmitted = goal.approval_status === "pending_approval";
-                const isApproved = isPostApproved(goal.approval_status);
-                const isChangesRequested = goal.approval_status === "changes_requested";
-
+              {sortedGroups.map((group) => {
+                const isExpanded = expandedUserId === group.user_id;
+                const goalCount = group.goals.length;
                 return (
-                  <Fragment key={goal.id}>
+                  <Fragment key={group.user_id}>
                     <tr
                       className={`transition-colors cursor-pointer ${
                         isExpanded ? "bg-brand/5" : "hover:bg-slate-50/60"
                       }`}
                       onClick={() =>
-                        setExpandedGoalId(isExpanded ? null : goal.id)
+                        setExpandedUserId(isExpanded ? null : group.user_id)
                       }
                     >
-                      {/* Goal title */}
-                      <td className="px-5 py-3 font-medium text-text-main max-w-xs">
-                        <div className="flex items-center gap-2">
+                      <td className="px-5 py-3 font-medium text-text-main">
+                        <div className="flex items-center gap-2 min-w-0">
                           <ChevronDown
                             className={`h-4 w-4 text-text-muted shrink-0 transition-transform duration-200 ${
                               isExpanded ? "rotate-180" : ""
                             }`}
+                            aria-hidden="true"
                           />
-                          <span className="line-clamp-1">{goal.title}</span>
+                          <span className="truncate">{group.owner_name}</span>
                         </div>
                       </td>
-
-                      {/* Mentee */}
                       <td className="px-4 py-3 text-text-muted">
-                        <div className="flex items-center gap-1.5">
-                          <UserCircle className="h-3.5 w-3.5 shrink-0" />
-                          <span className="truncate">{goal.owner_name}</span>
-                        </div>
+                        {group.function_name ?? "—"}
                       </td>
-
-                      {/* Year */}
+                      <td className="px-4 py-3 text-text-muted">
+                        {group.designation_name ?? "—"}
+                      </td>
                       <td className="px-4 py-3">
-                        {goal.fy_year ? (
+                        {group.latest_fy_year ? (
                           <span className="text-[12px] font-semibold text-text-muted bg-slate-100 px-1.5 py-0.5 rounded">
-                            {formatFyYearSpan(goal.fy_year)}
+                            {formatFyYearSpan(group.latest_fy_year)}
                           </span>
                         ) : (
                           <span className="text-[12px] text-text-muted">—</span>
                         )}
                       </td>
-
-                      {/* Status badge */}
-                      <td className="px-4 py-3">
-                        <ApprovalStatusBadge status={goal.approval_status} />
+                      <td className="px-4 py-3 text-text-muted">
+                        {goalCount} {goalCount === 1 ? "goal" : "goals"}
                       </td>
-
-                      {/* Actions — approval workflow + read-only self-review view */}
-                      <td
-                        className="px-4 py-3"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <div className="flex items-center gap-2 flex-wrap">
-                          {isSubmitted && (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setModalError("");
-                                  setFeedbackTarget(goal);
-                                }}
-                                disabled={isActing}
-                                className="flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-50 transition-colors"
-                              >
-                                <RotateCcw className="h-3 w-3" /> Request Changes
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleApprove(goal)}
-                                disabled={isActing}
-                                className="flex items-center gap-1 rounded-md bg-green-600 px-2 py-1 text-[11px] font-medium text-white hover:bg-green-700 disabled:opacity-50 transition-colors"
-                              >
-                                <Check className="h-3 w-3" /> Approve
-                              </button>
-                            </>
-                          )}
-                          {isApproved && (
-                            // Per-half mentor review entry. Each chip shows
-                            // the exact state for H1 and H2 (review now /
-                            // resume draft / awaiting self-review / done),
-                            // so the mentor doesn't have to decode a
-                            // fraction like "1/2".
-                            <MentorReviewHalfChips
-                              goal={goal}
-                              onSelect={(half) => openReview(goal, half)}
-                            />
-                          )}
-                          {isChangesRequested && (
-                            <span className="text-[11px] text-amber-700 italic">
-                              Awaiting revision
-                            </span>
-                          )}
-                        </div>
-                      </td>
-
                     </tr>
-
-                    {/* Expanded detail row — colSpan covers all 5 columns */}
                     {isExpanded && (
-                      <tr className="bg-brand/5">
-                        <td colSpan={5} className="px-10 py-4">
-                          <div className="space-y-3 max-w-2xl">
-                            {goal.description && (
-                              <p className="text-sm text-text-muted">
-                                {goal.description}
-                              </p>
-                            )}
-                            {goal.attachment_url && (
-                              <a
-                                href={goal.attachment_url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex items-center gap-1.5 text-xs text-brand hover:underline w-fit"
-                              >
-                                <LinkIcon className="h-3 w-3 shrink-0" />
-                                Attachment
-                              </a>
-                            )}
-                            {isChangesRequested && goal.manager_feedback && (
-                              <div className="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
-                                <MessageSquare className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
-                                <div>
-                                  <p className="text-xs font-semibold text-amber-700 mb-0.5">
-                                    Mentor Feedback
-                                  </p>
-                                  <p className="text-xs text-amber-800">
-                                    {goal.manager_feedback}
-                                  </p>
-                                </div>
-                              </div>
-                            )}
-                            {goal.criteria.length > 0 && (
-                              <CriteriaChecklist
-                                criteria={goal.criteria}
-                                approvalStatus={goal.approval_status}
-                                progressPercent={goal.progress_percent}
-                                readOnly
-                              />
-                            )}
-                          </div>
+                      <tr className="bg-slate-50/80">
+                        <td colSpan={5} className="p-0">
+                          <table className="w-full text-[13px]">
+                            <thead>
+                              <tr className="text-left text-[11px] font-bold uppercase tracking-wider text-text-muted border-b border-border/40">
+                                <th className="px-10 py-2 font-bold">Goal</th>
+                                <th className="px-4 py-2 font-bold">
+                                  Description
+                                </th>
+                                <th className="px-4 py-2 font-bold">Status</th>
+                                <th className="px-4 py-2 font-bold">Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {group.goals.map((g) => {
+                                const isPending =
+                                  g.approval_status === "pending_approval";
+                                const isApproved = isPostApproved(
+                                  g.approval_status,
+                                );
+                                const isChangesRequested =
+                                  g.approval_status === "changes_requested";
+                                return (
+                                  <tr
+                                    key={g.id}
+                                    className="border-t border-border/40"
+                                  >
+                                    <td className="px-10 py-2.5">
+                                      <div className="flex items-center gap-2">
+                                        <span className="font-medium text-text-main">
+                                          {g.title}
+                                        </span>
+                                        {g.attachment_url && (
+                                          <a
+                                            href={g.attachment_url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-brand hover:text-brand/80 transition-colors shrink-0"
+                                            title="Open attachment"
+                                          >
+                                            <LinkIcon
+                                              className="h-3.5 w-3.5"
+                                              aria-hidden="true"
+                                            />
+                                          </a>
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td className="px-4 py-2.5 text-[12.5px] text-text-muted max-w-md">
+                                      {g.description ? (
+                                        <span className="line-clamp-2">
+                                          {g.description}
+                                        </span>
+                                      ) : (
+                                        <span>—</span>
+                                      )}
+                                    </td>
+                                    <td className="px-4 py-2.5">
+                                      <ApprovalStatusBadge
+                                        status={g.approval_status}
+                                      />
+                                    </td>
+                                    <td className="px-4 py-2.5">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        {isPending && (
+                                          <>
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setModalError("");
+                                                setFeedbackTarget(g);
+                                              }}
+                                              disabled={isActing}
+                                              className="flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-50 transition-colors"
+                                            >
+                                              <RotateCcw className="h-3 w-3" />
+                                              Request Changes
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleApprove(g)}
+                                              disabled={isActing}
+                                              className="flex items-center gap-1 rounded-md bg-green-600 px-2 py-1 text-[11px] font-medium text-white hover:bg-green-700 disabled:opacity-50 transition-colors"
+                                            >
+                                              <Check className="h-3 w-3" />
+                                              Approve
+                                            </button>
+                                          </>
+                                        )}
+                                        {isApproved && (
+                                          <MentorReviewHalfChips
+                                            goal={g}
+                                            onSelect={(half) =>
+                                              openReview(g, half)
+                                            }
+                                          />
+                                        )}
+                                        {isChangesRequested && (
+                                          <span className="text-[11px] text-amber-700 italic">
+                                            Awaiting revision
+                                          </span>
+                                        )}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
                         </td>
                       </tr>
                     )}
@@ -850,7 +914,6 @@ export function TeamGoalsTab() {
           error={reviewError}
         />
       )}
-
     </div>
   );
 }

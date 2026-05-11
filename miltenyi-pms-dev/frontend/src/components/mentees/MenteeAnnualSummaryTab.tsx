@@ -586,31 +586,33 @@ export function MenteeAnnualSummaryTab({
         </div>
       </div>
 
-      {/* Reviews — mentee self + mentor evaluation. Mentor card only
-          renders once the mentor has actually submitted (the field is null
-          for active-FY rows still in `pending_mentor`, so it stays hidden
-          there but appears on past completed/calibration rows). */}
+      {/* Reviews — mentee self + mentor evaluation, side by side.
+          Both cards always render whenever any side has been filled, so
+          the layout doesn't shift when the mentor later submits. The
+          unfilled side renders as a placeholder ("pending") card that
+          mirrors the filled card's shape, making the missing piece
+          obvious without hiding the surface. */}
       {selectedReview &&
         (selectedReview.self_overall_review ||
-          selectedReview.self_performance_rating !== null) && (
-          <ReviewParagraphCard
-            label="Mentee's self review"
-            ratingLabel="Self rating"
-            rating={selectedReview.self_performance_rating}
-            text={selectedReview.self_overall_review}
-            emptyText="No self-review text"
-          />
-        )}
-      {selectedReview &&
-        (selectedReview.mentor_overall_review ||
+          selectedReview.self_performance_rating !== null ||
+          selectedReview.mentor_overall_review ||
           selectedReview.mentor_performance_rating !== null) && (
-          <ReviewParagraphCard
-            label="Mentor review"
-            ratingLabel="Final rating"
-            rating={selectedReview.mentor_performance_rating}
-            text={selectedReview.mentor_overall_review}
-            emptyText="No mentor review text"
-          />
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <ReviewParagraphCard
+              label="Mentee's self review"
+              ratingLabel="Self rating"
+              rating={selectedReview.self_performance_rating}
+              text={selectedReview.self_overall_review}
+              emptyText="Mentee self review pending."
+            />
+            <ReviewParagraphCard
+              label="Mentor review"
+              ratingLabel="Final rating"
+              rating={selectedReview.mentor_performance_rating}
+              text={selectedReview.mentor_overall_review}
+              emptyText="Mentor annual review pending."
+            />
+          </div>
         )}
 
       {/* Goals section */}
