@@ -44,9 +44,147 @@ export interface DashboardSummary {
   mentor_annual_reviews_pending: number;
 }
 
+// ── HR org-wide dashboard ─────────────────────────────────────────────
+//
+// Separate response model from DashboardSummary — the HR view shows
+// org-wide rollups, not the caller's personal queue. Both HR roles
+// (HR_MyOrg, HR_Miltenyi) hit the same endpoint and receive the same
+// payload for now; widgets that diverge get gated on the frontend.
+
+export interface HeadcountByRole {
+  staff: number;
+  mentor: number;
+  pm: number;
+  // Combined HR_MyOrg + HR_Miltenyi.
+  hr: number;
+}
+
+export interface HeadcountSummary {
+  total_active: number;
+  by_role: HeadcountByRole;
+}
+
+export interface AnnualReviewFunnel {
+  /** Fiscal start year the counts cover (e.g. 2026 for FY26-27). Null
+   *  when neither the request's `fy` param nor the active FY resolves —
+   *  the widget treats that as "no FY in scope" and renders an empty
+   *  state. */
+  fy_year: number | null;
+  total: number;
+  draft: number;
+  pending_mentor: number;
+  pending_management: number;
+  completed: number;
+}
+
+export interface GoalApprovalFunnel {
+  /** Same null semantics as AnnualReviewFunnel.fy_year. */
+  fy_year: number | null;
+  total: number;
+  /** Mentee submitted, awaiting mentor approve / changes-requested. */
+  pending_approval: number;
+  /** Mentor pushed back; employee needs to revise. */
+  changes_requested: number;
+  /** Rolls up APPROVED + all post-approval review states (H1/H2 +
+   *  Q1..Q4 self/mentor-reviewed). From HR's funnel-view this is one
+   *  bucket: "done with approval, progressing through the cycle". */
+  approved: number;
+}
+
+export interface ProjectReviewCompletion {
+  /** Same null semantics as the funnel widgets. */
+  fy_year: number | null;
+  /** Sum of every project-review row in this org × FY × cycle (H1+H2
+   *  for half-yearly orgs, Q1..Q4 for quarterly). */
+  total: number;
+  /** Row exists, PM hasn't started writing yet. */
+  pending: number;
+  /** PM saved partial work, hasn't submitted. */
+  draft: number;
+  /** Final, locked. */
+  reviewed: number;
+}
+
+export interface MissingAnnualReviewUser {
+  user_id: number;
+  full_name: string;
+  function_name: string | null;
+  designation_name: string | null;
+  mentor_name: string | null;
+}
+
+export interface MissingAnnualReviewsSummary {
+  fy_year: number | null;
+  count: number;
+  users: MissingAnnualReviewUser[];
+}
+
+export interface StalledGoal {
+  goal_id: number;
+  title: string;
+  owner_name: string;
+  mentor_name: string | null;
+  days_waiting: number;
+}
+
+export interface StalledGoalsSummary {
+  fy_year: number | null;
+  /** Number of days a goal must sit in `pending_approval` before it
+   *  counts as stalled. Echoed back by the backend so the frontend
+   *  doesn't have to duplicate the constant. */
+  threshold_days: number;
+  count: number;
+  goals: StalledGoal[];
+}
+
+export interface UnmentoredStaff {
+  user_id: number;
+  full_name: string;
+  function_name: string | null;
+  designation_name: string | null;
+}
+
+export interface MentorLoad {
+  mentor_id: number;
+  full_name: string;
+  mentee_count: number;
+}
+
+export interface MentorCoverage {
+  unmentored_staff: UnmentoredStaff[];
+  top_mentors: MentorLoad[];
+}
+
+export interface HrDashboardSummary {
+  headcount: HeadcountSummary;
+  annual_review_funnel: AnnualReviewFunnel;
+  goal_approval_funnel: GoalApprovalFunnel;
+  project_review_completion: ProjectReviewCompletion;
+  missing_annual_reviews: MissingAnnualReviewsSummary;
+  stalled_goals: StalledGoalsSummary;
+  mentor_coverage: MentorCoverage;
+  /** Distinct fiscal start years that have annual-review or annual-goal
+   *  data in the caller's org, sorted newest-first. The active FY is
+   *  always included so the dashboard's picker can offer the current
+   *  cycle even when no rows exist for it yet. */
+  available_fys: number[];
+}
+
 export const dashboardService = {
   getSummary: async (): Promise<DashboardSummary> => {
     const res = await apiClient.get<DashboardSummary>("/dashboard/summary");
+    return res.data;
+  },
+
+  /** HR-only aggregate. `fyYear` is the 4-digit fiscal start year
+   *  (e.g. 2026 for FY26-27). Sent today even though only cycle-scoped
+   *  widgets we add later will consume it — the headcount widget is a
+   *  snapshot and ignores it. */
+  getHrSummary: async (fyYear?: number): Promise<HrDashboardSummary> => {
+    const res = await apiClient.get<HrDashboardSummary>(
+      "/dashboard/hr-summary",
+      { params: fyYear !== undefined ? { fy: fyYear } : undefined },
+    );
     return res.data;
   },
 };
