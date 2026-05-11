@@ -28,14 +28,19 @@ Security Layers Applied:
     Layer 4 — Ownership:        Personal counts scoped to current_user.id
 """
 
+from datetime import datetime, timezone
+from typing import Annotated, Optional
+
 from sqlalchemy import func, Integer, cast, or_
-from fastapi import APIRouter
+from sqlalchemy.orm import joinedload
+from fastapi import APIRouter, Query
 
 from app.api.dependencies import DbSession, CurrentUser
+from app.api.routes.admin_routes import _require_hr_any
 from app.models.system_settings_models import SystemSettings
 from app.models.goal_models import Goal, GoalType, ApprovalStatus, POST_APPROVAL_STATES
 from app.models.goal_criteria_models import GoalCriterion
-from app.models.user_models import User
+from app.models.user_models import User, Role
 from app.models.annual_review_models import AnnualReview, ReviewStatus
 from app.models.project_review_models import (
     ProjectReview,
@@ -43,8 +48,34 @@ from app.models.project_review_models import (
     ProjectReviewStatus,
     EvaluatorStatus,
 )
-from app.core.cycle_utils import extract_fy_label
-from app.schemas.dashboard_schemas import DashboardSummary
+from app.core.cycle_utils import extract_fy_label, extract_fy_year
+from app.schemas.dashboard_schemas import (
+    AnnualReviewFunnel,
+    DashboardSummary,
+    GoalApprovalFunnel,
+    HeadcountByRole,
+    HeadcountSummary,
+    HrDashboardSummary,
+    MentorCoverage,
+    MentorLoad,
+    MissingAnnualReviewUser,
+    MissingAnnualReviewsSummary,
+    ProjectReviewCompletion,
+    StalledGoal,
+    StalledGoalsSummary,
+    UnmentoredStaff,
+)
+
+
+# How many top-loaded mentors to surface in the mentor-coverage widget.
+# Five fits comfortably in the card without scrolling for typical orgs.
+_TOP_MENTORS_LIMIT = 5
+
+
+# A goal in `pending_approval` is considered stalled after this many
+# days without movement. Stays a constant for now; if the threshold
+# proves arbitrary in practice we'll surface it on system settings.
+_STALL_THRESHOLD_DAYS = 7
 
 router = APIRouter()
 
@@ -264,4 +295,417 @@ def get_dashboard_summary(
         mentor_goals_pending_approval=mentor_goals_pending_approval,
         mentor_goal_reviews_pending=mentor_goal_reviews_pending,
         mentor_annual_reviews_pending=mentor_annual_reviews_pending,
+    )
+
+
+# ── HR org-wide dashboard ─────────────────────────────────────────────
+
+@router.get("/hr-summary", response_model=HrDashboardSummary)
+def get_hr_dashboard_summary(
+    db: DbSession,
+    current_user: CurrentUser,
+    fy: Annotated[Optional[int], Query()] = None,
+):
+    """
+    Aggregated HR dashboard payload — one GET, every widget fed at once.
+
+    Both HR roles (HR_MyOrg + HR_Miltenyi) can call this; gated by
+    `_require_hr_any`. The `fy` query parameter (4-digit fiscal start
+    year) is accepted today but only consumed by cycle-bound widgets
+    that will be added in later iterations — the headcount widget is a
+    point-in-time org snapshot and ignores it.
+
+    Tenant isolation: every aggregate filters by `current_user.org_id`.
+    """
+    _require_hr_any(current_user)
+
+    # ── Available FYs — derived from actual data, not a fixed window ──
+    # Take the union of FYs that have any annual review or annual goal
+    # row in this org, then include the active FY too so the picker
+    # always offers the current cycle (even if no rows exist yet).
+    settings = (
+        db.query(SystemSettings)
+        .filter(SystemSettings.org_id == current_user.org_id)
+        .first()
+    )
+    cycle_names: set[str] = set()
+    cycle_names.update(
+        row[0]
+        for row in (
+            db.query(AnnualReview.cycle_name)
+            .filter(AnnualReview.org_id == current_user.org_id)
+            .distinct()
+            .all()
+        )
+        if row[0]
+    )
+    cycle_names.update(
+        row[0]
+        for row in (
+            db.query(Goal.cycle_name)
+            .filter(
+                Goal.org_id == current_user.org_id,
+                Goal.goal_type == GoalType.ANNUAL.value,
+            )
+            .distinct()
+            .all()
+        )
+        if row[0]
+    )
+    if settings and settings.active_cycle_name:
+        cycle_names.add(settings.active_cycle_name)
+
+    available_fys: list[int] = sorted(
+        {
+            year
+            for year in (extract_fy_year(name) for name in cycle_names)
+            if year is not None
+        },
+        reverse=True,
+    )
+
+    # ── Headcount: total active + by-role breakdown ───────────────────
+    # Single GROUP BY scoped to the caller's org, skipping soft-deleted
+    # rows. Roles outside the 5-value taxonomy (shouldn't exist but cheap
+    # to guard) fall through silently.
+    role_rows = (
+        db.query(User.role, func.count(User.id))
+        .filter(
+            User.org_id == current_user.org_id,
+            User.is_deleted == False,  # noqa: E712
+        )
+        .group_by(User.role)
+        .all()
+    )
+    role_counts: dict[str, int] = dict(role_rows)
+
+    headcount = HeadcountSummary(
+        total_active=sum(role_counts.values()),
+        by_role=HeadcountByRole(
+            staff=role_counts.get(Role.STAFF.value, 0),
+            mentor=role_counts.get(Role.MENTOR.value, 0),
+            pm=role_counts.get(Role.PM.value, 0),
+            # HR chip is HR_MyOrg + HR_Miltenyi combined — the dashboard
+            # doesn't differentiate between the two HR roles on the UI.
+            hr=(
+                role_counts.get(Role.HR_MYORG.value, 0)
+                + role_counts.get(Role.HR_MILTENYI.value, 0)
+            ),
+        ),
+    )
+
+    # ── Annual Review funnel ──────────────────────────────────────────
+    # Resolve the FY scope: explicit `fy` query param wins, else fall
+    # back to the active FY from settings. If neither resolves we still
+    # return an empty funnel so the widget can render its "no data yet"
+    # state without the caller having to special-case None.
+    resolved_fy = fy
+    if resolved_fy is None and settings and settings.active_cycle_name:
+        resolved_fy = extract_fy_year(settings.active_cycle_name)
+
+    review_funnel = AnnualReviewFunnel(fy_year=resolved_fy)
+    if resolved_fy is not None:
+        # Fetch (status, cycle_name) pairs for the org and bucket in
+        # Python — cycle_name format varies ("FY26", "FY26-27") so a
+        # SQL prefix match would either miss rows or over-match. Annual-
+        # review volume is low (one row per user per FY), so a full
+        # in-memory pass is cheap.
+        org_review_rows = (
+            db.query(AnnualReview.status, AnnualReview.cycle_name)
+            .filter(AnnualReview.org_id == current_user.org_id)
+            .all()
+        )
+        status_counts: dict[str, int] = {}
+        for status_value, cycle_name in org_review_rows:
+            if extract_fy_year(cycle_name) != resolved_fy:
+                continue
+            status_counts[status_value] = status_counts.get(status_value, 0) + 1
+
+        review_funnel = AnnualReviewFunnel(
+            fy_year=resolved_fy,
+            draft=status_counts.get(ReviewStatus.DRAFT.value, 0),
+            pending_mentor=status_counts.get(ReviewStatus.PENDING_MENTOR.value, 0),
+            pending_management=status_counts.get(
+                ReviewStatus.PENDING_MANAGEMENT.value, 0
+            ),
+            completed=status_counts.get(ReviewStatus.COMPLETED.value, 0),
+            total=sum(status_counts.values()),
+        )
+
+    # ── Goal approval funnel ──────────────────────────────────────────
+    # Same FY resolution as the review funnel above. Drafts are private
+    # mentee work — never surfaced to HR. We bucket the remaining rows
+    # into three visible stages: pending_approval, changes_requested,
+    # and approved (where "approved" rolls up the literal APPROVED state
+    # plus every post-approval review state so the funnel stays a clean
+    # three-stage view).
+    goal_funnel = GoalApprovalFunnel(fy_year=resolved_fy)
+    if resolved_fy is not None:
+        org_goal_rows = (
+            db.query(Goal.approval_status, Goal.cycle_name)
+            .filter(
+                Goal.org_id == current_user.org_id,
+                Goal.goal_type == GoalType.ANNUAL.value,
+                Goal.approval_status != ApprovalStatus.DRAFT.value,
+            )
+            .all()
+        )
+        goal_status_counts: dict[str, int] = {}
+        for status_value, cycle_name in org_goal_rows:
+            if extract_fy_year(cycle_name) != resolved_fy:
+                continue
+            goal_status_counts[status_value] = (
+                goal_status_counts.get(status_value, 0) + 1
+            )
+
+        approved_count = sum(
+            goal_status_counts.get(s, 0) for s in POST_APPROVAL_STATES
+        )
+        pending_count = goal_status_counts.get(
+            ApprovalStatus.PENDING_APPROVAL.value, 0
+        )
+        changes_requested_count = goal_status_counts.get(
+            ApprovalStatus.CHANGES_REQUESTED.value, 0
+        )
+
+        goal_funnel = GoalApprovalFunnel(
+            fy_year=resolved_fy,
+            pending_approval=pending_count,
+            changes_requested=changes_requested_count,
+            approved=approved_count,
+            total=pending_count + changes_requested_count + approved_count,
+        )
+
+    # ── Project review completion ─────────────────────────────────────
+    # Aggregated across every cycle within the selected FY (H1+H2 for
+    # half-yearly orgs, Q1..Q4 for quarterly). Soft-deleted reviews are
+    # excluded — they represent assignments that were ended before the
+    # cycle closed and the row stayed around for audit but isn't part
+    # of the active completion picture.
+    project_review_completion = ProjectReviewCompletion(fy_year=resolved_fy)
+    if resolved_fy is not None:
+        org_pr_rows = (
+            db.query(ProjectReview.status, ProjectReview.cycle)
+            .filter(
+                ProjectReview.org_id == current_user.org_id,
+                ProjectReview.is_deleted == False,  # noqa: E712
+            )
+            .all()
+        )
+        pr_status_counts: dict[str, int] = {}
+        for status_value, cycle_label in org_pr_rows:
+            if extract_fy_year(cycle_label) != resolved_fy:
+                continue
+            pr_status_counts[status_value] = (
+                pr_status_counts.get(status_value, 0) + 1
+            )
+
+        pending_count = pr_status_counts.get(ProjectReviewStatus.PENDING.value, 0)
+        draft_count = pr_status_counts.get(ProjectReviewStatus.DRAFT.value, 0)
+        reviewed_count = pr_status_counts.get(ProjectReviewStatus.REVIEWED.value, 0)
+
+        project_review_completion = ProjectReviewCompletion(
+            fy_year=resolved_fy,
+            pending=pending_count,
+            draft=draft_count,
+            reviewed=reviewed_count,
+            total=pending_count + draft_count + reviewed_count,
+        )
+
+    # ── Missing annual reviews — the silent chase list ────────────────
+    # "Missing" = Staff users with NO AnnualReview row at all for the
+    # resolved FY. Mentees in DRAFT status are visible in the funnel
+    # widget's draft bucket, so they aren't repeated here — this card's
+    # purpose is to surface the population that has zero engagement.
+    # PMs / Mentors / HR are never rated in this system, so they're
+    # excluded from the "expected to have a review" denominator.
+    missing_reviews = MissingAnnualReviewsSummary(fy_year=resolved_fy)
+    if resolved_fy is not None:
+        reviewed_user_ids = {
+            row[0]
+            for row in (
+                db.query(AnnualReview.user_id, AnnualReview.cycle_name)
+                .filter(AnnualReview.org_id == current_user.org_id)
+                .all()
+            )
+            if extract_fy_year(row[1]) == resolved_fy
+        }
+
+        staff_query = (
+            db.query(User)
+            .options(
+                joinedload(User.function),
+                joinedload(User.designation),
+                joinedload(User.mentor),
+            )
+            .filter(
+                User.org_id == current_user.org_id,
+                User.role == Role.STAFF.value,
+                User.is_deleted == False,  # noqa: E712
+            )
+        )
+        if reviewed_user_ids:
+            staff_query = staff_query.filter(~User.id.in_(reviewed_user_ids))
+        missing_staff = staff_query.order_by(User.full_name.asc()).all()
+
+        missing_reviews = MissingAnnualReviewsSummary(
+            fy_year=resolved_fy,
+            count=len(missing_staff),
+            users=[
+                MissingAnnualReviewUser(
+                    user_id=u.id,
+                    full_name=u.full_name,
+                    function_name=u.function.name if u.function else None,
+                    designation_name=(
+                        u.designation.name if u.designation else None
+                    ),
+                    mentor_name=u.mentor.full_name if u.mentor else None,
+                )
+                for u in missing_staff
+            ],
+        )
+
+    # ── Stalled goal approvals — mentor-nudge chase list ──────────────
+    # Annual goals stuck in PENDING_APPROVAL longer than the threshold
+    # for the resolved FY. Once submitted the employee can't edit, so
+    # `updated_at` is effectively the submission timestamp (falling
+    # back to `created_at` for rows that haven't been touched since
+    # insert — onupdate doesn't fire then). Sorted oldest-first so the
+    # most-stalled goals surface at the top of the list.
+    stalled_goals = StalledGoalsSummary(
+        fy_year=resolved_fy, threshold_days=_STALL_THRESHOLD_DAYS
+    )
+    if resolved_fy is not None:
+        now_utc = datetime.now(timezone.utc)
+        pending_goals = (
+            db.query(Goal)
+            .options(joinedload(Goal.owner), joinedload(Goal.manager))
+            .filter(
+                Goal.org_id == current_user.org_id,
+                Goal.goal_type == GoalType.ANNUAL.value,
+                Goal.approval_status == ApprovalStatus.PENDING_APPROVAL.value,
+            )
+            .all()
+        )
+
+        stalled_rows: list[tuple[Goal, int]] = []
+        for g in pending_goals:
+            if extract_fy_year(g.cycle_name) != resolved_fy:
+                continue
+            ts = g.updated_at or g.created_at
+            if ts is None:
+                continue
+            # SQLite hands back naive datetimes; treat as UTC so the
+            # subtraction stays timezone-aware everywhere.
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            days_waiting = (now_utc - ts).days
+            if days_waiting >= _STALL_THRESHOLD_DAYS:
+                stalled_rows.append((g, days_waiting))
+
+        stalled_rows.sort(key=lambda pair: pair[1], reverse=True)
+
+        stalled_goals = StalledGoalsSummary(
+            fy_year=resolved_fy,
+            threshold_days=_STALL_THRESHOLD_DAYS,
+            count=len(stalled_rows),
+            goals=[
+                StalledGoal(
+                    goal_id=g.id,
+                    title=g.title,
+                    owner_name=g.owner.full_name if g.owner else "—",
+                    mentor_name=g.manager.full_name if g.manager else None,
+                    days_waiting=days,
+                )
+                for g, days in stalled_rows
+            ],
+        )
+
+    # ── Mentor coverage — pairing health snapshot ─────────────────────
+    # Two insights bundled together: unmentored Staff (operationally
+    # blocked from goals/reviews) and the most-loaded mentors (so HR
+    # can spot overload before assigning new Staff).
+    # Not FY-scoped — this is a "right now" picture of the org.
+
+    # Fetch all active Staff with their mentor relationship eager-loaded
+    # so we can check (a) mentor exists, (b) mentor isn't deactivated.
+    all_staff = (
+        db.query(User)
+        .options(
+            joinedload(User.function),
+            joinedload(User.designation),
+            joinedload(User.mentor),
+        )
+        .filter(
+            User.org_id == current_user.org_id,
+            User.role == Role.STAFF.value,
+            User.is_deleted == False,  # noqa: E712
+        )
+        .order_by(User.full_name.asc())
+        .all()
+    )
+
+    unmentored = [
+        UnmentoredStaff(
+            user_id=s.id,
+            full_name=s.full_name,
+            function_name=s.function.name if s.function else None,
+            designation_name=s.designation.name if s.designation else None,
+        )
+        for s in all_staff
+        if s.mentor_id is None or s.mentor is None or s.mentor.is_deleted
+    ]
+
+    # Active mentee counts per mentor — only counts Staff whose mentor
+    # is still active (so a dangling FK to a deactivated mentor doesn't
+    # inflate anyone's load).
+    mentee_count_rows = (
+        db.query(User.mentor_id, func.count(User.id))
+        .filter(
+            User.org_id == current_user.org_id,
+            User.role == Role.STAFF.value,
+            User.is_deleted == False,  # noqa: E712
+            User.mentor_id.isnot(None),
+        )
+        .group_by(User.mentor_id)
+        .all()
+    )
+    counts_by_mentor: dict[int, int] = dict(mentee_count_rows)
+    if counts_by_mentor:
+        active_mentor_rows = (
+            db.query(User.id, User.full_name)
+            .filter(
+                User.id.in_(counts_by_mentor.keys()),
+                User.is_deleted == False,  # noqa: E712
+            )
+            .all()
+        )
+        top_mentors = sorted(
+            (
+                MentorLoad(
+                    mentor_id=mid,
+                    full_name=name,
+                    mentee_count=counts_by_mentor[mid],
+                )
+                for mid, name in active_mentor_rows
+            ),
+            key=lambda m: (-m.mentee_count, m.full_name.lower()),
+        )[:_TOP_MENTORS_LIMIT]
+    else:
+        top_mentors = []
+
+    mentor_coverage = MentorCoverage(
+        unmentored_staff=unmentored,
+        top_mentors=top_mentors,
+    )
+
+    return HrDashboardSummary(
+        headcount=headcount,
+        annual_review_funnel=review_funnel,
+        goal_approval_funnel=goal_funnel,
+        project_review_completion=project_review_completion,
+        missing_annual_reviews=missing_reviews,
+        stalled_goals=stalled_goals,
+        mentor_coverage=mentor_coverage,
+        available_fys=available_fys,
     )

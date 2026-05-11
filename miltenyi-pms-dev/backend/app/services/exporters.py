@@ -25,13 +25,13 @@ Design notes:
 
 from __future__ import annotations
 
-import re
 from typing import Iterable, Optional
 
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.worksheet.worksheet import Worksheet
 from sqlalchemy.orm import Session, joinedload
 
+from app.core.cycle_utils import extract_fy_year as _extract_fy_year
 from app.models.annual_review_models import AnnualReview
 from app.models.goal_models import Goal
 from app.models.goal_mentor_review_models import GoalMentorReview
@@ -77,30 +77,8 @@ def _auto_size_columns(ws: Worksheet, max_width: int = 60) -> None:
 
 
 # ── FY extraction ─────────────────────────────────────────────────────
-
-_FY_TOKEN = re.compile(r"FY(\d{2,4})", re.IGNORECASE)
-
-
-def _extract_fy_year(cycle_name: Optional[str]) -> Optional[int]:
-    """Extract the 4-digit FY start year from a cycle_name string.
-
-    Accepts: "FY26", "FY26-27", "FY2026-27", "H1 FY26-27", "H2 2026" (legacy).
-    Returns None when the string has no recognisable FY token. Two-digit
-    forms are interpreted as 2000-relative (FY26 → 2026), matching the
-    convention used by goal_routes._goal_fy_year.
-    """
-    if not cycle_name:
-        return None
-    match = _FY_TOKEN.search(cycle_name)
-    if match:
-        head = match.group(1).split("-", 1)[0]
-        if head.isdigit():
-            return 2000 + int(head) if len(head) <= 2 else int(head)
-    # Legacy "H1 2026" / "H2 2026"
-    for token in cycle_name.upper().split():
-        if token.isdigit() and len(token) == 4:
-            return int(token)
-    return None
+# `_extract_fy_year` is imported from `app.core.cycle_utils` so it stays
+# in sync with the dashboard route's available-FY computation.
 
 
 def _passes_fy_filter(fy_year: Optional[int], fy_filter: Optional[set[int]]) -> bool:

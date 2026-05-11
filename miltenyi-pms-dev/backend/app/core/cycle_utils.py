@@ -251,6 +251,33 @@ def extract_fy_label(cycle_name: str) -> str:
     return cycle_name  # Fallback: return as-is if pattern not found
 
 
+import re as _re
+
+_FY_TOKEN_RE = _re.compile(r"FY(\d{2,4})", _re.IGNORECASE)
+
+
+def extract_fy_year(cycle_name: str | None) -> int | None:
+    """Pull the 4-digit fiscal start year out of any cycle name string.
+
+    Accepts the same shapes `extract_fy_label` does, plus the legacy
+    "H1 2026" / "H2 2026" form. Two-digit FY tokens are interpreted as
+    2000-relative (FY26 → 2026), matching the convention everywhere
+    else in the codebase. Returns None when no recognisable token is
+    present (or the input is None / empty).
+    """
+    if not cycle_name:
+        return None
+    match = _FY_TOKEN_RE.search(cycle_name)
+    if match:
+        head = match.group(1).split("-", 1)[0]
+        if head.isdigit():
+            return 2000 + int(head) if len(head) <= 2 else int(head)
+    for token in cycle_name.upper().split():
+        if token.isdigit() and len(token) == 4:
+            return int(token)
+    return None
+
+
 def get_current_cycle_info(current_date: date, cycle_type: CycleType, fiscal_start_month: int = 4) -> str:
     """
     Returns the cycle name in the canonical format used across the app:

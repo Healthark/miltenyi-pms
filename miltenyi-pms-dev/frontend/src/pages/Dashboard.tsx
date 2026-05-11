@@ -1,5 +1,6 @@
 import { useAuth } from "@/hooks/useAuth";
 import { Construction } from "lucide-react";
+import { HrDashboard } from "@/pages/HrDashboard";
 
 /**
  * Dashboard — role-aware "coming soon" placeholder.
@@ -54,6 +55,13 @@ const FALLBACK: RolePlaceholder = {
 
 export function Dashboard() {
   const { user } = useAuth();
+
+  // HR roles get the org-wide rollup surface. Other roles keep the
+  // placeholder until their per-role dashboards are designed.
+  if (user?.role === "HR_MyOrg" || user?.role === "HR_Miltenyi") {
+    return <HrDashboard />;
+  }
+
   const placeholder = (user && ROLE_PLACEHOLDERS[user.role]) ?? FALLBACK;
   const firstName = user?.full_name?.split(" ")[0] ?? "there";
 
