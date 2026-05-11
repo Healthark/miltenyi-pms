@@ -47,7 +47,7 @@ import {
   TableSkeleton,
 } from "@/components/project-reviews/MyReviewsSkeletons";
 import { SortableHeader } from "@/components/SortableHeader";
-import { compareValues, type SortKind, type SortState } from "@/utils/sort";
+import { compareValues, type SortKind, type SortState, type SortValue } from "@/utils/sort";
 
 type ActiveTab = "my" | "primary" | "secondary" | "mentees" | "all-reviews";
 type ViewMode = "grid" | "table";
@@ -67,7 +67,7 @@ type MyReviewsSortKey =
 
 const MY_REVIEWS_SORT_CONFIG: Record<
   MyReviewsSortKey,
-  { kind: SortKind; get: (c: MyProjectCard) => unknown }
+  { kind: SortKind; get: (c: MyProjectCard) => SortValue }
 > = {
   project_name:      { kind: "alpha",   get: (c) => c.project_name },
   project_code:      { kind: "natural", get: (c) => c.project_code },
@@ -89,7 +89,7 @@ type ReadOnlySortKey =
 
 const READ_ONLY_SORT_CONFIG: Record<
   ReadOnlySortKey,
-  { kind: SortKind; get: (r: ProjectReviewResponse) => unknown }
+  { kind: SortKind; get: (r: ProjectReviewResponse) => SortValue }
 > = {
   employee_name:     { kind: "alpha",   get: (r) => r.employee_name },
   project_name:      { kind: "alpha",   get: (r) => r.project_name },

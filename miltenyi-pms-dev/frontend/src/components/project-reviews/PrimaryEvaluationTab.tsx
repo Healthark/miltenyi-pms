@@ -24,7 +24,7 @@ import { getErrorMessage } from "@/utils/errors";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
 import { useToast } from "@/hooks/useToast";
 import { SortableHeader } from "@/components/SortableHeader";
-import { compareValues, type SortKind, type SortState } from "@/utils/sort";
+import { compareValues, type SortKind, type SortState, type SortValue } from "@/utils/sort";
 import { EvalModal } from "@/components/project-reviews/EvalModal";
 import { PerformanceRatingBadge } from "@/components/reviews/PerformanceRatingBadge";
 
@@ -57,7 +57,7 @@ interface PrimaryEvalRow {
   has_draft_content: boolean;
 }
 
-const EVAL_SORT_CONFIG: Record<EvalSortKey, { kind: SortKind; get: (r: PrimaryEvalRow) => unknown }> = {
+const EVAL_SORT_CONFIG: Record<EvalSortKey, { kind: SortKind; get: (r: PrimaryEvalRow) => SortValue }> = {
   employee_name:     { kind: "alpha",   get: (r) => r.employee_name },
   project_name:      { kind: "alpha",   get: (r) => r.project_name },
   cycle:             { kind: "cycle",   get: (r) => r.cycle },

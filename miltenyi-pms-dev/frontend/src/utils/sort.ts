@@ -22,6 +22,11 @@
 export type SortDirection = "asc" | "desc";
 export type SortKind = "alpha" | "natural" | "numeric" | "cycle";
 
+/** The set of value shapes our table columns ever produce. Tighter than
+ *  `unknown` — bans accidentally passing an object (which would stringify
+ *  to "[object Object]" and silently break the sorted order). */
+export type SortValue = string | number | boolean | null | undefined;
+
 export interface SortState<K extends string = string> {
   key: K;
   direction: SortDirection;
@@ -53,13 +58,56 @@ function cycleOrderKey(value: string): [number, number] {
   return [year, period];
 }
 
+// Per-kind comparators. Each one assumes its inputs are non-empty —
+// the empty-value short-circuit lives in `compareValues` so each
+// comparator stays small and single-purpose. Splitting them keeps the
+// main dispatcher readable and lets each kind's edge cases (NaN for
+// numeric, FY parsing for cycle, etc.) live next to the logic that
+// owns them.
+
+function compareNumeric(a: SortValue, b: SortValue): number {
+  const na = Number(a);
+  const nb = Number(b);
+  const aValid = Number.isFinite(na);
+  const bValid = Number.isFinite(nb);
+  // Happy path first — both convert to a finite number, do the maths.
+  // Then handle each unhappy case explicitly: if only one is invalid,
+  // the invalid one sorts after the valid one (positive return =
+  // "a goes after b"). Both invalid → equal.
+  if (aValid && bValid) return na - nb;
+  if (aValid) return -1;
+  if (bValid) return 1;
+  return 0;
+}
+
+function compareNatural(a: SortValue, b: SortValue): number {
+  return NATURAL_COLLATOR.compare(`${a}`, `${b}`);
+}
+
+function compareCycle(a: SortValue, b: SortValue): number {
+  const [ay, ap] = cycleOrderKey(`${a}`);
+  const [by, bp] = cycleOrderKey(`${b}`);
+  return ay !== by ? ay - by : ap - bp;
+}
+
+function compareAlpha(a: SortValue, b: SortValue): number {
+  return `${a}`.localeCompare(`${b}`, undefined, { sensitivity: "base" });
+}
+
+const COMPARERS: Record<SortKind, (a: SortValue, b: SortValue) => number> = {
+  numeric: compareNumeric,
+  natural: compareNatural,
+  cycle: compareCycle,
+  alpha: compareAlpha,
+};
+
 /**
  * Compare two values for a given column kind + direction.
  * Null / undefined / "" values always sort to the bottom (independent of direction).
  */
 export function compareValues(
-  a: unknown,
-  b: unknown,
+  a: SortValue,
+  b: SortValue,
   kind: SortKind,
   direction: SortDirection,
 ): number {
@@ -69,26 +117,7 @@ export function compareValues(
   if (aEmpty) return 1;
   if (bEmpty) return -1;
 
-  let cmp: number;
-  if (kind === "numeric") {
-    const na = Number(a);
-    const nb = Number(b);
-    const aNum = Number.isFinite(na);
-    const bNum = Number.isFinite(nb);
-    if (!aNum && !bNum) cmp = 0;
-    else if (!aNum) cmp = 1;
-    else if (!bNum) cmp = -1;
-    else cmp = na - nb;
-  } else if (kind === "natural") {
-    cmp = NATURAL_COLLATOR.compare(String(a), String(b));
-  } else if (kind === "cycle") {
-    const [ay, ap] = cycleOrderKey(String(a));
-    const [by, bp] = cycleOrderKey(String(b));
-    cmp = ay !== by ? ay - by : ap - bp;
-  } else {
-    cmp = String(a).localeCompare(String(b), undefined, { sensitivity: "base" });
-  }
-
+  const cmp = COMPARERS[kind](a, b);
   return direction === "asc" ? cmp : -cmp;
 }
 

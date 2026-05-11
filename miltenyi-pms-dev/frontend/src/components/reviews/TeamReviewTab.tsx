@@ -27,7 +27,7 @@ import { ReviewStatusBadge } from "@/components/reviews/ReviewStatusBadge";
 import { PerformanceRatingBadge } from "@/components/reviews/PerformanceRatingBadge";
 import { AnnualReviewDetailModal } from "@/components/reviews/AnnualReviewDetailModal";
 import { SortableHeader } from "@/components/SortableHeader";
-import { compareValues, type SortKind, type SortState } from "@/utils/sort";
+import { compareValues, type SortKind, type SortState, type SortValue } from "@/utils/sort";
 import { extractFyToken, formatFyLabel } from "@/utils/fy";
 
 type ViewMode = "grid" | "table";
@@ -41,7 +41,7 @@ type SortKey =
 
 const SORT_CONFIG: Record<
   SortKey,
-  { kind: SortKind; get: (r: MenteeAnnualReview) => unknown }
+  { kind: SortKind; get: (r: MenteeAnnualReview) => SortValue }
 > = {
   employee_name:                 { kind: "alpha",   get: (r) => r.employee_name },
   cycle_name:                    { kind: "cycle",   get: (r) => r.cycle_name },

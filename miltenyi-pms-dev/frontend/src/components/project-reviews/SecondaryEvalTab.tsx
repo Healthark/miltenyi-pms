@@ -20,7 +20,7 @@ import { getErrorMessage } from "@/utils/errors";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/useToast";
 import { SortableHeader } from "@/components/SortableHeader";
-import { compareValues, type SortKind, type SortState } from "@/utils/sort";
+import { compareValues, type SortKind, type SortState, type SortValue } from "@/utils/sort";
 
 type ViewMode = "grid" | "table";
 
@@ -255,7 +255,7 @@ export function SecondaryEvalTab() {
 
   const SECONDARY_SORT_CONFIG: Record<
     SecondarySortKey,
-    { kind: SortKind; get: (r: ProjectReviewResponse) => unknown }
+    { kind: SortKind; get: (r: ProjectReviewResponse) => SortValue }
   > = {
     employee_name:     { kind: "alpha", get: (r) => r.employee_name },
     project_name:      { kind: "alpha", get: (r) => r.project_name },

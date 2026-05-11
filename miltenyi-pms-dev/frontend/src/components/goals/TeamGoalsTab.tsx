@@ -31,7 +31,7 @@ import { GoalMentorReviewModal } from "@/components/goals/GoalMentorReviewModal"
 import { SelfReviewCycleMenu } from "@/components/goals/SelfReviewCycleMenu";
 import { BulkApproveModal } from "@/components/goals/BulkApproveModal";
 import { SortableHeader } from "@/components/SortableHeader";
-import { compareValues, type SortKind, type SortState } from "@/utils/sort";
+import { compareValues, type SortKind, type SortState, type SortValue } from "@/utils/sort";
 import { formatFyYearSpan } from "@/utils/fy";
 import { halfDisplayLabel, isPostApproved } from "@/utils/goalStatus";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
@@ -165,7 +165,7 @@ type TeamGoalsSortKey = "title" | "owner_name" | "fy_year" | "approval_status";
 
 const TEAM_GOALS_SORT_CONFIG: Record<
   TeamGoalsSortKey,
-  { kind: SortKind; get: (g: TeamGoal) => unknown }
+  { kind: SortKind; get: (g: TeamGoal) => SortValue }
 > = {
   title:           { kind: "alpha",   get: (g) => g.title },
   owner_name:      { kind: "alpha",   get: (g) => g.owner_name },

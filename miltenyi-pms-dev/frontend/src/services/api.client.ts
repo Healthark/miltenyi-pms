@@ -54,14 +54,18 @@ function forceLogout(): void {
   // Ask the server to clear the HttpOnly cookies it set. Fire-and-forget —
   // a failure here doesn't change the fact that we want the local session
   // gone. Use `fetch` (not apiClient) to avoid being re-intercepted.
-  try {
-    void fetch(`${apiClient.defaults.baseURL}/auth/logout`, {
-      method: "POST",
-      credentials: "include",
-    });
-  } catch {
+  //
+  // `.catch()` (not try/catch) is what handles the failure: try/catch
+  // only traps synchronous throws, and the only thing that can fail
+  // here is the async network round-trip. We genuinely don't care if
+  // the server-side cookie clear succeeds — the local-session purge
+  // below is the part that matters for UX.
+  fetch(`${apiClient.defaults.baseURL}/auth/logout`, {
+    method: "POST",
+    credentials: "include",
+  }).catch(() => {
     /* best effort */
-  }
+  });
   localStorage.removeItem("user");
   if (!PUBLIC_AUTH_PATHS.has(globalThis.location.pathname)) {
     globalThis.location.href = "/login";
