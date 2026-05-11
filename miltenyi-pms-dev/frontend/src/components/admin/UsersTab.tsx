@@ -3,6 +3,7 @@ import { Search, Pencil, UserX, UserCheck } from "lucide-react";
 import type { UserResponse } from "@/services/admin.service";
 import { StatusBadge } from "@/components/admin/StatusBadge";
 import { RoleBadge } from "@/components/admin/RoleBadge";
+import { ExportExcelButton } from "@/components/admin/ExportExcelButton";
 import { SortableHeader } from "@/components/SortableHeader";
 import { useAuth } from "@/hooks/useAuth";
 import {
@@ -224,6 +225,9 @@ export function UsersTab({
             </select>
           </div>
         )}
+        <div className="ml-auto">
+          <ExportExcelButton kind="users" />
+        </div>
       </div>
 
       {/* Table */}

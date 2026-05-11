@@ -9,6 +9,7 @@ import { TeamReviewTab } from "@/components/reviews/TeamReviewTab";
 import { SelfReviewFormModal } from "@/components/reviews/SelfReviewFormModal";
 import { PerformanceRatingBadge } from "@/components/reviews/PerformanceRatingBadge";
 import { StringCombobox } from "@/components/common/StringCombobox";
+import { ExportExcelButton } from "@/components/admin/ExportExcelButton";
 import { SortableHeader } from "@/components/SortableHeader";
 import { compareValues, type SortKind, type SortState, type SortValue } from "@/utils/sort";
 import {
@@ -376,7 +377,8 @@ function AllReviewsTab({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center gap-4 flex-wrap">
+      <div className="flex items-start justify-between gap-4">
+       <div className="flex items-center gap-4 flex-wrap flex-1 min-w-0">
         {/* Employee filter — typeable combobox styled like the PM picker
             in ProjectModal. Typing narrows the suggestion list; clicking
             an option commits the filter. Click the X to clear. */}
@@ -476,6 +478,10 @@ function AllReviewsTab({
         <span className="text-xs text-text-muted">
           {filtered.length} of {reviews.length}
         </span>
+       </div>
+       <div className="shrink-0">
+         <ExportExcelButton kind="annual-reviews" />
+       </div>
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-border">

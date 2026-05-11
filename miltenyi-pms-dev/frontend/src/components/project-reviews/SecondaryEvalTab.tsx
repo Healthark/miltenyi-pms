@@ -20,6 +20,7 @@ import { getErrorMessage } from "@/utils/errors";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/useToast";
 import { SortableHeader } from "@/components/SortableHeader";
+import { StringCombobox } from "@/components/common/StringCombobox";
 import { compareValues, type SortKind, type SortState, type SortValue } from "@/utils/sort";
 
 type ViewMode = "grid" | "table";
@@ -206,9 +207,13 @@ export function SecondaryEvalTab() {
   const [isLoading, setIsLoading] = useState(true);
 
   const [viewMode, setViewMode] = useState<ViewMode>("table");
-  const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [employeeFilter, setEmployeeFilter] = useState<string>("all");
+  const [cycleFilter, setCycleFilter] = useState<string>("all");
+  // Employee + Project use typeable StringCombobox — empty string = no filter.
+  // Replaced the standalone search box; the comboboxes type-narrow over the
+  // same fields the search used to scan (employee name, project name).
+  const [employeeFilter, setEmployeeFilter] = useState<string>("");
+  const [projectFilter, setProjectFilter] = useState<string>("");
   const [sort, setSort] = useState<SortState<SecondarySortKey> | null>(null);
 
   const [impactTarget, setImpactTarget] = useState<ProjectReviewResponse | null>(null);
@@ -233,23 +238,26 @@ export function SecondaryEvalTab() {
   const getMySubmission = (review: ProjectReviewResponse) =>
     review.secondary_evaluations?.find((ev) => ev.evaluator_id === currentUserId);
 
-  // Dropdown options
-  const availableEmployees = Array.from(new Set(reviews.map((r) => r.employee_name).filter(Boolean)));
+  // Dropdown options — derived from currently loaded reviews so the lists
+  // never offer a value that wouldn't match anything.
+  const availableEmployees = Array.from(
+    new Set(reviews.map((r) => r.employee_name).filter(Boolean)),
+  ).sort();
+  const availableProjects = Array.from(
+    new Set(reviews.map((r) => r.project_name).filter(Boolean)),
+  ).sort();
+  const availableCycles = Array.from(
+    new Set(reviews.map((r) => r.cycle).filter(Boolean)),
+  ).sort((a, b) => b.localeCompare(a));
 
   // Filter
   const filteredReviews = reviews.filter((r) => {
     const isSubmitted = !!getMySubmission(r);
     if (statusFilter === "pending" && isSubmitted) return false;
     if (statusFilter === "submitted" && !isSubmitted) return false;
-    if (employeeFilter !== "all" && r.employee_name !== employeeFilter) return false;
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      if (
-        !r.employee_name.toLowerCase().includes(q) &&
-        !r.project_name.toLowerCase().includes(q) &&
-        !r.project_code.toLowerCase().includes(q)
-      ) return false;
-    }
+    if (employeeFilter && r.employee_name !== employeeFilter) return false;
+    if (projectFilter && r.project_name !== projectFilter) return false;
+    if (cycleFilter !== "all" && r.cycle !== cycleFilter) return false;
     return true;
   });
 
@@ -324,19 +332,57 @@ export function SecondaryEvalTab() {
       {/* Toolbar */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3 flex-wrap">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-text-muted pointer-events-none" />
-            <input
-              type="text"
-              placeholder="Search employee or project..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="rounded-lg border border-border bg-white pl-9 pr-3 py-1.5 text-[13px] text-text-main placeholder:text-text-muted outline-none focus:border-brand w-56"
+          {/* Employee filter — typeable */}
+          <div className="flex items-center gap-2">
+            <label htmlFor="sec-employee-filter" className="text-[11px] font-bold uppercase tracking-wider text-text-muted">
+              Employee
+            </label>
+            <StringCombobox
+              id="sec-employee-filter"
+              options={availableEmployees}
+              value={employeeFilter}
+              onChange={setEmployeeFilter}
+              placeholder="Type a name…"
             />
           </div>
+
+          {/* Project filter — typeable */}
           <div className="flex items-center gap-2">
-            <label className="text-[11px] font-bold uppercase tracking-wider text-text-muted">Status</label>
+            <label htmlFor="sec-project-filter" className="text-[11px] font-bold uppercase tracking-wider text-text-muted">
+              Project
+            </label>
+            <StringCombobox
+              id="sec-project-filter"
+              options={availableProjects}
+              value={projectFilter}
+              onChange={setProjectFilter}
+              placeholder="Type a project…"
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label htmlFor="sec-cycle-filter" className="text-[11px] font-bold uppercase tracking-wider text-text-muted">
+              Cycle
+            </label>
             <select
+              id="sec-cycle-filter"
+              value={cycleFilter}
+              onChange={(e) => setCycleFilter(e.target.value)}
+              className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand min-w-[120px] cursor-pointer"
+            >
+              <option value="all">All</option>
+              {availableCycles.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label htmlFor="sec-status-filter" className="text-[11px] font-bold uppercase tracking-wider text-text-muted">
+              Status
+            </label>
+            <select
+              id="sec-status-filter"
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
               className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand min-w-[110px] cursor-pointer"
@@ -344,21 +390,6 @@ export function SecondaryEvalTab() {
               <option value="all">All</option>
               <option value="pending">Pending</option>
               <option value="submitted">Submitted</option>
-            </select>
-          </div>
-
-          {/* Employee filter */}
-          <div className="flex items-center gap-2">
-            <label className="text-[11px] font-bold uppercase tracking-wider text-text-muted">Employee</label>
-            <select
-              value={employeeFilter}
-              onChange={(e) => setEmployeeFilter(e.target.value)}
-              className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand min-w-[130px] cursor-pointer"
-            >
-              <option value="all">All</option>
-              {availableEmployees.map((e) => (
-                <option key={e} value={e}>{e}</option>
-              ))}
             </select>
           </div>
         </div>
