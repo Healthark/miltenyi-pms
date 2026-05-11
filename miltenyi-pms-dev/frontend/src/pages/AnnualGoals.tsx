@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, Fragment } from "react";
 import {
   Plus, Target, Lock, Search,
-  LayoutGrid, Table2, ChevronDown, ChevronUp, BookOpen,
+  LayoutGrid, Table2, ChevronDown, BookOpen,
   Pencil, SendHorizonal, Link, MessageSquare,
-  UserCircle,
+  UserCircle, Info,
 } from "lucide-react";
 import {
   goalService,
@@ -29,6 +29,7 @@ import { SelfReviewCycleMenu } from "@/components/goals/SelfReviewCycleMenu";
 import { TeamGoalsTab } from "@/components/goals/TeamGoalsTab";
 import { ApprovalStatusBadge } from "@/components/goals/ApprovalStatusBadge";
 import { CriteriaChecklist } from "@/components/goals/CriteriaChecklist";
+import { RoleExpectationsModal } from "@/components/goals/RoleExpectationsModal";
 import { StringCombobox } from "@/components/common/StringCombobox";
 import { SortableHeader } from "@/components/SortableHeader";
 import { compareValues, type SortKind, type SortState, type SortValue } from "@/utils/sort";
@@ -151,11 +152,6 @@ function recomputeProgress(criteria: Criterion[]): number {
   const completed = criteria.filter((c) => c.is_completed).length;
   return Math.round((completed / criteria.length) * 100);
 }
-
-const ROLE_EXP_FIELDS: { expKey: keyof UserRoleExpectation; label: string }[] = [
-  { expKey: "exp_firm_growth",       label: "Firm Growth" },
-  { expKey: "exp_competency_skills", label: "Competency & Skills" },
-];
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -574,41 +570,29 @@ export function AnnualGoals() {
           {/* ── My Goals tab ── */}
           {isStaff && activeTab === "my" && (
             <div className="space-y-4">
-              {/* Role expectations — single collapsible container, all competencies */}
+              {/* Role expectations — button-triggered modal so the reader
+                  sees all eight competencies at full width, not just a
+                  hard-coded subset inside an inline accordion. */}
               {roleExpectation && (
-                <div className="rounded-lg border border-border overflow-hidden">
+                <div className="flex items-center justify-between rounded-lg border border-blue-100 bg-blue-50/40 px-4 py-2.5">
+                  <span className="flex items-center gap-2 text-[13px] text-text-main">
+                    <BookOpen
+                      className="h-3.5 w-3.5 text-blue-600 shrink-0"
+                      aria-hidden="true"
+                    />
+                    <span>
+                      Reference your role expectations while writing or
+                      reviewing your goals.
+                    </span>
+                  </span>
                   <button
                     type="button"
-                    onClick={() => setRoleExpectationsOpen((v) => !v)}
-                    className="flex w-full items-center justify-between px-4 py-2.5 bg-blue-50/50 hover:bg-blue-50/80 transition-colors"
+                    onClick={() => setRoleExpectationsOpen(true)}
+                    className="flex items-center gap-1.5 rounded-lg border border-blue-200 bg-white px-3 py-1.5 text-[12px] font-medium text-blue-700 hover:bg-blue-50 transition-colors shrink-0"
                   >
-                    <span className="flex items-center gap-1.5 text-xs font-semibold text-text-main">
-                      <BookOpen className="h-3.5 w-3.5 text-blue-600 shrink-0" />
-                      Your Role Expectations
-                    </span>
-                    {roleExpectationsOpen
-                      ? <ChevronUp className="h-3.5 w-3.5 text-text-muted shrink-0" />
-                      : <ChevronDown className="h-3.5 w-3.5 text-text-muted shrink-0" />}
+                    <Info className="h-3.5 w-3.5" aria-hidden="true" />
+                    View Role Expectations
                   </button>
-                  {roleExpectationsOpen && (
-                    <div className="px-4 py-3 space-y-3 bg-blue-50/20 border-t border-border">
-                      {ROLE_EXP_FIELDS.map(({ expKey, label }) => {
-                        const text = roleExpectation[expKey] as string | null | undefined;
-                        if (!text) return null;
-                        return (
-                          <div key={expKey}>
-                            <p className="text-[11px] font-semibold text-text-main mb-0.5">{label}</p>
-                            <p className="text-xs text-text-muted whitespace-pre-wrap leading-relaxed">
-                              {text.replace(/ \| /g, "\n• ")}
-                            </p>
-                          </div>
-                        );
-                      })}
-                      <p className="text-[10px] text-text-muted pt-1 border-t border-border">
-                        {roleExpectation.function_name} · {roleExpectation.designation_name}
-                      </p>
-                    </div>
-                  )}
                 </div>
               )}
 
@@ -881,6 +865,16 @@ export function AnnualGoals() {
           isSaving={isSelfReviewSaving}
           isDraftSaving={isSelfReviewDraftSaving}
           error={selfReviewError}
+        />
+      )}
+
+      {/* Role expectations modal — opened by the "View Role Expectations"
+          button on the My Goals tab. Guarded on both open-state and
+          loaded data so it never renders with a missing expectation. */}
+      {roleExpectationsOpen && roleExpectation && (
+        <RoleExpectationsModal
+          expectation={roleExpectation}
+          onClose={() => setRoleExpectationsOpen(false)}
         />
       )}
     </div>

@@ -1,14 +1,15 @@
 /**
- * GoalMentorReviewModal.tsx — Split-panel modal for mentor review of a mentee's
- * self-review, simplified to a single paragraph each side.
+ * GoalMentorReviewModal.tsx — Three-column modal for mentor review of a
+ * mentee's self-review.
  *
  * Layout:
- *   Top (full-width)  — collapsible role-expectation panels for Firm Growth
- *                       and Competency & Skills, scoped to the mentee's
- *                       (goal owner's) function × designation.
- *   Left panel        — read-only display of the mentee's self-review paragraph.
- *   Right panel       — mentor fills a single paragraph (or views read-only
- *                       when a mentor review already exists for this half).
+ *   Left rail    — scrollable list of all eight role-expectation cards
+ *                  scoped to the mentee's (goal owner's) function ×
+ *                  designation. Always visible so the mentor can keep
+ *                  the rubric in view while writing.
+ *   Center panel — read-only display of the mentee's self-review paragraph.
+ *   Right panel  — mentor fills a single paragraph (or views read-only
+ *                  when a mentor review already exists for this half).
  */
 
 import { useState, useEffect } from "react";
@@ -21,6 +22,7 @@ import {
   X,
   User,
   MessageSquarePlus,
+  BookOpen,
 } from "lucide-react";
 import type {
   Goal,
@@ -31,13 +33,39 @@ import {
   projectReviewService,
   type RoleExpectation,
 } from "@/services/project-review.service";
-import { ExpectationPanel } from "@/components/project-reviews/ExpectationPanel";
 import { formatFyYearSpan } from "@/utils/fy";
 import { halfDisplayLabel } from "@/utils/goalStatus";
 import { getOwnerRole } from "@/utils/goalOwner";
 
 const TEXTAREA_CLS =
   "w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-brand resize-none";
+
+/** Eight competencies shown in the left rail. Order matches the
+ *  RoleExpectationsModal on My Goals so a reader who sees both surfaces
+ *  builds the same mental map. */
+const ROLE_EXP_FIELDS: {
+  expKey: keyof Pick<
+    RoleExpectation,
+    | "exp_task_execution"
+    | "exp_ownership"
+    | "exp_project_management"
+    | "exp_client_deliverables"
+    | "exp_communication"
+    | "exp_mentoring"
+    | "exp_firm_growth"
+    | "exp_competency_skills"
+  >;
+  label: string;
+}[] = [
+  { expKey: "exp_task_execution",      label: "Task Execution & Problem Solving" },
+  { expKey: "exp_ownership",           label: "Ownership & Accountability" },
+  { expKey: "exp_project_management",  label: "Project Management & Risk Mitigation" },
+  { expKey: "exp_client_deliverables", label: "Client-Ready Deliverables" },
+  { expKey: "exp_communication",       label: "Communication & Stakeholder Management" },
+  { expKey: "exp_mentoring",           label: "Mentoring & Team Development" },
+  { expKey: "exp_firm_growth",         label: "Firm Growth" },
+  { expKey: "exp_competency_skills",   label: "Competency & Skills" },
+];
 
 function cycleLabel(
   goal: Goal,
@@ -120,7 +148,7 @@ export function GoalMentorReviewModal({
         if (!cancelled) setExpectations(rows);
       })
       .catch(() => {
-        // Non-fatal — panels just won't render.
+        // Non-fatal — rail just won't render expectation cards.
       });
     return () => {
       cancelled = true;
@@ -163,7 +191,7 @@ export function GoalMentorReviewModal({
       aria-modal="true"
       aria-labelledby="mentor-review-modal-title"
     >
-      <div className="w-full max-w-5xl rounded-xl bg-surface shadow-xl flex flex-col max-h-[90vh]">
+      <div className="w-full max-w-7xl rounded-xl bg-surface shadow-xl flex flex-col max-h-[90vh]">
         {/* ── Header ── */}
         <div className="flex items-start justify-between gap-4 border-b border-border px-6 py-4 shrink-0">
           <div className="flex items-center gap-3">
@@ -190,37 +218,55 @@ export function GoalMentorReviewModal({
           </button>
         </div>
 
-        {/* ── Role-expectation reference panels (above the split) ── */}
-        {ownerExpectation && (
-          <div className="border-b border-border bg-blue-50/30 px-6 py-3 space-y-2 shrink-0">
-            <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">
-              Mentee role expectations
-            </p>
-            <div>
-              <p className="text-[11px] font-semibold text-text-main mb-0.5">
-                Firm Growth
-              </p>
-              <ExpectationPanel
-                expectation={ownerExpectation}
-                expKey="exp_firm_growth"
-              />
+        {/* ── Body — three-column layout ── */}
+        <div className="flex flex-1 overflow-hidden min-h-0">
+          {/* Left rail: all eight role-expectation cards */}
+          <div className="w-72 shrink-0 border-r border-border flex flex-col overflow-hidden bg-slate-50/40">
+            <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-slate-50/80 shrink-0">
+              <BookOpen className="h-4 w-4 text-blue-600" aria-hidden="true" />
+              <span className="text-xs font-semibold uppercase tracking-wider text-text-muted">
+                Role Expectations
+              </span>
             </div>
-            <div>
-              <p className="text-[11px] font-semibold text-text-main mb-0.5">
-                Competency &amp; Skills
-              </p>
-              <ExpectationPanel
-                expectation={ownerExpectation}
-                expKey="exp_competency_skills"
-              />
+            <div className="overflow-y-auto px-3 py-3 space-y-2.5">
+              {ownerExpectation ? (
+                ROLE_EXP_FIELDS.map(({ expKey, label: fieldLabel }, idx) => {
+                  const text = ownerExpectation[expKey];
+                  if (!text) return null;
+                  return (
+                    <div
+                      key={expKey}
+                      className="rounded-lg border border-border/60 bg-white p-2.5"
+                    >
+                      <div className="flex items-start gap-2">
+                        <span
+                          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-50 text-[10px] font-bold text-blue-700"
+                          aria-hidden="true"
+                        >
+                          {idx + 1}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <h4 className="text-[11px] font-semibold text-text-main leading-snug">
+                            {fieldLabel}
+                          </h4>
+                          <p className="mt-1 text-[10.5px] text-text-muted whitespace-pre-wrap leading-snug">
+                            {text.replace(/ \| /g, "\n• ")}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <p className="text-[12px] text-text-muted italic px-1">
+                  Role expectations unavailable for this mentee.
+                </p>
+              )}
             </div>
           </div>
-        )}
 
-        {/* ── Body — two-panel layout ── */}
-        <div className="flex flex-1 overflow-hidden min-h-0">
-          {/* Left: Mentee self-review (read-only paragraph) */}
-          <div className="w-1/2 border-r border-border flex flex-col overflow-hidden">
+          {/* Center: Mentee self-review (read-only paragraph) */}
+          <div className="flex-1 border-r border-border flex flex-col overflow-hidden">
             <div className="flex items-center gap-2 px-5 py-3 border-b border-border bg-slate-50/80 shrink-0">
               <User className="h-4 w-4 text-text-muted" aria-hidden="true" />
               <span className="text-xs font-semibold uppercase tracking-wider text-text-muted">
@@ -241,7 +287,7 @@ export function GoalMentorReviewModal({
           </div>
 
           {/* Right: Mentor review (editable or read-only) */}
-          <div className="w-1/2 flex flex-col overflow-hidden">
+          <div className="flex-1 flex flex-col overflow-hidden">
             <div className="flex items-center gap-2 px-5 py-3 border-b border-border bg-brand/5 shrink-0">
               <ClipboardCheck className="h-4 w-4 text-brand" aria-hidden="true" />
               <span className="text-xs font-semibold uppercase tracking-wider text-brand">
@@ -287,7 +333,7 @@ export function GoalMentorReviewModal({
                       className={TEXTAREA_CLS}
                       value={overall}
                       onChange={(e) => setOverall(e.target.value)}
-                      placeholder="Your assessment of the mentee's delivery this half — what was strong, where to grow, and how it ties into Firm Growth and Competency & Skills (see expectations above)."
+                      placeholder="Your assessment of the mentee's delivery this half — what was strong, where to grow, and how it ties into the role expectations on the left."
                     />
                   )}
                 </div>

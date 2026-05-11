@@ -1,7 +1,7 @@
 import { UserCircle, Check, RotateCcw, Link } from "lucide-react";
 import type { TeamGoal, SelfReviewCycleHalf } from "@/services/goal.service";
 import { ApprovalStatusBadge } from "@/components/goals/ApprovalStatusBadge";
-import { SelfReviewCycleMenu } from "@/components/goals/SelfReviewCycleMenu";
+import { MentorReviewHalfChips } from "@/components/goals/MentorReviewHalfChips";
 import { formatFyYearSpan } from "@/utils/fy";
 import { isPostApproved } from "@/utils/goalStatus";
 
@@ -99,9 +99,8 @@ export function TeamGoalCard({
         )}
 
         {isApproved && (
-          <SelfReviewCycleMenu
+          <MentorReviewHalfChips
             goal={goal}
-            mode="mentor"
             onSelect={(half) => onSelectHalf(goal, half)}
           />
         )}
