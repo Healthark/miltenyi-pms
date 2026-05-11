@@ -32,6 +32,11 @@ export interface SystemSettingsResponse {
   project_ratings_visible: boolean;
   annual_reviews_enabled: boolean;
   annual_review_final_rating_visible: boolean;
+  /** Demo-only escape hatch — when true, the date-based H1/H2 review-
+   *  window gate is bypassed everywhere. Mirrors the backend's
+   *  `cycle_window_override` and unlocks the calendar-gated frontend
+   *  menus so stakeholders can drive the whole cycle in one session. */
+  cycle_window_override: boolean;
   updated_by_id: number | null;
   created_at: string;
   updated_at: string | null;

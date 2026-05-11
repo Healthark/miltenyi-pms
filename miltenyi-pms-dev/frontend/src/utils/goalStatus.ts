@@ -105,14 +105,21 @@ export function currentQuarterAndFy(
  * through the end of the FY (so any earlier cycle can be backfilled
  * during a later one of the same FY). Returns false (locked) when
  * goalFyYear is null (legacy goals without a stamped cycle_name).
+ *
+ * `override` mirrors the backend's `cycle_window_override` system
+ * setting — when true the date gate is skipped and every cycle is
+ * treated as open. Used so demo orgs can drive the whole cycle
+ * (including future-FY halves) in a single session.
  */
 export function isHalfWindowOpen(
   cycle: SelfReviewCycleHalf,
   goalFyYear: number | null,
   fiscalStartMonth = 4,
   today: Date = new Date(),
+  override = false,
 ): boolean {
   if (goalFyYear == null) return false;
+  if (override) return true;
   const keys = cycleKeysFor(cycle);
   const currentCode =
     keys === HALF_KEYS
