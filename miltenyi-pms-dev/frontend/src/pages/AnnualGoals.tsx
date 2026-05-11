@@ -31,6 +31,7 @@ import { ApprovalStatusBadge } from "@/components/goals/ApprovalStatusBadge";
 import { CriteriaChecklist } from "@/components/goals/CriteriaChecklist";
 import { RoleExpectationsModal } from "@/components/goals/RoleExpectationsModal";
 import { StringCombobox } from "@/components/common/StringCombobox";
+import { ExportExcelButton } from "@/components/admin/ExportExcelButton";
 import { SortableHeader } from "@/components/SortableHeader";
 import { compareValues, type SortKind, type SortState, type SortValue } from "@/utils/sort";
 import { formatFyYearSpan } from "@/utils/fy";
@@ -976,7 +977,8 @@ function AllGoalsTab({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center gap-4 flex-wrap">
+      <div className="flex items-start justify-between gap-4">
+       <div className="flex items-center gap-4 flex-wrap flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <label
             htmlFor="all-goals-employee"
@@ -1079,6 +1081,10 @@ function AllGoalsTab({
           {sortedGroups.length} {sortedGroups.length === 1 ? "employee" : "employees"} ·{" "}
           {filtered.length} of {goals.length} goals
         </span>
+       </div>
+       <div className="shrink-0">
+         <ExportExcelButton kind="goals" />
+       </div>
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-border">

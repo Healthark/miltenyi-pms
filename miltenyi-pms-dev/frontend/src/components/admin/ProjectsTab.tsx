@@ -29,6 +29,7 @@ import {
 import { adminService, type UserResponse } from "@/services/admin.service";
 import { getErrorMessage } from "@/utils/errors";
 import { ProjectModal } from "@/components/admin/ProjectModal";
+import { ExportExcelButton } from "@/components/admin/ExportExcelButton";
 import { useToast } from "@/hooks/useToast";
 import { useSnackbar } from "@/hooks/useSnackbar";
 import { useConfirm } from "@/hooks/useConfirm";
@@ -330,6 +331,9 @@ export function ProjectsTab({ ref }: ProjectsTabProps = {}) {
             <option value="completed">Completed</option>
             <option value="all">All</option>
           </select>
+        </div>
+        <div className="ml-auto">
+          <ExportExcelButton kind="projects" />
         </div>
       </div>
 

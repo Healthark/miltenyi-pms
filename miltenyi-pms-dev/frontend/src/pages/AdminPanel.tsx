@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
-  UserPlus, Users, Settings, FolderOpen, ShieldCheck, Plus,
+  UserPlus, Users, Settings, FolderOpen, ShieldCheck, Plus, Download,
 } from "lucide-react";
 
 import {
@@ -20,6 +20,7 @@ import { SystemSettingsTab } from "@/components/admin/SystemSettingsTab";
 import { ProjectsTab, type ProjectsTabHandle } from "@/components/admin/ProjectsTab";
 import { UserModal } from "@/components/admin/UserModal";
 import { ManagementReviewTab } from "@/components/admin/ManagementReviewTab";
+import { ExportsTab } from "@/components/admin/ExportsTab";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
 import { useToast } from "@/hooks/useToast";
 import { useSnackbar } from "@/hooks/useSnackbar";
@@ -31,6 +32,7 @@ type ActiveTab =
   | "users"
   | "projects"
   | "management_review"
+  | "exports"
   | "settings";
 
 export default function AdminPanel() {
@@ -69,6 +71,8 @@ export default function AdminPanel() {
   // The Management Review tab is HR_MyOrg-only. The backend also enforces
   // this on every management endpoint; this gate is just a UI affordance.
   const canSeeManagementReview = user?.role === "HR_MyOrg";
+  // Exports tab is also HR_MyOrg-only (same backend gate as /export/*.xlsx).
+  const canSeeExports = user?.role === "HR_MyOrg";
   // ── Bootstrap ─────────────────────────────────────────────────────────────
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -298,6 +302,16 @@ export default function AdminPanel() {
               Management Review
             </button>
           )}
+          {canSeeExports && (
+            <button
+              type="button"
+              className={tabCls("exports")}
+              onClick={() => setActiveTab("exports")}
+            >
+              <Download className="h-4 w-4" aria-hidden="true" />
+              Exports
+            </button>
+          )}
           <button
             type="button"
             className={tabCls("settings")}
@@ -325,6 +339,8 @@ export default function AdminPanel() {
         {activeTab === "management_review" && canSeeManagementReview && (
           <ManagementReviewTab />
         )}
+
+        {activeTab === "exports" && canSeeExports && <ExportsTab />}
 
         {activeTab === "settings" && (
           <SystemSettingsTab
