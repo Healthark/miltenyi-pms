@@ -8,13 +8,14 @@
 import { useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import {
-  UserCircle, Briefcase, Send, Loader2, X, ClipboardList,
+  UserCircle, Briefcase, Send, Loader2, Save, X, ClipboardList,
   LayoutGrid, Table2, Search, CheckCircle2, Clock, Pencil,
 } from "lucide-react";
 import {
   projectReviewService,
   type ProjectReviewResponse,
   type SecondaryEvalPayload,
+  type SecondaryEvalDraftPayload,
 } from "@/services/project-review.service";
 import { getErrorMessage } from "@/utils/errors";
 import { useAuth } from "@/hooks/useAuth";
@@ -39,24 +40,44 @@ const TEXTAREA_CLS =
 interface ImpactModalProps {
   readonly review: ProjectReviewResponse;
   readonly onSubmit: (reviewId: number, payload: SecondaryEvalPayload) => Promise<void>;
+  readonly onSaveDraft?: (reviewId: number, payload: SecondaryEvalDraftPayload) => Promise<void>;
   readonly onClose: () => void;
   readonly isSaving: boolean;
+  readonly isDraftSaving?: boolean;
   readonly error: string;
   readonly isEditMode?: boolean;
+  readonly isDraftMode?: boolean;
   readonly existingImpact?: string;
 }
 
-function ImpactModal({ review, onSubmit, onClose, isSaving, error, isEditMode = false, existingImpact = "" }: ImpactModalProps) {
+function ImpactModal({
+  review,
+  onSubmit,
+  onSaveDraft,
+  onClose,
+  isSaving,
+  isDraftSaving = false,
+  error,
+  isEditMode = false,
+  isDraftMode = false,
+  existingImpact = "",
+}: ImpactModalProps) {
   const [impactStatement, setImpactStatement] = useState(existingImpact);
+  // Save Draft is only meaningful when the row hasn't been submitted
+  // yet — editing an already-submitted statement skips it.
+  const showSaveDraft = !isEditMode && !!onSaveDraft;
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" role="dialog" aria-modal="true" aria-labelledby="secondary-eval-title">
-      <div className="w-full max-w-md rounded-xl bg-surface shadow-xl">
+      <div className="w-full max-w-2xl rounded-xl bg-surface shadow-xl">
         <div className="flex items-center justify-between border-b border-border px-6 py-4">
           <div>
             <div className="flex items-center gap-2">
               {isEditMode && (
                 <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-700">Editing</span>
+              )}
+              {isDraftMode && (
+                <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-700">Draft</span>
               )}
               <h2 id="secondary-eval-title" className="font-display text-base font-semibold text-text-main">
                 {isEditMode ? "Edit" : "Secondary"} Feedback
@@ -72,11 +93,11 @@ function ImpactModal({ review, onSubmit, onClose, isSaving, error, isEditMode = 
         <div className="px-6 py-5 space-y-4">
           {error && <p className="rounded-lg bg-red-50 px-4 py-2.5 text-sm text-red-600">{error}</p>}
           <div>
-            <label htmlFor="sec-impact" className="block text-xs font-semibold text-text-main mb-1">Impact Statement *</label>
+            <label htmlFor="sec-impact" className="block text-xs font-semibold text-text-main mb-1">Review *</label>
             <p className="text-xs text-text-muted mb-2">Share your perspective on {review.employee_name}'s contribution to this project.</p>
             <textarea
               id="sec-impact"
-              rows={5}
+              rows={8}
               className={TEXTAREA_CLS}
               value={impactStatement}
               onChange={(e) => setImpactStatement(e.target.value)}
@@ -85,17 +106,37 @@ function ImpactModal({ review, onSubmit, onClose, isSaving, error, isEditMode = 
           </div>
         </div>
 
-        <div className="flex justify-end gap-3 border-t border-border px-6 py-4">
-          <button type="button" onClick={onClose} className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-text-muted hover:bg-slate-50 transition-colors">Cancel</button>
-          <button
-            type="button"
-            onClick={() => onSubmit(review.id, { impact_statement: impactStatement })}
-            disabled={isSaving || !impactStatement.trim()}
-            className="flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
-          >
-            {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-            {isSaving ? (isEditMode ? "Saving…" : "Submitting…") : (isEditMode ? "Save Changes" : "Submit")}
-          </button>
+        <div className="flex items-center justify-between gap-3 border-t border-border px-6 py-4">
+          <p className="text-xs text-text-muted">
+            {isEditMode
+              ? "Update your submitted review."
+              : isDraftMode
+                ? "Draft saved — keep editing or submit when ready."
+                : "Drafts can be saved and edited; submit when ready."}
+          </p>
+          <div className="flex items-center gap-3">
+            <button type="button" onClick={onClose} className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-text-muted hover:bg-slate-50 transition-colors">Cancel</button>
+            {showSaveDraft && (
+              <button
+                type="button"
+                onClick={() => onSaveDraft!(review.id, { impact_statement: impactStatement })}
+                disabled={isSaving || isDraftSaving || !impactStatement.trim()}
+                className="flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium text-text-main hover:bg-slate-50 disabled:opacity-50 transition-colors"
+              >
+                {isDraftSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                {isDraftSaving ? "Saving…" : "Save Draft"}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => onSubmit(review.id, { impact_statement: impactStatement })}
+              disabled={isSaving || isDraftSaving || !impactStatement.trim()}
+              className="flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
+            >
+              {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              {isSaving ? (isEditMode ? "Saving…" : "Submitting…") : (isEditMode ? "Save Changes" : "Submit")}
+            </button>
+          </div>
         </div>
       </div>
     </div>,
@@ -139,7 +180,59 @@ function SecondaryCard({
           onClick={() => onWriteImpact(review)}
           className="w-full rounded-lg bg-slate-600 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 transition-colors"
         >
-          Write Impact Statement
+          Write Review
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Card View: Draft Card ───────────────────────────────────────────
+
+function DraftCard({
+  review,
+  impactStatement,
+  onContinueDraft,
+}: {
+  readonly review: ProjectReviewResponse;
+  readonly impactStatement: string;
+  readonly onContinueDraft: (review: ProjectReviewResponse) => void;
+}) {
+  return (
+    <div className="rounded-xl border border-amber-200 bg-amber-50/30 p-4 shadow-sm flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] font-mono text-text-muted bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+          {review.project_code}
+        </span>
+        <span className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-700">
+          <Pencil className="h-3 w-3" /> Draft
+        </span>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <UserCircle className="h-5 w-5 text-text-muted shrink-0" />
+        <p className="text-[14px] font-semibold text-text-main">{review.employee_name}</p>
+      </div>
+
+      <div className="flex items-center gap-1.5 text-[12px] text-text-muted">
+        <Briefcase className="h-3 w-3 shrink-0" />
+        <span className="truncate">{review.project_name}</span>
+      </div>
+
+      {impactStatement.trim() && (
+        <div className="rounded-md bg-white border border-amber-100 px-3 py-2">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-text-muted mb-1">Draft (not submitted)</p>
+          <p className="text-[13px] text-text-main whitespace-pre-wrap line-clamp-3">{impactStatement}</p>
+        </div>
+      )}
+
+      <div className="mt-auto pt-2 border-t border-border/60">
+        <button
+          type="button"
+          onClick={() => onContinueDraft(review)}
+          className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-100 transition-colors"
+        >
+          <Pencil className="h-3.5 w-3.5" /> Continue Draft
         </button>
       </div>
     </div>
@@ -179,7 +272,7 @@ function SubmittedCard({
       </div>
 
       <div className="rounded-md bg-white border border-green-100 px-3 py-2">
-        <p className="text-[11px] font-bold uppercase tracking-wider text-text-muted mb-1">Your Impact Statement</p>
+        <p className="text-[11px] font-bold uppercase tracking-wider text-text-muted mb-1">Your Review</p>
         <p className="text-[13px] text-text-main whitespace-pre-wrap line-clamp-3">{impactStatement}</p>
       </div>
 
@@ -218,8 +311,10 @@ export function SecondaryEvalTab() {
 
   const [impactTarget, setImpactTarget] = useState<ProjectReviewResponse | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
+  const [isDraftMode, setIsDraftMode] = useState(false);
   const [editImpact, setEditImpact] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [isDraftSaving, setIsDraftSaving] = useState(false);
   const [modalError, setModalError] = useState("");
 
   const loadReviews = useCallback(async () => {
@@ -238,6 +333,17 @@ export function SecondaryEvalTab() {
   const getMySubmission = (review: ProjectReviewResponse) =>
     review.secondary_evaluations?.find((ev) => ev.evaluator_id === currentUserId);
 
+  /** Three-way status the queue treats per review:
+   *    "none"      — no row at all yet, secondary needs to write
+   *    "draft"     — secondary saved a draft, hasn't submitted
+   *    "submitted" — final, locked (edit reopens for amendment)
+   */
+  const myEvalStatus = (review: ProjectReviewResponse): "none" | "draft" | "submitted" => {
+    const my = getMySubmission(review);
+    if (!my) return "none";
+    return my.status === "submitted" ? "submitted" : "draft";
+  };
+
   // Dropdown options — derived from currently loaded reviews so the lists
   // never offer a value that wouldn't match anything.
   const availableEmployees = Array.from(
@@ -252,9 +358,10 @@ export function SecondaryEvalTab() {
 
   // Filter
   const filteredReviews = reviews.filter((r) => {
-    const isSubmitted = !!getMySubmission(r);
-    if (statusFilter === "pending" && isSubmitted) return false;
-    if (statusFilter === "submitted" && !isSubmitted) return false;
+    const evalStatus = myEvalStatus(r);
+    if (statusFilter === "pending" && evalStatus !== "none") return false;
+    if (statusFilter === "draft" && evalStatus !== "draft") return false;
+    if (statusFilter === "submitted" && evalStatus !== "submitted") return false;
     if (employeeFilter && r.employee_name !== employeeFilter) return false;
     if (projectFilter && r.project_name !== projectFilter) return false;
     if (cycleFilter !== "all" && r.cycle !== cycleFilter) return false;
@@ -268,7 +375,7 @@ export function SecondaryEvalTab() {
     employee_name:     { kind: "alpha", get: (r) => r.employee_name },
     project_name:      { kind: "alpha", get: (r) => r.project_name },
     cycle:             { kind: "cycle", get: (r) => r.cycle },
-    submission_status: { kind: "alpha", get: (r) => (getMySubmission(r) ? "submitted" : "pending") },
+    submission_status: { kind: "alpha", get: (r) => myEvalStatus(r) },
   };
 
   const sortedReviews = sort
@@ -285,13 +392,15 @@ export function SecondaryEvalTab() {
       if (isEditMode) {
         await projectReviewService.updateSecondaryEval(reviewId, payload);
       } else {
+        // submitSecondaryEval handles draft → submitted promotion server-side
         await projectReviewService.submitSecondaryEval(reviewId, payload);
       }
       await loadReviews();
       setImpactTarget(null);
       setIsEditMode(false);
+      setIsDraftMode(false);
       setEditImpact("");
-      toast.success(isEditMode ? "Impact statement updated." : "Impact statement submitted.");
+      toast.success(isEditMode ? "Review updated." : "Review submitted.");
     } catch (err: unknown) {
       setModalError(getErrorMessage(err));
     } finally {
@@ -299,12 +408,43 @@ export function SecondaryEvalTab() {
     }
   };
 
+  const handleSaveDraft = async (reviewId: number, payload: SecondaryEvalDraftPayload) => {
+    setIsDraftSaving(true);
+    setModalError("");
+    try {
+      await projectReviewService.saveSecondaryDraft(reviewId, payload);
+      await loadReviews();
+      // Don't close the modal — user may want to keep editing — but
+      // flip into draft mode so the badge + footer copy reflect that
+      // a saved draft exists now.
+      setIsDraftMode(true);
+      setEditImpact(payload.impact_statement ?? "");
+      toast.success("Draft saved.");
+    } catch (err: unknown) {
+      setModalError(getErrorMessage(err));
+    } finally {
+      setIsDraftSaving(false);
+    }
+  };
+
   const openCreate = (review: ProjectReviewResponse) => {
-    setIsEditMode(false); setEditImpact(""); setModalError(""); setImpactTarget(review);
+    setIsEditMode(false); setIsDraftMode(false); setEditImpact(""); setModalError(""); setImpactTarget(review);
+  };
+  const openContinueDraft = (review: ProjectReviewResponse) => {
+    const myEval = getMySubmission(review);
+    setIsEditMode(false);
+    setIsDraftMode(true);
+    setEditImpact(myEval?.impact_statement ?? "");
+    setModalError("");
+    setImpactTarget(review);
   };
   const openEdit = (review: ProjectReviewResponse) => {
     const myEval = getMySubmission(review);
-    setIsEditMode(true); setEditImpact(myEval?.impact_statement ?? ""); setModalError(""); setImpactTarget(review);
+    setIsEditMode(true);
+    setIsDraftMode(false);
+    setEditImpact(myEval?.impact_statement ?? "");
+    setModalError("");
+    setImpactTarget(review);
   };
 
   const viewBtnCls = (mode: ViewMode) =>
@@ -389,6 +529,7 @@ export function SecondaryEvalTab() {
             >
               <option value="all">All</option>
               <option value="pending">Pending</option>
+              <option value="draft">Draft</option>
               <option value="submitted">Submitted</option>
             </select>
           </div>
@@ -415,12 +556,29 @@ export function SecondaryEvalTab() {
         /* ── Card View ── */
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {sortedReviews.map((r) => {
+            const status = myEvalStatus(r);
             const myEval = getMySubmission(r);
-            return myEval ? (
-              <SubmittedCard key={r.id} review={r} impactStatement={myEval.impact_statement ?? ""} onEdit={openEdit} />
-            ) : (
-              <SecondaryCard key={r.id} review={r} onWriteImpact={openCreate} />
-            );
+            if (status === "submitted") {
+              return (
+                <SubmittedCard
+                  key={r.id}
+                  review={r}
+                  impactStatement={myEval?.impact_statement ?? ""}
+                  onEdit={openEdit}
+                />
+              );
+            }
+            if (status === "draft") {
+              return (
+                <DraftCard
+                  key={r.id}
+                  review={r}
+                  impactStatement={myEval?.impact_statement ?? ""}
+                  onContinueDraft={openContinueDraft}
+                />
+              );
+            }
+            return <SecondaryCard key={r.id} review={r} onWriteImpact={openCreate} />;
           })}
         </div>
       ) : (
@@ -446,8 +604,7 @@ export function SecondaryEvalTab() {
             </thead>
             <tbody className="divide-y divide-border/50">
               {sortedReviews.map((r) => {
-                const myEval = getMySubmission(r);
-                const isSubmitted = !!myEval;
+                const status = myEvalStatus(r);
                 return (
                   <tr key={r.id} className="hover:bg-slate-50/60 transition-colors">
                     <td className="px-5 py-3">
@@ -466,9 +623,13 @@ export function SecondaryEvalTab() {
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      {isSubmitted ? (
+                      {status === "submitted" ? (
                         <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-[11px] font-bold uppercase text-green-700">
                           <CheckCircle2 className="h-3 w-3" /> Submitted
+                        </span>
+                      ) : status === "draft" ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold uppercase text-amber-700">
+                          <Pencil className="h-3 w-3" /> Draft
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-bold uppercase text-amber-700">
@@ -477,7 +638,7 @@ export function SecondaryEvalTab() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {isSubmitted ? (
+                      {status === "submitted" ? (
                         <button
                           type="button"
                           onClick={() => openEdit(r)}
@@ -485,13 +646,21 @@ export function SecondaryEvalTab() {
                         >
                           <Pencil className="h-3 w-3" /> Edit
                         </button>
+                      ) : status === "draft" ? (
+                        <button
+                          type="button"
+                          onClick={() => openContinueDraft(r)}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-[12px] font-medium text-amber-700 hover:bg-amber-100 transition-colors"
+                        >
+                          <Pencil className="h-3 w-3" /> Continue Draft
+                        </button>
                       ) : (
                         <button
                           type="button"
                           onClick={() => openCreate(r)}
                           className="inline-flex items-center gap-1.5 rounded-lg bg-slate-600 px-3 py-1.5 text-[12px] font-medium text-white hover:bg-slate-700 transition-colors"
                         >
-                          Write Impact
+                          Write Review
                         </button>
                       )}
                     </td>
@@ -508,10 +677,19 @@ export function SecondaryEvalTab() {
         <ImpactModal
           review={impactTarget}
           onSubmit={handleSubmit}
-          onClose={() => { setImpactTarget(null); setIsEditMode(false); setEditImpact(""); setModalError(""); }}
+          onSaveDraft={handleSaveDraft}
+          onClose={() => {
+            setImpactTarget(null);
+            setIsEditMode(false);
+            setIsDraftMode(false);
+            setEditImpact("");
+            setModalError("");
+          }}
           isSaving={isSaving}
+          isDraftSaving={isDraftSaving}
           error={modalError}
           isEditMode={isEditMode}
+          isDraftMode={isDraftMode}
           existingImpact={editImpact}
         />
       )}

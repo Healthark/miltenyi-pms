@@ -124,6 +124,23 @@ def _strip_private_ratings(review: AnnualReview, final_visible: bool) -> None:
 # STAGE 1 — EMPLOYEE SELF-APPRAISAL
 # =====================================================================
 
+def _attach_mentor_name(review: AnnualReview, db: DbSession) -> AnnualReview:
+    """Populate the transient `mentor_name` field on a single AnnualReview.
+
+    `mentor_name` is a denormalised display field on the response schema —
+    not stored on the row. Every mutation endpoint that returns a single
+    review should call this so the frontend's optimistic upsert into the
+    My Reviews list keeps the Mentor column populated (otherwise the
+    field flickers to "—" after a save and only reappears on refresh
+    when /mine/history reloads the list)."""
+    if review.mentor_id is not None:
+        mentor = db.query(User).filter(User.id == review.mentor_id).first()
+        review.mentor_name = mentor.full_name if mentor else None
+    else:
+        review.mentor_name = None
+    return review
+
+
 @router.post("/self", response_model=AnnualReviewResponse, status_code=status.HTTP_201_CREATED)
 def create_self_appraisal(
     payload: SelfAppraisalCreate,
@@ -157,7 +174,7 @@ def create_self_appraisal(
         existing.status = ReviewStatus.PENDING_MENTOR.value
         db.commit()
         db.refresh(existing)
-        return existing
+        return _attach_mentor_name(existing, db)
 
     mentor_id = current_user.mentor_id
     review = AnnualReview(
@@ -172,7 +189,7 @@ def create_self_appraisal(
     db.add(review)
     db.commit()
     db.refresh(review)
-    return review
+    return _attach_mentor_name(review, db)
 
 
 @router.post("/self/draft", response_model=AnnualReviewResponse, status_code=status.HTTP_201_CREATED)
@@ -216,7 +233,7 @@ def create_self_appraisal_draft(
     db.add(review)
     db.commit()
     db.refresh(review)
-    return review
+    return _attach_mentor_name(review, db)
 
 
 @router.patch("/{review_id}/draft", response_model=AnnualReviewResponse)
@@ -245,7 +262,7 @@ def save_draft(
 
     db.commit()
     db.refresh(review)
-    return review
+    return _attach_mentor_name(review, db)
 
 
 @router.get("/mine", response_model=AnnualReviewResponse)
@@ -283,6 +300,10 @@ def get_my_review_history(
     All annual reviews owned by the current user, sorted newest-first.
     Used by the "My Review" tab to show past cycles alongside the current one.
     Ratings are filtered per visibility rules.
+
+    `mentor_name` is resolved per row (a Staff member may have a
+    different mentor across different cycles), so the table can render
+    the Mentor column directly without an extra round-trip.
     """
     settings = _get_settings(db, current_user.org_id)
     reviews = (
@@ -294,8 +315,20 @@ def get_my_review_history(
         .order_by(AnnualReview.created_at.desc())
         .all()
     )
+
+    # Batch-resolve mentor names so each row carries its historical
+    # mentor (could differ year-over-year if the Staff was reassigned).
+    mentor_ids = {r.mentor_id for r in reviews if r.mentor_id is not None}
+    mentor_name_by_id: dict[int, str] = {}
+    if mentor_ids:
+        for m in db.query(User).filter(User.id.in_(mentor_ids)).all():
+            mentor_name_by_id[m.id] = m.full_name
+
     for r in reviews:
         _strip_private_ratings(r, settings.annual_review_final_rating_visible)
+        r.mentor_name = (
+            mentor_name_by_id.get(r.mentor_id) if r.mentor_id is not None else None
+        )
     return reviews
 
 
