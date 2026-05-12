@@ -23,6 +23,7 @@ import {
   Briefcase,
   CheckCircle2,
   Clock,
+  Eye,
   Lock,
   Search,
   ChevronDown,
@@ -41,6 +42,7 @@ import { PerformanceRatingBadge } from "@/components/reviews/PerformanceRatingBa
 import { ProjectSummaryCard } from "@/components/project-reviews/ProjectSummaryCard";
 import { ReviewDetailPanel } from "@/components/project-reviews/ReviewDetailPanel";
 import { TableExpandedRow } from "@/components/project-reviews/TableExpandedRow";
+import { ProjectReviewDetailModal } from "@/components/project-reviews/ProjectReviewDetailModal";
 import { MyReviewsToolbar } from "@/components/project-reviews/MyReviewsToolbar";
 import {
   GridSkeleton,
@@ -468,6 +470,10 @@ function ReadOnlyReviewsList({
   const [employeeFilter, setEmployeeFilter] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [sort, setSort] = useState<SortState<ReadOnlySortKey> | null>(null);
+  // Read-only modal target. Mentors and HR both need a way to read the
+  // PM's competency comments + impact statement, not just the rating —
+  // setting this opens the detail modal in place.
+  const [viewTarget, setViewTarget] = useState<ProjectReviewResponse | null>(null);
 
   const cycles = useMemo(
     () =>
@@ -665,12 +671,15 @@ function ReadOnlyReviewsList({
               <th className="text-left px-4 py-2.5">
                 <SortableHeader label="Rating" columnKey="performance_group" sort={sort} onSort={setSort} />
               </th>
+              <th className="text-left px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted">
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border/50">
             {sorted.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-5 py-10 text-center">
+                <td colSpan={7} className="px-5 py-10 text-center">
                   <Search className="h-6 w-6 text-text-muted mx-auto mb-1" aria-hidden="true" />
                   <p className="text-[13px] text-text-main font-medium">No matching reviews</p>
                   <p className="text-[11px] text-text-muted mt-0.5">
@@ -721,12 +730,37 @@ function ReadOnlyReviewsList({
                       <PerformanceRatingBadge value={r.performance_group} />
                     )}
                   </td>
+                  <td className="px-4 py-3">
+                    {isReviewed ? (
+                      <button
+                        type="button"
+                        onClick={() => setViewTarget(r)}
+                        className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-text-muted hover:bg-brand/10 hover:text-brand transition-colors"
+                      >
+                        <Eye className="h-3 w-3" /> View
+                      </button>
+                    ) : (
+                      <span className="text-[11px] italic text-text-muted/70">
+                        Awaiting PM
+                      </span>
+                    )}
+                  </td>
                 </tr>
               );
             })}
           </tbody>
         </table>
       </div>
+
+      {/* Read-only review detail modal — opened from the View button.
+          The row payload already carries every field the modal renders,
+          so this is purely a presentation step (no extra fetch). */}
+      {viewTarget && (
+        <ProjectReviewDetailModal
+          review={viewTarget}
+          onClose={() => setViewTarget(null)}
+        />
+      )}
     </div>
   );
 }

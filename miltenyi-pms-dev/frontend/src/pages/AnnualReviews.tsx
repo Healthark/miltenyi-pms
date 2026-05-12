@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, Fragment } from "react";
-import { ChevronDown, Plus } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
 import { useToast } from "@/hooks/useToast";
@@ -19,7 +19,7 @@ import {
   type SelfReviewDraftPayload,
 } from "@/services/annual-review.service";
 import { getErrorMessage } from "@/utils/errors";
-import { formatFyLabel } from "@/utils/fy";
+import { extractFyToken, formatFyLabel } from "@/utils/fy";
 
 type AllReviewsSortKey =
   | "employee_name"
@@ -116,17 +116,22 @@ export function AnnualReviews() {
   }, [load]);
 
   // Lookup the active-cycle row (if any). May be a draft (still editable),
-  // or one of the post-draft statuses (locked).
-  const currentReview =
-    reviews.find((r) => r.cycle_name === activeCycle) ?? null;
+  // or one of the post-draft statuses (locked). The form modal below
+  // pre-fills from this when `isCurrentDraft` is true; the My Reviews
+  // tab decides which per-row action to surface based on submissionsOpen
+  // and the row's own status.
+  //
+  // Match on the FY token, not the full active-cycle string: annual-review
+  // rows are stamped with the bare FY label (e.g. "FY26-27"), while
+  // `active_cycle_name` can carry a half/quarter prefix (e.g. "Q1 FY26-27").
+  // Without `extractFyToken` here the lookup would miss every draft on
+  // half/quarterly orgs — the Save Draft handler would then take the
+  // "create new" branch and 400 with "review already exists."
+  const activeFyToken = activeCycle ? extractFyToken(activeCycle) : "";
+  const currentReview = activeFyToken
+    ? reviews.find((r) => r.cycle_name === activeFyToken) ?? null
+    : null;
   const isCurrentDraft = currentReview?.status === "draft";
-  // Can open the form when there's no row yet, OR when the existing row
-  // is still a draft. Past-draft statuses lock the modal closed.
-  const canStart =
-    !!activeCycle &&
-    submissionsOpen &&
-    (!currentReview || isCurrentDraft) &&
-    !isLoading;
 
   const handleSubmit = async (payload: SelfReviewPayload) => {
     const ok = await confirm({
@@ -191,13 +196,21 @@ export function AnnualReviews() {
         : "border-transparent text-text-muted hover:text-text-main"
     }`;
 
-  // Header text per role. Staff/Mentor keep the existing "Team Reviews"
-  // label (per the audit answer); HR_MyOrg gets a distinct "All Reviews"
-  // header signalling org-wide view-only scope.
-  const headerTitle = isHRMyOrg ? "All Reviews" : "Team Reviews";
+  // Header text per role. HR_MyOrg → "All Reviews" (org-wide view-only).
+  // Mentor → "Team Reviews" (they're evaluating their mentees). Staff and
+  // any other role → "Annual Reviews" (generic — Staff only have their
+  // own self-review here and shouldn't see a "Team" label since they
+  // don't have a team).
+  const headerTitle = isHRMyOrg
+    ? "All Reviews"
+    : isMentor
+      ? "Team Reviews"
+      : "Annual Reviews";
   const headerSubtitle = isHRMyOrg
     ? "View-only access to every annual review across the org."
-    : "Complete your team review and provide feedback for your team members.";
+    : isMentor
+      ? "Complete your team review and provide feedback for your team members."
+      : "Write your annual self-review and track its progress through the cycle.";
 
   return (
     <div className="space-y-6">
@@ -214,20 +227,10 @@ export function AnnualReviews() {
           </h1>
           <p className="mt-0.5 text-sm text-text-muted">{headerSubtitle}</p>
         </div>
-        {/* Self-Review button is Staff-only — never shown for Mentor or HR. */}
-        {isStaff && activeTab === "my" && canStart && (
-          <button
-            type="button"
-            onClick={() => {
-              setFormError("");
-              setShowForm(true);
-            }}
-            className="shrink-0 flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90 transition-opacity"
-          >
-            <Plus className="h-4 w-4" aria-hidden="true" />
-            {isCurrentDraft ? "Continue Draft" : "Self-Review"}
-          </button>
-        )}
+        {/* The Self-Review start / Continue Draft action used to live
+            here. It now lives inside the My Reviews table as a per-row
+            action (synthetic current-FY row → Start; draft row → Continue),
+            so the header has no action buttons. */}
       </div>
 
       {/* Tab container */}
@@ -264,7 +267,24 @@ export function AnnualReviews() {
 
         <div className="p-5">
           {isStaff && activeTab === "my" && (
-            <SelfReviewTab reviews={reviews} isLoading={isLoading} />
+            <SelfReviewTab
+              reviews={reviews}
+              isLoading={isLoading}
+              activeCycle={activeCycle}
+              submissionsOpen={submissionsOpen}
+              onStartReview={() => {
+                setFormError("");
+                setShowForm(true);
+              }}
+              onContinueDraft={() => {
+                // The form modal pulls draft content from `currentReview`
+                // via `draft={isCurrentDraft ? currentReview : null}`
+                // below, so opening it for the active-FY draft is the
+                // same path as Start.
+                setFormError("");
+                setShowForm(true);
+              }}
+            />
           )}
           {isMentor && activeTab === "team" && <TeamReviewTab />}
           {isHRMyOrg && activeTab === "all" && (
