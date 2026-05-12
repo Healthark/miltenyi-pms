@@ -3,7 +3,7 @@ import {
   Plus, Target, Lock, Search,
   LayoutGrid, Table2, ChevronDown, BookOpen,
   Pencil, SendHorizonal, Link, MessageSquare,
-  UserCircle, Info,
+  UserCircle, Info, Eye,
 } from "lucide-react";
 import {
   goalService,
@@ -25,6 +25,7 @@ import { getErrorMessage } from "@/utils/errors";
 import { AnnualGoalCard } from "@/components/goals/AnnualGoalCard";
 import { GoalFormModal } from "@/components/goals/GoalFormModal";
 import { GoalSelfReviewModal } from "@/components/goals/GoalSelfReviewModal";
+import { GoalReviewDetailsModal } from "@/components/goals/GoalReviewDetailsModal";
 import { SelfReviewCycleMenu } from "@/components/goals/SelfReviewCycleMenu";
 import { TeamGoalsTab } from "@/components/goals/TeamGoalsTab";
 import { ApprovalStatusBadge } from "@/components/goals/ApprovalStatusBadge";
@@ -103,8 +104,7 @@ type AllGoalsSortKey =
   | "function_name"
   | "designation_name"
   | "latest_fy_year"
-  | "latest_manager_name"
-  | "goal_count";
+  | "latest_manager_name";
 
 const ALL_GOALS_SORT_CONFIG: Record<
   AllGoalsSortKey,
@@ -115,7 +115,6 @@ const ALL_GOALS_SORT_CONFIG: Record<
   designation_name:    { kind: "alpha",   get: (g) => g.designation_name },
   latest_fy_year:      { kind: "numeric", get: (g) => g.latest_fy_year },
   latest_manager_name: { kind: "alpha",   get: (g) => g.latest_manager_name },
-  goal_count:          { kind: "numeric", get: (g) => g.goals.length },
 };
 
 function buildAllGoalsGroups(goals: readonly TeamGoal[]): AllGoalsEmployeeGroup[] {
@@ -904,6 +903,9 @@ function AllGoalsTab({
   const [employeeFilter, setEmployeeFilter] = useState<string>("");
   const [sort, setSort] = useState<SortState<AllGoalsSortKey> | null>(null);
   const [expandedUserId, setExpandedUserId] = useState<number | null>(null);
+  // The goal whose self/mentor reviews are currently being read in the
+  // details modal. null = modal closed.
+  const [viewGoal, setViewGoal] = useState<TeamGoal | null>(null);
 
   const years = Array.from(
     new Set(goals.map((g) => g.fy_year).filter((y): y is number => y !== null)),
@@ -1131,20 +1133,11 @@ function AllGoalsTab({
                   onSort={setSort}
                 />
               </th>
-              <th className="text-left px-4 py-2.5">
-                <SortableHeader
-                  label="Goals"
-                  columnKey="goal_count"
-                  sort={sort}
-                  onSort={setSort}
-                />
-              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border/50">
             {sortedGroups.map((group) => {
               const isExpanded = expandedUserId === group.user_id;
-              const goalCount = group.goals.length;
               return (
                 <Fragment key={group.user_id}>
                   <tr
@@ -1184,48 +1177,67 @@ function AllGoalsTab({
                     <td className="px-4 py-3 text-text-muted">
                       {group.latest_manager_name ?? "—"}
                     </td>
-                    <td className="px-4 py-3 text-text-muted">
-                      {goalCount} {goalCount === 1 ? "goal" : "goals"}
-                    </td>
                   </tr>
                   {isExpanded && (
-                    <tr className="bg-slate-50/80">
-                      <td colSpan={6} className="p-0">
-                        <table className="w-full text-[13px]">
-                          <thead>
-                            <tr className="text-left text-[11px] font-bold uppercase tracking-wider text-text-muted border-b border-border/40">
-                              <th className="px-10 py-2 font-bold">Goal</th>
-                              <th className="px-4 py-2 font-bold">Description</th>
-                              <th className="px-4 py-2 font-bold">Status</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {group.goals.map((g) => (
-                              <tr
-                                key={g.id}
-                                className="border-t border-border/40"
-                              >
-                                <td className="px-10 py-2.5">
-                                  <span className="font-medium text-text-main">
-                                    {g.title}
-                                  </span>
-                                </td>
-                                <td className="px-4 py-2.5 text-[12.5px] text-text-muted max-w-md">
-                                  {g.description ? (
-                                    <span className="line-clamp-2">{g.description}</span>
-                                  ) : (
-                                    <span>—</span>
-                                  )}
-                                </td>
-                                <td className="px-4 py-2.5">
-                                  <ApprovalStatusBadge status={g.approval_status} />
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </td>
-                    </tr>
+                    <>
+                      {/* Sub-header — reuses the parent table's column
+                          widths so Goal / Description / Status / Action
+                          line up with Employee / Function+Designation /
+                          Year / Mentor visually. Tinted with the brand
+                          colour so the expanded block reads as a child
+                          of the employee row rather than blending into
+                          the table chrome. */}
+                      <tr className="bg-brand/10 border-t border-brand/20 text-[11px] font-bold uppercase tracking-wider text-text-muted">
+                        <th className="text-left px-5 py-2 pl-10 font-bold border-l-2 border-brand/40">Goal</th>
+                        <th colSpan={2} className="text-left px-4 py-2 font-bold">Description</th>
+                        <th className="text-left px-4 py-2 font-bold">Status</th>
+                        <th className="text-left px-4 py-2 font-bold">Action</th>
+                      </tr>
+                      {group.goals.map((g, gi) => {
+                        const hasReview =
+                          g.self_reviews.some((r) => !r.is_draft) ||
+                          g.mentor_reviews.some((r) => !r.is_draft);
+                        return (
+                          <tr key={g.id} className="bg-brand/5 hover:bg-brand/10 transition-colors border-t border-brand/10">
+                            <td className="px-5 py-2.5 pl-10 align-top border-l-2 border-brand/40">
+                              <span className="font-medium text-text-main">
+                                <span className="mr-2 font-mono text-[12px] text-text-muted tabular-nums">
+                                  {gi + 1}.
+                                </span>
+                                {g.title}
+                              </span>
+                            </td>
+                            <td colSpan={2} className="px-4 py-2.5 text-[12.5px] text-text-muted align-top">
+                              {g.description ? (
+                                <span className="whitespace-normal break-words">
+                                  {g.description}
+                                </span>
+                              ) : (
+                                <span>—</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-2.5 align-top">
+                              <ApprovalStatusBadge status={g.approval_status} />
+                            </td>
+                            <td className="px-4 py-2.5 align-top">
+                              {hasReview ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setViewGoal(g)}
+                                  className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-white px-2.5 py-1 text-[12px] font-medium text-text-muted hover:bg-slate-50 hover:text-text-main transition-colors"
+                                >
+                                  <Eye className="h-3 w-3" /> View
+                                </button>
+                              ) : (
+                                <span className="text-[11px] italic text-text-muted">
+                                  —
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </>
                   )}
                 </Fragment>
               );
@@ -1233,6 +1245,13 @@ function AllGoalsTab({
           </tbody>
         </table>
       </div>
+
+      {viewGoal && (
+        <GoalReviewDetailsModal
+          goal={viewGoal}
+          onClose={() => setViewGoal(null)}
+        />
+      )}
     </div>
   );
 }
