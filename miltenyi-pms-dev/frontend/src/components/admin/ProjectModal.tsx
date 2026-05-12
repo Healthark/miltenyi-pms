@@ -76,6 +76,12 @@ export function ProjectModal({
   const [expectedEndDate, setExpectedEndDate] = useState("");
   const [pmId, setPmId] = useState<number | null>(null);
   const [secondaryEvaluatorId, setSecondaryEvaluatorId] = useState<number | null>(null);
+  // Display names captured from /projects/{id}. Used to build a stub
+  // user entry for the combobox when the saved PM or Secondary isn't
+  // in the parent's `users` list (e.g. they belong to a different org,
+  // or were hard-deleted from the directory after being assigned).
+  const [pmDisplayName, setPmDisplayName] = useState<string | null>(null);
+  const [secondaryDisplayName, setSecondaryDisplayName] = useState<string | null>(null);
 
   // ── Reference Data ──────────────────────────────────────────────
   const [functions, setFunctions] = useState<FunctionBrief[]>([]);
@@ -101,6 +107,61 @@ export function ProjectModal({
     (u) => u.role !== "PM" && u.role !== "Mentor",
   );
   const memberCandidates = activeUsers.filter((u) => u.role === "Staff");
+
+  // The combobox uses its `users` prop both for the suggestion list and
+  // for resolving the currently-selected id back to a label. If the
+  // project's saved PM/Secondary isn't in the role-filtered pool above
+  // (deactivated, role changed) OR isn't in the parent's `users` list
+  // at all (e.g. cross-org Miltenyi PM that the current HR can't see
+  // in the directory), the field renders blank even though the id is
+  // set. We synthesize a stub UserResponse from `pm_name` /
+  // `secondary_evaluator_name` (returned by /projects/{id}) so the
+  // combobox can always show the current value.
+  const stubUser = (
+    id: number,
+    fullName: string,
+    role: string,
+  ): UserResponse => ({
+    id,
+    org_id: 0,
+    employee_code: "",
+    full_name: fullName,
+    email: "",
+    phone: null,
+    role,
+    function_id: null,
+    designation_id: null,
+    mentor_id: null,
+    is_deleted: false,
+    created_at: "",
+    function: null,
+    designation: null,
+  });
+  const augmentWithCurrent = (
+    pool: UserResponse[],
+    currentId: number | null,
+    displayName: string | null,
+    fallbackRole: string,
+  ): UserResponse[] => {
+    if (currentId === null) return pool;
+    if (pool.some((u) => u.id === currentId)) return pool;
+    const fromDirectory = users.find((u) => u.id === currentId);
+    if (fromDirectory) return [...pool, fromDirectory];
+    if (displayName) return [...pool, stubUser(currentId, displayName, fallbackRole)];
+    return pool;
+  };
+  const pmComboboxUsers = augmentWithCurrent(
+    pmCandidates,
+    pmId,
+    pmDisplayName,
+    "PM",
+  );
+  const secondaryComboboxUsers = augmentWithCurrent(
+    secondaryCandidates,
+    secondaryEvaluatorId,
+    secondaryDisplayName,
+    "Staff",
+  );
 
   // ── Load reference data + existing project ──────────────────────
   useEffect(() => {
@@ -132,6 +193,8 @@ export function ProjectModal({
         setExpectedEndDate(toDateInput(detail.expected_end_date));
         setPmId(detail.pm_id ?? null);
         setSecondaryEvaluatorId(detail.secondary_evaluator_id ?? null);
+        setPmDisplayName(detail.pm_name ?? null);
+        setSecondaryDisplayName(detail.secondary_evaluator_name ?? null);
         setExistingAssignments(detail.assignments);
       })
       .catch((err: unknown) => setError(getErrorMessage(err)))
@@ -425,7 +488,7 @@ export function ProjectModal({
               {/* PM and Secondary Evaluator — both project-level fields */}
               <div className="grid grid-cols-2 gap-4">
                 <UserCombobox
-                  users={pmCandidates}
+                  users={pmComboboxUsers}
                   value={pmId}
                   onChange={setPmId}
                   label="Project Manager (Miltenyi)"
@@ -433,7 +496,7 @@ export function ProjectModal({
                   placeholder={pmCandidates.length === 0 ? "No PM users in directory" : "Select a PM"}
                 />
                 <UserCombobox
-                  users={secondaryCandidates}
+                  users={secondaryComboboxUsers}
                   value={secondaryEvaluatorId}
                   onChange={setSecondaryEvaluatorId}
                   label="Secondary Evaluator"

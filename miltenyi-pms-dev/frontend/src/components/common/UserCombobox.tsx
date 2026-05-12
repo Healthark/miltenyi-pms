@@ -55,7 +55,17 @@ export function UserCombobox({
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
+  // Lazy initializer — when this combobox mounts with `value` already
+  // set (e.g. an Edit modal that mounted only after the parent finished
+  // loading the row), seed `query` with the selected user's label so
+  // the field shows the saved value immediately. The sync-effect below
+  // handles subsequent value/open changes; without this initializer
+  // the field would render blank until the user interacts with it,
+  // because the sync only fires when `selected` *changes*.
+  const [query, setQuery] = useState<string>(() => {
+    const u = users.find((x) => x.id === value);
+    return u ? userLabel(u) : "";
+  });
   const [activeIdx, setActiveIdx] = useState(0);
 
   const selected = useMemo(
