@@ -47,7 +47,7 @@ const ROLE_OPTIONS: { value: RoleFilter; label: string }[] = [
 const STATUS_OPTIONS: { value: StatusFilter; label: string }[] = [
   { value: "all", label: "All Statuses" },
   { value: "active", label: "Active" },
-  { value: "inactive", label: "Inactive" },
+  { value: "inactive", label: "Deactivated" },
 ];
 
 // HR_Miltenyi cannot edit or deactivate Mentor / HR_MyOrg rows (security boundary).
