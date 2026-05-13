@@ -48,7 +48,7 @@ export function GoalApprovalFunnelCard({
         </div>
         <div>
           <h3 className="font-display text-sm font-semibold text-text-main">
-            Goal Approval Progress
+            Annual Goal Progress
           </h3>
           {fyLabel && (
             <p className="mt-0.5 text-[11px] text-text-muted">{fyLabel}</p>
