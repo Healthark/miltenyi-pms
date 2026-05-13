@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { Bell, CalendarDays, Target } from "lucide-react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { Bell, CalendarDays } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
 import {
@@ -7,8 +7,6 @@ import {
   type TopbarSummary,
 } from "@/services/notification.service";
 import { NotificationDropdown } from "@/components/layout/NotificationDropdown";
-import { currentHalfAndFy } from "@/utils/goalStatus";
-import { formatFyYearSpan } from "@/utils/fy";
 
 export function Topbar() {
   const { user } = useAuth();
@@ -78,12 +76,10 @@ export function Topbar() {
 
   return (
     <header className="h-16 bg-surface border-b border-border flex items-center justify-between px-8 shrink-0">
-      {/* Left — cycle badges (project + goal, role-gated) */}
+      {/* Left — project cycle badge */}
       <CycleBadges
         settingsLoading={settingsLoading}
         activeCycleName={settings?.active_cycle_name ?? null}
-        fiscalStartMonth={settings?.fiscal_start_month ?? 4}
-        userRole={user?.role}
       />
 
       {/* Right — bell + avatar */}
@@ -131,36 +127,19 @@ export function Topbar() {
   );
 }
 
-// ── Cycle Badges (role-gated dual badge) ───────────────────────────
+// ── Cycle Badge ─────────────────────────────────────────────────────
 
 /**
- * Per-role badge rule:
- *   PM, HR_Miltenyi          → project cycle badge only.
- *   Staff, Mentor, HR_MyOrg  → both project + goal cycle badges.
- *
- * The project cycle comes from SystemSettings.active_cycle_name (set by HR).
- * The goal cycle is computed from today's date — goal cadence is uniformly
- * half-yearly per `currentHalfAndFy()`, independent of the org's cycle_type.
+ * Project cycle badge — single source of truth is
+ * `SystemSettings.active_cycle_name` (set by HR).
  */
 function CycleBadges({
   settingsLoading,
   activeCycleName,
-  fiscalStartMonth,
-  userRole,
 }: {
   readonly settingsLoading: boolean;
   readonly activeCycleName: string | null;
-  readonly fiscalStartMonth: number;
-  readonly userRole: string | undefined;
 }) {
-  const goalCycle = useMemo(() => {
-    const { half, fyYear } = currentHalfAndFy(new Date(), fiscalStartMonth);
-    return `${half} ${formatFyYearSpan(fyYear)}`;
-  }, [fiscalStartMonth]);
-
-  const showGoalBadge =
-    userRole === "Staff" || userRole === "Mentor" || userRole === "HR_MyOrg";
-
   if (settingsLoading) {
     return (
       <div className="flex items-center gap-2">
@@ -180,15 +159,6 @@ function CycleBadges({
         >
           <CalendarDays className="h-3 w-3 text-accent" aria-hidden="true" />
           Project · {activeCycleName}
-        </span>
-      )}
-      {showGoalBadge && (
-        <span
-          className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-border bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700"
-          title="Annual goal review cycle"
-        >
-          <Target className="h-3 w-3" aria-hidden="true" />
-          Goal · {goalCycle}
         </span>
       )}
     </div>
