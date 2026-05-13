@@ -33,7 +33,6 @@ class SystemSettingsResponse(BaseModel):
     # Exposed here so the frontend can show/hide the "Add Goal" button
     # and disable the edit pencil on draft annual goals without an extra API call.
     annual_goals_edit_enabled: bool
-    annual_goals_final_rating_visible: bool
     project_ratings_visible: bool
     annual_reviews_enabled: bool
     annual_review_final_rating_visible: bool
@@ -98,7 +97,6 @@ class SystemSettingsUpdate(BaseModel):
     reviews_submission_open: Optional[bool] = None
     goals_edit_enabled: Optional[bool] = None
     annual_goals_edit_enabled: Optional[bool] = None
-    annual_goals_final_rating_visible: Optional[bool] = None
     project_ratings_visible: Optional[bool] = None
     annual_reviews_enabled: Optional[bool] = None
     annual_review_final_rating_visible: Optional[bool] = None

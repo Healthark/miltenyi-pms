@@ -103,7 +103,6 @@ class AdminSettingsResponse(BaseModel):
     fiscal_start_month: int
     goals_edit_enabled: bool
     annual_goals_edit_enabled: bool
-    annual_goals_final_rating_visible: bool
     project_ratings_visible: bool
     annual_reviews_enabled: bool
     annual_review_final_rating_visible: bool
@@ -116,7 +115,6 @@ class AdminSettingsUpdate(BaseModel):
     fiscal_start_month: Optional[int] = Field(default=None, ge=1, le=12)
     goals_edit_enabled: Optional[bool] = None
     annual_goals_edit_enabled: Optional[bool] = None
-    annual_goals_final_rating_visible: Optional[bool] = None
     project_ratings_visible: Optional[bool] = None
     annual_reviews_enabled: Optional[bool] = None
     annual_review_final_rating_visible: Optional[bool] = None

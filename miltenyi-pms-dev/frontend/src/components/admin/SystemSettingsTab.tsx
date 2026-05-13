@@ -13,8 +13,6 @@ interface SystemSettingsTabProps {
   // Goal access controls
   readonly annualGoalsEditEnabled: boolean;
   readonly onAnnualGoalsEditEnabledChange: (val: boolean) => void;
-  readonly finalRatingVisible: boolean;
-  readonly onFinalRatingVisibleChange: (val: boolean) => void;
   readonly projectRatingsVisible: boolean;
   readonly onProjectRatingsVisibleChange: (val: boolean) => void;
   readonly onSave: () => void;
@@ -79,8 +77,6 @@ export function SystemSettingsTab({
   onAnnualReviewFinalRatingVisibleChange,
   annualGoalsEditEnabled,
   onAnnualGoalsEditEnabledChange,
-  finalRatingVisible,
-  onFinalRatingVisibleChange,
   projectRatingsVisible,
   onProjectRatingsVisibleChange,
   onSave,
@@ -144,12 +140,6 @@ export function SystemSettingsTab({
                 description="When off, no one in the org can create or edit annual goals."
                 checked={annualGoalsEditEnabled}
                 onChange={onAnnualGoalsEditEnabledChange}
-              />
-              <ToggleRow
-                label="View Final Rating for Annual Goals"
-                description="When on, employees can see their final rating on annual reviews."
-                checked={finalRatingVisible}
-                onChange={onFinalRatingVisibleChange}
               />
             </div>
           </div>

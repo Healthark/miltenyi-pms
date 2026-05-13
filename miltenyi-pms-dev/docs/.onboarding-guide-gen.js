@@ -601,7 +601,6 @@ const sec6 = [
   bulletMixed([{ text: "goals_submission_open", code: true }, " — when false, Staff cannot submit a new annual goal (the Add Goal button hides)."]),
   bulletMixed([{ text: "reviews_submission_open", code: true }, " — when false, the project-review cycle is frozen (PMs see existing rows read-only)."]),
   bulletMixed([{ text: "annual_goals_edit_enabled", code: true }, " — controls the edit pencil on draft annual goals on the My Goals tab."]),
-  bulletMixed([{ text: "annual_goals_final_rating_visible", code: true }, " — when true, the final rating on past annual reviews is visible on the Staff's own goal cards. False hides it."]),
   bulletMixed([{ text: "project_ratings_visible", code: true }, " — controls whether Staff can see the performance group on their submitted project reviews. Many orgs prefer to hide this until calibration completes."]),
   bulletMixed([{ text: "annual_reviews_enabled", code: true }, " — master switch for the annual review feature. When false, the entire Annual Reviews page is unavailable."]),
   bulletMixed([{ text: "annual_review_final_rating_visible", code: true }, " — once management has set a final rating, this controls whether the Staff member sees it on their own review."]),

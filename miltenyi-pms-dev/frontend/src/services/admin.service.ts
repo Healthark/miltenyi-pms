@@ -40,7 +40,6 @@ export interface SystemSettings {
   fiscal_start_month: number;
   goals_edit_enabled: boolean;
   annual_goals_edit_enabled: boolean;
-  annual_goals_final_rating_visible: boolean;
   project_ratings_visible: boolean;
   annual_reviews_enabled: boolean;
   annual_review_final_rating_visible: boolean;
@@ -52,7 +51,6 @@ export interface AdminSettingsUpdatePayload {
   fiscal_start_month?: number;
   goals_edit_enabled?: boolean;
   annual_goals_edit_enabled?: boolean;
-  annual_goals_final_rating_visible?: boolean;
   project_ratings_visible?: boolean;
   annual_reviews_enabled?: boolean;
   annual_review_final_rating_visible?: boolean;
