@@ -62,6 +62,10 @@ class User(Base):
     # The frontend gates the app until the user chooses a new password, and
     # the self-service change-password endpoint clears it on success.
     must_change_password = Column(Boolean, nullable=False, default=False, server_default="false")
+    # Per-user UI theme preference. One of: "light" | "dark". Defaults to
+    # "light" so existing users get the historical appearance until they
+    # opt into dark mode via the topbar toggle.
+    theme_preference = Column(String, nullable=False, default="light", server_default="light")
     is_deleted = Column(Boolean, default=False)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
