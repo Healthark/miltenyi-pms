@@ -224,7 +224,17 @@ export function UserModal({
                 id="role"
                 className={INPUT_CLS}
                 value={form.role}
-                onChange={(e) => set("role", e.target.value)}
+                onChange={(e) => {
+                  const nextRole = e.target.value;
+                  // Only Staff have a mentor — flipping to any other role
+                  // clears the previous selection so it can't be saved
+                  // against a role that shouldn't carry one.
+                  setForm((prev) => ({
+                    ...prev,
+                    role: nextRole,
+                    mentor_id: nextRole === "Staff" ? prev.mentor_id : "",
+                  }));
+                }}
               >
                 {visibleRoleOptions.map((r) => (
                   <option key={r.value} value={r.value}>
@@ -279,7 +289,12 @@ export function UserModal({
             value={form.mentor_id ? Number(form.mentor_id) : null}
             onChange={(id) => set("mentor_id", id !== null ? String(id) : "")}
             label="Assigned Mentor / Line Manager"
-            placeholder="Search by name, email, or role…"
+            placeholder={
+              form.role === "Staff"
+                ? "Search by name, email, or role…"
+                : "Only Staff can be assigned a mentor"
+            }
+            disabled={form.role !== "Staff"}
             excludeIds={editingUser ? [editingUser.id] : undefined}
           />
 
