@@ -20,6 +20,20 @@ import {
   Phone,
 } from "lucide-react";
 import type { UserProfile } from "@/services/profile.service";
+import { RoleBadge } from "@/components/admin/RoleBadge";
+
+// Both companies share a single org_id in the data model, so the
+// backend's `org_name` doesn't distinguish Healthark folks from
+// Miltenyi folks. Map by role until this is modelled server-side.
+//   HR_MyOrg, Mentor, Staff  -> Healthark
+//   HR_Miltenyi, PM          -> Miltenyi
+const ROLE_TO_ORG: Record<string, string> = {
+  HR_MyOrg: "Healthark",
+  Mentor: "Healthark",
+  Staff: "Healthark",
+  HR_Miltenyi: "Miltenyi",
+  PM: "Miltenyi",
+};
 
 interface ProfileInfoCardProps {
   readonly profile: UserProfile | null;
@@ -105,9 +119,9 @@ export function ProfileInfoCard({ profile, isLoading }: ProfileInfoCardProps) {
           <h2 className="font-display text-base font-semibold text-text-main truncate">
             {profile.full_name}
           </h2>
-          <span className="inline-block mt-1 rounded-full bg-brand-light px-2.5 py-0.5 text-xs font-medium text-brand">
-            {profile.role}
-          </span>
+          <div className="mt-1">
+            <RoleBadge role={profile.role} />
+          </div>
         </div>
       </div>
 
@@ -125,7 +139,7 @@ export function ProfileInfoCard({ profile, isLoading }: ProfileInfoCardProps) {
         <InfoRow
           icon={Building2}
           label="Organization"
-          value={profile.org_name}
+          value={ROLE_TO_ORG[profile.role] ?? profile.org_name}
         />
         <InfoRow
           icon={Briefcase}
