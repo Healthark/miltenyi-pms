@@ -39,7 +39,7 @@ from app.api.dependencies import DbSession, CurrentUser
 from app.core.cycle_utils import extract_fy_label
 from app.models.annual_review_models import AnnualReview, ReviewStatus
 from app.models.system_settings_models import SystemSettings
-from app.models.user_models import User
+from app.models.user_models import User, Role
 from app.schemas.annual_review_schemas import (
     SelfAppraisalCreate,
     SelfAppraisalDraft,
@@ -554,56 +554,107 @@ def get_calibration_grid(
     current_user: CurrentUser,
 ):
     """
-    All reviews in pending_management + completed for the active cycle,
-    shaped into a simplified grid row. Management-only.
+    Every active Staff user in the org for the active cycle, LEFT-joined
+    against their AnnualReview row. Staff who haven't created a review
+    yet appear with status="not_started" and null ratings; the frontend
+    gates actions per stage. Management-only.
     """
     _require_management(current_user)
     cycle_name = _get_active_cycle(db, current_user.org_id)
 
+    staff_users = (
+        db.query(User)
+        .options(
+            joinedload(User.function),
+            joinedload(User.designation),
+        )
+        .filter(
+            User.org_id == current_user.org_id,
+            User.role == Role.STAFF.value,
+            User.is_deleted == False,  # noqa: E712
+        )
+        .all()
+    )
+    if not staff_users:
+        return []
+
+    staff_ids = [u.id for u in staff_users]
     reviews = (
         db.query(AnnualReview)
         .filter(
             AnnualReview.org_id == current_user.org_id,
             AnnualReview.cycle_name == cycle_name,
-            AnnualReview.status.in_([
-                ReviewStatus.PENDING_MANAGEMENT.value,
-                ReviewStatus.COMPLETED.value,
-            ]),
+            AnnualReview.user_id.in_(staff_ids),
         )
-        .order_by(AnnualReview.created_at.asc())
         .all()
     )
+    reviews_by_user = {r.user_id: r for r in reviews}
 
-    # Preload employees + mentors in a single round-trip. Mentors come from
-    # review.mentor_id (the one captured at self-review time) rather than
-    # user.mentor_id to keep the grid consistent with the review snapshot.
-    user_ids = {r.user_id for r in reviews}
-    mentor_ids = {r.mentor_id for r in reviews if r.mentor_id is not None}
-    all_ids = list(user_ids | mentor_ids)
-    users_by_id = {
-        u.id: u
-        for u in db.query(User).filter(User.id.in_(all_ids)).all()
-    } if all_ids else {}
+    # Resolve mentor names in a single round-trip. For users with a
+    # review, prefer the snapshotted review.mentor_id (so the grid stays
+    # consistent with the review). For users without a review, fall back
+    # to the live User.mentor_id assignment.
+    mentor_ids: set[int] = set()
+    for u in staff_users:
+        review = reviews_by_user.get(u.id)
+        snapshot_id = review.mentor_id if review else None
+        live_id = u.mentor_id
+        if snapshot_id is not None:
+            mentor_ids.add(snapshot_id)
+        elif live_id is not None:
+            mentor_ids.add(live_id)
+    mentors_by_id = {
+        m.id: m
+        for m in db.query(User).filter(User.id.in_(list(mentor_ids))).all()
+    } if mentor_ids else {}
 
     rows: list[CalibrationRow] = []
-    for r in reviews:
-        u = users_by_id.get(r.user_id)
-        m = users_by_id.get(r.mentor_id) if r.mentor_id else None
-        rows.append(CalibrationRow(
-            review_id=r.id,
-            user_id=r.user_id,
-            employee_name=u.full_name if u else "Unknown",
-            employee_email=u.email if u else None,
-            mentor_name=m.full_name if m else None,
-            function=u.function.name if u and u.function else None,
-            designation=u.designation.name if u and u.designation else None,
-            self_performance_rating=r.self_performance_rating,
-            mentor_performance_rating=r.mentor_performance_rating,
-            management_performance_rating=r.management_performance_rating,
-            final_performance_rating=r.final_performance_rating,
-            status=r.status,
-            final_rating_enabled=r.final_rating_enabled,
-        ))
+    for u in staff_users:
+        review = reviews_by_user.get(u.id)
+        if review is not None:
+            mentor = (
+                mentors_by_id.get(review.mentor_id)
+                if review.mentor_id is not None
+                else None
+            )
+            rows.append(CalibrationRow(
+                review_id=review.id,
+                user_id=u.id,
+                employee_name=u.full_name,
+                employee_email=u.email,
+                mentor_name=mentor.full_name if mentor else None,
+                function=u.function.name if u.function else None,
+                designation=u.designation.name if u.designation else None,
+                self_performance_rating=review.self_performance_rating,
+                mentor_performance_rating=review.mentor_performance_rating,
+                management_performance_rating=review.management_performance_rating,
+                final_performance_rating=review.final_performance_rating,
+                status=review.status,
+                final_rating_enabled=review.final_rating_enabled,
+            ))
+        else:
+            mentor = (
+                mentors_by_id.get(u.mentor_id)
+                if u.mentor_id is not None
+                else None
+            )
+            rows.append(CalibrationRow(
+                review_id=None,
+                user_id=u.id,
+                employee_name=u.full_name,
+                employee_email=u.email,
+                mentor_name=mentor.full_name if mentor else None,
+                function=u.function.name if u.function else None,
+                designation=u.designation.name if u.designation else None,
+                self_performance_rating=None,
+                mentor_performance_rating=None,
+                management_performance_rating=None,
+                final_performance_rating=None,
+                status=ReviewStatus.NOT_STARTED.value,
+                final_rating_enabled=False,
+            ))
+
+    rows.sort(key=lambda r: r.employee_name.lower())
     return rows
 
 

@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Settings,
+  ShieldCheck,
   type LucideIcon,
 } from "lucide-react";
 import { NavLink, useNavigate } from "react-router-dom";
@@ -82,6 +83,7 @@ const NavItem = ({
 //   Annual Goals    — Staff, Mentor, HR_MyOrg
 //   Annual Reviews  — Staff, Mentor, HR_MyOrg
 //   My Mentees      — Mentor, HR_MyOrg     (gated on has_mentees)
+//   Management Review — HR_MyOrg only (Healthark admin)
 //   Admin Panel     — HR_Miltenyi, HR_MyOrg
 const MAIN_NAV: NavItemData[] = [
   { id: "dashboard", path: "/dashboard", label: "Dashboard", icon: LayoutDashboard,
@@ -100,6 +102,8 @@ const MAIN_NAV: NavItemData[] = [
     feature: "mentoring",
     requiredRole: ["Mentor", "HR_MyOrg"],
     requiresMentees: true },
+  { id: "management-review", path: "/management-review", label: "Management Review", icon: ShieldCheck,
+    requiredRole: ["HR_MyOrg"] },
   { id: "admin", path: "/admin", label: "Admin Panel", icon: Settings,
     feature: "admin",
     requiredRole: ["HR_Miltenyi", "HR_MyOrg"] },
