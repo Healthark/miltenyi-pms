@@ -81,7 +81,7 @@ function UnmentoredSection({
       </SectionLabel>
 
       {count === 0 ? (
-        <div className="rounded-lg bg-emerald-50/40 border border-dashed border-emerald-200 px-3 py-2.5 text-center">
+        <div className="rounded-lg bg-emerald-50/40 dark:bg-emerald-900/20 border border-dashed border-emerald-200 dark:border-emerald-500/40 px-3 py-2.5 text-center">
           <p className="text-[12px] text-emerald-700 inline-flex items-center gap-1.5">
             <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
             Every active Staff member has a mentor.

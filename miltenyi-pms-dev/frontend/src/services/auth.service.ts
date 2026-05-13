@@ -20,7 +20,12 @@ export interface SessionClaims {
   // True when an admin just reset this user's password to a temporary one.
   // The frontend gates all protected routes to /change-password until cleared.
   must_change_password: boolean;
+  // Saved UI theme — "light" | "dark". The frontend applies this at
+  // login so the user lands in the appearance they last picked.
+  theme_preference: ThemePreference;
 }
+
+export type ThemePreference = "light" | "dark";
 
 // After C12 the JWT lives in an HttpOnly cookie and is NEVER surfaced to JS.
 // The login response body carries session claims + the CSRF token value.
@@ -74,5 +79,16 @@ export const authService = {
    */
   forgotPassword: async (email: string): Promise<void> => {
     await apiClient.post("/auth/forgot-password", { email });
+  },
+
+  /**
+   * Persist the user's UI theme preference. Returns refreshed session
+   * claims so the caller can update its cached `user` payload.
+   */
+  updateTheme: async (theme: ThemePreference): Promise<SessionClaims> => {
+    const response = await apiClient.patch<SessionClaims>("/auth/me/theme", {
+      theme_preference: theme,
+    });
+    return response.data;
   },
 };

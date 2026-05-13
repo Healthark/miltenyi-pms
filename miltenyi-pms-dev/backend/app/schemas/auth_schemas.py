@@ -45,6 +45,14 @@ class SessionResponse(BaseModel):
     # all routes until the user completes the change-password flow, which
     # clears this flag.
     must_change_password: bool = False
+    # Per-user UI theme. "light" | "dark". Returned so the frontend can
+    # apply the saved preference at login time without a follow-up call.
+    theme_preference: str = "light"
+
+
+class ThemePreferenceUpdate(BaseModel):
+    """Body for PATCH /auth/me/theme — flips the saved UI theme."""
+    theme_preference: str = Field(..., pattern=r"^(light|dark)$")
 
 
 # 2. The Outgoing Response (What we send back to React)

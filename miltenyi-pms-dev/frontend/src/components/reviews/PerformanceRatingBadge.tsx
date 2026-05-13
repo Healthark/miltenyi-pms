@@ -13,11 +13,11 @@ interface PerformanceRatingBadgeProps {
 }
 
 const TIER: Record<number, string> = {
-  1: "bg-green-50 text-green-700 border-green-200",
-  2: "bg-brand/10 text-brand border-brand/30",
-  3: "bg-slate-100 text-slate-700 border-slate-200",
-  4: "bg-amber-50 text-amber-700 border-amber-200",
-  5: "bg-red-50 text-red-700 border-red-200",
+  1: "bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-green-200 dark:border-green-700/40",
+  2: "bg-brand/10 dark:bg-brand-light/60 text-brand dark:text-brand-accent border-brand/30 dark:border-brand-accent/40",
+  3: "bg-slate-100 dark:bg-slate-700/50 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-600",
+  4: "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-700/40",
+  5: "bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 border-red-200 dark:border-red-700/40",
 };
 
 export function PerformanceRatingBadge({

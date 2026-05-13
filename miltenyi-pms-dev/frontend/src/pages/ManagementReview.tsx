@@ -545,7 +545,7 @@ export function ManagementReview() {
                                       draft: r.management_performance_rating ?? "",
                                     });
                                   }}
-                                  className="inline-flex items-center gap-1 rounded-md border border-border bg-white px-2 py-1 text-[12px] font-medium text-text-muted hover:bg-brand-light hover:text-brand hover:border-brand-light transition-colors"
+                                  className="inline-flex items-center gap-1 rounded-md border border-border bg-white dark:bg-slate-700/40 px-2 py-1 text-[12px] font-medium text-text-muted hover:bg-brand-light hover:text-brand-accent hover:border-brand-light transition-colors"
                                   aria-label={`View review for ${r.employee_name}`}
                                 >
                                   <Eye className="h-3.5 w-3.5" aria-hidden="true" />

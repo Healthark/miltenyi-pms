@@ -18,8 +18,8 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 const ROLE_STYLES: Record<string, string> = {
-  HR_MyOrg: "bg-purple-100 text-purple-700",
-  HR_Miltenyi: "bg-blue-100 text-blue-700",
+  HR_MyOrg: "bg-blue-100 text-blue-700",
+  HR_Miltenyi: "bg-purple-100 text-purple-700",
   Mentor: "bg-emerald-100 text-emerald-700",
   PM: "bg-amber-100 text-amber-700",
   Staff: "bg-slate-100 text-slate-600",

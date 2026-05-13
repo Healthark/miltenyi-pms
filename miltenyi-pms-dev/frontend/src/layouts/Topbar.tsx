@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Bell, CalendarDays } from "lucide-react";
+import { Bell, CalendarDays, Moon, Sun } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
+import { useTheme } from "@/hooks/useTheme";
 import {
   notificationService,
   type TopbarSummary,
@@ -10,6 +11,7 @@ import { NotificationDropdown } from "@/components/layout/NotificationDropdown";
 
 export function Topbar() {
   const { user } = useAuth();
+  const { isDark, toggleTheme } = useTheme();
 
   // ── Active Cycle — from the dedicated SystemSettings context ──────
   // This is the single source of truth for the cycle badge. When an Admin
@@ -82,13 +84,27 @@ export function Topbar() {
         activeCycleName={settings?.active_cycle_name ?? null}
       />
 
-      {/* Right — bell + avatar */}
+      {/* Right — theme toggle + bell + avatar */}
       <div className="flex items-center gap-4">
+        <button
+          type="button"
+          onClick={toggleTheme}
+          className="p-2 text-text-main hover:text-brand-accent transition-colors rounded-full hover:bg-brand-light"
+          aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+          title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+        >
+          {isDark ? (
+            <Sun className="w-5 h-5 text-amber-400" aria-hidden="true" />
+          ) : (
+            <Moon className="w-5 h-5" aria-hidden="true" />
+          )}
+        </button>
+
         <button
           ref={bellRef}
           type="button"
           onClick={handleBellClick}
-          className="relative p-2 text-text-muted hover:text-brand transition-colors rounded-full hover:bg-slate-50"
+          className="relative p-2 text-text-muted hover:text-brand-accent transition-colors rounded-full hover:bg-brand-light"
           aria-label={
             hasNotifications
               ? `Notifications (${summary?.notifications.length} new)`
@@ -154,7 +170,7 @@ function CycleBadges({
     <div className="flex items-center gap-2">
       {activeCycleName && (
         <span
-          className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-border bg-brand-light px-2.5 py-0.5 text-xs font-medium text-brand"
+          className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-border bg-brand-light px-2.5 py-0.5 text-xs font-medium text-brand-accent"
           title="Project review cycle"
         >
           <CalendarDays className="h-3 w-3 text-accent" aria-hidden="true" />

@@ -19,6 +19,7 @@ from app.schemas.auth_schemas import (
     TokenResponse,
     ResetPasswordRequest,
     ForgotPasswordRequest,
+    ThemePreferenceUpdate,
 )
 from app.schemas.user_schemas import UserProfile as UserProfileResponse
 from app.api.dependencies import CurrentUser, issue_auth_cookies
@@ -68,6 +69,7 @@ def _build_session(user: User, db: Session) -> dict:
         "has_mentees": has_mentees,
         "has_mentor": has_mentor,
         "must_change_password": bool(user.must_change_password),
+        "theme_preference": user.theme_preference or "light",
     }
 
 
@@ -277,6 +279,23 @@ def forgot_password(
         )
 
     return None
+
+
+@router.patch("/me/theme", response_model=SessionResponse)
+def update_theme_preference(
+    payload: ThemePreferenceUpdate,
+    current_user: CurrentUser,
+    db: DbSession,
+):
+    """
+    Persist the authenticated user's UI theme preference. Returns a
+    fresh session payload so the frontend can update its cached claims
+    without a separate /auth/session call.
+    """
+    current_user.theme_preference = payload.theme_preference
+    db.commit()
+    db.refresh(current_user)
+    return _build_session(current_user, db)
 
 
 @router.get("/me", response_model=UserProfileResponse)
