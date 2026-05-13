@@ -52,8 +52,8 @@ const NavItem = ({
           isCollapsed ? "justify-center py-2.5 px-0" : "px-3 py-2 gap-2.5"
         } ${
           isActive
-            ? "bg-brand-light text-brand font-semibold border-l-2 border-accent"
-            : "text-text-muted hover:bg-slate-50 hover:text-text-main font-medium border-l-2 border-transparent"
+            ? "bg-brand-light text-brand-accent font-semibold border-l-2 border-accent"
+            : "text-text-muted hover:bg-brand-light/40 hover:text-text-main font-medium border-l-2 border-transparent"
         }`
       }
     >
@@ -61,7 +61,7 @@ const NavItem = ({
         <>
           <Icon
             className={`w-4 h-4 shrink-0 transition-colors ${
-              isActive ? "text-brand" : "text-text-muted"
+              isActive ? "text-brand-accent" : "text-text-muted"
             }`}
           />
           {!isCollapsed && (
