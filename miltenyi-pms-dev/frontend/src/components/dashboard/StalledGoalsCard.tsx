@@ -4,18 +4,29 @@
  *
  * The natural escalation target is the **mentor** (who owns
  * approve/changes-requested on submission), so each row foregrounds
- * the mentor name in its right column. HR opens this card to know
- * which mentors to nudge.
+ * the mentor name underneath the goal title. HR opens this card to
+ * know which mentors to nudge.
  *
- * All-clear state mirrors MissingAnnualReviewsCard — green check + a
- * positive message — so the dashboard reads "everything's fine here"
- * when the chase list is empty.
+ * Card layout follows the checklist reference: title + red count
+ * badge in the header, a short list of the most-stalled items (top
+ * INLINE_LIMIT rows), and a full-width brand CTA at the bottom that
+ * leads to the page with the rest. The right column shows the wait
+ * time prominently — it's the field that actually drives HR
+ * prioritisation.
  */
 
-import { AlertTriangle, CheckCircle2 } from "lucide-react";
+import { CheckCircle2, Clock } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { StalledGoalsSummary } from "@/services/dashboard.service";
 import { formatFyYearSpan } from "@/utils/fy";
+
+/** Max rows shown inline. Mirrors the checklist reference's cadence
+ *  and keeps card heights even with MissingAnnualReviewsCard. */
+const INLINE_LIMIT = 3;
+/** Wait days at which a stall is treated as critical (badge + per-row
+ *  icon escalate from amber to red). 14d = two business weeks, the
+ *  point where "people forgot" becomes "process is broken". */
+const CRITICAL_DAYS = 14;
 
 interface StalledGoalsCardProps {
   /** Null while the parent's fetch is in flight. */
@@ -38,98 +49,88 @@ export function StalledGoalsCard({
       : fyLabel;
 
   return (
-    <article className="rounded-xl border border-border bg-surface p-5 shadow-sm flex flex-col gap-4">
+    <article className="flex flex-col rounded-xl border border-border bg-surface shadow-sm">
       {/* Header */}
-      <div className="flex items-center gap-2.5">
-        <div
-          className={`flex h-8 w-8 items-center justify-center rounded-lg ${
-            isAllClear ? "bg-emerald-50" : "bg-amber-50"
-          }`}
-        >
-          {isAllClear ? (
-            <CheckCircle2
-              className="h-4 w-4 text-emerald-600"
-              aria-hidden="true"
-            />
-          ) : (
-            <AlertTriangle
-              className="h-4 w-4 text-amber-600"
-              aria-hidden="true"
-            />
-          )}
-        </div>
+      <div className="flex items-start justify-between gap-3 px-5 pt-5 pb-3">
         <div>
-          <h3 className="font-display text-sm font-semibold text-text-main">
+          <h3 className="font-display text-base font-semibold text-text-main">
             Stalled Goal Approvals
           </h3>
           {subtitle && (
             <p className="mt-0.5 text-[11px] text-text-muted">{subtitle}</p>
           )}
         </div>
+        <CountBadge count={count} isAllClear={isAllClear} />
       </div>
+
+      <hr className="border-border/60" />
 
       {/* Body */}
       {isLoading ? (
         <SkeletonBody />
       ) : isAllClear ? (
-        <AllClearBody fyLabel={fyLabel} />
+        <AllClearBody fyLabel={fyLabel} thresholdDays={data.threshold_days} />
       ) : (
-        <div className="space-y-2">
-          <div className="flex items-baseline gap-2">
-            <span className="font-display text-3xl font-semibold text-text-main leading-none">
-              {count}
-            </span>
-            <span className="text-sm text-text-muted">
-              {count === 1
-                ? "goal waiting on a mentor"
-                : "goals waiting on a mentor"}
-            </span>
-          </div>
-
-          {/* Scrollable list */}
-          <div className="rounded-lg border border-border bg-slate-50/40 max-h-64 overflow-y-auto divide-y divide-border/60">
-            {data!.goals.map((g) => (
-              <div
+        <ul className="divide-y divide-border/60">
+          {data.goals.slice(0, INLINE_LIMIT).map((g) => {
+            const isCritical = g.days_waiting >= CRITICAL_DAYS;
+            return (
+              <li
                 key={g.goal_id}
-                className="flex items-start justify-between gap-3 px-3 py-2"
+                className="flex items-center gap-3 px-5 py-3"
               >
+                <div
+                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
+                    isCritical ? "bg-rose-50" : "bg-amber-50"
+                  }`}
+                >
+                  <Clock
+                    className={`h-4 w-4 ${
+                      isCritical ? "text-red" : "text-amber"
+                    }`}
+                    aria-hidden="true"
+                  />
+                </div>
                 <div className="min-w-0 flex-1">
                   <p
-                    className="text-[13px] font-medium text-text-main truncate"
+                    className="text-[13px] font-semibold text-text-main truncate"
                     title={g.title}
                   >
                     {g.title}
                   </p>
-                  <p className="mt-0.5 text-[11px] text-text-muted truncate">
-                    {g.owner_name}
-                  </p>
-                </div>
-                <div className="shrink-0 flex flex-col items-end gap-1">
-                  <span className="inline-flex items-center rounded-full bg-amber-50 text-amber-700 px-2 py-0.5 text-[11px] font-semibold">
-                    {g.days_waiting}d
-                  </span>
-                  <span
-                    className="text-[11px] text-text-muted truncate max-w-[120px]"
+                  <p
+                    className="mt-0.5 text-[11px] text-text-muted truncate"
                     title={g.mentor_name ?? "no mentor"}
                   >
-                    Mentor:{" "}
-                    {g.mentor_name ?? (
-                      <span className="italic">none</span>
+                    {g.owner_name}
+                    {g.mentor_name && (
+                      <>
+                        {" · "}
+                        <span>mentor: {g.mentor_name}</span>
+                      </>
                     )}
-                  </span>
+                  </p>
                 </div>
-              </div>
-            ))}
-          </div>
-        </div>
+                <p
+                  className={`shrink-0 text-right font-display text-[13px] font-semibold tabular-nums ${
+                    isCritical ? "text-red" : "text-amber"
+                  }`}
+                >
+                  {g.days_waiting}d
+                </p>
+              </li>
+            );
+          })}
+        </ul>
       )}
 
-      <div className="pt-2 border-t border-border/60">
+      {/* Footer CTA */}
+      <div className="px-5 pb-5 pt-3">
         <Link
           to={viewAllHref}
-          className="text-[12px] font-medium text-brand hover:underline"
+          className="block w-full rounded-lg bg-brand-light py-2.5 text-center text-[13px] font-semibold text-brand transition-colors hover:bg-brand hover:text-white"
         >
-          View all →
+          View All Goals
         </Link>
       </div>
     </article>
@@ -138,41 +139,64 @@ export function StalledGoalsCard({
 
 // ── Internal pieces ───────────────────────────────────────────────────
 
-function SkeletonBody() {
+function CountBadge({
+  count,
+  isAllClear,
+}: {
+  readonly count: number;
+  readonly isAllClear: boolean;
+}) {
+  if (isAllClear) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-green">
+        <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
+        All clear
+      </span>
+    );
+  }
   return (
-    <div className="space-y-2 animate-pulse">
-      <div className="flex items-baseline gap-2">
-        <div className="h-8 w-12 rounded bg-slate-100" />
-        <div className="h-4 w-40 rounded bg-slate-100" />
-      </div>
-      <div className="rounded-lg border border-border bg-slate-50/40 divide-y divide-border/60">
-        {[0, 1, 2].map((i) => (
-          <div
-            key={i}
-            className="flex items-center justify-between gap-3 px-3 py-2"
-          >
-            <div className="min-w-0 flex-1 space-y-1">
-              <div className="h-3 w-44 rounded bg-slate-100" />
-              <div className="h-2 w-24 rounded bg-slate-100" />
-            </div>
-            <div className="space-y-1 items-end flex flex-col">
-              <div className="h-4 w-10 rounded-full bg-slate-100" />
-              <div className="h-2 w-20 rounded bg-slate-100" />
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
+    <span className="inline-flex items-center rounded-md bg-red px-2.5 py-1 text-[11px] font-semibold text-white tabular-nums">
+      {count} Stalled
+    </span>
   );
 }
 
-function AllClearBody({ fyLabel }: { readonly fyLabel: string | null }) {
+function SkeletonBody() {
   return (
-    <div className="rounded-lg bg-emerald-50/40 border border-dashed border-emerald-200 px-4 py-5 text-center">
-      <p className="text-sm text-emerald-700">
+    <ul className="divide-y divide-border/60 animate-pulse">
+      {[0, 1, 2].map((i) => (
+        <li key={i} className="flex items-center gap-3 px-5 py-3">
+          <div className="h-10 w-10 shrink-0 rounded-full bg-slate-100" />
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <div className="h-3 w-40 rounded bg-slate-100" />
+            <div className="h-2 w-28 rounded bg-slate-100" />
+          </div>
+          <div className="h-4 w-10 rounded bg-slate-100" />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function AllClearBody({
+  fyLabel,
+  thresholdDays,
+}: {
+  readonly fyLabel: string | null;
+  readonly thresholdDays: number;
+}) {
+  return (
+    <div className="px-5 py-6 text-center">
+      <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-emerald-50">
+        <CheckCircle2 className="h-5 w-5 text-green" aria-hidden="true" />
+      </div>
+      <p className="mt-2 text-[13px] font-medium text-text-main">
+        No goals stalled in approval.
+      </p>
+      <p className="mt-0.5 text-[11px] text-text-muted">
         {fyLabel
-          ? `No ${fyLabel} goals stalled in approval.`
-          : "No goals stalled in approval."}
+          ? `Nothing waiting > ${thresholdDays}d in ${fyLabel}.`
+          : `Nothing waiting > ${thresholdDays}d.`}
       </p>
     </div>
   );

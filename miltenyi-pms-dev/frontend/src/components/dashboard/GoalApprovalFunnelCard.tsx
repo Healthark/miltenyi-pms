@@ -9,18 +9,26 @@
  *
  * Drafts are not surfaced — private mentee work. The headline reads
  * "<approved> / <total> goals approved", matching how the Annual
- * Review funnel widget sized its denominator (rows in the system; the
- * "missing goals" widget in Theme D will eventually cover the
- * never-submitted population).
+ * Review funnel widget sized its denominator.
  *
- * Loading + empty states mirror AnnualReviewFunnelCard so the two
- * cards read as a visually symmetric pair on the page.
+ * Layout matches the other progress cards in row 1 of HrDashboard:
+ * vertical legend on the left, donut on the right, header link to the
+ * full page in the top-right corner.
  */
 
 import { Target } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { GoalApprovalFunnel } from "@/services/dashboard.service";
 import { formatFyYearSpan } from "@/utils/fy";
+import { DonutChart } from "./DonutChart";
+import { InsightStripe, type InsightTone } from "./InsightStripe";
+
+// Tokens from index.css — keeps the chart in the system palette.
+const SEGMENT_COLORS = {
+  pending_approval: "var(--color-amber)",
+  changes_requested: "var(--color-red)",
+  approved: "var(--color-green)",
+} as const;
 
 interface GoalApprovalFunnelCardProps {
   /** Null while the parent's fetch is in flight. */
@@ -42,18 +50,26 @@ export function GoalApprovalFunnelCard({
   return (
     <article className="rounded-xl border border-border bg-surface p-5 shadow-sm flex flex-col gap-4">
       {/* Header */}
-      <div className="flex items-center gap-2.5">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-teal-50">
-          <Target className="h-4 w-4 text-teal-600" aria-hidden="true" />
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-light">
+            <Target className="h-4 w-4 text-brand" aria-hidden="true" />
+          </div>
+          <div>
+            <h3 className="font-display text-sm font-semibold text-text-main">
+              Goal Approval Progress
+            </h3>
+            {fyLabel && (
+              <p className="mt-0.5 text-[11px] text-text-muted">{fyLabel}</p>
+            )}
+          </div>
         </div>
-        <div>
-          <h3 className="font-display text-sm font-semibold text-text-main">
-            Goal Approval Progress
-          </h3>
-          {fyLabel && (
-            <p className="mt-0.5 text-[11px] text-text-muted">{fyLabel}</p>
-          )}
-        </div>
+        <Link
+          to={viewAllHref}
+          className="text-[12px] font-medium text-brand hover:underline whitespace-nowrap"
+        >
+          View all →
+        </Link>
       </div>
 
       {/* Body */}
@@ -62,79 +78,105 @@ export function GoalApprovalFunnelCard({
       ) : !hasData ? (
         <EmptyBody fyLabel={fyLabel} />
       ) : (
-        <div className="space-y-3">
-          <div className="flex items-baseline gap-2">
-            <span className="font-display text-3xl font-semibold text-text-main leading-none">
-              {data.approved}
-            </span>
-            <span className="text-sm text-text-muted">
-              / {data.total} goals approved
-            </span>
-            <span className="ml-auto text-[12px] font-semibold text-text-muted">
-              {approvalPercent}%
-            </span>
-          </div>
-
-          {/* Progress bar */}
-          <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
-            <div
-              className="h-full rounded-full bg-teal-500 transition-all duration-300"
-              style={{ width: `${approvalPercent}%` }}
+        <>
+          <div className="flex items-center gap-2">
+            <ul className="flex-1 space-y-2 text-[13px]">
+              <LegendItem
+                dotColor={SEGMENT_COLORS.pending_approval}
+                count={data.pending_approval}
+                label="Pending Approval"
+              />
+              <LegendItem
+                dotColor={SEGMENT_COLORS.changes_requested}
+                count={data.changes_requested}
+                label="Changes Requested"
+              />
+              <LegendItem
+                dotColor={SEGMENT_COLORS.approved}
+                count={data.approved}
+                label="Approved"
+              />
+            </ul>
+            <DonutChart
+              segments={[
+                {
+                  label: "Pending Approval",
+                  value: data.pending_approval,
+                  color: SEGMENT_COLORS.pending_approval,
+                },
+                {
+                  label: "Changes Requested",
+                  value: data.changes_requested,
+                  color: SEGMENT_COLORS.changes_requested,
+                },
+                {
+                  label: "Approved",
+                  value: data.approved,
+                  color: SEGMENT_COLORS.approved,
+                },
+              ]}
+              centerPrimary={String(data.approved)}
+              centerSecondary={`/${data.total}`}
+              ariaLabel={`${data.approved} of ${data.total} annual goals approved (${approvalPercent}%)`}
             />
           </div>
-
-          {/* Per-stage chips */}
-          <div className="flex flex-wrap gap-x-3 gap-y-1.5 text-[12px]">
-            <StatusChip
-              label="Pending Approval"
-              count={data.pending_approval}
-              color="amber"
-            />
-            <StatusChip
-              label="Changes Requested"
-              count={data.changes_requested}
-              color="rose"
-            />
-            <StatusChip
-              label="Approved"
-              count={data.approved}
-              color="emerald"
-            />
-          </div>
-        </div>
+          <InsightStripe {...buildInsight(data, approvalPercent)} />
+        </>
       )}
-
-      <div className="pt-2 border-t border-border/60">
-        <Link
-          to={viewAllHref}
-          className="text-[12px] font-medium text-brand hover:underline"
-        >
-          View all →
-        </Link>
-      </div>
     </article>
   );
+}
+
+// Most-actionable callout. "Changes requested" is friction (employee
+// has to revise + resubmit) so we surface it ahead of plain pending —
+// it's the bucket most likely to stall the cycle.
+function buildInsight(
+  data: GoalApprovalFunnel,
+  approvalPercent: number,
+): { text: string; tone: InsightTone } {
+  if (data.changes_requested > 0) {
+    return {
+      text: `${data.changes_requested} ${pluralize(
+        data.changes_requested,
+        "goal",
+      )} awaiting revision`,
+      tone: "red",
+    };
+  }
+  if (data.pending_approval > 0) {
+    return {
+      text: `${data.pending_approval} ${pluralize(
+        data.pending_approval,
+        "goal",
+      )} awaiting mentor approval`,
+      tone: "amber",
+    };
+  }
+  return {
+    text: `${approvalPercent}% approved · all submissions cleared`,
+    tone: "green",
+  };
+}
+
+function pluralize(n: number, word: string): string {
+  return n === 1 ? word : `${word}s`;
 }
 
 // ── Internal pieces ───────────────────────────────────────────────────
 
 function SkeletonBody() {
   return (
-    <div className="space-y-3 animate-pulse">
-      <div className="flex items-baseline gap-2">
-        <div className="h-8 w-12 rounded bg-slate-100" />
-        <div className="h-4 w-32 rounded bg-slate-100" />
-        <div className="ml-auto h-4 w-10 rounded bg-slate-100" />
-      </div>
-      <div className="h-2 w-full rounded-full bg-slate-100" />
-      <div className="flex flex-wrap gap-2">
-        <div className="h-5 w-28 rounded bg-slate-100" />
-        <div className="h-5 w-32 rounded bg-slate-100" />
-        <div className="h-5 w-20 rounded bg-slate-100" />
-      </div>
+    <div className="flex items-center gap-2 animate-pulse">
+      <ul className="flex-1 space-y-2">
+        <li className="h-4 w-36 rounded bg-slate-100" />
+        <li className="h-4 w-40 rounded bg-slate-100" />
+        <li className="h-4 w-28 rounded bg-slate-100" />
+      </ul>
+      <div className="h-32 w-32 rounded-full bg-slate-100" />
     </div>
   );
 }
+
 
 function EmptyBody({ fyLabel }: { readonly fyLabel: string | null }) {
   return (
@@ -148,31 +190,26 @@ function EmptyBody({ fyLabel }: { readonly fyLabel: string | null }) {
   );
 }
 
-type ChipColor = "amber" | "rose" | "emerald";
-
-const CHIP_DOT: Record<ChipColor, string> = {
-  amber: "bg-amber-500",
-  rose: "bg-rose-500",
-  emerald: "bg-emerald-500",
-};
-
-function StatusChip({
-  label,
+function LegendItem({
+  dotColor,
   count,
-  color,
+  label,
 }: {
-  readonly label: string;
+  readonly dotColor: string;
   readonly count: number;
-  readonly color: ChipColor;
+  readonly label: string;
 }) {
   return (
-    <span className="inline-flex items-center gap-1.5">
+    <li className="flex items-center gap-2">
       <span
-        className={`h-1.5 w-1.5 rounded-full ${CHIP_DOT[color]}`}
+        className="h-2 w-2 shrink-0 rounded-full"
+        style={{ backgroundColor: dotColor }}
         aria-hidden="true"
       />
+      <span className="font-semibold text-text-main tabular-nums">
+        {count}
+      </span>
       <span className="text-text-muted">{label}</span>
-      <span className="font-semibold text-text-main">{count}</span>
-    </span>
+    </li>
   );
 }

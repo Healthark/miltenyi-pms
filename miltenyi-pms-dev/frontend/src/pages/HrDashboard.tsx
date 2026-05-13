@@ -138,17 +138,14 @@ export function HrDashboard() {
         </div>
       </div>
 
-      {/* Widget grid */}
+      {/* Row 1 — annual-review storyline: funnel progress, project-cycle
+          progress, and the silent population that hasn't started yet.
+          Miltenyi HR only sees Project Review Completion in this row
+          (annual reviews are out of their scope). */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <HeadcountCard data={summary?.headcount ?? null} />
         {!isMiltenyiHR && (
           <AnnualReviewFunnelCard
             data={summary?.annual_review_funnel ?? null}
-          />
-        )}
-        {!isMiltenyiHR && (
-          <GoalApprovalFunnelCard
-            data={summary?.goal_approval_funnel ?? null}
           />
         )}
         <ProjectReviewCompletionCard
@@ -159,11 +156,28 @@ export function HrDashboard() {
             data={summary?.missing_annual_reviews ?? null}
           />
         )}
+      </div>
+
+      {/* Row 2 — goal-approval storyline + headcount snapshot. Goal
+          Approval and Stalled Goals are hidden for Miltenyi HR, so
+          they only see the Headcount card in this row. */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {!isMiltenyiHR && (
+          <GoalApprovalFunnelCard
+            data={summary?.goal_approval_funnel ?? null}
+          />
+        )}
+        <HeadcountCard data={summary?.headcount ?? null} />
         {!isMiltenyiHR && (
           <StalledGoalsCard data={summary?.stalled_goals ?? null} />
         )}
+      </div>
+
+      {/* Row 3 — mentor pairing health snapshot. Standalone because it
+          isn't FY-scoped and doesn't pair narratively with either of
+          the cycle-driven rows above. */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         <MentorCoverageCard data={summary?.mentor_coverage ?? null} />
-        {/* Subsequent widgets slot in here as we add them. */}
       </div>
     </div>
   );

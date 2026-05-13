@@ -8,14 +8,28 @@
  * not in the denominator (they'll show up in the "Missing reviews"
  * widget in Theme D when we add it).
  *
- * Loading state renders a shimmer skeleton in the same outer shell so
- * the page doesn't reflow when data arrives.
+ * Layout follows the system-theme reference: title + "View all" header
+ * on top, donut chart on the right, vertical legend on the left. Colors
+ * are pulled from the theme tokens declared in `index.css`.
  */
 
 import { ClipboardCheck } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { AnnualReviewFunnel } from "@/services/dashboard.service";
 import { formatFyYearSpan } from "@/utils/fy";
+import { DonutChart } from "./DonutChart";
+import { InsightStripe, type InsightTone } from "./InsightStripe";
+
+// Segment palette — pulled from the theme tokens defined in index.css
+// so the chart stays in sync with the rest of the design system. The
+// "draft" slate is the only non-token color and matches the chip-dot
+// neutral used elsewhere on the dashboard.
+const SEGMENT_COLORS = {
+  draft: "#94a3b8",
+  pending_mentor: "var(--color-amber)",
+  pending_management: "var(--color-brand)",
+  completed: "var(--color-green)",
+} as const;
 
 interface AnnualReviewFunnelCardProps {
   /** Null while the parent's fetch is in flight. */
@@ -36,22 +50,30 @@ export function AnnualReviewFunnelCard({
 
   return (
     <article className="rounded-xl border border-border bg-surface p-5 shadow-sm flex flex-col gap-4">
-      {/* Header */}
-      <div className="flex items-center gap-2.5">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-50">
-          <ClipboardCheck
-            className="h-4 w-4 text-violet-600"
-            aria-hidden="true"
-          />
+      {/* Header — icon + title on the left, "View all" link on the right */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-light">
+            <ClipboardCheck
+              className="h-4 w-4 text-brand"
+              aria-hidden="true"
+            />
+          </div>
+          <div>
+            <h3 className="font-display text-sm font-semibold text-text-main">
+              Annual Review Progress
+            </h3>
+            {fyLabel && (
+              <p className="mt-0.5 text-[11px] text-text-muted">{fyLabel}</p>
+            )}
+          </div>
         </div>
-        <div>
-          <h3 className="font-display text-sm font-semibold text-text-main">
-            Annual Review Progress
-          </h3>
-          {fyLabel && (
-            <p className="mt-0.5 text-[11px] text-text-muted">{fyLabel}</p>
-          )}
-        </div>
+        <Link
+          to={viewAllHref}
+          className="text-[12px] font-medium text-brand hover:underline whitespace-nowrap"
+        >
+          View all →
+        </Link>
       </div>
 
       {/* Body */}
@@ -60,81 +82,121 @@ export function AnnualReviewFunnelCard({
       ) : !hasData ? (
         <EmptyBody fyLabel={fyLabel} />
       ) : (
-        <div className="space-y-3">
-          <div className="flex items-baseline gap-2">
-            <span className="font-display text-3xl font-semibold text-text-main leading-none">
-              {data.completed}
-            </span>
-            <span className="text-sm text-text-muted">
-              / {data.total} reviews complete
-            </span>
-            <span className="ml-auto text-[12px] font-semibold text-text-muted">
-              {completionPercent}%
-            </span>
-          </div>
-
-          {/* Progress bar */}
-          <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
-            <div
-              className="h-full rounded-full bg-violet-500 transition-all duration-300"
-              style={{ width: `${completionPercent}%` }}
+        <>
+          <div className="flex items-center gap-2">
+            {/* Left: vertical legend (dot + count + label). Matches the
+                reference card's "● 1,031 on time" style. */}
+            <ul className="flex-1 space-y-2 text-[13px]">
+              <LegendItem
+                dotColor={SEGMENT_COLORS.draft}
+                count={data.draft}
+                label="Draft"
+              />
+              <LegendItem
+                dotColor={SEGMENT_COLORS.pending_mentor}
+                count={data.pending_mentor}
+                label="Pending Mentor"
+              />
+              <LegendItem
+                dotColor={SEGMENT_COLORS.pending_management}
+                count={data.pending_management}
+                label="Pending Mgmt"
+              />
+              <LegendItem
+                dotColor={SEGMENT_COLORS.completed}
+                count={data.completed}
+                label="Completed"
+              />
+            </ul>
+            {/* Right: donut */}
+            <DonutChart
+              segments={[
+                { label: "Draft", value: data.draft, color: SEGMENT_COLORS.draft },
+                {
+                  label: "Pending Mentor",
+                  value: data.pending_mentor,
+                  color: SEGMENT_COLORS.pending_mentor,
+                },
+                {
+                  label: "Pending Mgmt",
+                  value: data.pending_management,
+                  color: SEGMENT_COLORS.pending_management,
+                },
+                {
+                  label: "Completed",
+                  value: data.completed,
+                  color: SEGMENT_COLORS.completed,
+                },
+              ]}
+              centerPrimary={String(data.completed)}
+              centerSecondary={`/${data.total}`}
+              ariaLabel={`${data.completed} of ${data.total} annual reviews complete (${completionPercent}%)`}
             />
           </div>
-
-          {/* Per-status chips */}
-          <div className="flex flex-wrap gap-x-3 gap-y-1.5 text-[12px]">
-            <StatusChip label="Draft" count={data.draft} color="slate" />
-            <StatusChip
-              label="Pending Mentor"
-              count={data.pending_mentor}
-              color="amber"
-            />
-            <StatusChip
-              label="Pending Mgmt"
-              count={data.pending_management}
-              color="blue"
-            />
-            <StatusChip
-              label="Completed"
-              count={data.completed}
-              color="emerald"
-            />
-          </div>
-        </div>
+          <InsightStripe {...buildInsight(data, completionPercent)} />
+        </>
       )}
-
-      <div className="pt-2 border-t border-border/60">
-        <Link
-          to={viewAllHref}
-          className="text-[12px] font-medium text-brand hover:underline"
-        >
-          View all →
-        </Link>
-      </div>
     </article>
   );
+}
+
+// Derive the most-actionable callout for the bottom of the card. We
+// surface the deepest still-incomplete bucket — that's the work HR
+// needs to chase up next — and choose a tone that matches urgency.
+function buildInsight(
+  data: AnnualReviewFunnel,
+  completionPercent: number,
+): { text: string; tone: InsightTone } {
+  if (data.pending_management > 0) {
+    return {
+      text: `${data.pending_management} ${pluralize(
+        data.pending_management,
+        "review",
+      )} ready for management`,
+      tone: "brand",
+    };
+  }
+  if (data.pending_mentor > 0) {
+    return {
+      text: `${data.pending_mentor} ${pluralize(
+        data.pending_mentor,
+        "review",
+      )} awaiting mentor`,
+      tone: "amber",
+    };
+  }
+  if (data.draft > 0) {
+    return {
+      text: `${data.draft} ${pluralize(data.draft, "draft")} still in progress`,
+      tone: "amber",
+    };
+  }
+  return {
+    text: `${completionPercent}% complete · all reviews on track`,
+    tone: "green",
+  };
+}
+
+function pluralize(n: number, word: string): string {
+  return n === 1 ? word : `${word}s`;
 }
 
 // ── Internal pieces ───────────────────────────────────────────────────
 
 function SkeletonBody() {
   return (
-    <div className="space-y-3 animate-pulse">
-      <div className="flex items-baseline gap-2">
-        <div className="h-8 w-12 rounded bg-slate-100" />
-        <div className="h-4 w-32 rounded bg-slate-100" />
-        <div className="ml-auto h-4 w-10 rounded bg-slate-100" />
-      </div>
-      <div className="h-2 w-full rounded-full bg-slate-100" />
-      <div className="flex flex-wrap gap-2">
-        <div className="h-5 w-20 rounded bg-slate-100" />
-        <div className="h-5 w-28 rounded bg-slate-100" />
-        <div className="h-5 w-24 rounded bg-slate-100" />
-        <div className="h-5 w-24 rounded bg-slate-100" />
-      </div>
+    <div className="flex items-center gap-2 animate-pulse">
+      <ul className="flex-1 space-y-2">
+        <li className="h-4 w-32 rounded bg-slate-100" />
+        <li className="h-4 w-36 rounded bg-slate-100" />
+        <li className="h-4 w-28 rounded bg-slate-100" />
+        <li className="h-4 w-32 rounded bg-slate-100" />
+      </ul>
+      <div className="h-32 w-32 rounded-full bg-slate-100" />
     </div>
   );
 }
+
 
 function EmptyBody({ fyLabel }: { readonly fyLabel: string | null }) {
   return (
@@ -148,32 +210,26 @@ function EmptyBody({ fyLabel }: { readonly fyLabel: string | null }) {
   );
 }
 
-type ChipColor = "slate" | "amber" | "blue" | "emerald";
-
-const CHIP_DOT: Record<ChipColor, string> = {
-  slate: "bg-slate-400",
-  amber: "bg-amber-500",
-  blue: "bg-blue-500",
-  emerald: "bg-emerald-500",
-};
-
-function StatusChip({
-  label,
+function LegendItem({
+  dotColor,
   count,
-  color,
+  label,
 }: {
-  readonly label: string;
+  readonly dotColor: string;
   readonly count: number;
-  readonly color: ChipColor;
+  readonly label: string;
 }) {
   return (
-    <span className="inline-flex items-center gap-1.5">
+    <li className="flex items-center gap-2">
       <span
-        className={`h-1.5 w-1.5 rounded-full ${CHIP_DOT[color]}`}
+        className="h-2 w-2 shrink-0 rounded-full"
+        style={{ backgroundColor: dotColor }}
         aria-hidden="true"
       />
+      <span className="font-semibold text-text-main tabular-nums">
+        {count}
+      </span>
       <span className="text-text-muted">{label}</span>
-      <span className="font-semibold text-text-main">{count}</span>
-    </span>
+    </li>
   );
 }

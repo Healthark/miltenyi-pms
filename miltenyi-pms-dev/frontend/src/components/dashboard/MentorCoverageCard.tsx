@@ -10,11 +10,17 @@
  *
  * Not FY-scoped. This is a "right now" snapshot of the org, like the
  * Headcount card.
+ *
+ * Layout aligns with the row 1 progress cards: brand-themed header
+ * tile, "View all" top-right, and an InsightStripe surfacing the
+ * priority callout (unmentored count if any, otherwise the heaviest
+ * mentor load).
  */
 
 import { CheckCircle2, UserCog, UserMinus, Users } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { MentorCoverage } from "@/services/dashboard.service";
+import { InsightStripe } from "./InsightStripe";
 
 interface MentorCoverageCardProps {
   /** Null while the parent's fetch is in flight. */
@@ -33,35 +39,64 @@ export function MentorCoverageCard({
   return (
     <article className="rounded-xl border border-border bg-surface p-5 shadow-sm flex flex-col gap-4">
       {/* Header */}
-      <div className="flex items-center gap-2.5">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-50">
-          <Users className="h-4 w-4 text-cyan-600" aria-hidden="true" />
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-light">
+            <Users className="h-4 w-4 text-brand" aria-hidden="true" />
+          </div>
+          <h3 className="font-display text-sm font-semibold text-text-main">
+            Mentor Coverage
+          </h3>
         </div>
-        <h3 className="font-display text-sm font-semibold text-text-main">
-          Mentor Coverage
-        </h3>
+        <Link
+          to={viewAllHref}
+          className="text-[12px] font-medium text-brand hover:underline whitespace-nowrap"
+        >
+          View all →
+        </Link>
       </div>
 
       {/* Body */}
       {isLoading ? (
         <SkeletonBody />
       ) : (
-        <div className="space-y-4">
+        <>
           <UnmentoredSection unmentored={data.unmentored_staff} />
           <TopMentorsSection mentors={data.top_mentors} />
-        </div>
+          <InsightStripe {...buildInsight(data)} />
+        </>
       )}
-
-      <div className="pt-2 border-t border-border/60">
-        <Link
-          to={viewAllHref}
-          className="text-[12px] font-medium text-brand hover:underline"
-        >
-          View all →
-        </Link>
-      </div>
     </article>
   );
+}
+
+// Priority order: unmentored staff are an operational block (no goals,
+// no reviews), so they outrank "someone is overloaded" as a callout.
+// Overload only becomes the headline once the floor is covered.
+function buildInsight(data: MentorCoverage) {
+  const unmentored = data.unmentored_staff.length;
+  if (unmentored > 0) {
+    return {
+      tone: "red" as const,
+      text:
+        unmentored === 1
+          ? "1 staff blocked — needs a mentor assignment"
+          : `${unmentored} staff blocked — need mentor assignments`,
+    };
+  }
+  const heaviest = data.top_mentors.at(0);
+  if (!heaviest) {
+    return {
+      tone: "amber" as const,
+      text: "No mentors with active mentees yet",
+    };
+  }
+  return {
+    tone: "brand" as const,
+    text: `${heaviest.full_name.split(" ")[0]} carries the heaviest load (${heaviest.mentee_count} ${
+      heaviest.mentee_count === 1 ? "mentee" : "mentees"
+    })`,
+  };
 }
 
 // ── Sections ──────────────────────────────────────────────────────────
@@ -88,11 +123,13 @@ function UnmentoredSection({
       ) : (
         <>
           <p className="text-[12px] text-text-muted">
-            <span className="font-semibold text-text-main">{count}</span>{" "}
+            <span className="font-semibold text-text-main tabular-nums">
+              {count}
+            </span>{" "}
             {count === 1 ? "Staff member is" : "Staff members are"} blocked
             from goals + reviews.
           </p>
-          <div className="rounded-lg border border-border bg-slate-50/40 max-h-36 overflow-y-auto divide-y divide-border/60">
+          <div className="rounded-lg border border-border bg-slate-50/40 max-h-32 overflow-y-auto divide-y divide-border/60">
             {unmentored.map((s) => (
               <div key={s.user_id} className="px-3 py-1.5">
                 <p className="text-[13px] font-medium text-text-main truncate">
@@ -137,7 +174,7 @@ function TopMentorsSection({
               <p className="text-[13px] text-text-main truncate">
                 {m.full_name}
               </p>
-              <span className="inline-flex items-center rounded-full bg-cyan-50 text-cyan-700 px-2 py-0.5 text-[11px] font-semibold shrink-0">
+              <span className="inline-flex items-center rounded-full bg-brand-light px-2 py-0.5 text-[11px] font-semibold text-brand shrink-0 tabular-nums">
                 {m.mentee_count}{" "}
                 {m.mentee_count === 1 ? "mentee" : "mentees"}
               </span>
@@ -181,12 +218,13 @@ function SkeletonBody() {
                 className="flex items-center justify-between gap-3 px-3 py-2"
               >
                 <div className="h-3 w-32 rounded bg-slate-100" />
-                <div className="h-4 w-12 rounded-full bg-slate-100" />
+                <div className="h-4 w-16 rounded-full bg-slate-100" />
               </div>
             ))}
           </div>
         </div>
       ))}
+      <div className="h-8 w-full rounded-lg bg-slate-100" />
     </div>
   );
 }
