@@ -39,7 +39,14 @@ from app.core.database import Base
 
 
 class ReviewStatus(str, PyEnum):
-    """Tracks which stage the review is currently in."""
+    """Tracks which stage the review is currently in.
+
+    NOT_STARTED is a synthetic value — never written to the database. It
+    exists only so the Management Calibration grid can surface Staff
+    users who haven't created an AnnualReview row for the active cycle
+    yet, alongside rows that do exist.
+    """
+    NOT_STARTED          = "not_started"
     DRAFT                = "draft"
     PENDING_MENTOR       = "pending_mentor"
     PENDING_MANAGEMENT   = "pending_management"

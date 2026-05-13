@@ -17,6 +17,7 @@ import apiClient from "@/services/api.client";
 // ── Enums ───────────────────────────────────────────────────────────
 
 export type ReviewStatus =
+  | "not_started"
   | "draft"
   | "pending_mentor"
   | "pending_management"
@@ -70,7 +71,8 @@ export interface MenteeAnnualReview extends AnnualReview {
 }
 
 export interface CalibrationRow {
-  review_id: number;
+  /** Null when the Staff user hasn't created a review yet (status === "not_started"). */
+  review_id: number | null;
   user_id: number;
   employee_name: string;
   employee_email: string | null;

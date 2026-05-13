@@ -118,8 +118,13 @@ class AnnualReviewResponse(BaseModel):
 
 
 class CalibrationRow(BaseModel):
-    """Simplified row for the HR Calibration Grid datatable."""
-    review_id: int
+    """Simplified row for the HR Calibration Grid datatable.
+
+    `review_id` is None for synthetic rows that represent Staff users
+    who haven't created a review row yet — those rows carry
+    `status = "not_started"` and all rating fields null.
+    """
+    review_id: Optional[int] = None
     user_id: int
     employee_name: str
     employee_email: Optional[str] = None

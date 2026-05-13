@@ -2,7 +2,8 @@
  * ReviewStatusBadge.tsx — Color-Coded Status Badge for Annual Reviews.
  *
  * Maps each ReviewStatus to a distinct color:
- *   draft              → slate    (neutral)
+ *   not_started        → gray     (no review row yet)
+ *   draft              → slate    (employee saved a draft)
  *   pending_mentor     → amber    (waiting on mentor)
  *   pending_management → blue     (waiting on HR)
  *   completed          → green    (done)
@@ -20,6 +21,11 @@ const STATUS_CONFIG: Record<
   ReviewStatus,
   { label: string; bgClass: string; textClass: string }
 > = {
+  not_started: {
+    label: "Not Started",
+    bgClass: "bg-slate-50",
+    textClass: "text-slate-500",
+  },
   draft: {
     label: "Draft",
     bgClass: "bg-slate-100",
