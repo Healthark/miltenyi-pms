@@ -309,8 +309,8 @@ function AllClearBlock({
   readonly subtitle: string;
 }) {
   return (
-    <div className="rounded-lg border border-dashed border-emerald-200 bg-emerald-50/40 px-4 py-4 text-center">
-      <div className="mx-auto flex h-9 w-9 items-center justify-center rounded-full bg-emerald-50">
+    <div className="rounded-lg border border-dashed border-emerald-200 dark:border-emerald-500/40 bg-emerald-50/40 dark:bg-emerald-900/20 px-4 py-4 text-center">
+      <div className="mx-auto flex h-9 w-9 items-center justify-center rounded-full bg-emerald-50 dark:bg-emerald-900/50">
         {icon}
       </div>
       <p className="mt-2 text-[13px] font-medium text-text-main">{title}</p>
