@@ -26,8 +26,7 @@ import { HeadcountCard } from "@/components/dashboard/HeadcountCard";
 import { AnnualReviewFunnelCard } from "@/components/dashboard/AnnualReviewFunnelCard";
 import { GoalApprovalFunnelCard } from "@/components/dashboard/GoalApprovalFunnelCard";
 import { ProjectReviewCompletionCard } from "@/components/dashboard/ProjectReviewCompletionCard";
-import { MissingAnnualReviewsCard } from "@/components/dashboard/MissingAnnualReviewsCard";
-import { StalledGoalsCard } from "@/components/dashboard/StalledGoalsCard";
+import { PendingActionsCard } from "@/components/dashboard/PendingActionsCard";
 import { MentorCoverageCard } from "@/components/dashboard/MentorCoverageCard";
 
 export function HrDashboard() {
@@ -138,47 +137,45 @@ export function HrDashboard() {
         </div>
       </div>
 
-      {/* Row 1 — annual-review storyline: funnel progress, project-cycle
-          progress, and the silent population that hasn't started yet.
-          Miltenyi HR only sees Project Review Completion in this row
-          (annual reviews are out of their scope). */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {!isMiltenyiHR && (
+      {/* Summary grid — four progress cards in a 2×2 on the left, and
+          the combined "Needs Attention" follow-up card spanning both
+          rows on the right. Miltenyi HR doesn't see annual reviews or
+          annual goals, so for them we collapse to a single-row layout
+          with just the cards they're scoped to. */}
+      {isMiltenyiHR ? (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <ProjectReviewCompletionCard
+            data={summary?.project_review_completion ?? null}
+          />
+          <HeadcountCard data={summary?.headcount ?? null} />
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           <AnnualReviewFunnelCard
             data={summary?.annual_review_funnel ?? null}
           />
-        )}
-        <ProjectReviewCompletionCard
-          data={summary?.project_review_completion ?? null}
-        />
-        {!isMiltenyiHR && (
-          <MissingAnnualReviewsCard
-            data={summary?.missing_annual_reviews ?? null}
+          <ProjectReviewCompletionCard
+            data={summary?.project_review_completion ?? null}
           />
-        )}
-      </div>
-
-      {/* Row 2 — goal-approval storyline + headcount snapshot. Goal
-          Approval and Stalled Goals are hidden for Miltenyi HR, so
-          they only see the Headcount card in this row. */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {!isMiltenyiHR && (
+          {/* Merged follow-up card sits in column 3 and spans both
+              rows, matching the 2×2 grid height beside it. */}
+          <div className="xl:col-start-3 xl:row-start-1 xl:row-span-2">
+            <PendingActionsCard
+              missingReviews={summary?.missing_annual_reviews ?? null}
+              stalledGoals={summary?.stalled_goals ?? null}
+            />
+          </div>
           <GoalApprovalFunnelCard
             data={summary?.goal_approval_funnel ?? null}
           />
-        )}
-        <HeadcountCard data={summary?.headcount ?? null} />
-        {!isMiltenyiHR && (
-          <StalledGoalsCard data={summary?.stalled_goals ?? null} />
-        )}
-      </div>
+          <HeadcountCard data={summary?.headcount ?? null} />
+        </div>
+      )}
 
-      {/* Row 3 — mentor pairing health snapshot. Standalone because it
-          isn't FY-scoped and doesn't pair narratively with either of
-          the cycle-driven rows above. */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <MentorCoverageCard data={summary?.mentor_coverage ?? null} />
-      </div>
+      {/* Mentor pairing health snapshot — full-width row of its own
+          since it isn't FY-scoped and doesn't pair narratively with
+          the summary grid above. */}
+      <MentorCoverageCard data={summary?.mentor_coverage ?? null} />
     </div>
   );
 }

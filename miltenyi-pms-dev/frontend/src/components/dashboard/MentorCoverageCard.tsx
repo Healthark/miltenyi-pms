@@ -11,16 +11,13 @@
  * Not FY-scoped. This is a "right now" snapshot of the org, like the
  * Headcount card.
  *
- * Layout aligns with the row 1 progress cards: brand-themed header
- * tile, "View all" top-right, and an InsightStripe surfacing the
- * priority callout (unmentored count if any, otherwise the heaviest
- * mentor load).
+ * Renders as a full-width row beneath the summary grid — brand-themed
+ * header tile with a "View all" affordance.
  */
 
 import { CheckCircle2, UserCog, UserMinus, Users } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { MentorCoverage } from "@/services/dashboard.service";
-import { InsightStripe } from "./InsightStripe";
 
 interface MentorCoverageCardProps {
   /** Null while the parent's fetch is in flight. */
@@ -60,43 +57,13 @@ export function MentorCoverageCard({
       {isLoading ? (
         <SkeletonBody />
       ) : (
-        <>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <UnmentoredSection unmentored={data.unmentored_staff} />
           <TopMentorsSection mentors={data.top_mentors} />
-          <InsightStripe {...buildInsight(data)} />
-        </>
+        </div>
       )}
     </article>
   );
-}
-
-// Priority order: unmentored staff are an operational block (no goals,
-// no reviews), so they outrank "someone is overloaded" as a callout.
-// Overload only becomes the headline once the floor is covered.
-function buildInsight(data: MentorCoverage) {
-  const unmentored = data.unmentored_staff.length;
-  if (unmentored > 0) {
-    return {
-      tone: "red" as const,
-      text:
-        unmentored === 1
-          ? "1 staff blocked — needs a mentor assignment"
-          : `${unmentored} staff blocked — need mentor assignments`,
-    };
-  }
-  const heaviest = data.top_mentors.at(0);
-  if (!heaviest) {
-    return {
-      tone: "amber" as const,
-      text: "No mentors with active mentees yet",
-    };
-  }
-  return {
-    tone: "brand" as const,
-    text: `${heaviest.full_name.split(" ")[0]} carries the heaviest load (${heaviest.mentee_count} ${
-      heaviest.mentee_count === 1 ? "mentee" : "mentees"
-    })`,
-  };
 }
 
 // ── Sections ──────────────────────────────────────────────────────────
@@ -207,7 +174,7 @@ function SectionLabel({
 
 function SkeletonBody() {
   return (
-    <div className="space-y-4 animate-pulse">
+    <div className="grid grid-cols-1 gap-4 animate-pulse md:grid-cols-2">
       {[0, 1].map((section) => (
         <div key={section} className="space-y-2">
           <div className="h-3 w-32 rounded bg-slate-100" />
@@ -224,7 +191,6 @@ function SkeletonBody() {
           </div>
         </div>
       ))}
-      <div className="h-8 w-full rounded-lg bg-slate-100" />
     </div>
   );
 }

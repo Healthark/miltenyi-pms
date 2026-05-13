@@ -24,11 +24,12 @@ import { formatFyYearSpan } from "@/utils/fy";
 import { DonutChart } from "./DonutChart";
 import { InsightStripe, type InsightTone } from "./InsightStripe";
 
-// Tokens from index.css — keeps the chart in the system palette.
+// Local chart palette (slate-400 / amber-400 / emerald-400). Kept off
+// the theme tokens so the donut reads subtler than chip/badge accents.
 const SEGMENT_COLORS = {
   pending: "#94a3b8",
-  draft: "var(--color-amber)",
-  reviewed: "var(--color-green)",
+  draft: "#fbbf24",
+  reviewed: "#34d399",
 } as const;
 
 interface ProjectReviewCompletionCardProps {

@@ -20,15 +20,16 @@ import { formatFyYearSpan } from "@/utils/fy";
 import { DonutChart } from "./DonutChart";
 import { InsightStripe, type InsightTone } from "./InsightStripe";
 
-// Segment palette — pulled from the theme tokens defined in index.css
-// so the chart stays in sync with the rest of the design system. The
-// "draft" slate is the only non-token color and matches the chip-dot
-// neutral used elsewhere on the dashboard.
+// Local chart palette. Intentionally separate from theme tokens
+// (--color-brand / --color-amber / --color-green) so the dashboard
+// donuts stay subtle even though the rest of the app still leans on
+// the saturated brand purple for accents. Slate-400 / amber-400 /
+// blue-400 / emerald-400 read as a calm "blue/green/yellow" set.
 const SEGMENT_COLORS = {
   draft: "#94a3b8",
-  pending_mentor: "var(--color-amber)",
-  pending_management: "var(--color-brand)",
-  completed: "var(--color-green)",
+  pending_mentor: "#fbbf24",
+  pending_management: "#60a5fa",
+  completed: "#34d399",
 } as const;
 
 interface AnnualReviewFunnelCardProps {

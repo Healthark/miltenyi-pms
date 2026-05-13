@@ -23,11 +23,15 @@ import { formatFyYearSpan } from "@/utils/fy";
 import { DonutChart } from "./DonutChart";
 import { InsightStripe, type InsightTone } from "./InsightStripe";
 
-// Tokens from index.css — keeps the chart in the system palette.
+// Local chart palette (amber-400 / blue-400 / emerald-400). Kept off
+// the theme tokens so the donut reads subtler than chip/badge accents.
+// Blue replaces the saturated red for "changes requested" — the
+// callout is still distinguishable from "pending" amber but no longer
+// fights the rest of the dashboard for attention.
 const SEGMENT_COLORS = {
-  pending_approval: "var(--color-amber)",
-  changes_requested: "var(--color-red)",
-  approved: "var(--color-green)",
+  pending_approval: "#fbbf24",
+  changes_requested: "#60a5fa",
+  approved: "#34d399",
 } as const;
 
 interface GoalApprovalFunnelCardProps {

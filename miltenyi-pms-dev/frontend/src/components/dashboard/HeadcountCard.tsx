@@ -20,11 +20,13 @@ import { InsightStripe } from "./InsightStripe";
 
 // Stable role-segment palette. Donut walks clockwise in ROLE_ORDER so
 // the legend (top → bottom) matches the chart's 12-o'clock-first
-// reading order.
+// reading order. Subtle blue/yellow/green/slate set, intentionally
+// off the theme tokens so the chart doesn't fight the rest of the
+// dashboard with the saturated brand purple.
 const ROLE_COLORS = {
-  staff: "var(--color-brand)",
-  mentor: "var(--color-amber)",
-  pm: "var(--color-green)",
+  staff: "#60a5fa",
+  mentor: "#fbbf24",
+  pm: "#34d399",
   hr: "#94a3b8",
 } as const;
 
