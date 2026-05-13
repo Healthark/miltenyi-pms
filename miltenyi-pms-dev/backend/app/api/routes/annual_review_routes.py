@@ -617,14 +617,13 @@ def set_management_rating(
     """
     Management-only inline action from the Management Review tab.
 
-    Sets (or updates) management_performance_rating and unlocks the per-row
+    Sets (or updates) management_performance_rating, unlocks the per-row
     final_rating_enabled flag so the user-side fallback
     (management ?? mentor) becomes visible — still subject to the org-wide
-    annual_review_final_rating_visible gate.
-
-    Unlike /finalize, this does NOT require a final_performance_rating and
-    does NOT transition status, so management can adjust ratings multiple
-    times during calibration.
+    annual_review_final_rating_visible gate — and transitions the row to
+    COMPLETED. Further edits remain allowed because the input gate also
+    accepts COMPLETED, so management can recalibrate the rating without
+    rolling the status back.
     """
     _require_management(current_user)
 
@@ -645,6 +644,7 @@ def set_management_rating(
 
     review.management_performance_rating = payload.management_performance_rating
     review.final_rating_enabled = True
+    review.status = ReviewStatus.COMPLETED.value
 
     db.commit()
     db.refresh(review)

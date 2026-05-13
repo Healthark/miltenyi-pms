@@ -461,7 +461,6 @@ def get_admin_settings(
             fiscal_start_month=row.fiscal_start_month,
             goals_edit_enabled=row.goals_edit_enabled,
             annual_goals_edit_enabled=row.annual_goals_edit_enabled,
-            annual_goals_final_rating_visible=row.annual_goals_final_rating_visible,
             project_ratings_visible=row.project_ratings_visible,
             annual_reviews_enabled=row.annual_reviews_enabled,
             annual_review_final_rating_visible=row.annual_review_final_rating_visible,
@@ -503,8 +502,6 @@ def update_admin_settings(
         settings.goals_edit_enabled = settings_in.goals_edit_enabled
     if settings_in.annual_goals_edit_enabled is not None:
         settings.annual_goals_edit_enabled = settings_in.annual_goals_edit_enabled
-    if settings_in.annual_goals_final_rating_visible is not None:
-        settings.annual_goals_final_rating_visible = settings_in.annual_goals_final_rating_visible
     if settings_in.project_ratings_visible is not None:
         settings.project_ratings_visible = settings_in.project_ratings_visible
     if settings_in.annual_reviews_enabled is not None:
@@ -532,7 +529,6 @@ def update_admin_settings(
         fiscal_start_month=settings.fiscal_start_month,
         goals_edit_enabled=settings.goals_edit_enabled,
         annual_goals_edit_enabled=settings.annual_goals_edit_enabled,
-        annual_goals_final_rating_visible=settings.annual_goals_final_rating_visible,
         project_ratings_visible=settings.project_ratings_visible,
         annual_reviews_enabled=settings.annual_reviews_enabled,
         annual_review_final_rating_visible=settings.annual_review_final_rating_visible,

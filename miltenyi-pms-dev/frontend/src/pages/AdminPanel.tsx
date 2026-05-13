@@ -56,7 +56,6 @@ export default function AdminPanel() {
   const [fiscalStartMonth, setFiscalStartMonth] = useState(4);
   const [annualReviewsEnabled, setAnnualReviewsEnabled] = useState(false);
   const [annualGoalsEditEnabled, setAnnualGoalsEditEnabled] = useState(false);
-  const [finalRatingVisible, setFinalRatingVisible] = useState(false);
   const [projectRatingsVisible, setProjectRatingsVisible] = useState(false);
   const [annualReviewFinalRatingVisible, setAnnualReviewFinalRatingVisible] = useState(false);
 
@@ -91,7 +90,6 @@ export default function AdminPanel() {
       setFiscalStartMonth(settingsData.fiscal_start_month ?? 4);
       setAnnualReviewsEnabled(settingsData.annual_reviews_enabled ?? false);
       setAnnualGoalsEditEnabled(settingsData.annual_goals_edit_enabled ?? false);
-      setFinalRatingVisible(settingsData.annual_goals_final_rating_visible ?? false);
       setProjectRatingsVisible(settingsData.project_ratings_visible ?? false);
       setAnnualReviewFinalRatingVisible(settingsData.annual_review_final_rating_visible ?? false);
     } catch {
@@ -206,7 +204,6 @@ export default function AdminPanel() {
         fiscal_start_month: fiscalStartMonth,
         annual_reviews_enabled: annualReviewsEnabled,
         annual_goals_edit_enabled: annualGoalsEditEnabled,
-        annual_goals_final_rating_visible: finalRatingVisible,
         project_ratings_visible: projectRatingsVisible,
         annual_review_final_rating_visible: annualReviewFinalRatingVisible,
       };
@@ -218,7 +215,6 @@ export default function AdminPanel() {
       setFiscalStartMonth(fresh.fiscal_start_month ?? 4);
       setAnnualReviewsEnabled(fresh.annual_reviews_enabled ?? false);
       setAnnualGoalsEditEnabled(fresh.annual_goals_edit_enabled ?? false);
-      setFinalRatingVisible(fresh.annual_goals_final_rating_visible ?? false);
       setProjectRatingsVisible(fresh.project_ratings_visible ?? false);
       setAnnualReviewFinalRatingVisible(fresh.annual_review_final_rating_visible ?? false);
       await refreshSettings();
@@ -351,8 +347,6 @@ export default function AdminPanel() {
             onAnnualReviewsEnabledChange={setAnnualReviewsEnabled}
             annualGoalsEditEnabled={annualGoalsEditEnabled}
             onAnnualGoalsEditEnabledChange={setAnnualGoalsEditEnabled}
-            finalRatingVisible={finalRatingVisible}
-            onFinalRatingVisibleChange={setFinalRatingVisible}
             projectRatingsVisible={projectRatingsVisible}
             onProjectRatingsVisibleChange={setProjectRatingsVisible}
             annualReviewFinalRatingVisible={annualReviewFinalRatingVisible}

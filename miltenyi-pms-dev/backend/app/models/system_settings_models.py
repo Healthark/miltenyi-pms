@@ -76,7 +76,6 @@ class SystemSettings(Base):
     # explicitly enabled each cycle. Annual goals are blocked at the API
     # layer when this is False — regardless of approval_status.
     annual_goals_edit_enabled = Column(Boolean, default=False, nullable=False)
-    annual_goals_final_rating_visible = Column(Boolean, default=False, nullable=False)
     project_ratings_visible = Column(Boolean, default=False, nullable=False)
     # Admin gate to enable/disable the Annual Reviews module org-wide.
     # When False, the Annual Reviews page is hidden and submissions are blocked.

@@ -371,7 +371,6 @@ def seed_test_database() -> None:
                 reviews_submission_open=True,
                 goals_edit_enabled=True,
                 annual_goals_edit_enabled=True,
-                annual_goals_final_rating_visible=True,
                 project_ratings_visible=True,
                 annual_reviews_enabled=True,
                 annual_review_final_rating_visible=True,
