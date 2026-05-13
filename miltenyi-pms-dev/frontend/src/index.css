@@ -1,66 +1,104 @@
 @import "tailwindcss";
 
+/* Activate the `dark:` utility variant from a class on <html>. Tailwind 4
+   defaults to OS-preference detection; this rewires it to the class our
+   ThemeProvider toggles. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
-  /* Map Tailwind colors to our dynamic CSS variables */
+  /* Map Tailwind colors to dynamic CSS variables so toggling
+     <html class="dark"> swaps the whole palette at once. */
   --color-brand: var(--brand);
   --color-brand-light: var(--brand-light);
-  --color-accent: var(--accent); /* <-- NEW: Dynamic Accent Color */
-  
-  /* Layout Colors */
-  --color-background: var(--background); /* Made background dynamic too */
-  --color-surface: #FFFFFF;
+  --color-brand-accent: var(--brand-accent);
+  --color-accent: var(--accent);
 
-  /* Text Colors */
-  --color-text-main: #0F172A;
-  --color-text-muted: #64748B;
+  --color-background: var(--background);
+  --color-surface: var(--surface);
 
-  /* Status Colors */
-  --color-green: #10B981;
-  --color-amber: #F59E0B;
-  --color-red: #EF4444;
-  --color-border: #E2E8F0;
+  --color-text-main: var(--text-main);
+  --color-text-muted: var(--text-muted);
 
-  /* Typography */
+  --color-green: var(--green);
+  --color-amber: var(--amber);
+  --color-red: var(--red);
+  --color-border: var(--border);
+
   --font-display: 'Poppins', sans-serif;
   --font-body: 'DM Sans', sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
 }
 
-/* Base Styles */
 @layer base {
-  /* Bake in a one-notch zoom-out so the app matches the typical
-     1366×768 / 1920×1080 14–16" laptop. All rem-based Tailwind
-     utilities (spacing, font sizes, gaps) scale off this. */
+  /* One-notch zoom-out so the app reads well on 14–16" laptops. */
   html {
     font-size: 87.5%;
   }
 
-  /* Miltenyi Biotec Theme */
+  /* ── Light theme (Miltenyi Biotec palette) ──────────────────────── */
   :root {
-    --brand: #3C1053; /* Miltenyi Deep Purple */
-    --brand-light: #F4EFF8;
-    --accent: #F37920; /* Miltenyi Vibrant Orange */
+    --brand: #3C1053;          /* Miltenyi Deep Purple — button surfaces */
+    --brand-light: #F4EFF8;    /* Subtle brand tint for chips & active rows */
+    --brand-accent: #3C1053;   /* Brand-tinted TEXT and borders */
+    --accent: #F37920;         /* Miltenyi Vibrant Orange */
+
     --background: #FDFCFE;
+    --surface: #FFFFFF;
+
+    --text-main: #0F172A;
+    --text-muted: #64748B;
+
+    --border: #E2E8F0;
+
+    --green: #10B981;
+    --amber: #F59E0B;
+    --red: #EF4444;
+
+    --scrollbar-thumb: rgba(15, 23, 42, 0.18);
+    --scrollbar-thumb-hover: rgba(15, 23, 42, 0.32);
+  }
+
+  /* ── Dark theme — derived from the Miltenyi palette ─────────────── */
+  :root.dark {
+    /* Brand button surface — slightly lifted from the light-mode
+       #3C1053 so primary buttons read as distinct from the dark
+       slate-800 cards behind them while remaining recognisably the
+       Miltenyi brand. White text still passes WCAG AA. */
+    --brand: #5B1F82;
+    /* Subtle brand-tinted card surface for active rows / pills. Sits
+       just above --surface so it reads as a highlight without going
+       milky-purple. */
+    --brand-light: #4A2B61;
+    /* Lifted purple used wherever brand appears as TEXT or BORDER on a
+       dark surface. Tuned to clear WCAG AA against slate-800. */
+    --brand-accent: #D5B8E8;
+    --accent: #F37920;
+
+    --background: #0F172A;
+    --surface: #1E293B;
+
+    --text-main: #F1F5F9;
+    --text-muted: #94A3B8;
+
+    --border: #334155;
+
+    --green: #34D399;
+    --amber: #FBBF24;
+    --red: #F87171;
+
+    --scrollbar-thumb: rgba(226, 232, 240, 0.18);
+    --scrollbar-thumb-hover: rgba(226, 232, 240, 0.32);
   }
 
   body {
     @apply bg-background text-text-main font-body min-h-screen overflow-x-hidden antialiased;
   }
 
-  /* ── Site-wide minimalist scrollbar ───────────────────────────────
-     Subtle gray, applied to every scroll container automatically.
-     Firefox honours the standardized `scrollbar-*` properties; Chrome,
-     Edge, and Safari fall through to the `::-webkit-scrollbar` pseudos.
-     Track is transparent on both engines so the bar doesn't read as a
-     framed channel. */
-
-  /* Firefox */
+  /* ── Site-wide scrollbar (themable) ──────────────────────────────── */
   * {
     scrollbar-width: thin;
-    scrollbar-color: rgba(15, 23, 42, 0.18) transparent; /* slate-900 @ 18% */
+    scrollbar-color: var(--scrollbar-thumb) transparent;
   }
-
-  /* WebKit / Chromium / Safari */
   ::-webkit-scrollbar {
     width: 4px;
     height: 4px;
@@ -69,13 +107,341 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background-color: rgba(15, 23, 42, 0.18);
+    background-color: var(--scrollbar-thumb);
     border-radius: 2px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background-color: rgba(15, 23, 42, 0.32);
+    background-color: var(--scrollbar-thumb-hover);
   }
   ::-webkit-scrollbar-corner {
     background: transparent;
   }
+}
+
+/* ────────────────────────────────────────────────────────────────────
+   Dark-mode overrides for raw Tailwind palette utilities used widely
+   across the codebase. Instead of editing every `bg-slate-50` and
+   `hover:bg-slate-X` site individually, we override the compiled
+   utilities directly so the bulk of the UI flips by adding a single
+   class on <html>.
+
+   These rules live OUTSIDE `@layer base` deliberately. Tailwind
+   utilities like `.bg-amber-50` are emitted into `@layer utilities`,
+   which has higher precedence than `@layer base`. Un-layered styles
+   (these) outrank both layers per CSS cascade rules.
+   ──────────────────────────────────────────────────────────────────── */
+:root.dark .bg-slate-50,
+:root.dark .bg-slate-50\/30,
+:root.dark .bg-slate-50\/40,
+:root.dark .bg-slate-50\/50,
+:root.dark .bg-slate-50\/60,
+:root.dark .bg-slate-50\/70,
+:root.dark .bg-slate-50\/80 {
+  background-color: rgba(30, 41, 59, 0.5); /* slate-800 @ 50% */
+}
+:root.dark .bg-slate-100,
+:root.dark .bg-slate-100\/40,
+:root.dark .bg-slate-100\/50,
+:root.dark .bg-slate-100\/60,
+:root.dark .bg-slate-100\/80 {
+  background-color: rgba(51, 65, 85, 0.5); /* slate-700 @ 50% */
+}
+:root.dark .bg-slate-200 {
+  background-color: rgba(51, 65, 85, 0.7);
+}
+:root.dark .bg-white {
+  background-color: var(--surface);
+}
+:root.dark .bg-gray-50,
+:root.dark .bg-gray-100 {
+  background-color: rgba(30, 41, 59, 0.5);
+}
+
+/* Hover states — the biggest source of the "blinding-white flash"
+   reported on dark backgrounds. */
+:root.dark .hover\:bg-slate-50:hover,
+:root.dark .hover\:bg-slate-100:hover,
+:root.dark .hover\:bg-slate-50\/40:hover,
+:root.dark .hover\:bg-slate-50\/50:hover,
+:root.dark .hover\:bg-slate-50\/60:hover {
+  background-color: rgba(51, 65, 85, 0.4); /* slate-700 @ 40% */
+}
+:root.dark .hover\:bg-white:hover {
+  background-color: rgba(51, 65, 85, 0.6);
+}
+:root.dark .hover\:bg-gray-50:hover {
+  background-color: rgba(51, 65, 85, 0.4);
+}
+:root.dark .hover\:bg-red-50:hover {
+  background-color: rgba(127, 29, 29, 0.4); /* red-900 @ 40% */
+}
+:root.dark .hover\:bg-green-50:hover {
+  background-color: rgba(20, 83, 45, 0.4);
+}
+
+/* Status badge family — bg-X-50 + text-X-700 pattern. These map to
+   a darker-toned variant so the badge keeps its semantic hue while
+   reading well on a dark card. */
+:root.dark .bg-amber-50,
+:root.dark .bg-amber-50\/40,
+:root.dark .bg-amber-50\/60 {
+  background-color: rgba(120, 53, 15, 0.45); /* amber-900 @ 45% */
+}
+:root.dark .bg-amber-100 {
+  background-color: rgba(120, 53, 15, 0.55);
+}
+:root.dark .text-amber-700,
+:root.dark .text-amber-800,
+:root.dark .text-amber-600 {
+  color: #FCD34D; /* amber-300 */
+}
+:root.dark .bg-blue-50,
+:root.dark .bg-blue-50\/30,
+:root.dark .bg-blue-50\/40,
+:root.dark .bg-blue-50\/50,
+:root.dark .bg-blue-50\/60 {
+  background-color: rgba(30, 58, 138, 0.45); /* blue-900 @ 45% */
+}
+:root.dark .bg-blue-100 {
+  background-color: rgba(30, 58, 138, 0.55);
+}
+:root.dark .text-blue-700,
+:root.dark .text-blue-900,
+:root.dark .text-blue-600 {
+  color: #93C5FD; /* blue-300 */
+}
+:root.dark .text-blue-900\/60 {
+  color: rgba(147, 197, 253, 0.7);
+}
+:root.dark .bg-green-50,
+:root.dark .bg-green-50\/30,
+:root.dark .bg-green-50\/40 {
+  background-color: rgba(20, 83, 45, 0.5); /* green-900 @ 50% */
+}
+:root.dark .bg-green-100 {
+  background-color: rgba(20, 83, 45, 0.6);
+}
+:root.dark .text-green-700,
+:root.dark .text-green-600 {
+  color: #6EE7B7; /* emerald-300 */
+}
+:root.dark .bg-emerald-50,
+:root.dark .bg-emerald-50\/30,
+:root.dark .bg-emerald-50\/40,
+:root.dark .bg-emerald-50\/60 {
+  background-color: rgba(6, 78, 59, 0.5);
+}
+:root.dark .bg-emerald-100 {
+  background-color: rgba(6, 78, 59, 0.6);
+}
+:root.dark .text-emerald-700,
+:root.dark .text-emerald-600 {
+  color: #6EE7B7;
+}
+:root.dark .bg-rose-50,
+:root.dark .bg-rose-50\/30,
+:root.dark .bg-rose-50\/40,
+:root.dark .bg-rose-50\/60 {
+  background-color: rgba(136, 19, 55, 0.45); /* rose-900 @ 45% */
+}
+:root.dark .bg-rose-100 {
+  background-color: rgba(136, 19, 55, 0.55);
+}
+:root.dark .text-rose-700,
+:root.dark .text-rose-600,
+:root.dark .text-rose-500 {
+  color: #FDA4AF; /* rose-300 */
+}
+:root.dark .bg-red-50 {
+  background-color: rgba(127, 29, 29, 0.45);
+}
+:root.dark .bg-red-100 {
+  background-color: rgba(127, 29, 29, 0.55);
+}
+:root.dark .text-red-700,
+:root.dark .text-red-600 {
+  color: #FCA5A5; /* red-300 */
+}
+:root.dark .bg-teal-50 {
+  background-color: rgba(19, 78, 74, 0.45);
+}
+:root.dark .bg-teal-100 {
+  background-color: rgba(19, 78, 74, 0.55);
+}
+:root.dark .text-teal-600,
+:root.dark .text-teal-700 {
+  color: #5EEAD4; /* teal-300 */
+}
+
+/* Cycle-review hue palette — drives the H1/H2/Q1..Q4 self/mentor
+   review status badges in ApprovalStatusBadge. */
+:root.dark .bg-cyan-50 {
+  background-color: rgba(22, 78, 99, 0.45);
+}
+:root.dark .bg-cyan-100 {
+  background-color: rgba(22, 78, 99, 0.55);
+}
+:root.dark .text-cyan-600,
+:root.dark .text-cyan-700 {
+  color: #67E8F9; /* cyan-300 */
+}
+:root.dark .bg-sky-50 {
+  background-color: rgba(12, 74, 110, 0.45);
+}
+:root.dark .bg-sky-100 {
+  background-color: rgba(12, 74, 110, 0.55);
+}
+:root.dark .text-sky-600,
+:root.dark .text-sky-700 {
+  color: #7DD3FC; /* sky-300 */
+}
+:root.dark .bg-indigo-50 {
+  background-color: rgba(49, 46, 129, 0.45);
+}
+:root.dark .bg-indigo-100 {
+  background-color: rgba(49, 46, 129, 0.55);
+}
+:root.dark .text-indigo-600,
+:root.dark .text-indigo-700 {
+  color: #A5B4FC; /* indigo-300 */
+}
+:root.dark .bg-violet-50 {
+  background-color: rgba(76, 29, 149, 0.45);
+}
+:root.dark .bg-violet-100 {
+  background-color: rgba(76, 29, 149, 0.55);
+}
+:root.dark .text-violet-600,
+:root.dark .text-violet-700 {
+  color: #C4B5FD; /* violet-300 */
+}
+:root.dark .bg-fuchsia-50 {
+  background-color: rgba(112, 26, 117, 0.45);
+}
+:root.dark .bg-fuchsia-100 {
+  background-color: rgba(112, 26, 117, 0.55);
+}
+:root.dark .text-fuchsia-600,
+:root.dark .text-fuchsia-700 {
+  color: #F0ABFC; /* fuchsia-300 */
+}
+:root.dark .bg-pink-50 {
+  background-color: rgba(131, 24, 67, 0.45);
+}
+:root.dark .bg-pink-100 {
+  background-color: rgba(131, 24, 67, 0.55);
+}
+:root.dark .text-pink-600,
+:root.dark .text-pink-700 {
+  color: #F9A8D4; /* pink-300 */
+}
+:root.dark .bg-purple-50 {
+  background-color: rgba(88, 28, 135, 0.45);
+}
+:root.dark .bg-purple-100 {
+  background-color: rgba(88, 28, 135, 0.55);
+}
+:root.dark .text-purple-600,
+:root.dark .text-purple-700 {
+  color: #D8B4FE; /* purple-300 */
+}
+
+/* Tinted borders on alert / mentor-review cards. */
+:root.dark .border-blue-100,
+:root.dark .border-blue-200 {
+  border-color: rgba(59, 130, 246, 0.35);
+}
+:root.dark .border-amber-100,
+:root.dark .border-amber-200 {
+  border-color: rgba(245, 158, 11, 0.35);
+}
+:root.dark .border-rose-100,
+:root.dark .border-rose-200 {
+  border-color: rgba(244, 63, 94, 0.35);
+}
+:root.dark .border-green-100,
+:root.dark .border-green-200,
+:root.dark .border-emerald-100,
+:root.dark .border-emerald-200 {
+  border-color: rgba(16, 185, 129, 0.35);
+}
+
+/* Generic slate text — used for muted captions on raw-color bgs. */
+:root.dark .text-slate-500,
+:root.dark .text-slate-600,
+:root.dark .text-slate-700 {
+  color: var(--text-muted);
+}
+:root.dark .text-slate-800,
+:root.dark .text-slate-900 {
+  color: var(--text-main);
+}
+
+/* Loose dividers and slate border utilities. */
+:root.dark .border-slate-100,
+:root.dark .border-slate-200 {
+  border-color: var(--border);
+}
+
+/* Brand TEXT and BORDER usages flip to the lifted brand-accent in
+   dark mode so links, active-tab indicators, dashboard icon glyphs,
+   and "View all →" links stay readable. The brand BACKGROUND utility
+   (`bg-brand`) deliberately stays the deep purple so buttons with
+   white text keep their punch. */
+:root.dark .text-brand,
+:root.dark .hover\:text-brand:hover {
+  color: var(--brand-accent);
+}
+:root.dark .border-brand,
+:root.dark .hover\:border-brand:hover,
+:root.dark .focus\:border-brand:focus {
+  border-color: var(--brand-accent);
+}
+:root.dark .focus\:ring-brand:focus {
+  --tw-ring-color: var(--brand-accent);
+}
+
+/* Form inputs — explicit white backgrounds set per-field. The generic
+   `.bg-white` override above handles most; this catches `<input>` and
+   `<select>` elements that rely on UA defaults. */
+:root.dark input:not([type="checkbox"]):not([type="radio"]),
+:root.dark select,
+:root.dark textarea {
+  background-color: var(--surface);
+  color: var(--text-main);
+  color-scheme: dark;
+}
+:root.dark input::placeholder,
+:root.dark textarea::placeholder {
+  color: var(--text-muted);
+}
+
+/* Primary brand buttons get a very subtle outer glow in dark mode so
+   they read as elevated against the slate-800 cards. Limited to
+   <button>/<a> + .bg-brand so the avatar circle (a <div>) and other
+   non-interactive surfaces don't pick it up. */
+:root.dark button.bg-brand,
+:root.dark a.bg-brand {
+  box-shadow:
+    0 0 0 1px rgba(213, 184, 232, 0.08),
+    0 2px 12px rgba(168, 124, 201, 0.22);
+  transition: box-shadow 0.15s ease, opacity 0.15s ease;
+}
+:root.dark button.bg-brand:hover,
+:root.dark a.bg-brand:hover {
+  box-shadow:
+    0 0 0 1px rgba(213, 184, 232, 0.18),
+    0 2px 16px rgba(168, 124, 201, 0.35);
+}
+
+/* The Miltenyi wordmark is rendered as a single SVG containing the
+   deep-purple "Miltenyi Biotec" text. On a dark background the purple
+   blends into the slate, so we lift the brightness and add a soft
+   brand-purple glow around it. Targeted by alt attribute so we don't
+   need to mutate the component. Applies to both the expanded logo and
+   the collapsed small mark. */
+:root.dark img[alt="Miltenyi Biotec"] {
+  filter:
+    brightness(1.3) saturate(1.05)
+    drop-shadow(0 0 8px rgba(213, 184, 232, 0.35));
 }
