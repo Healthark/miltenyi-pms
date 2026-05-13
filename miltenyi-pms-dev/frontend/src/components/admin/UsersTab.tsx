@@ -89,6 +89,7 @@ export function UsersTab({
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [functionFilter, setFunctionFilter] = useState<string>("all");
   const [designationFilter, setDesignationFilter] = useState<string>("all");
+  const [mentorFilter, setMentorFilter] = useState<string>("all");
 
   // Dropdown options derived from the loaded users so we never show
   // a function/designation that has no row to match.
@@ -110,6 +111,21 @@ export function UsersTab({
       ).sort(),
     [users],
   );
+  // Resolve each row's mentor_id back to a full_name so the dropdown
+  // is a stable name-keyed list. Anyone referenced by at least one
+  // user.mentor_id qualifies, regardless of their own role.
+  const availableMentors = useMemo(() => {
+    const mentorIds = new Set(
+      users.map((u) => u.mentor_id).filter((id): id is number => id !== null),
+    );
+    return Array.from(
+      new Set(
+        users
+          .filter((u) => mentorIds.has(u.id))
+          .map((u) => u.full_name),
+      ),
+    ).sort();
+  }, [users]);
 
   const { user: currentUser } = useAuth();
   const isViewerMiltenyiHR = currentUser?.role === "HR_Miltenyi";
@@ -136,6 +152,12 @@ export function UsersTab({
       if (statusFilter === "inactive" && !u.is_deleted) return false;
       if (functionFilter !== "all" && u.function?.name !== functionFilter) return false;
       if (designationFilter !== "all" && u.designation?.name !== designationFilter) return false;
+      if (mentorFilter !== "all") {
+        const mentorName = u.mentor_id
+          ? users.find((m) => m.id === u.mentor_id)?.full_name
+          : null;
+        if (mentorName !== mentorFilter) return false;
+      }
       return true;
     });
     if (!sort) return filtered;
@@ -143,7 +165,7 @@ export function UsersTab({
     return filtered.slice().sort((a, b) =>
       compareValues(get(a, users), get(b, users), kind, sort.direction),
     );
-  }, [users, searchQuery, roleFilter, statusFilter, functionFilter, designationFilter, sort]);
+  }, [users, searchQuery, roleFilter, statusFilter, functionFilter, designationFilter, mentorFilter, sort]);
 
   return (
     <div>
@@ -176,19 +198,24 @@ export function UsersTab({
             ))}
           </select>
         </div>
-        <div className="flex items-center gap-2">
-          <label htmlFor="user-status-filter" className={FILTER_LABEL_CLS}>Status</label>
-          <select
-            id="user-status-filter"
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-            className={`${FILTER_SELECT_CLS} min-w-[120px]`}
-          >
-            {STATUS_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
-        </div>
+        {availableMentors.length > 0 && (
+          <div className="flex items-center gap-2">
+            <label htmlFor="user-mentor-filter" className={FILTER_LABEL_CLS}>
+              Mentor
+            </label>
+            <select
+              id="user-mentor-filter"
+              value={mentorFilter}
+              onChange={(e) => setMentorFilter(e.target.value)}
+              className={`${FILTER_SELECT_CLS} min-w-[150px]`}
+            >
+              <option value="all">All Mentors</option>
+              {availableMentors.map((m) => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
+          </div>
+        )}
         {availableFunctions.length > 0 && (
           <div className="flex items-center gap-2">
             <label htmlFor="user-function-filter" className={FILTER_LABEL_CLS}>
@@ -225,6 +252,19 @@ export function UsersTab({
             </select>
           </div>
         )}
+        <div className="flex items-center gap-2">
+          <label htmlFor="user-status-filter" className={FILTER_LABEL_CLS}>Status</label>
+          <select
+            id="user-status-filter"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+            className={`${FILTER_SELECT_CLS} min-w-[120px]`}
+          >
+            {STATUS_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
         <div className="ml-auto">
           <ExportExcelButton kind="users" />
         </div>

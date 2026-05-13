@@ -894,10 +894,10 @@ function AllGoalsTab({
   readonly goals: TeamGoal[];
   readonly isLoading: boolean;
 }) {
-  const [statusFilter, setStatusFilter] = useState<ApprovalFilter>("all");
   const [yearFilter, setYearFilter] = useState<string>("all");
   const [functionFilter, setFunctionFilter] = useState<string>("all");
   const [designationFilter, setDesignationFilter] = useState<string>("all");
+  const [mentorFilter, setMentorFilter] = useState<string>("all");
   // Employee filter — typeable combobox styled like the PM picker.
   // Empty string means "no employee filter applied".
   const [employeeFilter, setEmployeeFilter] = useState<string>("");
@@ -927,9 +927,11 @@ function AllGoalsTab({
         .filter((d): d is string => !!d),
     ),
   ).sort();
+  const mentors = Array.from(
+    new Set(goals.map((g) => g.manager_name).filter((m): m is string => !!m)),
+  ).sort();
 
   const filtered = goals
-    .filter((g) => statusFilter === "all" || g.approval_status === statusFilter)
     .filter((g) => yearFilter === "all" || g.fy_year === Number(yearFilter))
     .filter(
       (g) => functionFilter === "all" || g.owner_function_name === functionFilter,
@@ -939,6 +941,7 @@ function AllGoalsTab({
         designationFilter === "all" ||
         g.owner_designation_name === designationFilter,
     )
+    .filter((g) => mentorFilter === "all" || g.manager_name === mentorFilter)
     .filter((g) => !employeeFilter || g.owner_name === employeeFilter);
 
   const groups = buildAllGoalsGroups(filtered);
@@ -998,27 +1001,6 @@ function AllGoalsTab({
         </div>
         <div className="flex items-center gap-2">
           <label
-            htmlFor="all-goals-year"
-            className="text-[11px] font-bold uppercase tracking-wider text-text-muted"
-          >
-            Year
-          </label>
-          <select
-            id="all-goals-year"
-            value={yearFilter}
-            onChange={(e) => setYearFilter(e.target.value)}
-            className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand cursor-pointer min-w-[120px]"
-          >
-            <option value="all">All Years</option>
-            {years.map((y) => (
-              <option key={y} value={y}>
-                {formatFyYearSpan(y)}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex items-center gap-2">
-          <label
             htmlFor="all-goals-function"
             className="text-[11px] font-bold uppercase tracking-wider text-text-muted"
           >
@@ -1061,20 +1043,42 @@ function AllGoalsTab({
         </div>
         <div className="flex items-center gap-2">
           <label
-            htmlFor="all-goals-status"
+            htmlFor="all-goals-year"
             className="text-[11px] font-bold uppercase tracking-wider text-text-muted"
           >
-            Status
+            Year
           </label>
           <select
-            id="all-goals-status"
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as ApprovalFilter)}
-            className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand cursor-pointer min-w-[160px]"
+            id="all-goals-year"
+            value={yearFilter}
+            onChange={(e) => setYearFilter(e.target.value)}
+            className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand cursor-pointer min-w-[120px]"
           >
-            {buildFilterConfig().map((f) => (
-              <option key={f.value} value={f.value}>
-                {f.label}
+            <option value="all">All Years</option>
+            {years.map((y) => (
+              <option key={y} value={y}>
+                {formatFyYearSpan(y)}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex items-center gap-2">
+          <label
+            htmlFor="all-goals-mentor"
+            className="text-[11px] font-bold uppercase tracking-wider text-text-muted"
+          >
+            Mentor
+          </label>
+          <select
+            id="all-goals-mentor"
+            value={mentorFilter}
+            onChange={(e) => setMentorFilter(e.target.value)}
+            className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand cursor-pointer min-w-[140px]"
+          >
+            <option value="all">All Mentors</option>
+            {mentors.map((m) => (
+              <option key={m} value={m}>
+                {m}
               </option>
             ))}
           </select>
