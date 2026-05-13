@@ -35,6 +35,12 @@ export function HrDashboard() {
   const { settings } = useSystemSettings();
   const snackbar = useSnackbar();
 
+  // HR_Miltenyi's scope excludes annual reviews and annual goals
+  // (see annual_review_routes.py: "Miltenyi HR has no business in
+  // annual reviews"), so the four cards that summarise those flows
+  // are hidden for them.
+  const isMiltenyiHR = user?.role === "HR_Miltenyi";
+
   const [summary, setSummary] = useState<HrDashboardSummary | null>(null);
 
   // Active FY drives the picker's default selection. Read straight from
@@ -135,19 +141,27 @@ export function HrDashboard() {
       {/* Widget grid */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         <HeadcountCard data={summary?.headcount ?? null} />
-        <AnnualReviewFunnelCard
-          data={summary?.annual_review_funnel ?? null}
-        />
-        <GoalApprovalFunnelCard
-          data={summary?.goal_approval_funnel ?? null}
-        />
+        {!isMiltenyiHR && (
+          <AnnualReviewFunnelCard
+            data={summary?.annual_review_funnel ?? null}
+          />
+        )}
+        {!isMiltenyiHR && (
+          <GoalApprovalFunnelCard
+            data={summary?.goal_approval_funnel ?? null}
+          />
+        )}
         <ProjectReviewCompletionCard
           data={summary?.project_review_completion ?? null}
         />
-        <MissingAnnualReviewsCard
-          data={summary?.missing_annual_reviews ?? null}
-        />
-        <StalledGoalsCard data={summary?.stalled_goals ?? null} />
+        {!isMiltenyiHR && (
+          <MissingAnnualReviewsCard
+            data={summary?.missing_annual_reviews ?? null}
+          />
+        )}
+        {!isMiltenyiHR && (
+          <StalledGoalsCard data={summary?.stalled_goals ?? null} />
+        )}
         <MentorCoverageCard data={summary?.mentor_coverage ?? null} />
         {/* Subsequent widgets slot in here as we add them. */}
       </div>
