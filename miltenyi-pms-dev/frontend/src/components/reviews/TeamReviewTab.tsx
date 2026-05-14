@@ -13,7 +13,8 @@
  *   draft              → "Awaiting self-review" (mentee hasn't submitted)
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import {
   ClipboardCheck, Eye, LayoutGrid, Search,
@@ -154,8 +155,6 @@ function EmptyState({ hasFilter }: { readonly hasFilter: boolean }) {
 
 export function TeamReviewTab() {
   const navigate = useNavigate();
-  const [reviews, setReviews] = useState<MenteeAnnualReview[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [viewMode, setViewMode] = useState<ViewMode>("table");
   const [searchQuery, setSearchQuery] = useState("");
   const [yearFilter, setYearFilter] = useState("all");
@@ -164,20 +163,18 @@ export function TeamReviewTab() {
   const [sort, setSort] = useState<SortState<SortKey> | null>(null);
   const [viewTarget, setViewTarget] = useState<MenteeAnnualReview | null>(null);
 
-  const load = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      setReviews(await annualReviewService.getMenteeReviews());
-    } catch {
-      /* stays empty */
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  // The mentor's view of every mentee's annual review. Cache-keyed
+  // under ['annual-reviews', 'mentees']. EvalDrawer / useReviewDetails
+  // are the writers (not migrated in this PR) — when those land, their
+  // mutations will invalidate this key so the table refreshes after a
+  // submit. For now, refetchOnWindowFocus (default true) handles the
+  // "I just reviewed a mentee in another tab" case.
+  const reviewsQuery = useQuery({
+    queryKey: ["annual-reviews", "mentees"],
+    queryFn: annualReviewService.getMenteeReviews,
+  });
+  const reviews: MenteeAnnualReview[] = reviewsQuery.data ?? [];
+  const isLoading = reviewsQuery.isPending;
 
   const availableYears = Array.from(
     new Set(reviews.map((r) => extractFyToken(r.cycle_name))),

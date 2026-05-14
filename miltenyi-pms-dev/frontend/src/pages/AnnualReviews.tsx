@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState, Fragment } from "react";
+import { useEffect, useState, Fragment } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
@@ -85,35 +86,45 @@ export function AnnualReviews() {
     else setActiveTab("my");
   }, [isMentor, isHRMyOrg]);
 
-  const [reviews, setReviews] = useState<AnnualReview[]>([]);
-  const [allReviews, setAllReviews] = useState<AnnualReview[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const queryClient = useQueryClient();
+
+  // Role-gated queries. Two endpoints back this page — Staff get their
+  // own history, HR_MyOrg gets the org-wide list. We register BOTH
+  // queries unconditionally so the hooks-order rule is happy, but use
+  // `enabled` to keep each one parked unless the current user's role
+  // actually needs it.
+  //
+  // The Mentor branch is missing from this page on purpose: TeamReviewTab
+  // (a child) owns its own ['reviews', 'mentees'] query. Keeping that
+  // local to the tab means the data only fetches when the tab is
+  // mounted, which matters because TeamReviewTab is HEAVY (~500 LOC).
+  const myReviewsQuery = useQuery({
+    queryKey: ["annual-reviews", "mine"],
+    queryFn: annualReviewService.getMyReviewHistory,
+    enabled: isStaff,
+  });
+  const allReviewsQuery = useQuery({
+    queryKey: ["annual-reviews", "all"],
+    queryFn: annualReviewService.getAllReviews,
+    enabled: isHRMyOrg,
+  });
+
+  // `data = []` keeps downstream `.find()`/`.filter()` working with arrays
+  // even before the first fetch resolves. The cache stays the source of
+  // truth — these are just renaming-for-readability locals.
+  const reviews = myReviewsQuery.data ?? [];
+  const allReviews = allReviewsQuery.data ?? [];
+  // Show the table skeleton while the role-relevant query is loading.
+  // Mentor users see TeamReviewTab's own loading state so this flag
+  // doesn't matter to them.
+  const isLoading = isStaff
+    ? myReviewsQuery.isPending
+    : isHRMyOrg
+      ? allReviewsQuery.isPending
+      : false;
 
   const [showForm, setShowForm] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isDraftSaving, setIsDraftSaving] = useState(false);
   const [formError, setFormError] = useState("");
-
-  const load = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      if (isHRMyOrg) {
-        setAllReviews(await annualReviewService.getAllReviews());
-      } else if (isStaff) {
-        setReviews(await annualReviewService.getMyReviewHistory());
-      } else {
-        // Mentor: TeamReviewTab loads its own data
-      }
-    } catch {
-      /* stays empty */
-    } finally {
-      setIsLoading(false);
-    }
-  }, [isHRMyOrg, isStaff]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
 
   // Lookup the active-cycle row (if any). May be a draft (still editable),
   // or one of the post-draft statuses (locked). The form modal below
@@ -133,6 +144,49 @@ export function AnnualReviews() {
     : null;
   const isCurrentDraft = currentReview?.status === "draft";
 
+  // ── Mutations ──────────────────────────────────────────────────────
+  // All three writes invalidate ['annual-reviews', 'mine'] so the
+  // history table re-fetches with the new row. The previous code did a
+  // findIndex+splice upsert against local state; with invalidate the
+  // server's response is the source of truth and we don't have to keep
+  // an upsert helper in sync with backend behaviour (e.g. server may
+  // recompute `cycle_name` from the canonical FY label).
+  //
+  // We also invalidate ['annual-reviews', 'all'] so HR's view (if any
+  // HR user has it mounted in another tab) refreshes too. Cross-key
+  // invalidation: each write declares EVERY key it could affect, not
+  // just the one the current user is looking at. That's the real
+  // unlock of theme 2's cache architecture.
+
+  const submitMutation = useMutation({
+    mutationFn: annualReviewService.submitSelfReview,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["annual-reviews", "mine"] });
+      void queryClient.invalidateQueries({ queryKey: ["annual-reviews", "all"] });
+      setShowForm(false);
+      toast.success("Self-review submitted.");
+    },
+    onError: (err) => setFormError(getErrorMessage(err)),
+  });
+
+  // createSelfDraft and saveDraft hit different endpoints (POST vs
+  // PATCH) but both share the same key invalidation + toast + UI
+  // contract, so we wire them under ONE mutation whose mutationFn
+  // routes based on whether a row already exists. Cleaner than two
+  // useMutations the caller has to choose between.
+  const draftMutation = useMutation({
+    mutationFn: (payload: SelfReviewDraftPayload) =>
+      currentReview
+        ? annualReviewService.saveDraft(currentReview.id, payload)
+        : annualReviewService.createSelfDraft(payload),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["annual-reviews", "mine"] });
+      void queryClient.invalidateQueries({ queryKey: ["annual-reviews", "all"] });
+      toast.success("Draft saved.");
+    },
+    onError: (err) => setFormError(getErrorMessage(err)),
+  });
+
   const handleSubmit = async (payload: SelfReviewPayload) => {
     const ok = await confirm({
       title: "Submit annual self-review?",
@@ -143,49 +197,24 @@ export function AnnualReviews() {
       confirmText: "Submit",
     });
     if (!ok) return;
-    setIsSaving(true);
     setFormError("");
+    // mutateAsync because SelfReviewFormModal awaits onSubmit to drive
+    // its internal "Submitting..." state. Catch + swallow so the
+    // legacy contract (onSubmit never throws to the modal) is
+    // preserved — onError already set formError for the UI.
     try {
-      const saved = await annualReviewService.submitSelfReview(payload);
-      // submitSelfReview can either create a new row or promote a draft;
-      // upsert into local state by id.
-      setReviews((prev) => {
-        const idx = prev.findIndex((r) => r.id === saved.id);
-        if (idx === -1) return [saved, ...prev];
-        const next = prev.slice();
-        next[idx] = saved;
-        return next;
-      });
-      setShowForm(false);
-      toast.success("Self-review submitted.");
-    } catch (err) {
-      setFormError(getErrorMessage(err));
-    } finally {
-      setIsSaving(false);
+      await submitMutation.mutateAsync(payload);
+    } catch {
+      /* handled by onError */
     }
   };
 
   const handleSaveDraft = async (payload: SelfReviewDraftPayload) => {
-    setIsDraftSaving(true);
     setFormError("");
     try {
-      // First save calls POST /self/draft to create the row; subsequent
-      // saves use PATCH /draft on the existing row.
-      const saved = currentReview
-        ? await annualReviewService.saveDraft(currentReview.id, payload)
-        : await annualReviewService.createSelfDraft(payload);
-      setReviews((prev) => {
-        const idx = prev.findIndex((r) => r.id === saved.id);
-        if (idx === -1) return [saved, ...prev];
-        const next = prev.slice();
-        next[idx] = saved;
-        return next;
-      });
-      toast.success("Draft saved.");
-    } catch (err) {
-      setFormError(getErrorMessage(err));
-    } finally {
-      setIsDraftSaving(false);
+      await draftMutation.mutateAsync(payload);
+    } catch {
+      /* handled by onError */
     }
   };
 
@@ -326,8 +355,8 @@ export function AnnualReviews() {
             setShowForm(false);
             setFormError("");
           }}
-          isSaving={isSaving}
-          isDraftSaving={isDraftSaving}
+          isSaving={submitMutation.isPending}
+          isDraftSaving={draftMutation.isPending}
           error={formError}
         />
       )}
