@@ -88,6 +88,15 @@ export const queryKeys = {
     mine: () => [...queryKeys.annualReviews.all, "mine"] as const,
     org: () => [...queryKeys.annualReviews.all, "org"] as const,
     mentees: () => [...queryKeys.annualReviews.all, "mentees"] as const,
+    /** Management Review calibration grid — every annual review in the
+     *  active FY for HR to publish management ratings on. */
+    calibration: () =>
+      [...queryKeys.annualReviews.all, "calibration"] as const,
+    /** Per-review detail (full text + ratings), dynamic key. Used by
+     *  the ManagementReview Rate modal to load self + mentor narratives
+     *  alongside the rating selector. */
+    detail: (id: number) =>
+      [...queryKeys.annualReviews.all, "detail", id] as const,
   },
 
   // ── Goal rows ──────────────────────────────────────────────────────
