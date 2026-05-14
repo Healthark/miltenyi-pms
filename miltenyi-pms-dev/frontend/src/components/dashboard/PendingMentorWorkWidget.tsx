@@ -37,12 +37,17 @@ export function PendingMentorWorkWidget({
 
   const rows: MentorRow[] = [];
 
+  // Both goal-related rows land on /annual-goals — for mentor users the
+  // page auto-switches to the Team tab (AnnualGoals.tsx ~line 273), and
+  // both Approve/Request-Changes and the Mentor-Review chips live there
+  // in TeamGoalsTab. Annual reviews go to /annual-reviews where the
+  // page auto-switches to the Team tab and renders TeamReviewTab.
   if (mentor_goals_pending_approval > 0) {
     rows.push({
       key: "goals_approval",
       label: `Goal${mentor_goals_pending_approval === 1 ? "" : "s"} awaiting your approval`,
       count: mentor_goals_pending_approval,
-      to: "/my-mentees",
+      to: "/annual-goals",
     });
   }
 
@@ -51,7 +56,7 @@ export function PendingMentorWorkWidget({
       key: "goal_reviews",
       label: `Half-cycle review${mentor_goal_reviews_pending === 1 ? "" : "s"} to write`,
       count: mentor_goal_reviews_pending,
-      to: "/my-mentees",
+      to: "/annual-goals",
     });
   }
 
@@ -60,7 +65,7 @@ export function PendingMentorWorkWidget({
       key: "annual_reviews",
       label: `Annual review${mentor_annual_reviews_pending === 1 ? "" : "s"} to evaluate`,
       count: mentor_annual_reviews_pending,
-      to: "/my-mentees",
+      to: "/annual-reviews",
     });
   }
 
