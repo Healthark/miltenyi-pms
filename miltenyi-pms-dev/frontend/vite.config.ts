@@ -62,11 +62,18 @@ export default defineConfig({
             if (/[\\/]node_modules[\\/]axios[\\/]/.test(id)) {
               return 'http-vendor';
             }
-            // TanStack Query core + devtools. Pair them so the devtools
-            // tree-shake cleanly in prod (the import.meta.env.DEV guard
-            // in main.tsx makes the entire devtools branch dead code,
-            // and Rolldown drops the chunk dependency). Cache-stable,
-            // bumped rarely.
+            // All TanStack packages: react-query + devtools + react-virtual.
+            // Bundled together because they share an author, ship as ESM,
+            // and version-bump on similar cadences — keeping them in one
+            // chunk means a TanStack upgrade only invalidates one cache
+            // entry across our deploys. The devtools branch
+            // tree-shakes cleanly in prod (import.meta.env.DEV guard in
+            // main.tsx makes it dead code).
+            //
+            // The chunk name stays "query-vendor" for backwards
+            // compatibility with existing cached chunks on returning
+            // users' browsers — renaming would invalidate every
+            // returning visitor's cache for a cosmetic gain.
             if (/[\\/]node_modules[\\/]@tanstack[\\/]/.test(id)) {
               return 'query-vendor';
             }
