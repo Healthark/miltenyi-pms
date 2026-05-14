@@ -1,6 +1,6 @@
 # 17 — Applying the template: ProjectReviews ReadOnlyReviewsList (Mentor + HR)
 
-> **PR:** _pending_
+> **PR:** [#34](https://github.com/Healthark/miltenyi-pms/pull/34)
 > **Files changed:** `frontend/src/pages/ProjectReviews.tsx` only.
 > **Headline result:** Third virtualization target. Same variable-height template from PR #16. **One refactor virtualizes both consumer views** (`ReadOnlyReviewsList` is rendered by both the Mentor "Mentees' Reviews" tab and the HR "All Reviews" tab). No new patterns introduced — this PR teaches the discipline of *applying* a template vs *introducing* one.
 
