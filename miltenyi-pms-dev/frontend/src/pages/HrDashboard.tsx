@@ -24,6 +24,7 @@ import { fyTokenToStartYear, formatFyYearSpan } from "@/utils/fy";
 import { getErrorMessage } from "@/utils/errors";
 import { HeadcountCard } from "@/components/dashboard/HeadcountCard";
 import { AnnualReviewFunnelCard } from "@/components/dashboard/AnnualReviewFunnelCard";
+import { DashboardAlerts } from "@/components/dashboard/DashboardAlerts";
 import { GoalApprovalFunnelCard } from "@/components/dashboard/GoalApprovalFunnelCard";
 import { ProjectReviewCompletionCard } from "@/components/dashboard/ProjectReviewCompletionCard";
 import { PendingActionsCard } from "@/components/dashboard/PendingActionsCard";
@@ -100,6 +101,11 @@ export function HrDashboard() {
 
   return (
     <div className="space-y-6">
+      {/* State-derived alert banners (paused submissions, hidden
+          ratings, cycle rollover dismiss). Always rendered first so
+          they read as page-level context. */}
+      <DashboardAlerts />
+
       {/* Header: greeting + FY picker */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
