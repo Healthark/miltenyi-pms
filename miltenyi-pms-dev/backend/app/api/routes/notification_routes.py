@@ -29,7 +29,7 @@ from app.models.goal_models import Goal, ApprovalStatus
 from app.models.user_models import User
 from app.models.goal_notification_models import GoalNotification
 from app.schemas.notification_schemas import NotificationItem, UserNotificationItem, TopbarSummary
-from app.core.cycle_utils import get_current_cycle_info
+from app.core.cycle_utils import get_current_cycle_info, resolve_today
 
 router = APIRouter()
 
@@ -48,10 +48,12 @@ def get_topbar_summary(
         SystemSettings.org_id == current_user.org_id
     ).first()
 
-    # Dynamically calculate the active cycle based on the org's cadence
+    # Dynamically calculate the active cycle based on the org's cadence.
+    # Uses resolve_today() so simulated_today (when set) shifts the cycle
+    # consistently with the rest of the app.
     if settings:
         active_cycle = get_current_cycle_info(
-            current_date=date.today(),
+            current_date=resolve_today(settings),
             cycle_type=settings.cycle_type,
             fiscal_start_month=settings.fiscal_start_month
         )
