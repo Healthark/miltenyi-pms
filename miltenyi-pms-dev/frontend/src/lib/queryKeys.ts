@@ -132,6 +132,14 @@ export const queryKeys = {
     mine: () => [...queryKeys.projectReviews.all, "mine"] as const,
     mentees: () => [...queryKeys.projectReviews.all, "mentees"] as const,
     org: () => [...queryKeys.projectReviews.all, "org"] as const,
+    /** PM's queue of pending evaluations on their projects. Consumed by
+     *  PrimaryEvaluationTab; not pre-warmed by any parent (the PM tab
+     *  is the first thing that asks for it). */
+    pmQueue: () => [...queryKeys.projectReviews.all, "pm-queue"] as const,
+    /** Secondary evaluator's queue. The ProjectReviews page (PR #07)
+     *  fires a probe query on this key for tab-visibility; when
+     *  SecondaryEvalTab mounts it reads the same cache entry — the
+     *  probe pre-warmed it. Cache-warming probe pattern, doc #07. */
     secondaryQueue: () =>
       [...queryKeys.projectReviews.all, "secondary-queue"] as const,
     roleExpectations: () =>

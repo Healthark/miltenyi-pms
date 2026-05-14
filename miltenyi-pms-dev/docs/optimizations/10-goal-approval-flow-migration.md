@@ -1,6 +1,6 @@
 # 10 — Goal-approval flow migration: TeamGoalsTab + MenteeGoalsTab
 
-> **PR:** _pending_
+> **PR:** [#27](https://github.com/Healthark/miltenyi-pms/pull/27)
 > **Files changed:** `frontend/src/components/goals/TeamGoalsTab.tsx`, `frontend/src/components/mentees/MenteeGoalsTab.tsx`, `frontend/src/pages/MenteeDetail.tsx` (prop wiring).
 > **Headline result:** First child-component PR after the page-level milestone. 1 query + 7 mutations migrated. New design choice documented: **when to leave a component imperative** (CriteriaChecklist stays unchanged on purpose).
 

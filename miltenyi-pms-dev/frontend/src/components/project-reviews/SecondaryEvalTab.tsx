@@ -5,7 +5,9 @@
  * Shows both pending and submitted reviews with edit option.
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useCallback, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/queryKeys";
 import { createPortal } from "react-dom";
 import {
   UserCircle, Briefcase, Send, Loader2, Save, X, ClipboardList,
@@ -296,8 +298,20 @@ export function SecondaryEvalTab() {
   const currentUserId = user?.user_id;
   const toast = useToast();
 
-  const [reviews, setReviews] = useState<ProjectReviewResponse[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const queryClient = useQueryClient();
+
+  // Cache-warming payoff: the parent ProjectReviews page (PR #07)
+  // already fires a probe query on this exact key to decide whether
+  // to render this tab's button. When this tab mounts, `data` is
+  // already populated — no second network round-trip. Per doc #07's
+  // "cache-warming probe" promise, this is the consumer that finally
+  // realizes the win.
+  const queueQuery = useQuery({
+    queryKey: queryKeys.projectReviews.secondaryQueue(),
+    queryFn: projectReviewService.getSecondaryQueue,
+  });
+  const reviews: ProjectReviewResponse[] = queueQuery.data ?? [];
+  const isLoading = queueQuery.isPending;
 
   const [viewMode, setViewMode] = useState<ViewMode>("table");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -313,22 +327,79 @@ export function SecondaryEvalTab() {
   const [isEditMode, setIsEditMode] = useState(false);
   const [isDraftMode, setIsDraftMode] = useState(false);
   const [editImpact, setEditImpact] = useState("");
-  const [isSaving, setIsSaving] = useState(false);
-  const [isDraftSaving, setIsDraftSaving] = useState(false);
   const [modalError, setModalError] = useState("");
 
-  const loadReviews = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      setReviews(await projectReviewService.getSecondaryQueue());
-    } catch {
-      // stays empty
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  // ── Mutations ──────────────────────────────────────────────────────
+  // Same broadcast-invalidation footprint as the PM side:
+  //   projectReviews.all  → secondaryQueue, pmQueue, mine, mentees, org
+  //   dashboard.all       → project_reviews_pending_secondary count
+  const invalidateSecondaryScope = useCallback(() => {
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.projectReviews.all,
+    });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
+  }, [queryClient]);
 
-  useEffect(() => { void loadReviews(); }, [loadReviews]);
+  // updateSecondaryEval edits an already-submitted impact statement;
+  // submitSecondaryEval creates a new one or promotes a draft. Two
+  // mutation instances for two flows (same endpoint family, different
+  // UX) — same DRY-vs-clarity trade we've been making since PR #20's
+  // create vs update user.
+  const updateSecondaryMutation = useMutation({
+    mutationFn: (vars: {
+      reviewId: number;
+      payload: SecondaryEvalPayload;
+    }) =>
+      projectReviewService.updateSecondaryEval(vars.reviewId, vars.payload),
+    onSuccess: () => {
+      invalidateSecondaryScope();
+      closeImpactModal();
+      toast.success("Review updated.");
+    },
+    onError: (err) => setModalError(getErrorMessage(err)),
+  });
+
+  const submitSecondaryMutation = useMutation({
+    mutationFn: (vars: {
+      reviewId: number;
+      payload: SecondaryEvalPayload;
+    }) =>
+      projectReviewService.submitSecondaryEval(vars.reviewId, vars.payload),
+    onSuccess: () => {
+      invalidateSecondaryScope();
+      closeImpactModal();
+      toast.success("Review submitted.");
+    },
+    onError: (err) => setModalError(getErrorMessage(err)),
+  });
+
+  // saveSecondaryDraft (PATCH /secondary/draft) — keeps the modal
+  // open so the user can keep editing.
+  const draftSecondaryMutation = useMutation({
+    mutationFn: (vars: {
+      reviewId: number;
+      payload: SecondaryEvalDraftPayload;
+    }) =>
+      projectReviewService.saveSecondaryDraft(vars.reviewId, vars.payload),
+    onSuccess: (_data, vars) => {
+      invalidateSecondaryScope();
+      // Flip into draft mode so the badge + footer copy reflect the
+      // saved draft state. editImpact stays whatever the user typed
+      // (we don't reset the textarea on draft-save).
+      setIsDraftMode(true);
+      setEditImpact(vars.payload.impact_statement ?? "");
+      toast.success("Draft saved.");
+    },
+    onError: (err) => setModalError(getErrorMessage(err)),
+  });
+
+  // Helper to centralize modal close-and-reset.
+  function closeImpactModal() {
+    setImpactTarget(null);
+    setIsEditMode(false);
+    setIsDraftMode(false);
+    setEditImpact("");
+  }
 
   const getMySubmission = (review: ProjectReviewResponse) =>
     review.secondary_evaluations?.find((ev) => ev.evaluator_id === currentUserId);
@@ -385,45 +456,32 @@ export function SecondaryEvalTab() {
       })
     : filteredReviews;
 
+  // Impact modal awaits onSubmit + onSaveDraft to drive its
+  // "Saving..." spinners (same modal pattern we've used since PR #20).
+  // mutateAsync + try/catch preserves the legacy contract; onError
+  // already routed the failure to setModalError for inline display.
   const handleSubmit = async (reviewId: number, payload: SecondaryEvalPayload) => {
-    setIsSaving(true);
     setModalError("");
     try {
       if (isEditMode) {
-        await projectReviewService.updateSecondaryEval(reviewId, payload);
+        await updateSecondaryMutation.mutateAsync({ reviewId, payload });
       } else {
-        // submitSecondaryEval handles draft → submitted promotion server-side
-        await projectReviewService.submitSecondaryEval(reviewId, payload);
+        await submitSecondaryMutation.mutateAsync({ reviewId, payload });
       }
-      await loadReviews();
-      setImpactTarget(null);
-      setIsEditMode(false);
-      setIsDraftMode(false);
-      setEditImpact("");
-      toast.success(isEditMode ? "Review updated." : "Review submitted.");
-    } catch (err: unknown) {
-      setModalError(getErrorMessage(err));
-    } finally {
-      setIsSaving(false);
+    } catch {
+      /* handled by onError */
     }
   };
 
-  const handleSaveDraft = async (reviewId: number, payload: SecondaryEvalDraftPayload) => {
-    setIsDraftSaving(true);
+  const handleSaveDraft = async (
+    reviewId: number,
+    payload: SecondaryEvalDraftPayload,
+  ) => {
     setModalError("");
     try {
-      await projectReviewService.saveSecondaryDraft(reviewId, payload);
-      await loadReviews();
-      // Don't close the modal — user may want to keep editing — but
-      // flip into draft mode so the badge + footer copy reflect that
-      // a saved draft exists now.
-      setIsDraftMode(true);
-      setEditImpact(payload.impact_statement ?? "");
-      toast.success("Draft saved.");
-    } catch (err: unknown) {
-      setModalError(getErrorMessage(err));
-    } finally {
-      setIsDraftSaving(false);
+      await draftSecondaryMutation.mutateAsync({ reviewId, payload });
+    } catch {
+      /* handled by onError */
     }
   };
 
@@ -685,8 +743,11 @@ export function SecondaryEvalTab() {
             setEditImpact("");
             setModalError("");
           }}
-          isSaving={isSaving}
-          isDraftSaving={isDraftSaving}
+          isSaving={
+            submitSecondaryMutation.isPending ||
+            updateSecondaryMutation.isPending
+          }
+          isDraftSaving={draftSecondaryMutation.isPending}
           error={modalError}
           isEditMode={isEditMode}
           isDraftMode={isDraftMode}
