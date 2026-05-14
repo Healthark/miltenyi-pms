@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback, Fragment } from "react";
+import { useEffect, useCallback, useRef, useState, Fragment } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { queryKeys } from "@/lib/queryKeys";
 import {
   Plus, Target, Lock, Search,
@@ -967,6 +968,30 @@ export function AnnualGoals() {
 
 // ── HR_MyOrg "All Goals" view-only table ──────────────────────────
 
+// Shared CSS Grid layout for the 5-column virtualized "All Goals" view.
+// The same template covers BOTH the user-level row (Employee | Function
+// | Designation | Year | Mentor) AND the per-goal sub-rows inside the
+// expansion (Goal | Description-span-2 | Status | Action). For sub-rows
+// the Description cell uses `gridColumn: span 2` to occupy what Function
+// + Designation would have held — the CSS Grid equivalent of the
+// legacy <td colSpan={2}>.
+const ALL_GOALS_GRID_TEMPLATE_COLUMNS =
+  "minmax(180px, 1.6fr) minmax(140px, 1.4fr) minmax(140px, 1.4fr) " +
+  "minmax(100px, 1fr) minmax(140px, 1.3fr)";
+
+// Collapsed user row (~48px) — text-[13px] + py-3 padding. measureElement
+// records the real size after render; this estimate seeds the initial
+// total-size calculation before any row has rendered.
+const ALL_GOALS_ESTIMATE_ROW_PX = 48;
+
+const ALL_GOALS_SCROLL_HEIGHT_PX = 600;
+
+// Lower overscan than PR #15/#17 because expanded groups can be VERY
+// tall (a user with 10 goals = ~500px expansion). Over-rendering tall
+// rows costs more measurement work; tune up only if scroll on slow
+// devices flashes empty rows.
+const ALL_GOALS_OVERSCAN = 4;
+
 function AllGoalsTab({
   goals,
   isLoading,
@@ -1038,6 +1063,21 @@ function AllGoalsTab({
             sensitivity: "base",
           }),
         );
+
+  // Variable-height virtualizer for the per-user groups. Each "row" in
+  // the virtualizer is a user GROUP; when expanded, the group's outer
+  // div contains the user-level row plus the sub-header + per-goal rows
+  // inline. measureElement records the total height — collapsed groups
+  // are ~48px, expanded groups can be 200-700px depending on goal
+  // count. Same pattern as PR #16/#17, applied to the most variable
+  // expansion shape so far.
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: sortedGroups.length,
+    getScrollElement: () => scrollContainerRef.current,
+    estimateSize: () => ALL_GOALS_ESTIMATE_ROW_PX,
+    overscan: ALL_GOALS_OVERSCAN,
+  });
 
   if (isLoading) {
     return (
@@ -1173,161 +1213,212 @@ function AllGoalsTab({
        </div>
       </div>
 
+      {/* Virtualized "All Goals" view (variable-height; see doc #18).
+          Outer div handles x-scroll on narrow viewports. Inner scroll
+          container handles y-virtualization. The expansion shape here
+          is denser than PR #16/#17 — sub-header + N per-goal rows
+          inside one outer measured div. measureElement records the
+          total height including the variable expansion. */}
       <div className="overflow-x-auto rounded-lg border border-border">
-        <table className="w-full text-[13px]">
-          <thead>
-            <tr className="bg-slate-50/80 border-b border-border">
-              <th className="text-left px-5 py-2.5">
-                <SortableHeader
-                  label="Employee"
-                  columnKey="owner_name"
-                  sort={sort}
-                  onSort={setSort}
-                />
-              </th>
-              <th className="text-left px-4 py-2.5">
-                <SortableHeader
-                  label="Function"
-                  columnKey="function_name"
-                  sort={sort}
-                  onSort={setSort}
-                />
-              </th>
-              <th className="text-left px-4 py-2.5">
-                <SortableHeader
-                  label="Designation"
-                  columnKey="designation_name"
-                  sort={sort}
-                  onSort={setSort}
-                />
-              </th>
-              <th className="text-left px-4 py-2.5">
-                <SortableHeader
-                  label="Year"
-                  columnKey="latest_fy_year"
-                  sort={sort}
-                  onSort={setSort}
-                />
-              </th>
-              <th className="text-left px-4 py-2.5">
-                <SortableHeader
-                  label="Mentor"
-                  columnKey="latest_manager_name"
-                  sort={sort}
-                  onSort={setSort}
-                />
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border/50">
-            {sortedGroups.map((group) => {
-              const isExpanded = expandedUserId === group.user_id;
-              return (
-                <Fragment key={group.user_id}>
-                  <tr
-                    className={`transition-colors cursor-pointer ${
+        <div
+          role="table"
+          aria-label="All annual goals (HR view)"
+          aria-rowcount={sortedGroups.length}
+          className="text-[13px]"
+        >
+          {/* Header — non-virtualized */}
+          <div role="rowgroup" className="bg-slate-50/80 border-b border-border">
+            <div
+              role="row"
+              className="grid items-center"
+              style={{ gridTemplateColumns: ALL_GOALS_GRID_TEMPLATE_COLUMNS }}
+            >
+              <div role="columnheader" className="text-left px-5 py-2.5">
+                <SortableHeader label="Employee" columnKey="owner_name" sort={sort} onSort={setSort} />
+              </div>
+              <div role="columnheader" className="text-left px-4 py-2.5">
+                <SortableHeader label="Function" columnKey="function_name" sort={sort} onSort={setSort} />
+              </div>
+              <div role="columnheader" className="text-left px-4 py-2.5">
+                <SortableHeader label="Designation" columnKey="designation_name" sort={sort} onSort={setSort} />
+              </div>
+              <div role="columnheader" className="text-left px-4 py-2.5">
+                <SortableHeader label="Year" columnKey="latest_fy_year" sort={sort} onSort={setSort} />
+              </div>
+              <div role="columnheader" className="text-left px-4 py-2.5">
+                <SortableHeader label="Mentor" columnKey="latest_manager_name" sort={sort} onSort={setSort} />
+              </div>
+            </div>
+          </div>
+
+          {/* Body — virtualized per-user groups */}
+          <div
+            ref={scrollContainerRef}
+            role="rowgroup"
+            style={{ height: ALL_GOALS_SCROLL_HEIGHT_PX }}
+            className="overflow-y-auto"
+          >
+            <div
+              style={{
+                height: rowVirtualizer.getTotalSize(),
+                position: "relative",
+                width: "100%",
+              }}
+            >
+              {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                const group = sortedGroups[virtualRow.index];
+                const isExpanded = expandedUserId === group.user_id;
+                return (
+                  <div
+                    role="row"
+                    aria-rowindex={virtualRow.index + 1}
+                    aria-expanded={isExpanded}
+                    key={group.user_id}
+                    // data-index REQUIRED so the ResizeObserver maps
+                    // each measurement back to the right group index.
+                    // See doc #16 for the full mechanics.
+                    data-index={virtualRow.index}
+                    ref={rowVirtualizer.measureElement}
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      width: "100%",
+                      transform: `translateY(${virtualRow.start}px)`,
+                    }}
+                    className={`transition-colors border-b border-border/50 ${
                       isExpanded ? "bg-brand/5" : "hover:bg-slate-50/60"
                     }`}
-                    onClick={() =>
-                      setExpandedUserId(isExpanded ? null : group.user_id)
-                    }
                   >
-                    <td className="px-5 py-3 font-medium text-text-main">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <ChevronDown
-                          className={`h-4 w-4 text-text-muted shrink-0 transition-transform duration-200 ${
-                            isExpanded ? "rotate-180" : ""
-                          }`}
-                          aria-hidden="true"
-                        />
-                        <span className="truncate">{group.owner_name}</span>
+                    {/* User-level row (always visible). Click anywhere
+                        on this strip toggles expansion. */}
+                    <div
+                      className="grid items-center cursor-pointer"
+                      style={{ gridTemplateColumns: ALL_GOALS_GRID_TEMPLATE_COLUMNS }}
+                      onClick={() =>
+                        setExpandedUserId(isExpanded ? null : group.user_id)
+                      }
+                    >
+                      <div role="cell" className="px-5 py-3 font-medium text-text-main">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <ChevronDown
+                            className={`h-4 w-4 text-text-muted shrink-0 transition-transform duration-200 ${
+                              isExpanded ? "rotate-180" : ""
+                            }`}
+                            aria-hidden="true"
+                          />
+                          <span className="truncate">{group.owner_name}</span>
+                        </div>
                       </div>
-                    </td>
-                    <td className="px-4 py-3 text-text-muted">
-                      {group.function_name ?? "—"}
-                    </td>
-                    <td className="px-4 py-3 text-text-muted">
-                      {group.designation_name ?? "—"}
-                    </td>
-                    <td className="px-4 py-3">
-                      {group.latest_fy_year ? (
-                        <span className="text-[12px] font-semibold text-text-muted bg-slate-100 px-1.5 py-0.5 rounded">
-                          {formatFyYearSpan(group.latest_fy_year)}
-                        </span>
-                      ) : (
-                        <span className="text-[12px] text-text-muted">—</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-text-muted">
-                      {group.latest_manager_name ?? "—"}
-                    </td>
-                  </tr>
-                  {isExpanded && (
-                    <>
-                      {/* Sub-header — reuses the parent table's column
-                          widths so Goal / Description / Status / Action
-                          line up with Employee / Function+Designation /
-                          Year / Mentor visually. Tinted with the brand
-                          colour so the expanded block reads as a child
-                          of the employee row rather than blending into
-                          the table chrome. */}
-                      <tr className="bg-brand/10 border-t border-brand/20 text-[11px] font-bold uppercase tracking-wider text-text-muted">
-                        <th className="text-left px-5 py-2 pl-10 font-bold border-l-2 border-brand/40">Goal</th>
-                        <th colSpan={2} className="text-left px-4 py-2 font-bold">Description</th>
-                        <th className="text-left px-4 py-2 font-bold">Status</th>
-                        <th className="text-left px-4 py-2 font-bold">Action</th>
-                      </tr>
-                      {group.goals.map((g, gi) => {
-                        const hasReview =
-                          g.self_reviews.some((r) => !r.is_draft) ||
-                          g.mentor_reviews.some((r) => !r.is_draft);
-                        return (
-                          <tr key={g.id} className="bg-brand/5 hover:bg-brand/10 transition-colors border-t border-brand/10">
-                            <td className="px-5 py-2.5 pl-10 align-top border-l-2 border-brand/40">
-                              <span className="font-medium text-text-main">
-                                <span className="mr-2 font-mono text-[12px] text-text-muted tabular-nums">
-                                  {gi + 1}.
+                      <div role="cell" className="px-4 py-3 text-text-muted truncate">
+                        {group.function_name ?? "—"}
+                      </div>
+                      <div role="cell" className="px-4 py-3 text-text-muted truncate">
+                        {group.designation_name ?? "—"}
+                      </div>
+                      <div role="cell" className="px-4 py-3">
+                        {group.latest_fy_year ? (
+                          <span className="text-[12px] font-semibold text-text-muted bg-slate-100 px-1.5 py-0.5 rounded">
+                            {formatFyYearSpan(group.latest_fy_year)}
+                          </span>
+                        ) : (
+                          <span className="text-[12px] text-text-muted">—</span>
+                        )}
+                      </div>
+                      <div role="cell" className="px-4 py-3 text-text-muted truncate">
+                        {group.latest_manager_name ?? "—"}
+                      </div>
+                    </div>
+
+                    {/* Expansion: sub-header + per-goal rows. Same
+                        5-column grid; the Description cell uses
+                        `gridColumn: span 2` to occupy the visual width
+                        of Function+Designation columns — CSS Grid
+                        equivalent of the legacy <td colSpan={2}>. */}
+                    {isExpanded && (
+                      <>
+                        {/* Sub-header */}
+                        <div
+                          className="bg-brand/10 border-t border-brand/20 text-[11px] font-bold uppercase tracking-wider text-text-muted grid items-center"
+                          style={{
+                            gridTemplateColumns: ALL_GOALS_GRID_TEMPLATE_COLUMNS,
+                          }}
+                        >
+                          <div className="text-left px-5 py-2 pl-10 font-bold border-l-2 border-brand/40">
+                            Goal
+                          </div>
+                          <div
+                            className="text-left px-4 py-2 font-bold"
+                            style={{ gridColumn: "span 2" }}
+                          >
+                            Description
+                          </div>
+                          <div className="text-left px-4 py-2 font-bold">Status</div>
+                          <div className="text-left px-4 py-2 font-bold">Action</div>
+                        </div>
+
+                        {/* Per-goal sub-rows */}
+                        {group.goals.map((g, gi) => {
+                          const hasReview =
+                            g.self_reviews.some((r) => !r.is_draft) ||
+                            g.mentor_reviews.some((r) => !r.is_draft);
+                          return (
+                            <div
+                              key={g.id}
+                              className="bg-brand/5 hover:bg-brand/10 transition-colors border-t border-brand/10 grid"
+                              style={{
+                                gridTemplateColumns: ALL_GOALS_GRID_TEMPLATE_COLUMNS,
+                              }}
+                            >
+                              <div className="px-5 py-2.5 pl-10 border-l-2 border-brand/40 self-start">
+                                <span className="font-medium text-text-main">
+                                  <span className="mr-2 font-mono text-[12px] text-text-muted tabular-nums">
+                                    {gi + 1}.
+                                  </span>
+                                  {g.title}
                                 </span>
-                                {g.title}
-                              </span>
-                            </td>
-                            <td colSpan={2} className="px-4 py-2.5 text-[12.5px] text-text-muted align-top">
-                              {g.description ? (
-                                <span className="whitespace-normal break-words">
-                                  {g.description}
-                                </span>
-                              ) : (
-                                <span>—</span>
-                              )}
-                            </td>
-                            <td className="px-4 py-2.5 align-top">
-                              <ApprovalStatusBadge status={g.approval_status} />
-                            </td>
-                            <td className="px-4 py-2.5 align-top">
-                              {hasReview ? (
-                                <button
-                                  type="button"
-                                  onClick={() => setViewGoal(g)}
-                                  className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-white px-2.5 py-1 text-[12px] font-medium text-text-muted hover:bg-slate-50 hover:text-text-main transition-colors"
-                                >
-                                  <Eye className="h-3 w-3" /> View
-                                </button>
-                              ) : (
-                                <span className="text-[11px] italic text-text-muted">
-                                  —
-                                </span>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </>
-                  )}
-                </Fragment>
-              );
-            })}
-          </tbody>
-        </table>
+                              </div>
+                              <div
+                                className="px-4 py-2.5 text-[12.5px] text-text-muted self-start"
+                                style={{ gridColumn: "span 2" }}
+                              >
+                                {g.description ? (
+                                  <span className="whitespace-normal break-words">
+                                    {g.description}
+                                  </span>
+                                ) : (
+                                  <span>—</span>
+                                )}
+                              </div>
+                              <div className="px-4 py-2.5 self-start">
+                                <ApprovalStatusBadge status={g.approval_status} />
+                              </div>
+                              <div className="px-4 py-2.5 self-start">
+                                {hasReview ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setViewGoal(g)}
+                                    className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-white px-2.5 py-1 text-[12px] font-medium text-text-muted hover:bg-slate-50 hover:text-text-main transition-colors"
+                                  >
+                                    <Eye className="h-3 w-3" /> View
+                                  </button>
+                                ) : (
+                                  <span className="text-[11px] italic text-text-muted">
+                                    —
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
       </div>
 
       {viewGoal && (
