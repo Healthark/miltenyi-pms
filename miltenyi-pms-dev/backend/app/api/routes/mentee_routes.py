@@ -119,12 +119,27 @@ def _build_review_status(active_review: AnnualReview | None) -> MenteeReviewStat
     """Shape the active-cycle review (or its absence) for the card."""
     if not active_review:
         return MenteeReviewStatus()
+    final = None
+    if active_review.final_rating_enabled:
+        # Synthesize from management ?? mentor when the stored column is
+        # NULL — rows rated before set_management_rating started persisting
+        # final_performance_rating leave the column empty, but the row is
+        # still officially published (final_rating_enabled=True).
+        final = (
+            active_review.final_performance_rating
+            if active_review.final_performance_rating is not None
+            else (
+                active_review.management_performance_rating
+                if active_review.management_performance_rating is not None
+                else active_review.mentor_performance_rating
+            )
+        )
     return MenteeReviewStatus(
         review_id=active_review.id,
         cycle_name=active_review.cycle_name,
         status=active_review.status,
         mentor_performance_rating=active_review.mentor_performance_rating,
-        final_performance_rating=active_review.final_performance_rating if active_review.final_rating_enabled else None,
+        final_performance_rating=final,
     )
 
 
@@ -354,6 +369,16 @@ def get_mentee_detail(
         .order_by(AnnualReview.created_at.desc())
         .all()
     )
+    # Backfill rows rated before set_management_rating started persisting
+    # final_performance_rating. Without this, the MenteeReviewTab's Final
+    # column would show blank for any review rated under the old write path.
+    for r in reviews_list:
+        if r.final_performance_rating is None and r.final_rating_enabled:
+            r.final_performance_rating = (
+                r.management_performance_rating
+                if r.management_performance_rating is not None
+                else r.mentor_performance_rating
+            )
     active_review = next((r for r in reviews_list if r.cycle_name == active_cycle), None)
 
     # Project assignments, joined with the review for the active cycle

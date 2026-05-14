@@ -378,7 +378,18 @@ def build_annual_reviews_sheet(
         ws.cell(row=row, column=12, value=r.mentor_performance_rating)
         ws.cell(row=row, column=13, value=r.mentor_overall_review or "")
         ws.cell(row=row, column=14, value=r.management_performance_rating)
-        ws.cell(row=row, column=15, value=r.final_performance_rating)
+        # Synthesize from management ?? mentor when the stored column is NULL
+        # but the row is officially published. Rows rated before
+        # set_management_rating started persisting final_performance_rating
+        # would otherwise export a blank Final column.
+        final_rating = r.final_performance_rating
+        if final_rating is None and r.final_rating_enabled:
+            final_rating = (
+                r.management_performance_rating
+                if r.management_performance_rating is not None
+                else r.mentor_performance_rating
+            )
+        ws.cell(row=row, column=15, value=final_rating)
         ws.cell(row=row, column=16, value=r.management_comments or "")
         ws.cell(
             row=row,

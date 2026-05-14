@@ -458,6 +458,16 @@ def get_all_annual_reviews(
         meta = employee_meta.get(r.user_id, (None, None))
         r.function = meta[0]
         r.designation = meta[1]
+        # Backfill rows rated before set_management_rating started persisting
+        # final_performance_rating. Mirrors the user-side synthesis in
+        # _strip_private_ratings so the "All Reviews" Final column matches
+        # what the rated employee sees.
+        if r.final_performance_rating is None and r.final_rating_enabled:
+            r.final_performance_rating = (
+                r.management_performance_rating
+                if r.management_performance_rating is not None
+                else r.mentor_performance_rating
+            )
 
     return reviews
 
@@ -514,6 +524,16 @@ def get_mentee_reviews(
 
     rows: list[MenteeAnnualReview] = []
     for r in reviews:
+        # Backfill rows rated before set_management_rating started persisting
+        # final_performance_rating. Mirrors the user-side synthesis in
+        # _strip_private_ratings so mentor mentee cards show the published
+        # final rating instead of a blank.
+        if r.final_performance_rating is None and r.final_rating_enabled:
+            r.final_performance_rating = (
+                r.management_performance_rating
+                if r.management_performance_rating is not None
+                else r.mentor_performance_rating
+            )
         # Drop any name fields the parent already populated as None — we
         # provide our own resolved `employee_name` below, and otherwise
         # Python complains about duplicate kwargs when spreading `base`.
@@ -769,6 +789,12 @@ def set_management_rating(
         )
 
     review.management_performance_rating = payload.management_performance_rating
+    # Persist the synthesized final so HR_MyOrg's `/all` view, mentor mentee
+    # cards, and the Excel export all read a populated value. Matches the
+    # user-side synthesis in `_strip_private_ratings` (management ?? mentor),
+    # keeping the DB the single source of truth instead of relying on every
+    # read path to recompute it.
+    review.final_performance_rating = payload.management_performance_rating
     review.final_rating_enabled = True
     review.status = ReviewStatus.COMPLETED.value
 
