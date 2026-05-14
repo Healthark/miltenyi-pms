@@ -1,6 +1,6 @@
 # 16 — Variable-height virtualization: AnnualReviews AllReviewsTab
 
-> **PR:** _pending_
+> **PR:** [#33](https://github.com/Healthark/miltenyi-pms/pull/33)
 > **Files changed:** `frontend/src/pages/AnnualReviews.tsx` only.
 > **Headline result:** Second virtualization target. Where PR #15 had fixed-height rows, this one has **inline expansion** — clicking a row reveals a self+mentor narrative panel of variable text length. The pattern is the same library (`@tanstack/react-virtual`) with one new API: **`measureElement`** for letting the virtualizer learn each row's actual rendered height.
 

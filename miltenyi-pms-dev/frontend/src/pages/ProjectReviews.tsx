@@ -18,8 +18,9 @@
  * picks between Skeleton / Empty / Grid / Table.
  */
 
-import { useState, useEffect, useMemo, Fragment } from "react";
+import { useEffect, useMemo, useRef, useState, Fragment } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   Briefcase,
   CheckCircle2,
@@ -436,6 +437,39 @@ export function ProjectReviews() {
 
 // ── Read-only review list (Mentor + HR) ────────────────────────────
 
+// Shared CSS Grid layout for the 7-column virtualized read-only review
+// list. `minmax(floor, weight)` keeps narrow columns readable and lets
+// wide ones expand to fill space.
+//
+// Column shape:
+//   1. Project (name + code — two visible lines, widest)
+//   2. Employee/Mentee (medium)
+//   3. PM (medium)
+//   4. Cycle (badge)
+//   5. Status (badge with icon)
+//   6. Rating (badge or Lock indicator)
+//   7. Actions (View button or "Awaiting PM" italic text)
+const READ_ONLY_GRID_TEMPLATE_COLUMNS =
+  "minmax(220px, 2.2fr) minmax(140px, 1.4fr) minmax(140px, 1.4fr) " +
+  "minmax(100px, 1fr) minmax(120px, 1.1fr) minmax(120px, 1.1fr) " +
+  "minmax(100px, 0.9fr)";
+
+// Starting guess for the collapsed row height (project cell's 2-line
+// content + py-3 padding ≈ 60-64px). measureElement corrects after
+// render — most rows are uniform, but long project names can wrap and
+// push the height higher. Using variable-height pattern from PR #16
+// to handle that edge case correctly.
+//
+// Note: this table has NO inline expansion (the View button opens a
+// MODAL, not an inline panel). We could have used fixed-height
+// virtualization like PR #15. We chose variable-height anyway because
+// (a) project names can wrap, (b) it keeps the codebase consistent
+// with PR #16's template, (c) the cost vs fixed-height is minimal.
+const READ_ONLY_ESTIMATE_ROW_PX = 64;
+
+const READ_ONLY_SCROLL_HEIGHT_PX = 600;
+const READ_ONLY_OVERSCAN = 6;
+
 function ReadOnlyReviewsList({
   isLoading,
   reviews,
@@ -518,6 +552,19 @@ function ReadOnlyReviewsList({
       return compareValues(get(a), get(b), kind, sort.direction);
     });
   }, [filtered, sort]);
+
+  // Variable-height virtualizer (same template as PR #16 / doc #16).
+  // We use measureElement here primarily for the long-project-name
+  // edge case where the cell wraps to two display lines. The rest of
+  // the row is fixed-height; ResizeObserver fires once per row and
+  // the virtualizer caches that height for the row's lifetime.
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: sorted.length,
+    getScrollElement: () => scrollContainerRef.current,
+    estimateSize: () => READ_ONLY_ESTIMATE_ROW_PX,
+    overscan: READ_ONLY_OVERSCAN,
+  });
 
   if (isLoading) {
     return <TableSkeleton />;
@@ -636,112 +683,167 @@ function ReadOnlyReviewsList({
          </div>
       </div>
 
+      {/* Virtualized read-only review list (variable-height via
+          measureElement; see doc #17). Outer div handles horizontal
+          overflow for narrow viewports (header + body x-scroll
+          together). Inner scroll container handles vertical
+          virtualization. Empty / no-match states render outside the
+          virtualized container. */}
       <div className="overflow-x-auto rounded-lg border border-border">
-        <table className="w-full text-[13px]">
-          <thead>
-            <tr className="bg-slate-50/80 border-b border-border">
-              <th className="text-left px-5 py-2.5">
+        <div
+          role="table"
+          aria-label="Read-only project reviews"
+          aria-rowcount={sorted.length}
+          className="text-[13px]"
+        >
+          {/* Header — non-virtualized, pinned at top */}
+          <div role="rowgroup" className="bg-slate-50/80 border-b border-border">
+            <div
+              role="row"
+              className="grid items-center"
+              style={{ gridTemplateColumns: READ_ONLY_GRID_TEMPLATE_COLUMNS }}
+            >
+              <div role="columnheader" className="text-left px-5 py-2.5">
                 <SortableHeader label="Project" columnKey="project_name" sort={sort} onSort={setSort} />
-              </th>
-              <th className="text-left px-4 py-2.5">
+              </div>
+              <div role="columnheader" className="text-left px-4 py-2.5">
                 <SortableHeader
                   label={employeeColumnLabel}
                   columnKey="employee_name"
                   sort={sort}
                   onSort={setSort}
                 />
-              </th>
-              <th className="text-left px-4 py-2.5">
+              </div>
+              <div role="columnheader" className="text-left px-4 py-2.5">
                 <SortableHeader label="PM" columnKey="pm_name" sort={sort} onSort={setSort} />
-              </th>
-              <th className="text-left px-4 py-2.5">
+              </div>
+              <div role="columnheader" className="text-left px-4 py-2.5">
                 <SortableHeader label="Cycle" columnKey="cycle" sort={sort} onSort={setSort} />
-              </th>
-              <th className="text-left px-4 py-2.5">
+              </div>
+              <div role="columnheader" className="text-left px-4 py-2.5">
                 <SortableHeader label="Status" columnKey="status" sort={sort} onSort={setSort} />
-              </th>
-              <th className="text-left px-4 py-2.5">
+              </div>
+              <div role="columnheader" className="text-left px-4 py-2.5">
                 <SortableHeader label="Rating" columnKey="performance_group" sort={sort} onSort={setSort} />
-              </th>
-              <th className="text-left px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted">
+              </div>
+              <div
+                role="columnheader"
+                className="text-left px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted"
+              >
                 Actions
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border/50">
-            {sorted.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="px-5 py-10 text-center">
-                  <Search className="h-6 w-6 text-text-muted mx-auto mb-1" aria-hidden="true" />
-                  <p className="text-[13px] text-text-main font-medium">No matching reviews</p>
-                  <p className="text-[11px] text-text-muted mt-0.5">
-                    Try adjusting your filters or search query.
-                  </p>
-                </td>
-              </tr>
-            ) : sorted.map((r) => {
-              const isReviewed = r.status === "reviewed";
-              return (
-                <tr key={r.id} className="hover:bg-slate-50/60 transition-colors">
-                  <td className="px-5 py-3">
-                    <div className="font-medium text-text-main">
-                      {r.project_name}
+              </div>
+            </div>
+          </div>
+
+          {/* Body — either the no-matches branch or the virtualized
+              scroll container. */}
+          {sorted.length === 0 ? (
+            <div className="px-5 py-10 text-center">
+              <Search className="h-6 w-6 text-text-muted mx-auto mb-1" aria-hidden="true" />
+              <p className="text-[13px] text-text-main font-medium">No matching reviews</p>
+              <p className="text-[11px] text-text-muted mt-0.5">
+                Try adjusting your filters or search query.
+              </p>
+            </div>
+          ) : (
+            <div
+              ref={scrollContainerRef}
+              role="rowgroup"
+              style={{ height: READ_ONLY_SCROLL_HEIGHT_PX }}
+              className="overflow-y-auto"
+            >
+              <div
+                style={{
+                  height: rowVirtualizer.getTotalSize(),
+                  position: "relative",
+                  width: "100%",
+                }}
+              >
+                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                  const r = sorted[virtualRow.index];
+                  const isReviewed = r.status === "reviewed";
+                  return (
+                    <div
+                      role="row"
+                      aria-rowindex={virtualRow.index + 1}
+                      key={r.id}
+                      // data-index is REQUIRED by measureElement to map
+                      // the ResizeObserver entry back to this row's
+                      // index in the virtualizer's size cache. See
+                      // doc #16 part 1.
+                      data-index={virtualRow.index}
+                      ref={rowVirtualizer.measureElement}
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        width: "100%",
+                        transform: `translateY(${virtualRow.start}px)`,
+                        gridTemplateColumns: READ_ONLY_GRID_TEMPLATE_COLUMNS,
+                      }}
+                      className="grid items-center hover:bg-slate-50/60 transition-colors border-b border-border/50"
+                    >
+                      <div role="cell" className="px-5 py-3">
+                        <div className="font-medium text-text-main">
+                          {r.project_name}
+                        </div>
+                        <div className="font-mono text-[11px] text-text-muted">
+                          {r.project_code}
+                        </div>
+                      </div>
+                      <div role="cell" className="px-4 py-3 font-medium text-text-main truncate">
+                        {r.employee_name}
+                      </div>
+                      <div role="cell" className="px-4 py-3 text-text-muted truncate">
+                        {r.pm_name ?? r.reviewer_name ?? "—"}
+                      </div>
+                      <div role="cell" className="px-4 py-3">
+                        <span className="text-[12px] font-semibold text-text-muted bg-slate-100 px-1.5 py-0.5 rounded">
+                          {r.cycle}
+                        </span>
+                      </div>
+                      <div role="cell" className="px-4 py-3">
+                        {isReviewed ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-[11px] font-bold uppercase text-green-700">
+                            <CheckCircle2 className="h-3 w-3" /> Reviewed
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-bold uppercase text-amber-700">
+                            <Clock className="h-3 w-3" /> Pending PM
+                          </span>
+                        )}
+                      </div>
+                      <div role="cell" className="px-4 py-3">
+                        {!projectRatingsVisible ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] text-text-muted/60">
+                            <Lock className="h-3 w-3" /> Hidden
+                          </span>
+                        ) : (
+                          <PerformanceRatingBadge value={r.performance_group} />
+                        )}
+                      </div>
+                      <div role="cell" className="px-4 py-3">
+                        {isReviewed ? (
+                          <button
+                            type="button"
+                            onClick={() => setViewTarget(r)}
+                            className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-text-muted hover:bg-brand/10 hover:text-brand transition-colors"
+                          >
+                            <Eye className="h-3 w-3" /> View
+                          </button>
+                        ) : (
+                          <span className="text-[11px] italic text-text-muted/70">
+                            Awaiting PM
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <div className="font-mono text-[11px] text-text-muted">
-                      {r.project_code}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 font-medium text-text-main">
-                    {r.employee_name}
-                  </td>
-                  <td className="px-4 py-3 text-text-muted">
-                    {r.pm_name ?? r.reviewer_name ?? "—"}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="text-[12px] font-semibold text-text-muted bg-slate-100 px-1.5 py-0.5 rounded">
-                      {r.cycle}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    {isReviewed ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-[11px] font-bold uppercase text-green-700">
-                        <CheckCircle2 className="h-3 w-3" /> Reviewed
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-bold uppercase text-amber-700">
-                        <Clock className="h-3 w-3" /> Pending PM
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    {!projectRatingsVisible ? (
-                      <span className="inline-flex items-center gap-1 text-[11px] text-text-muted/60">
-                        <Lock className="h-3 w-3" /> Hidden
-                      </span>
-                    ) : (
-                      <PerformanceRatingBadge value={r.performance_group} />
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    {isReviewed ? (
-                      <button
-                        type="button"
-                        onClick={() => setViewTarget(r)}
-                        className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-text-muted hover:bg-brand/10 hover:text-brand transition-colors"
-                      >
-                        <Eye className="h-3 w-3" /> View
-                      </button>
-                    ) : (
-                      <span className="text-[11px] italic text-text-muted/70">
-                        Awaiting PM
-                      </span>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Read-only review detail modal — opened from the View button.
