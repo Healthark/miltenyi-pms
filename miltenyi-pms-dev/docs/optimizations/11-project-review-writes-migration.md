@@ -1,6 +1,6 @@
 # 11 — Project-review writes: PrimaryEvaluationTab + SecondaryEvalTab
 
-> **PR:** _pending_
+> **PR:** [#28](https://github.com/Healthark/miltenyi-pms/pull/28)
 > **Files changed:** `frontend/src/lib/queryKeys.ts` (added `projectReviews.pmQueue()`), `frontend/src/components/project-reviews/PrimaryEvaluationTab.tsx`, `frontend/src/components/project-reviews/SecondaryEvalTab.tsx`.
 > **Headline result:** 3 queries + 6 mutations migrated. The **cache-warming probe** introduced in PR #07 finally has a consumer — `SecondaryEvalTab` reads the same key the parent ProjectReviews page probed at mount, so the tab data is instantly available on click.
 

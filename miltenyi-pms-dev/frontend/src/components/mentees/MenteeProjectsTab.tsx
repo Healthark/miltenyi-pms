@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/queryKeys";
 import {
   Briefcase,
   CheckCircle2,
@@ -251,20 +253,23 @@ function EvalCard({
 interface MenteeProjectsTabProps {
   readonly assignments: MenteeProjectAssignment[];
   readonly menteeName: string;
-  /** Needed for the create-path of EvalModal (submitPMEvaluation). */
+  /** Needed for the create-path of EvalModal (submitPMEvaluation)
+   *  AND for invalidating the parent mentee's detail cache entry
+   *  after any write here. Replaces the old `onReload` callback that
+   *  used to bubble up to MenteeDetail — this component now manages
+   *  its own cache invalidation directly. */
   readonly menteeUserId: number;
-  readonly onReload: () => void;
 }
 
 export function MenteeProjectsTab({
   assignments,
   menteeName,
   menteeUserId,
-  onReload,
 }: MenteeProjectsTabProps) {
   const { user } = useAuth();
   const currentUserId = user?.user_id ?? null;
   const toast = useToast();
+  const queryClient = useQueryClient();
 
   const [viewMode, setViewMode] = useState<ViewMode>("table");
   const [searchQuery, setSearchQuery] = useState("");
@@ -272,25 +277,181 @@ export function MenteeProjectsTab({
   const [cycleFilter, setCycleFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilterValue>("all");
   const [sort, setSort] = useState<SortState<SortKey> | null>(null);
-  const [expectations, setExpectations] = useState<RoleExpectation[]>([]);
 
-  // Modal state
+  // Modal state — pure client state. The saving flags are gone
+  // (mutations expose isPending instead); the active modal target and
+  // mode stay local.
   const [evalTarget, setEvalTarget] = useState<MenteeEvalRow | null>(null);
   const [evalMode, setEvalMode] = useState<"create" | "edit" | "view">("create");
-  const [impactTarget, setImpactTarget] = useState<MenteeEvalRow | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isDraftSaving, setIsDraftSaving] = useState(false);
+  const [impactReviewId, setImpactReviewId] = useState<number | null>(null);
+  const [impactRow, setImpactRow] = useState<MenteeEvalRow | null>(null);
   const [modalError, setModalError] = useState("");
 
-  // Role expectations only matter when the mentor will actually evaluate.
-  // Fetching is cheap and cached at the service layer — same call the
-  // Project Reviews page makes.
-  useEffect(() => {
-    projectReviewService
-      .getRoleExpectations()
-      .then(setExpectations)
-      .catch(() => setExpectations([]));
-  }, []);
+  // Role expectations only matter when the mentor will actually
+  // evaluate. Reuses the factory key from PR #07 — same cache entry
+  // that ProjectReviews/PrimaryEvaluationTab use, so any mentor who
+  // touched those pages first gets warm data here.
+  const expectationsQuery = useQuery({
+    queryKey: queryKeys.projectReviews.roleExpectations(),
+    queryFn: projectReviewService.getRoleExpectations,
+  });
+  const expectations: RoleExpectation[] = expectationsQuery.data ?? [];
+
+  // On-demand detail fetch for the impact-statement modal. Same
+  // "modal-driven on-demand" pattern as ManagementReview's Rate modal
+  // (PR #26): `enabled` gates on `impactReviewId` being non-null
+  // (modal is open AND we have a valid review_id).
+  //
+  // The ?? -1 sentinel is for the closed-modal placeholder (factory
+  // expects `number`, not `number | null`). enabled keeps the inert
+  // cache entry from ever firing. Same trick as PR #26.
+  const detailQuery = useQuery({
+    queryKey: queryKeys.projectReviews.detail(impactReviewId ?? -1),
+    queryFn: () => projectReviewService.getReview(impactReviewId as number),
+    enabled: impactReviewId !== null,
+  });
+  const impactLoading = impactReviewId !== null && detailQuery.isPending;
+
+  // When the detail query resolves and we have an impact target row,
+  // merge the fetched ProjectReviewResponse into the row so the modal
+  // can identify the mentor's own secondary_evaluation entry. This
+  // happens in a render-time derivation (instead of useEffect+setState)
+  // because the data flows one-way from query → derived row.
+  const impactTarget: MenteeEvalRow | null = impactRow && detailQuery.data
+    ? ({ ...impactRow, review_detail: detailQuery.data } as MenteeEvalRow)
+    : impactRow;
+
+  // ── Mutations ──────────────────────────────────────────────────────
+  // Four cache invalidations per write — mix of specific (per-mentee)
+  // and broadcast (cross-namespace):
+  //
+  //   mentees.detail(menteeUserId)  → SPECIFIC: this mentee's
+  //                                   project_assignments (the parent
+  //                                   payload that drives this tab's
+  //                                   `assignments` prop) needs to
+  //                                   refresh
+  //   mentees.summaries()           → mentor's roster:
+  //                                   projects.pending_reviews_count
+  //                                   and projects.latest_performance_
+  //                                   group change for this mentee
+  //   projectReviews.all            → BROADCAST: pm queue, secondary
+  //                                   queue, staff mine, hr org —
+  //                                   anyone watching project reviews
+  //                                   anywhere
+  //   dashboard.all                 → BROADCAST: project_reviews_
+  //                                   pending_primary / _secondary
+  //                                   counts on Staff/HR dashboards
+  //
+  // The mentees side stays specific (PR #27's pattern — per-mentee
+  // data; broadcasting would over-invalidate other mentees we have
+  // cached). The cross-namespace side uses broadcast because there's
+  // no per-mentee shape there — every project-review consumer cares.
+  const invalidateScope = useCallback(() => {
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.mentees.detail(menteeUserId),
+    });
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.mentees.summaries(),
+    });
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.projectReviews.all,
+    });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
+  }, [queryClient, menteeUserId]);
+
+  // ── PM-side mutations (3) ──────────────────────────────────────────
+  const updateReviewMutation = useMutation({
+    mutationFn: (vars: { reviewId: number; payload: PMEvaluationPayload }) =>
+      projectReviewService.updateReview(vars.reviewId, vars.payload),
+    onSuccess: () => {
+      invalidateScope();
+      closeEval();
+      toast.success("Evaluation updated.");
+    },
+    onError: (err) => setModalError(getErrorMessage(err)),
+  });
+
+  const submitPMEvalMutation = useMutation({
+    mutationFn: (vars: {
+      projectId: number;
+      userId: number;
+      payload: PMEvaluationPayload;
+    }) =>
+      projectReviewService.submitPMEvaluation(
+        vars.projectId,
+        vars.userId,
+        vars.payload,
+      ),
+    onSuccess: () => {
+      invalidateScope();
+      closeEval();
+      toast.success("Evaluation submitted.");
+    },
+    onError: (err) => setModalError(getErrorMessage(err)),
+  });
+
+  const savePMDraftMutation = useMutation({
+    mutationFn: (vars: {
+      projectId: number;
+      userId: number;
+      payload: PMEvaluationDraftPayload;
+    }) =>
+      projectReviewService.savePMDraft(
+        vars.projectId,
+        vars.userId,
+        vars.payload,
+      ),
+    onSuccess: () => {
+      invalidateScope();
+      toast.success("Draft saved.");
+    },
+    onError: (err) => setModalError(getErrorMessage(err)),
+  });
+
+  // ── Secondary-side mutations (3) ───────────────────────────────────
+  const updateSecondaryMutation = useMutation({
+    mutationFn: (vars: { reviewId: number; payload: SecondaryEvalPayload }) =>
+      projectReviewService.updateSecondaryEval(vars.reviewId, vars.payload),
+    onSuccess: () => {
+      invalidateScope();
+      closeImpact();
+      toast.success("Impact statement updated.");
+    },
+    onError: (err) => setModalError(getErrorMessage(err)),
+  });
+
+  const submitSecondaryMutation = useMutation({
+    mutationFn: (vars: { reviewId: number; payload: SecondaryEvalPayload }) =>
+      projectReviewService.submitSecondaryEval(vars.reviewId, vars.payload),
+    onSuccess: () => {
+      invalidateScope();
+      closeImpact();
+      toast.success("Impact statement submitted.");
+    },
+    onError: (err) => setModalError(getErrorMessage(err)),
+  });
+
+  const saveSecondaryDraftMutation = useMutation({
+    mutationFn: (vars: {
+      reviewId: number;
+      payload: SecondaryEvalDraftPayload;
+    }) =>
+      projectReviewService.saveSecondaryDraft(vars.reviewId, vars.payload),
+    onSuccess: () => {
+      invalidateScope();
+      toast.success("Draft saved.");
+    },
+    onError: (err) => setModalError(getErrorMessage(err)),
+  });
+
+  // Aggregated saving flags for the two modals (each modal has both
+  // submit and edit paths — OR the relevant mutations together).
+  const isEvalSaving =
+    submitPMEvalMutation.isPending || updateReviewMutation.isPending;
+  const isEvalDraftSaving = savePMDraftMutation.isPending;
+  const isImpactSaving =
+    submitSecondaryMutation.isPending || updateSecondaryMutation.isPending;
+  const isImpactDraftSaving = saveSecondaryDraftMutation.isPending;
 
   // Build row list from assignments. Backend now emits one assignment row
   // per (project, cycle), so we map 1:1.
@@ -359,13 +520,6 @@ export function MenteeProjectsTab({
     [menteeName],
   );
 
-  // Build ImpactModalRow shape. When viewer is Secondary on a pending review,
-  // we need the ProjectReviewResponse to POST against. If review_detail is
-  // null (pending), we fetch the review stub via getReview — requires a
-  // review_id which we may not have for "no review yet" rows. We gate the
-  // button on review_status === "pending" which implies a review exists.
-  const [impactLoading, setImpactLoading] = useState(false);
-
   const handleEvaluate = (row: MenteeEvalRow) => {
     setModalError("");
     setEvalMode(row.review_status === "reviewed" ? "edit" : "create");
@@ -378,25 +532,16 @@ export function MenteeProjectsTab({
     setEvalTarget(row);
   };
 
-  const handleWriteImpact = async (row: MenteeEvalRow) => {
+  const handleWriteImpact = (row: MenteeEvalRow) => {
     setModalError("");
     if (row.review_id == null) return;
-    // We need the full ProjectReviewResponse to identify the mentor's own
-    // secondary_evaluation row (if any) for edit mode. Fetch on demand —
-    // review_detail on row is only populated for "reviewed" rows; we need
-    // the pending one too.
-    setImpactLoading(true);
-    try {
-      const review = await projectReviewService.getReview(row.review_id);
-      setImpactTarget({
-        ...row,
-        review_detail: review,
-      } as MenteeEvalRow);
-    } catch (err) {
-      setModalError(getErrorMessage(err));
-    } finally {
-      setImpactLoading(false);
-    }
+    // Setting impactReviewId enables the detailQuery (defined above)
+    // which fetches the full ProjectReviewResponse. The render-time
+    // `impactTarget` derivation merges the response into the row when
+    // it arrives. No imperative fetch needed here — the cache
+    // architecture handles it.
+    setImpactRow(row);
+    setImpactReviewId(row.review_id);
   };
 
   const closeEval = () => {
@@ -404,51 +549,47 @@ export function MenteeProjectsTab({
     setModalError("");
   };
   const closeImpact = () => {
-    setImpactTarget(null);
+    setImpactRow(null);
+    setImpactReviewId(null);
     setModalError("");
   };
 
+  // Modal-await contract: EvalModal and ImpactModal both await their
+  // submit callbacks to drive "Saving..." spinners. mutateAsync +
+  // try/catch (the established pattern from PR #20 onwards).
   const handlePMSubmit = async (payload: PMEvaluationPayload) => {
     if (!evalTarget) return;
-    setIsSaving(true);
     setModalError("");
+    const isEdit = evalMode === "edit" && evalTarget.review_id != null;
     try {
-      const isEdit = evalMode === "edit" && evalTarget.review_id != null;
       if (isEdit) {
-        await projectReviewService.updateReview(evalTarget.review_id!, payload);
-      } else {
-        await projectReviewService.submitPMEvaluation(
-          evalTarget.project_id,
-          menteeUserId,
+        await updateReviewMutation.mutateAsync({
+          reviewId: evalTarget.review_id!,
           payload,
-        );
+        });
+      } else {
+        await submitPMEvalMutation.mutateAsync({
+          projectId: evalTarget.project_id,
+          userId: menteeUserId,
+          payload,
+        });
       }
-      onReload();
-      closeEval();
-      toast.success(isEdit ? "Evaluation updated." : "Evaluation submitted.");
-    } catch (err) {
-      setModalError(getErrorMessage(err));
-    } finally {
-      setIsSaving(false);
+    } catch {
+      /* handled by onError */
     }
   };
 
   const handlePMSaveDraft = async (payload: PMEvaluationDraftPayload) => {
     if (!evalTarget) return;
-    setIsDraftSaving(true);
     setModalError("");
     try {
-      await projectReviewService.savePMDraft(
-        evalTarget.project_id,
-        menteeUserId,
+      await savePMDraftMutation.mutateAsync({
+        projectId: evalTarget.project_id,
+        userId: menteeUserId,
         payload,
-      );
-      onReload();
-      toast.success("Draft saved.");
-    } catch (err) {
-      setModalError(getErrorMessage(err));
-    } finally {
-      setIsDraftSaving(false);
+      });
+    } catch {
+      /* handled by onError */
     }
   };
 
@@ -456,16 +597,11 @@ export function MenteeProjectsTab({
     reviewId: number,
     payload: SecondaryEvalDraftPayload,
   ) => {
-    setIsDraftSaving(true);
     setModalError("");
     try {
-      await projectReviewService.saveSecondaryDraft(reviewId, payload);
-      onReload();
-      toast.success("Draft saved.");
-    } catch (err) {
-      setModalError(getErrorMessage(err));
-    } finally {
-      setIsDraftSaving(false);
+      await saveSecondaryDraftMutation.mutateAsync({ reviewId, payload });
+    } catch {
+      /* handled by onError */
     }
   };
 
@@ -474,25 +610,19 @@ export function MenteeProjectsTab({
     payload: SecondaryEvalPayload,
   ) => {
     if (!impactTarget) return;
-    setIsSaving(true);
     setModalError("");
+    // If the mentor already wrote an impact here, PUT — otherwise POST.
+    const mine = impactTarget.review_detail?.secondary_evaluations.find(
+      (ev) => ev.evaluator_id === currentUserId,
+    );
     try {
-      // If the mentor already wrote an impact here, PUT — otherwise POST.
-      const mine = impactTarget.review_detail?.secondary_evaluations.find(
-        (ev) => ev.evaluator_id === currentUserId,
-      );
       if (mine) {
-        await projectReviewService.updateSecondaryEval(reviewId, payload);
+        await updateSecondaryMutation.mutateAsync({ reviewId, payload });
       } else {
-        await projectReviewService.submitSecondaryEval(reviewId, payload);
+        await submitSecondaryMutation.mutateAsync({ reviewId, payload });
       }
-      onReload();
-      closeImpact();
-      toast.success(mine ? "Impact statement updated." : "Impact statement submitted.");
-    } catch (err) {
-      setModalError(getErrorMessage(err));
-    } finally {
-      setIsSaving(false);
+    } catch {
+      /* handled by onError */
     }
   };
 
@@ -743,8 +873,8 @@ export function MenteeProjectsTab({
           onSubmit={handlePMSubmit}
           onSaveDraft={evalMode === "create" ? handlePMSaveDraft : undefined}
           onClose={closeEval}
-          isSaving={isSaving}
-          isDraftSaving={isDraftSaving}
+          isSaving={isEvalSaving}
+          isDraftSaving={isEvalDraftSaving}
           error={modalError}
         />
       )}
@@ -758,8 +888,8 @@ export function MenteeProjectsTab({
               : handleSecSaveDraft
           }
           onClose={closeImpact}
-          isSaving={isSaving}
-          isDraftSaving={isDraftSaving}
+          isSaving={isImpactSaving}
+          isDraftSaving={isImpactDraftSaving}
           error={modalError}
         />
       )}

@@ -144,5 +144,11 @@ export const queryKeys = {
       [...queryKeys.projectReviews.all, "secondary-queue"] as const,
     roleExpectations: () =>
       [...queryKeys.projectReviews.all, "role-expectations"] as const,
+    /** Per-review detail (full ProjectReviewResponse including
+     *  secondary_evaluations list). Used by MenteeProjectsTab's
+     *  impact-statement modal — fetched on demand when the modal
+     *  opens, since row data only carries the lightweight summary. */
+    detail: (id: number) =>
+      [...queryKeys.projectReviews.all, "detail", id] as const,
   },
 } as const;
