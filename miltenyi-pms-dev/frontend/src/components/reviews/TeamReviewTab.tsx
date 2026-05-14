@@ -15,6 +15,7 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/queryKeys";
 import { useNavigate } from "react-router-dom";
 import {
   ClipboardCheck, Eye, LayoutGrid, Search,
@@ -170,7 +171,7 @@ export function TeamReviewTab() {
   // submit. For now, refetchOnWindowFocus (default true) handles the
   // "I just reviewed a mentee in another tab" case.
   const reviewsQuery = useQuery({
-    queryKey: ["annual-reviews", "mentees"],
+    queryKey: queryKeys.annualReviews.mentees(),
     queryFn: annualReviewService.getMenteeReviews,
   });
   const reviews: MenteeAnnualReview[] = reviewsQuery.data ?? [];

@@ -1,5 +1,6 @@
 import { useEffect, useState, Fragment } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/queryKeys";
 import { ChevronDown } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
@@ -99,12 +100,12 @@ export function AnnualReviews() {
   // local to the tab means the data only fetches when the tab is
   // mounted, which matters because TeamReviewTab is HEAVY (~500 LOC).
   const myReviewsQuery = useQuery({
-    queryKey: ["annual-reviews", "mine"],
+    queryKey: queryKeys.annualReviews.mine(),
     queryFn: annualReviewService.getMyReviewHistory,
     enabled: isStaff,
   });
   const allReviewsQuery = useQuery({
-    queryKey: ["annual-reviews", "all"],
+    queryKey: queryKeys.annualReviews.org(),
     queryFn: annualReviewService.getAllReviews,
     enabled: isHRMyOrg,
   });
@@ -161,8 +162,8 @@ export function AnnualReviews() {
   const submitMutation = useMutation({
     mutationFn: annualReviewService.submitSelfReview,
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["annual-reviews", "mine"] });
-      void queryClient.invalidateQueries({ queryKey: ["annual-reviews", "all"] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.annualReviews.mine() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.annualReviews.org() });
       setShowForm(false);
       toast.success("Self-review submitted.");
     },
@@ -180,8 +181,8 @@ export function AnnualReviews() {
         ? annualReviewService.saveDraft(currentReview.id, payload)
         : annualReviewService.createSelfDraft(payload),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["annual-reviews", "mine"] });
-      void queryClient.invalidateQueries({ queryKey: ["annual-reviews", "all"] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.annualReviews.mine() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.annualReviews.org() });
       toast.success("Draft saved.");
     },
     onError: (err) => setFormError(getErrorMessage(err)),

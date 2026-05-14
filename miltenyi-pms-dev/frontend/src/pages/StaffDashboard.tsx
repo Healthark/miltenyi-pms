@@ -23,6 +23,7 @@
 
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/queryKeys";
 import { useAuth } from "@/hooks/useAuth";
 import { useSnackbar } from "@/hooks/useSnackbar";
 import { dashboardService } from "@/services/dashboard.service";
@@ -48,7 +49,7 @@ export function StaffDashboard() {
   //   - The race-condition `cancelled` flag is gone — TanStack Query
   //     handles unmount-mid-fetch internally via AbortController.
   const { data: summary, error } = useQuery({
-    queryKey: ["dashboard", "summary"],
+    queryKey: queryKeys.dashboard.summary(),
     queryFn: dashboardService.getSummary,
   });
 

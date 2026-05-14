@@ -26,6 +26,7 @@
 
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/queryKeys";
 import { useAuth } from "@/hooks/useAuth";
 import { useSnackbar } from "@/hooks/useSnackbar";
 import { dashboardService } from "@/services/dashboard.service";
@@ -51,12 +52,12 @@ export function MentorDashboard() {
   // and any future mutation that invalidates ['dashboard'] refreshes
   // BOTH variants at once.
   const { data: summary, error: summaryError } = useQuery({
-    queryKey: ["dashboard", "summary"],
+    queryKey: queryKeys.dashboard.summary(),
     queryFn: dashboardService.getSummary,
   });
 
   const { data: mentees, error: menteesError } = useQuery({
-    queryKey: ["mentees", "summaries"],
+    queryKey: queryKeys.mentees.summaries(),
     queryFn: menteeService.getSummaries,
   });
 
