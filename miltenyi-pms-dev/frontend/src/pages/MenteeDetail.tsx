@@ -107,17 +107,12 @@ export function MenteeDetail() {
   // Replace the "/3" segment in the Topbar breadcrumb with the mentee's name.
   usePageTitleOverride(data?.full_name ?? null);
 
-  // Bridge for unmigrated child tabs (MenteeGoalsTab, MenteeProjectsTab)
-  // that still do imperative mutations and need to refresh the
-  // mentee-detail view. Once those tabs migrate to useMutation, they'll
-  // invalidate keys directly and we can drop this prop. Until then,
-  // expose a stable callback that hits the same invalidation a useQuery
-  // mutation would.
-  const reloadDetail = useCallback(() => {
-    void queryClient.invalidateQueries({
-      queryKey: queryKeys.mentees.detail(menteeId),
-    });
-  }, [queryClient, menteeId]);
+  // The `reloadDetail` bridge callback that used to live here is gone.
+  // Both child tabs that consumed it (MenteeGoalsTab in PR #27,
+  // MenteeProjectsTab in #12) now self-manage their cache invalidation
+  // by accepting `menteeId` / `menteeUserId` and calling
+  // queryClient.invalidateQueries directly. The bridge pattern from
+  // PR #25 has fully unwound.
 
   const setActiveTab = (key: TabKey) => {
     // Preserve any other query params by copying from current search.
@@ -375,7 +370,6 @@ export function MenteeDetail() {
                   assignments={data.project_assignments}
                   menteeName={data.full_name}
                   menteeUserId={data.user_id}
-                  onReload={reloadDetail}
                 />
               )}
             </div>
