@@ -1,6 +1,6 @@
 # 13 — `useReviewDetails` hook: useReducer → useQuery
 
-> **PR:** _pending_
+> **PR:** [#30](https://github.com/Healthark/miltenyi-pms/pull/30)
 > **Files changed:** `frontend/src/hooks/useReviewDetails.ts` (full rewrite, same exports).
 > **Headline result:** Custom hook's internals swap from `useReducer + useEffect + cancelled-flag` to a single `useQuery` call. Public `{ details, isFetching, error }` return shape preserved — zero consumer changes. Bundle: ProjectReviews chunk **shrinks by 0.16 KB gzip** (less code is fewer bytes).
 

@@ -117,6 +117,18 @@ export const queryKeys = {
     expectations: () => [...queryKeys.profile.all, "expectations"] as const,
   },
 
+  // ── System settings (public read view) ─────────────────────────────
+  // The org-wide settings endpoint (/settings/) every page reads to
+  // render banners, gates, and cycle text. Distinct from
+  // `admin.settings()` (which hits the HR-only /admin/settings endpoint
+  // with extra fields like simulation_allowed) — different responses,
+  // different cache entries. After a save on /admin/settings, the
+  // AdminPanel mutation invalidates both keys.
+  systemSettings: {
+    all: ["system-settings"] as const,
+    current: () => [...queryKeys.systemSettings.all, "current"] as const,
+  },
+
   // ── Project review rows ────────────────────────────────────────────
   // The five page-level reads on /project-reviews. The PM and secondary
   // mutation flows live in child tabs (PrimaryEvaluationTab,
