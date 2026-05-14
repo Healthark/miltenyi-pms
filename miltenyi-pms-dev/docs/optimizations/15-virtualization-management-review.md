@@ -1,6 +1,6 @@
 # 15 — Virtualization opener: the ManagementReview calibration grid
 
-> **PR:** _pending_
+> **PR:** [#32](https://github.com/Healthark/miltenyi-pms/pull/32)
 > **Files changed:** `frontend/package.json` + lockfile (new dep), `frontend/vite.config.ts` (comment refresh on the existing TanStack vendor rule), `frontend/src/pages/ManagementReview.tsx` (table → virtualized div-grid).
 > **Headline result:** Opens the fresh scaling theme. ManagementReview's calibration grid is now virtualized — at 1000 active staff, the DOM holds ~27 rows instead of ~1000. Bundle: **+5.86 KB gzip in `query-vendor`** for the one-time library install (vendor-cached across deploys).
 
