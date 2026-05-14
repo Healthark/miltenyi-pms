@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, Fragment } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Plus, Target, Lock, Search,
   LayoutGrid, Table2, ChevronDown, BookOpen,
@@ -227,6 +228,8 @@ export function AnnualGoals() {
       settings.active_cycle_name
     : null;
 
+  const queryClient = useQueryClient();
+
   const [activeTab, setActiveTab] = useState<ActiveTab>("my");
   const [approvalFilter, setApprovalFilter] = useState<ApprovalFilter>("all");
   const [yearFilter, setYearFilter] = useState("all");
@@ -234,38 +237,53 @@ export function AnnualGoals() {
   const [sort, setSort] = useState<SortState<MyGoalsSortKey> | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("table");
   const [expandedGoalId, setExpandedGoalId] = useState<number | null>(null);
-  const [goals, setGoals] = useState<Goal[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
   const [modalError, setModalError] = useState("");
 
-  // Self-review modal state
+  // Self-review modal state — pure client state. The saving flags are
+  // gone (mutations expose isPending instead); the error string + which
+  // goal/half is being reviewed stay local.
   const [selfReviewGoal, setSelfReviewGoal] = useState<Goal | null>(null);
   const [selfReviewCycle, setSelfReviewCycle] =
     useState<SelfReviewCycleHalf | null>(null);
-  const [isSelfReviewSaving, setIsSelfReviewSaving] = useState(false);
-  const [isSelfReviewDraftSaving, setIsSelfReviewDraftSaving] = useState(false);
   const [selfReviewError, setSelfReviewError] = useState("");
 
-  // Role expectations for the My Goals tab — collapsed by default.
-  const [roleExpectation, setRoleExpectation] = useState<UserRoleExpectation | null>(null);
   const [roleExpectationsOpen, setRoleExpectationsOpen] = useState(false);
-  useEffect(() => {
-    let cancelled = false;
-    profileService
-      .getMyExpectations()
-      .then((exp) => {
-        if (!cancelled) setRoleExpectation(exp);
-      })
-      .catch(() => {
-        // Non-fatal — section just won't render.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+
+  // ── Queries ────────────────────────────────────────────────────────
+  // Three queries, all role-gated. Both goal queries register
+  // unconditionally (Rules of Hooks) and use `enabled` to keep the
+  // request parked unless the current user actually needs it. Mentor
+  // is conspicuously absent here — TeamGoalsTab owns its own
+  // ['goals', 'mentees'] query.
+  //
+  // Role-expectations is everyone-fetches: every role sees the
+  // collapsible "What's expected at my level" panel, so no gate.
+  const expectationsQuery = useQuery({
+    queryKey: ["profile", "expectations"],
+    queryFn: profileService.getMyExpectations,
+  });
+  const myGoalsQuery = useQuery({
+    queryKey: ["goals", "mine", "annual"],
+    queryFn: () => goalService.getMyGoals("annual"),
+    enabled: isStaff,
+  });
+  const allGoalsQuery = useQuery({
+    queryKey: ["goals", "all"],
+    queryFn: goalService.getAllGoals,
+    enabled: isHRMyOrg,
+  });
+
+  const roleExpectation: UserRoleExpectation | null =
+    expectationsQuery.data ?? null;
+  const goals: Goal[] = myGoalsQuery.data ?? [];
+  const allGoals: TeamGoal[] = allGoalsQuery.data ?? [];
+  const isLoading = isStaff
+    ? myGoalsQuery.isPending
+    : isHRMyOrg
+      ? allGoalsQuery.isPending
+      : false;
 
   // Auto-switch to the role's primary tab once auth resolves.
   useEffect(() => {
@@ -273,29 +291,6 @@ export function AnnualGoals() {
     else if (isHRMyOrg) setActiveTab("all");
     else setActiveTab("my");
   }, [isMentor, isHRMyOrg]);
-
-  const [allGoals, setAllGoals] = useState<TeamGoal[]>([]);
-
-  const loadGoals = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      if (isHRMyOrg) {
-        setAllGoals(await goalService.getAllGoals());
-      } else if (isStaff) {
-        setGoals(await goalService.getMyGoals("annual"));
-      } else {
-        // Mentor: TeamGoalsTab loads its own data
-      }
-    } catch {
-      /* stays empty */
-    } finally {
-      setIsLoading(false);
-    }
-  }, [isHRMyOrg, isStaff]);
-
-  useEffect(() => {
-    void loadGoals();
-  }, [loadGoals]);
 
   // Modal helpers
   const openAdd = () => {
@@ -314,38 +309,121 @@ export function AnnualGoals() {
     setModalError("");
   };
 
-  // Create or update
+  // ── Mutations ──────────────────────────────────────────────────────
+  // All five mutations invalidate the SAME two parent keys:
+  //
+  //   ['goals']      — catches ['goals','mine','annual'], ['goals','all'],
+  //                    ['goals','mentees'] (TeamGoalsTab), and any other
+  //                    cache entry under the goals namespace. This is
+  //                    the broadcast pattern: one parent-key invalidation
+  //                    refreshes every observer of every goal query in
+  //                    the app, regardless of who's looking.
+  //   ['dashboard']  — the dashboard summary tile counts goals, so any
+  //                    goal mutation can change those numbers. The old
+  //                    code never refreshed dashboard counts after a
+  //                    goal write — a real bug this migration fixes.
+  //
+  // Broadcast keys vs explicit lists: in PR #21 we listed each affected
+  // key by name (['annual-reviews','mine'] + ['annual-reviews','all']).
+  // That's clearer when the list is short. When you have 3+ children
+  // under a parent (mine, all, mentees, plus future per-user keys), a
+  // parent-key invalidation is shorter, future-proof, and matches
+  // TanStack Query's prefix-matching semantics perfectly.
+  const invalidateGoalsAndDashboard = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: ["goals"] });
+    void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+  }, [queryClient]);
+
+  const createGoalMutation = useMutation({
+    mutationFn: (payload: GoalCreatePayload) =>
+      goalService.createGoal({ ...payload, goal_type: "annual" }),
+    onSuccess: () => {
+      invalidateGoalsAndDashboard();
+      closeModal();
+      toast.success("Goal created.");
+    },
+    onError: (err) => setModalError(getErrorMessage(err)),
+  });
+
+  const updateGoalMutation = useMutation({
+    mutationFn: (vars: { id: number; payload: GoalUpdatePayload }) =>
+      goalService.updateGoal(vars.id, vars.payload),
+    onSuccess: () => {
+      invalidateGoalsAndDashboard();
+      closeModal();
+      toast.success("Goal updated.");
+    },
+    onError: (err) => setModalError(getErrorMessage(err)),
+  });
+
+  const submitGoalMutation = useMutation({
+    mutationFn: (goalId: number) => goalService.submitGoal(goalId),
+    onSuccess: () => {
+      invalidateGoalsAndDashboard();
+      toast.success("Goal submitted for review.");
+    },
+    onError: (err) => snackbar.error(getErrorMessage(err)),
+  });
+
+  const submitSelfReviewMutation = useMutation({
+    mutationFn: (vars: {
+      goalId: number;
+      cycleHalf: SelfReviewCycleHalf;
+      payload: GoalSelfReviewPayload;
+    }) =>
+      goalService.submitSelfReview(vars.goalId, vars.cycleHalf, vars.payload),
+    onSuccess: () => {
+      invalidateGoalsAndDashboard();
+      closeSelfReview();
+      toast.success("Self-review submitted.");
+    },
+    onError: (err) => setSelfReviewError(getErrorMessage(err)),
+  });
+
+  const saveSelfReviewDraftMutation = useMutation({
+    mutationFn: (vars: {
+      goalId: number;
+      cycleHalf: SelfReviewCycleHalf;
+      payload: GoalSelfReviewPayload;
+    }) =>
+      goalService.saveSelfReviewDraft(
+        vars.goalId,
+        vars.cycleHalf,
+        vars.payload,
+      ),
+    onSuccess: () => {
+      invalidateGoalsAndDashboard();
+      // Keep the modal open so the mentee sees the "(Draft)" title and
+      // can continue editing — toast confirms the save.
+      toast.success("Draft saved.");
+    },
+    onError: (err) => setSelfReviewError(getErrorMessage(err)),
+  });
+
+  const isSavingGoal =
+    createGoalMutation.isPending || updateGoalMutation.isPending;
+
+  // ── Handlers (thin wrappers over mutations) ────────────────────────
+  // Create or update. mutateAsync because GoalFormModal awaits onSave
+  // to drive its "Saving..." state (same pattern as UserModal in #20).
   const handleSave = async (payload: GoalCreatePayload | GoalUpdatePayload) => {
-    setIsSaving(true);
     setModalError("");
     try {
       if (editingGoal) {
-        const updated = await goalService.updateGoal(
-          editingGoal.id,
-          payload as GoalUpdatePayload,
-        );
-        setGoals((prev) =>
-          prev.map((g) => (g.id === updated.id ? updated : g)),
-        );
-        closeModal();
-        toast.success("Goal updated.");
-      } else {
-        const created = await goalService.createGoal({
-          ...(payload as GoalCreatePayload),
-          goal_type: "annual",
+        await updateGoalMutation.mutateAsync({
+          id: editingGoal.id,
+          payload: payload as GoalUpdatePayload,
         });
-        setGoals((prev) => [created, ...prev]);
-        closeModal();
-        toast.success("Goal created.");
+      } else {
+        await createGoalMutation.mutateAsync(payload as GoalCreatePayload);
       }
-    } catch (err) {
-      setModalError(getErrorMessage(err));
-    } finally {
-      setIsSaving(false);
+    } catch {
+      /* handled by onError */
     }
   };
 
-  // Submit draft / changes_requested goal for mentor review
+  // Submit draft / changes_requested goal for mentor review.
+  // Fire-and-forget — no caller awaits this.
   const handleSubmit = async (goal: Goal) => {
     const ok = await confirm({
       title: "Submit goal for approval?",
@@ -354,13 +432,7 @@ export function AnnualGoals() {
       confirmText: "Submit",
     });
     if (!ok) return;
-    try {
-      const updated = await goalService.submitGoal(goal.id);
-      setGoals((prev) => prev.map((g) => (g.id === updated.id ? updated : g)));
-      toast.success("Goal submitted for review.");
-    } catch (err) {
-      snackbar.error(getErrorMessage(err));
-    }
+    submitGoalMutation.mutate(goal.id);
   };
 
   // Self-review handlers
@@ -386,23 +458,15 @@ export function AnnualGoals() {
       confirmText: "Submit Self-Review",
     });
     if (!ok) return;
-    setIsSelfReviewSaving(true);
     setSelfReviewError("");
     try {
-      const updated = await goalService.submitSelfReview(
-        selfReviewGoal.id,
+      await submitSelfReviewMutation.mutateAsync({
+        goalId: selfReviewGoal.id,
         cycleHalf,
         payload,
-      );
-      setGoals((prev) =>
-        prev.map((g) => (g.id === updated.id ? updated : g)),
-      );
-      closeSelfReview();
-      toast.success("Self-review submitted.");
-    } catch (err) {
-      setSelfReviewError(getErrorMessage(err));
-    } finally {
-      setIsSelfReviewSaving(false);
+      });
+    } catch {
+      /* handled by onError */
     }
   };
 
@@ -411,45 +475,57 @@ export function AnnualGoals() {
     payload: GoalSelfReviewPayload,
   ) => {
     if (!selfReviewGoal) return;
-    setIsSelfReviewDraftSaving(true);
     setSelfReviewError("");
     try {
-      const updated = await goalService.saveSelfReviewDraft(
-        selfReviewGoal.id,
+      await saveSelfReviewDraftMutation.mutateAsync({
+        goalId: selfReviewGoal.id,
         cycleHalf,
         payload,
-      );
-      setGoals((prev) =>
-        prev.map((g) => (g.id === updated.id ? updated : g)),
-      );
-      // Keep the modal open so the mentee sees the "(Draft)" title and can
-      // continue editing — toast confirms the save.
-      toast.success("Draft saved.");
-    } catch (err) {
-      setSelfReviewError(getErrorMessage(err));
-    } finally {
-      setIsSelfReviewDraftSaving(false);
+      });
+    } catch {
+      /* handled by onError */
     }
   };
 
-  // Criterion toggle — client-side progress recompute for instant feedback
+  // Criterion toggle — preserves the original "instant client-side
+  // feedback" behaviour, but now writes to the cache directly via
+  // setQueryData instead of a local useState. CriteriaChecklist still
+  // calls goalService.updateCriterion itself; this handler just splices
+  // the response into the My Goals cache entry.
+  //
+  // Why setQueryData (not invalidateQueries) here: the criterion toggle
+  // is a HOT PATH — every checkbox click would otherwise trigger a full
+  // /goals refetch. Direct cache mutation keeps the UI responsive and
+  // saves bandwidth. The trade is: if the server normalizes the row
+  // somehow we can miss the normalization, but criterion writes are
+  // simple enough that this is safe.
+  //
+  // The dashboard summary's completion_percent ALSO depends on
+  // criterion state, so we invalidate dashboard alongside. That's a
+  // background refetch the user doesn't see (the dashboard isn't
+  // mounted while on /annual-goals).
   const handleCriterionUpdate = useCallback(
     (goalId: number, updated: Criterion) => {
-      setGoals((prev) =>
-        prev.map((g) => {
-          if (g.id !== goalId) return g;
-          const newCriteria = g.criteria.map((c) =>
-            c.id === updated.id ? updated : c,
-          );
-          return {
-            ...g,
-            criteria: newCriteria,
-            progress_percent: recomputeProgress(newCriteria),
-          };
-        }),
+      queryClient.setQueryData<Goal[]>(
+        ["goals", "mine", "annual"],
+        (prev) => {
+          if (!prev) return prev;
+          return prev.map((g) => {
+            if (g.id !== goalId) return g;
+            const newCriteria = g.criteria.map((c) =>
+              c.id === updated.id ? updated : c,
+            );
+            return {
+              ...g,
+              criteria: newCriteria,
+              progress_percent: recomputeProgress(newCriteria),
+            };
+          });
+        },
       );
+      void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     },
-    [],
+    [queryClient],
   );
 
   const availableYears = Array.from(
@@ -854,7 +930,7 @@ export function AnnualGoals() {
           onClose={closeModal}
           onSave={handleSave}
           editingGoal={editingGoal}
-          isSaving={isSaving}
+          isSaving={isSavingGoal}
           error={modalError}
         />
       )}
@@ -866,8 +942,8 @@ export function AnnualGoals() {
           onClose={closeSelfReview}
           onSubmit={handleSelfReviewSubmit}
           onSaveDraft={handleSelfReviewSaveDraft}
-          isSaving={isSelfReviewSaving}
-          isDraftSaving={isSelfReviewDraftSaving}
+          isSaving={submitSelfReviewMutation.isPending}
+          isDraftSaving={saveSelfReviewDraftMutation.isPending}
           error={selfReviewError}
         />
       )}

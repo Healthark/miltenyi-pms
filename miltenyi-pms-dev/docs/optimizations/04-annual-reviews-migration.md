@@ -1,6 +1,6 @@
 # 04 — AnnualReviews + TeamReviewTab migration: role-gated queries with `enabled`
 
-> **PR:** _pending_
+> **PR:** [#21](https://github.com/Healthark/miltenyi-pms/pull/21)
 > **Files changed:** `frontend/src/pages/AnnualReviews.tsx`, `frontend/src/components/reviews/TeamReviewTab.tsx`.
 > **Headline result:** Three queries migrated (`getMyReviewHistory`, `getAllReviews`, `getMenteeReviews`), two mutations migrated (`submitSelfReview`, draft save). New pattern introduced: **role-gated `enabled` queries** + **multi-key invalidation**.
 
