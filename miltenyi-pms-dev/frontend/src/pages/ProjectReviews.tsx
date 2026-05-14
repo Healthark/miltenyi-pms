@@ -18,7 +18,8 @@
  * picks between Skeleton / Empty / Grid / Table.
  */
 
-import { useState, useEffect, useCallback, useMemo, Fragment } from "react";
+import { useState, useEffect, useMemo, Fragment } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   Briefcase,
   CheckCircle2,
@@ -34,6 +35,7 @@ import {
   type ProjectReviewResponse,
   type RoleExpectation,
 } from "@/services/project-review.service";
+import { queryKeys } from "@/lib/queryKeys";
 import { useAuth } from "@/hooks/useAuth";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
 import { PrimaryEvaluationTab } from "@/components/project-reviews/PrimaryEvaluationTab";
@@ -134,31 +136,68 @@ export function ProjectReviews() {
   const [projectFilter, setProjectFilter] = useState("all");
   const [sort, setSort] = useState<SortState<MyReviewsSortKey> | null>(null);
 
-  const [cards, setCards] = useState<MyProjectCard[]>([]);
-  const [menteeReviews, setMenteeReviews] = useState<ProjectReviewResponse[]>([]);
-  const [allReviews, setAllReviews] = useState<ProjectReviewResponse[]>([]);
-  const [expectations, setExpectations] = useState<RoleExpectation[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  // ── Queries ────────────────────────────────────────────────────────
+  // Five role-gated queries. All register unconditionally to respect
+  // the Rules of Hooks; `enabled` keeps each parked unless the current
+  // role actually needs the data.
+  //
+  // The PM branch is conspicuously absent: PrimaryEvaluationTab (the
+  // child component) owns its own pm-queue fetch. Migrating it to
+  // useQuery is a follow-up PR; until then the PM flow stays
+  // imperative inside that tab.
+  const cardsQuery = useQuery({
+    queryKey: queryKeys.projectReviews.mine(),
+    queryFn: projectReviewService.getMyProjects,
+    enabled: isStaff,
+  });
+  const expectationsQuery = useQuery({
+    queryKey: queryKeys.projectReviews.roleExpectations(),
+    queryFn: projectReviewService.getRoleExpectations,
+    enabled: isStaff,
+  });
+  const menteeReviewsQuery = useQuery({
+    queryKey: queryKeys.projectReviews.mentees(),
+    queryFn: projectReviewService.getMenteeReviews,
+    enabled: isMentor,
+  });
+  const allReviewsQuery = useQuery({
+    queryKey: queryKeys.projectReviews.org(),
+    queryFn: projectReviewService.getAllReviews,
+    enabled: isHR,
+  });
 
-  // Probe the secondary queue once at mount. Drives visibility of the
-  // "Secondary Evaluation" tab — Staff and HR who are listed as
-  // `Project.secondary_evaluator_id` on at least one project. PMs are
-  // blocked from being Secondary by the route validator, and Mentors
-  // can't be Secondary either, so we skip the call for them.
+  // The secondary queue is a peek-at-the-count probe: we only need to
+  // know "are there any rows?" to decide whether to render the tab
+  // button. PMs and Mentors can never be Secondary (route validator
+  // rejects them), so we gate the probe for them. As a bonus, when the
+  // tab IS rendered and the user clicks it, SecondaryEvalTab can read
+  // this same cache entry instead of refetching — the probe warms the
+  // cache for the tab's own consumption.
   const canBeSecondary = !isPM && !isMentor;
-  const [hasSecondaryWork, setHasSecondaryWork] = useState(false);
-  useEffect(() => {
-    if (!canBeSecondary) {
-      setHasSecondaryWork(false);
-      return;
-    }
-    let cancelled = false;
-    void projectReviewService
-      .getSecondaryQueue()
-      .then((rows) => { if (!cancelled) setHasSecondaryWork(rows.length > 0); })
-      .catch(() => { if (!cancelled) setHasSecondaryWork(false); });
-    return () => { cancelled = true; };
-  }, [canBeSecondary]);
+  const secondaryQueueQuery = useQuery({
+    queryKey: queryKeys.projectReviews.secondaryQueue(),
+    queryFn: projectReviewService.getSecondaryQueue,
+    enabled: canBeSecondary,
+  });
+  const hasSecondaryWork = (secondaryQueueQuery.data?.length ?? 0) > 0;
+
+  // `?? []` defaults keep downstream code working with arrays.
+  const cards = cardsQuery.data ?? [];
+  const expectations = expectationsQuery.data ?? [];
+  const menteeReviews = menteeReviewsQuery.data ?? [];
+  const allReviews = allReviewsQuery.data ?? [];
+
+  // `isLoading` follows the role-appropriate query's pending flag. PM
+  // doesn't have a page-level query (their tab loads its own data), so
+  // they get a hard `false` — the child tab handles its own loading
+  // state.
+  const isLoading = isStaff
+    ? cardsQuery.isPending
+    : isMentor
+      ? menteeReviewsQuery.isPending
+      : isHR
+        ? allReviewsQuery.isPending
+        : false;
 
   // Auto-switch to the role's primary tab once auth resolves.
   useEffect(() => {
@@ -167,56 +206,6 @@ export function ProjectReviews() {
     else if (isHR) setActiveTab("all-reviews");
     else setActiveTab("my");
   }, [isPM, isMentor, isHR]);
-
-  // Load Staff data (own project cards + role expectations for the modal).
-  const loadStaffData = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const [projectsData, expectationsData] = await Promise.all([
-        projectReviewService.getMyProjects(),
-        projectReviewService.getRoleExpectations(),
-      ]);
-      setCards(projectsData);
-      setExpectations(expectationsData);
-    } catch {
-      // Stays empty on error
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  // Load Mentor data (read-only mentee project reviews).
-  const loadMentorData = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const reviews = await projectReviewService.getMenteeReviews();
-      setMenteeReviews(reviews);
-    } catch {
-      // Stays empty on error
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  // Load HR data (read-only org-wide project reviews, every cycle).
-  const loadHRData = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const reviews = await projectReviewService.getAllReviews();
-      setAllReviews(reviews);
-    } catch {
-      // Stays empty on error
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (isStaff) void loadStaffData();
-    else if (isMentor) void loadMentorData();
-    else if (isHR) void loadHRData();
-    else setIsLoading(false); // PM uses PrimaryEvaluationTab which loads itself
-  }, [isStaff, isMentor, isHR, loadStaffData, loadMentorData, loadHRData]);
 
   // ── Derived filter sources + filtered/sorted cards (memoised) ──────
 
