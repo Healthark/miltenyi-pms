@@ -62,6 +62,10 @@ const STATUS_PILL: Record<
     label: "Not started",
     cls: "bg-slate-100 text-slate-600",
   },
+  not_started: {
+    label: "Not started",
+    cls: "bg-slate-100 text-slate-600",
+  },
   draft: {
     label: "Mentee drafting",
     cls: "bg-slate-100 text-slate-600",

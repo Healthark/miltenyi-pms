@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import {
   BrowserRouter,
   Routes,
@@ -8,24 +9,63 @@ import {
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { Sidebar } from "@/layouts/Sidebar";
 import { Topbar } from "@/layouts/Topbar";
+// Login stays eager. It's the very first thing an unauthenticated user
+// sees — making it lazy would force the user to wait for a chunk before
+// even seeing the form. Every other route is code-split below.
 import { Login } from "@/pages/Login";
-import { Dashboard } from "@/pages/Dashboard";
-import { AnnualGoals } from "@/pages/AnnualGoals";
-import AdminPanel from "@/pages/AdminPanel";
-import { Profile } from "@/pages/Profile";
-import Unauthorized from "@/pages/Unauthorized";
-import { AnnualReviews } from "@/pages/AnnualReviews";
-import { ManagementReview } from "@/pages/ManagementReview";
-import { ProjectReviews } from "@/pages/ProjectReviews";
-import { MyMentees } from "@/pages/MyMentees";
-import { MenteeDetail } from "@/pages/MenteeDetail";
-import { ChangePassword } from "@/pages/ChangePassword";
-import { ResetPassword } from "@/pages/ResetPassword";
 import { PageTitleProvider } from "@/contexts/PageTitleProvider";
 import { SidebarProvider } from "@/contexts/SidebarProvider";
 import { useSidebar } from "@/hooks/useSidebar";
 import { useAuth } from "@/hooks/useAuth";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
+
+// ── Code-split routes ──────────────────────────────────────────────
+// Each `lazy(() => import(...))` tells Vite to emit a separate JS chunk
+// for that page. The chunk is fetched the first time the user navigates
+// to its route, then cached by the browser for the rest of the session.
+//
+// Our pages use named exports (`export function Dashboard()`), but
+// React.lazy expects `export default`. The `.then(m => ({ default: m.X }))`
+// adapter bridges that without touching the page files. The default-export
+// pages (AdminPanel, Unauthorized) skip the adapter.
+const Dashboard = lazy(() =>
+  import("@/pages/Dashboard").then((m) => ({ default: m.Dashboard })),
+);
+const AnnualGoals = lazy(() =>
+  import("@/pages/AnnualGoals").then((m) => ({ default: m.AnnualGoals })),
+);
+const AdminPanel = lazy(() => import("@/pages/AdminPanel"));
+const Profile = lazy(() =>
+  import("@/pages/Profile").then((m) => ({ default: m.Profile })),
+);
+const Unauthorized = lazy(() => import("@/pages/Unauthorized"));
+const AnnualReviews = lazy(() =>
+  import("@/pages/AnnualReviews").then((m) => ({ default: m.AnnualReviews })),
+);
+const ManagementReview = lazy(() =>
+  import("@/pages/ManagementReview").then((m) => ({
+    default: m.ManagementReview,
+  })),
+);
+const ProjectReviews = lazy(() =>
+  import("@/pages/ProjectReviews").then((m) => ({
+    default: m.ProjectReviews,
+  })),
+);
+const MyMentees = lazy(() =>
+  import("@/pages/MyMentees").then((m) => ({ default: m.MyMentees })),
+);
+const MenteeDetail = lazy(() =>
+  import("@/pages/MenteeDetail").then((m) => ({ default: m.MenteeDetail })),
+);
+const ChangePassword = lazy(() =>
+  import("@/pages/ChangePassword").then((m) => ({
+    default: m.ChangePassword,
+  })),
+);
+const ResetPassword = lazy(() =>
+  import("@/pages/ResetPassword").then((m) => ({ default: m.ResetPassword })),
+);
 
 /**
  * Wraps the route content. Reads `rightInsetPx` from the layout context so
@@ -46,7 +86,13 @@ function MainContent() {
         zoom: 0.9,
       }}
     >
-      <Outlet />
+      {/* Inner Suspense boundary: catches lazy-loaded protected pages so
+          only the content area shows the spinner while the next page's
+          chunk downloads. The sidebar + topbar stay mounted, avoiding a
+          full-screen flash on navigation. */}
+      <Suspense fallback={<PageLoader />}>
+        <Outlet />
+      </Suspense>
     </main>
   );
 }
@@ -103,9 +149,33 @@ function RequireAuth({ children }: Readonly<{ children: React.ReactNode }>) {
   return isAuthenticated ? <>{children}</> : <Navigate to="/login" replace />;
 }
 
+/**
+ * Suspense fallback shown while a lazy-loaded page chunk is downloading.
+ * Centred subtle spinner — sized to fill the content area without
+ * looking like an error. Used by both Suspense boundaries in this file.
+ */
+function PageLoader() {
+  return (
+    <div className="flex h-full min-h-[60vh] items-center justify-center">
+      <div
+        role="status"
+        aria-label="Loading page"
+        className="h-8 w-8 animate-spin rounded-full border-2 border-slate-200 border-t-slate-500"
+      />
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <BrowserRouter>
+      {/* Outer Suspense boundary: catches lazy public routes
+          (Unauthorized, ResetPassword, ChangePassword) that don't sit
+          inside AppShell. The inner Suspense inside MainContent
+          handles protected pages so the sidebar/topbar stay mounted
+          across navigations. Nested boundaries are fine — React picks
+          the nearest one. */}
+      <Suspense fallback={<PageLoader />}>
       <Routes>
         {/* Public */}
         <Route path="/login" element={<Login />} />
@@ -192,6 +262,7 @@ export default function App() {
 
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
+      </Suspense>
     </BrowserRouter>
   );
 }
