@@ -41,6 +41,10 @@ class SystemSettingsResponse(BaseModel):
     # frontend should ALSO unlock the calendar-gated menus so stakeholders
     # can drive the whole cycle in one session.
     cycle_window_override: bool
+    # Demo-only date simulation. When set, the backend treats this as
+    # "today" for every cycle / window decision. The frontend renders a
+    # banner across the app so every user knows the dates are simulated.
+    simulated_today: Optional[date] = None
 
     updated_by_id: Optional[int] = None
     created_at: datetime

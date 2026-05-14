@@ -87,6 +87,15 @@ class Settings(BaseSettings):
 
     FISCAL_START_MONTH: int = 4
 
+    # ── Demo / QA escape hatches ─────────────────────────────────────
+    # Gates the `system_settings.simulated_today` write path. When False
+    # (default), the PATCH /admin/settings endpoint rejects any non-null
+    # `simulated_today` payload with a 400 — so production deployments
+    # are safe from accidental cycle-time shifts. Dev / staging set this
+    # to True in their .env to make the field editable from the System
+    # Settings page.
+    ALLOW_DATE_SIMULATION: bool = False
+
     def cookie_kwargs(self) -> dict:
         """Shared cookie attributes for set_cookie / delete_cookie. SameSite=None
         requires Secure=True per browser spec, so we enforce that when the

@@ -77,8 +77,11 @@ class SystemSettings(Base):
     # layer when this is False — regardless of approval_status.
     annual_goals_edit_enabled = Column(Boolean, default=False, nullable=False)
     project_ratings_visible = Column(Boolean, default=False, nullable=False)
-    # Admin gate to enable/disable the Annual Reviews module org-wide.
-    # When False, the Annual Reviews page is hidden and submissions are blocked.
+    # Admin gate to pause Annual Review submissions org-wide. When False,
+    # the page and history stay viewable, but every state-changing
+    # endpoint (self-review submit/draft, mentor evaluation, management
+    # rating) returns 403. The frontend renders a banner so the pause is
+    # visible to anyone who arrives at the page.
     annual_reviews_enabled = Column(Boolean, default=False, nullable=False)
     # When False, the Ratings column is hidden in the Mentor's Mentee Review /
     # Team Review tabs and the employee cannot see the final rating on past
@@ -92,6 +95,16 @@ class SystemSettings(Base):
     # has actually started in real time. Production should always leave
     # this False so the calendar gate enforces ordering.
     cycle_window_override = Column(Boolean, default=False, nullable=False, server_default="false")
+    # Demo-only date simulation. When non-null, every cycle-determination
+    # and review-window check uses this date instead of today's real wall
+    # date — letting HR/QA preview the morning of a cycle rollover or
+    # walk a stakeholder through "next quarter" without time-travelling.
+    # Audit timestamps (project completion, assignment end, export
+    # filename) always use the real clock; this only shifts the
+    # cycle-calendar reference point. Gated by the `ALLOW_DATE_SIMULATION`
+    # env flag — production deployments leave that flag off and reject
+    # any non-null write to this column.
+    simulated_today = Column(Date, nullable=True)
 
     # ── Audit Trail ──────────────────────────────────────────────────
     updated_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)

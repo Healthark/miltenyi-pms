@@ -13,7 +13,59 @@ cycle code can recover the cadence without an extra arg — see
 """
 
 from datetime import date, datetime
+from typing import Optional, TYPE_CHECKING
 from app.models.system_settings_models import CycleType
+
+if TYPE_CHECKING:
+    # Imported only for type hints to avoid a runtime circular import:
+    # cycle_utils is consumed by route modules that themselves import
+    # SystemSettings, and the model module imports CycleType from here.
+    from app.models.system_settings_models import SystemSettings
+
+
+def resolve_today(settings: "Optional[SystemSettings]" = None) -> date:
+    """Return the date the rest of the system should treat as "today".
+
+    Falls back to the wall clock unless `settings.simulated_today` is
+    populated, in which case that value wins. Used by every cycle-
+    determination and review-window check so demo / QA environments can
+    simulate cycle rollovers without time-travelling the host.
+
+    Audit timestamps (project completion, assignment end, export
+    filename) intentionally bypass this helper — they must always
+    reflect real wall time. See the plan in
+    `~/.claude/plans/in-admin-panel-management-delegated-yao.md`.
+    """
+    if settings is not None and getattr(settings, "simulated_today", None):
+        return settings.simulated_today
+    return date.today()
+
+
+def apply_rollover_resets(settings: "SystemSettings", fresh_cycle: str) -> bool:
+    """Reset the org-wide submission / visibility flags whenever the
+    active cycle has changed since `settings.active_cycle_name` was
+    last stored.
+
+    Resets three flags to False:
+      - `annual_reviews_enabled`
+      - `project_ratings_visible`
+      - `annual_review_final_rating_visible`
+
+    Preserved (intentionally): `annual_goals_edit_enabled`. HR may want
+    annual-goal editing to stay open across the rollover; they re-open
+    the others deliberately per cycle.
+
+    Also updates `settings.active_cycle_name` to the new value so
+    subsequent calls short-circuit. Returns True when a reset was
+    applied. Caller is responsible for `db.commit()`.
+    """
+    if settings.active_cycle_name == fresh_cycle:
+        return False
+    settings.active_cycle_name = fresh_cycle
+    settings.annual_reviews_enabled = False
+    settings.project_ratings_visible = False
+    settings.annual_review_final_rating_visible = False
+    return True
 
 
 # ── Cadence helpers ─────────────────────────────────────────────────
