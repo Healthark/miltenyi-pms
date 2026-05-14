@@ -8,14 +8,15 @@
  * Secondary impact statements live in their own tab (`SecondaryEvalTab`).
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/queryKeys";
 import {
   UserCircle, Briefcase, ClipboardList, Pencil,
   LayoutGrid, Table2, Search, CheckCircle2, Clock,
 } from "lucide-react";
 import {
   projectReviewService,
-  type PMPendingReviewCard,
   type PMEvaluationPayload,
   type PMEvaluationDraftPayload,
   type RoleExpectation,
@@ -139,9 +140,24 @@ export function PrimaryEvaluationTab() {
   const activeCycle = settings?.active_cycle_name ?? null;
   const toast = useToast();
 
-  const [pmCards, setPmCards] = useState<PMPendingReviewCard[]>([]);
-  const [expectations, setExpectations] = useState<RoleExpectation[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const queryClient = useQueryClient();
+
+  // ── Queries ────────────────────────────────────────────────────────
+  // Two independent queries — TanStack runs them in parallel
+  // automatically. roleExpectations is the SAME key the parent
+  // ProjectReviews uses (PR #07), so when the PM lands here straight
+  // from the page header, the expectations cache is already warm.
+  const pmQueueQuery = useQuery({
+    queryKey: queryKeys.projectReviews.pmQueue(),
+    queryFn: projectReviewService.getPMQueue,
+  });
+  const expectationsQuery = useQuery({
+    queryKey: queryKeys.projectReviews.roleExpectations(),
+    queryFn: projectReviewService.getRoleExpectations,
+  });
+  const pmCards = pmQueueQuery.data ?? [];
+  const expectations: RoleExpectation[] = expectationsQuery.data ?? [];
+  const isLoading = pmQueueQuery.isPending;
 
   const [viewMode, setViewMode] = useState<ViewMode>("table");
   const [searchQuery, setSearchQuery] = useState("");
@@ -159,23 +175,81 @@ export function PrimaryEvaluationTab() {
   // Modal state
   const [evalTarget, setEvalTarget] = useState<PrimaryEvalRow | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isDraftSaving, setIsDraftSaving] = useState(false);
   const [modalError, setModalError] = useState("");
 
-  const loadData = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const [queueData, expData] = await Promise.all([
-        projectReviewService.getPMQueue(),
-        projectReviewService.getRoleExpectations(),
-      ]);
-      setPmCards(queueData);
-      setExpectations(expData);
-    } catch { /* stays empty */ } finally { setIsLoading(false); }
-  }, []);
+  // ── Mutations ──────────────────────────────────────────────────────
+  // Same broadcast-invalidation pattern as PR #22 (goals) / PR #27
+  // (goal-approval): every write fans out to every cache entry under
+  // ['project-reviews'] (catches Staff's mine, Mentor's mentees, HR's
+  // org, the PM queue itself, the secondary queue) plus dashboard
+  // (project_reviews_pending_primary / pending_secondary counts on
+  // DashboardSummary).
+  const invalidatePMScope = useCallback(() => {
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.projectReviews.all,
+    });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
+  }, [queryClient]);
 
-  useEffect(() => { void loadData(); }, [loadData]);
+  // updateReview edits an already-submitted PM evaluation (different
+  // verb — PUT — and a different endpoint than submitPMEvaluation).
+  // We treat it as a separate mutation instance to keep the UX flows
+  // independent: editing a submitted row shows a different toast and
+  // doesn't need the "row moves from pending to reviewed" UX.
+  const updateReviewMutation = useMutation({
+    mutationFn: (vars: { reviewId: number; payload: PMEvaluationPayload }) =>
+      projectReviewService.updateReview(vars.reviewId, vars.payload),
+    onSuccess: () => {
+      invalidatePMScope();
+      closeModal();
+      toast.success("Evaluation updated.");
+    },
+    onError: (err) => setModalError(getErrorMessage(err)),
+  });
+
+  // submitPMEvaluation creates a new evaluation (POST /evaluate). Takes
+  // 3 args (projectId, userId, payload) → pack-into-object pattern.
+  const submitMutation = useMutation({
+    mutationFn: (vars: {
+      projectId: number;
+      userId: number;
+      payload: PMEvaluationPayload;
+    }) =>
+      projectReviewService.submitPMEvaluation(
+        vars.projectId,
+        vars.userId,
+        vars.payload,
+      ),
+    onSuccess: () => {
+      invalidatePMScope();
+      closeModal();
+      toast.success("Evaluation submitted.");
+    },
+    onError: (err) => setModalError(getErrorMessage(err)),
+  });
+
+  // savePMDraft (PATCH /evaluate/.../draft) — leaves the modal open
+  // so the PM can keep editing. Same 3-arg pack-into-object pattern.
+  const draftMutation = useMutation({
+    mutationFn: (vars: {
+      projectId: number;
+      userId: number;
+      payload: PMEvaluationDraftPayload;
+    }) =>
+      projectReviewService.savePMDraft(
+        vars.projectId,
+        vars.userId,
+        vars.payload,
+      ),
+    onSuccess: () => {
+      // Refresh the queue so the row picks up has_draft_content=true
+      // and a real review_id (which switches the row's CTA from
+      // "Start Evaluation" to "Continue Evaluation").
+      invalidatePMScope();
+      toast.success("Draft saved.");
+    },
+    onError: (err) => setModalError(getErrorMessage(err)),
+  });
 
   // Build rows
   const rows: PrimaryEvalRow[] = pmCards.map((c) => ({
@@ -237,40 +311,45 @@ export function PrimaryEvaluationTab() {
 
   const closeModal = () => { setEvalTarget(null); setIsEditMode(false); setModalError(""); };
 
+  // EvalModal awaits onSubmit / onSaveDraft to drive its "Saving..."
+  // spinner, so mutateAsync + try/catch is the right pattern (matches
+  // every previous modal flow: UserModal #20, GoalFormModal #22,
+  // GoalSelfReviewModal #22, EvalDrawer #25, etc.). The catch swallow
+  // is purely to preserve "onSubmit never throws" for the modal — the
+  // actual error UX runs in the mutation's onError callback.
   const handlePMSubmit = async (payload: PMEvaluationPayload) => {
     if (!evalTarget) return;
-    setIsSaving(true); setModalError("");
+    setModalError("");
     try {
       if (isEditMode && evalTarget.review_id != null) {
-        await projectReviewService.updateReview(evalTarget.review_id, payload);
-        closeModal();
-        toast.success("Evaluation updated.");
+        await updateReviewMutation.mutateAsync({
+          reviewId: evalTarget.review_id,
+          payload,
+        });
       } else {
-        await projectReviewService.submitPMEvaluation(evalTarget.project_id, evalTarget.user_id!, payload);
-        setPmCards((prev) => prev.map((c) =>
-          c.project_id === evalTarget.project_id && c.user_id === evalTarget.user_id ? { ...c, review_status: "reviewed" } : c
-        ));
-        closeModal();
-        toast.success("Evaluation submitted.");
+        await submitMutation.mutateAsync({
+          projectId: evalTarget.project_id,
+          userId: evalTarget.user_id!,
+          payload,
+        });
       }
-    } catch (err: unknown) { setModalError(getErrorMessage(err)); } finally { setIsSaving(false); }
+    } catch {
+      /* handled by onError */
+    }
   };
 
   const handlePMSaveDraft = async (payload: PMEvaluationDraftPayload) => {
     if (!evalTarget) return;
-    setIsDraftSaving(true); setModalError("");
+    setModalError("");
     try {
-      await projectReviewService.savePMDraft(
-        evalTarget.project_id,
-        evalTarget.user_id!,
+      await draftMutation.mutateAsync({
+        projectId: evalTarget.project_id,
+        userId: evalTarget.user_id!,
         payload,
-      );
-      // Refresh so the row picks up the newly-created review_id and the
-      // Draft pill — without it the "Continue Evaluation" button doesn't
-      // reflect saved state.
-      await loadData();
-      toast.success("Draft saved.");
-    } catch (err: unknown) { setModalError(getErrorMessage(err)); } finally { setIsDraftSaving(false); }
+      });
+    } catch {
+      /* handled by onError */
+    }
   };
 
   const viewBtnCls = (mode: ViewMode) =>
@@ -458,7 +537,10 @@ export function PrimaryEvaluationTab() {
         <EvalModal card={evalTarget} expectation={getExpectation(evalTarget)} isEditMode={isEditMode}
           onSubmit={handlePMSubmit}
           onSaveDraft={isEditMode ? undefined : handlePMSaveDraft}
-          onClose={closeModal} isSaving={isSaving} isDraftSaving={isDraftSaving} error={modalError} />
+          onClose={closeModal}
+          isSaving={submitMutation.isPending || updateReviewMutation.isPending}
+          isDraftSaving={draftMutation.isPending}
+          error={modalError} />
       )}
     </div>
   );
