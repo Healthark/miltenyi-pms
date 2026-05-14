@@ -25,6 +25,7 @@ import { PageTitleProvider } from "@/contexts/PageTitleProvider";
 import { SidebarProvider } from "@/contexts/SidebarProvider";
 import { useSidebar } from "@/hooks/useSidebar";
 import { useAuth } from "@/hooks/useAuth";
+import { useSystemSettings } from "@/hooks/useSystemSettings";
 
 /**
  * Wraps the route content. Reads `rightInsetPx` from the layout context so
@@ -53,6 +54,11 @@ function MainContent() {
 /**
  * AppShell renders the persistent chrome (Sidebar + Topbar) around all
  * authenticated pages. <Outlet /> is where the matched child route renders.
+ *
+ * Hosts the simulated-today banner: when HR (or QA) has pinned a fake
+ * "today" for cycle/window decisions, a thin amber stripe across the top
+ * makes the override impossible to miss — no engineer or stakeholder
+ * should be confused by mysteriously-shifted cycles.
  */
 function AppShell() {
   return (
@@ -61,12 +67,29 @@ function AppShell() {
         <div className="flex h-screen overflow-hidden">
           <Sidebar />
           <div className="flex flex-1 flex-col overflow-hidden">
+            <SimulatedTodayBanner />
             <Topbar />
             <MainContent />
           </div>
         </div>
       </PageTitleProvider>
     </SidebarProvider>
+  );
+}
+
+function SimulatedTodayBanner() {
+  const { settings } = useSystemSettings();
+  if (!settings?.simulated_today) return null;
+  return (
+    <div
+      role="status"
+      className="shrink-0 bg-amber-100 px-4 py-1.5 text-center text-xs font-semibold text-amber-900"
+    >
+      Date simulation active — system is treating today as
+      {" "}
+      <span className="tabular-nums">{settings.simulated_today}</span>.
+      Cycle text, review windows, and goal gates use the simulated date.
+    </div>
   );
 }
 

@@ -212,6 +212,15 @@ export function AnnualReviews() {
       ? "Complete your team review and provide feedback for your team members."
       : "Write your annual self-review and track its progress through the cycle.";
 
+  // When HR pauses the module, the page stays open so people can read
+  // historical reviews — only mutating endpoints 403. Surface the pause
+  // as a banner so the absence of action buttons isn't mysterious.
+  // Suppressed for HR_MyOrg: they're the one who flipped the toggle, so
+  // the announcement adds no information for them and just clutters
+  // their view. Staff and Mentors still see it.
+  const submissionsPaused =
+    settings?.annual_reviews_enabled === false && !isHRMyOrg;
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -232,6 +241,19 @@ export function AnnualReviews() {
             action (synthetic current-FY row → Start; draft row → Continue),
             so the header has no action buttons. */}
       </div>
+
+      {submissionsPaused && (
+        <div
+          role="status"
+          className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800"
+        >
+          <span className="font-semibold">Submissions paused.</span>
+          <span>
+            New annual review submissions are temporarily disabled by your
+            administrator. Historical reviews remain readable.
+          </span>
+        </div>
+      )}
 
       {/* Tab container */}
       <div className="rounded-xl border border-border bg-surface shadow-sm overflow-hidden">

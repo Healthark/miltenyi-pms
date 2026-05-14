@@ -430,7 +430,10 @@ export function ProjectReviews() {
             <ReadOnlyReviewsList
               isLoading={isLoading}
               reviews={allReviews}
-              projectRatingsVisible={projectRatingsVisible}
+              // HR can see project ratings any time — the system-wide
+              // project_ratings_visible toggle is a Staff-facing gate
+              // and shouldn't blind HR's own org-wide review.
+              projectRatingsVisible={true}
               employeeColumnLabel="Employee"
               emptyTitle="No project reviews recorded"
               emptySubtitle="Reviews will appear here once PMs start evaluating their teams."
