@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Users, AlertTriangle } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { queryKeys } from "@/lib/queryKeys";
 import { MenteeCard } from "@/components/mentees/MenteeCard";
 import {
   MenteeTable,
@@ -59,38 +61,30 @@ export function MyMentees() {
 }
 
 function MyMenteesView() {
-  const [mentees, setMentees] = useState<MenteeSummary[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
   const [search, setSearch] = useState("");
   const [onlyPending, setOnlyPending] = useState(false);
   const [sortKey, setSortKey] = useState<MenteeSortKey>("name");
   const [viewMode, setViewMode] = useState<MenteeViewMode>("grid");
   const [tableSort, setTableSort] = useState<SortState<MenteeTableSortKey> | null>(null);
 
-  // One-shot fetch on mount. `isLoading` is initialized to `true` above
-  // (we're going to fetch immediately), so the effect doesn't need to
-  // flip it on synchronously — that would just redundantly set the
-  // value to what it already is, while also tripping the lint rule
-  // about setState inside an effect body.
-  useEffect(() => {
-    let cancelled = false;
-    menteeService
-      .getSummaries()
-      .then((data) => {
-        if (!cancelled) setMentees(data);
-      })
-      .catch(() => {
-        if (!cancelled) setError("Could not load mentees. Please try again.");
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  // Cross-page cache sharing: this is the SAME key MentorDashboard uses
+  // (queryKeys.mentees.summaries — see PR #19). A mentor who lands on
+  // /dashboard first and then navigates here gets instant data from
+  // cache. Conversely, if they hit /my-mentees first, the dashboard's
+  // version is pre-warmed.
+  const menteesQuery = useQuery({
+    queryKey: queryKeys.mentees.summaries(),
+    queryFn: menteeService.getSummaries,
+  });
+  const mentees = menteesQuery.data ?? [];
+  const isLoading = menteesQuery.isPending;
+  // useQuery's `error` is unknown by default; coerce to a user-facing
+  // string. We don't display the actual error.message because backend
+  // errors here aren't actionable for end users — the friendly copy
+  // matches the pre-migration UX.
+  const error: string | null = menteesQuery.isError
+    ? "Could not load mentees. Please try again."
+    : null;
 
   const totalPendingActions = useMemo(
     () => mentees.reduce((sum, m) => sum + m.pending_actions_count, 0),
@@ -233,30 +227,17 @@ function EmptyState() {
 // ── HR_MyOrg "All Mentor Pairings" view ────────────────────────────
 
 function AllMentorPairings() {
-  const [groups, setGroups] = useState<MentorPairingGroup[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
-  // One-shot fetch on mount. `isLoading` is initialized to `true`, so
-  // we don't need to flip it again synchronously inside the effect.
-  useEffect(() => {
-    let cancelled = false;
-    menteeService
-      .getAllPairings()
-      .then((data) => {
-        if (!cancelled) setGroups(data);
-      })
-      .catch(() => {
-        if (!cancelled) setError("Could not load pairings. Please try again.");
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const pairingsQuery = useQuery({
+    queryKey: queryKeys.mentees.pairings(),
+    queryFn: menteeService.getAllPairings,
+  });
+  const groups = pairingsQuery.data ?? [];
+  const isLoading = pairingsQuery.isPending;
+  const error: string | null = pairingsQuery.isError
+    ? "Could not load pairings. Please try again."
+    : null;
 
   const totalMentees = useMemo(
     () => groups.reduce((sum, g) => sum + g.mentees.length, 0),

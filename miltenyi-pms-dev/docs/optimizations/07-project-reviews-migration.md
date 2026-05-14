@@ -1,6 +1,6 @@
 # 07 — ProjectReviews migration: 5 role-gated queries + cache-warming probe pattern
 
-> **PR:** _pending_
+> **PR:** [#24](https://github.com/Healthark/miltenyi-pms/pull/24)
 > **Files changed:** `frontend/src/lib/queryKeys.ts` (new `projectReviews` namespace), `frontend/src/pages/ProjectReviews.tsx`.
 > **Headline result:** 5 page-level reads migrated. New pattern introduced: **cache-warming probe** — a probe query whose data is reused by a downstream consumer instead of a separate state flag.
 

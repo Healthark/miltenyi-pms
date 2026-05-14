@@ -63,9 +63,19 @@ export const queryKeys = {
   },
 
   // ── Mentor's mentees ───────────────────────────────────────────────
+  // `summaries` is the mentor's roster (used by both /my-mentees and the
+  // MentorDashboard — cross-page cache sharing).
+  // `pairings` is HR_MyOrg's org-wide grouped view (every mentor + their
+  // mentees nested).
+  // `detail(id)` is the per-mentee profile (dynamic key — each mentee
+  // gets its own cache entry; switching between two mentees is instant
+  // on revisit).
   mentees: {
     all: ["mentees"] as const,
     summaries: () => [...queryKeys.mentees.all, "summaries"] as const,
+    pairings: () => [...queryKeys.mentees.all, "pairings"] as const,
+    detail: (id: number) =>
+      [...queryKeys.mentees.all, "detail", id] as const,
   },
 
   // ── Annual review rows ─────────────────────────────────────────────

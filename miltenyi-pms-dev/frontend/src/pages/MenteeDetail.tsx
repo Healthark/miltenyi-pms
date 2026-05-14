@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams, useSearchParams } from "react-router-dom";
+import { queryKeys } from "@/lib/queryKeys";
 import {
   ArrowLeft,
   Briefcase,
@@ -12,10 +14,7 @@ import {
   Building2,
   Phone,
 } from "lucide-react";
-import {
-  menteeService,
-  type MenteeDetail as MenteeDetailData,
-} from "@/services/mentee.service";
+import { menteeService } from "@/services/mentee.service";
 import {
   annualReviewService,
   type AnnualReview,
@@ -70,53 +69,55 @@ export function MenteeDetail() {
   const tabFromUrl = searchParams.get("tab");
   const activeTab: TabKey = isTabKey(tabFromUrl) ? tabFromUrl : "summary";
 
-  const [data, setData] = useState<MenteeDetailData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+
+  // Dynamic key per mentee — switching between two mentees keeps each
+  // one's cache entry independently. The old `silent: true` reload
+  // machinery is gone: useQuery's data stays visible during background
+  // refetches by default (this is stale-while-revalidate). Only the
+  // first-ever fetch flips `isPending` true; subsequent refetches use
+  // `isFetching` which we don't gate the UI on.
+  //
+  // `enabled` gates on a valid menteeId so we don't fire a request
+  // with NaN (the URL param parses to NaN if the user hand-types
+  // /my-mentees/abc).
+  const detailQuery = useQuery({
+    queryKey: queryKeys.mentees.detail(menteeId),
+    queryFn: () => menteeService.getDetail(menteeId),
+    enabled: Boolean(menteeId) && !Number.isNaN(menteeId),
+  });
+
+  const data = detailQuery.data ?? null;
+  const isLoading = detailQuery.isPending && !Number.isNaN(menteeId);
+
+  // Two error sources, same UI treatment: an invalid URL param OR the
+  // query failing. The query's failureReason carries the axios error;
+  // a 404 (mentee not assigned to us / doesn't exist) gets a different
+  // message than transient failures.
+  const error: string | null = useMemo(() => {
+    if (!menteeId || Number.isNaN(menteeId)) return "Invalid mentee id.";
+    if (!detailQuery.isError) return null;
+    const err = detailQuery.error as { response?: { status?: number } } | null;
+    if (err?.response?.status === 404) {
+      return "This mentee is not assigned to you or doesn't exist.";
+    }
+    return "Could not load mentee details. Please try again.";
+  }, [menteeId, detailQuery.isError, detailQuery.error]);
 
   // Replace the "/3" segment in the Topbar breadcrumb with the mentee's name.
   usePageTitleOverride(data?.full_name ?? null);
 
-  const loadDetail = useCallback(
-    (options?: { silent?: boolean }) => {
-      if (!menteeId || Number.isNaN(menteeId)) {
-        setError("Invalid mentee id.");
-        setIsLoading(false);
-        return () => {};
-      }
-      let cancelled = false;
-      // silent reload (e.g. after an action) keeps the existing tab content
-      // visible instead of flashing the skeleton.
-      if (!options?.silent) setIsLoading(true);
-      setError(null);
-      menteeService
-        .getDetail(menteeId)
-        .then((d) => {
-          if (!cancelled) setData(d);
-        })
-        .catch((err) => {
-          if (cancelled) return;
-          const msg =
-            err?.response?.status === 404
-              ? "This mentee is not assigned to you or doesn't exist."
-              : "Could not load mentee details. Please try again.";
-          setError(msg);
-        })
-        .finally(() => {
-          if (!cancelled && !options?.silent) setIsLoading(false);
-        });
-      return () => {
-        cancelled = true;
-      };
-    },
-    [menteeId],
-  );
-
-  useEffect(() => loadDetail(), [loadDetail]);
-
+  // Bridge for unmigrated child tabs (MenteeGoalsTab, MenteeProjectsTab)
+  // that still do imperative mutations and need to refresh the
+  // mentee-detail view. Once those tabs migrate to useMutation, they'll
+  // invalidate keys directly and we can drop this prop. Until then,
+  // expose a stable callback that hits the same invalidation a useQuery
+  // mutation would.
   const reloadDetail = useCallback(() => {
-    loadDetail({ silent: true });
-  }, [loadDetail]);
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.mentees.detail(menteeId),
+    });
+  }, [queryClient, menteeId]);
 
   const setActiveTab = (key: TabKey) => {
     // Preserve any other query params by copying from current search.
@@ -130,12 +131,59 @@ export function MenteeDetail() {
   // tab) so the mentor can browse other tabs while evaluating. The
   // form's auto-save-on-unmount only fires when this whole page
   // unmounts (route change), not on tab switches.
+  //
+  // Mutation isPending flags replace the old evalSaving /
+  // evalDraftSaving useStates.
   const [evalFy, setEvalFy] = useState<string | null>(null);
-  const [evalSaving, setEvalSaving] = useState(false);
-  const [evalDraftSaving, setEvalDraftSaving] = useState(false);
   const [evalError, setEvalError] = useState("");
   const confirm = useConfirm();
   const toast = useToast();
+
+  // ── Mentor-eval mutations ──────────────────────────────────────────
+  // These were deliberately deferred from PR #21 (AnnualReviews
+  // migration) because EvalDrawer / mentor-eval logic lives at the
+  // MenteeDetail page level, not the AnnualReviews page level.
+  //
+  // Broadcast invalidation footprint:
+  //   - mentees.all        → this mentee's detail + the mentor's
+  //                          summaries (badge counts, pending actions)
+  //   - annualReviews.all  → TeamReviewTab, HR's All Reviews, the
+  //                          mentee's own history
+  //   - dashboard.all      → mentor's mentor_annual_reviews_pending
+  //                          count in the dashboard widget
+  const invalidateMentorEvalScope = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.mentees.all });
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.annualReviews.all,
+    });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
+  }, [queryClient]);
+
+  const submitMentorEvalMutation = useMutation({
+    mutationFn: (vars: { reviewId: number; payload: MentorEvalPayload }) =>
+      annualReviewService.submitMentorEval(vars.reviewId, vars.payload),
+    onSuccess: () => {
+      invalidateMentorEvalScope();
+      setEvalFy(null);
+    },
+    onError: (err) => setEvalError(getErrorMessage(err)),
+  });
+
+  const saveMentorDraftMutation = useMutation({
+    mutationFn: (vars: {
+      reviewId: number;
+      payload: MentorEvalDraftPayload;
+    }) => annualReviewService.saveMentorDraft(vars.reviewId, vars.payload),
+    onSuccess: () => {
+      invalidateMentorEvalScope();
+      // Fires for both the explicit "Save Draft" click and the implicit
+      // auto-save when this page unmounts (route change). The toast
+      // provider lives at the app root, so it survives this component
+      // unmounting mid-save.
+      toast.success("Draft saved.");
+    },
+    onError: (err) => setEvalError(getErrorMessage(err)),
+  });
 
   const reviewByCycle = useMemo(() => {
     const m = new Map<string, AnnualReview>();
@@ -169,6 +217,11 @@ export function MenteeDetail() {
     setEvalError("");
   }, []);
 
+  // EvalDrawer awaits onSubmit / onSaveDraft to drive its internal
+  // "Saving..." state — use mutateAsync + try/catch to preserve the
+  // legacy contract (onError sets evalError; the await never sees an
+  // exception). Same pattern as PR #20's UserModal and PR #22's
+  // GoalFormModal.
   const handleEvalSubmit = async (
     reviewId: number,
     payload: MentorEvalPayload,
@@ -183,16 +236,11 @@ export function MenteeDetail() {
       confirmText: "Submit Evaluation",
     });
     if (!ok) return;
-    setEvalSaving(true);
     setEvalError("");
     try {
-      await annualReviewService.submitMentorEval(reviewId, payload);
-      setEvalFy(null);
-      reloadDetail();
-    } catch (err) {
-      setEvalError(getErrorMessage(err));
-    } finally {
-      setEvalSaving(false);
+      await submitMentorEvalMutation.mutateAsync({ reviewId, payload });
+    } catch {
+      /* handled by onError */
     }
   };
 
@@ -200,20 +248,11 @@ export function MenteeDetail() {
     reviewId: number,
     payload: MentorEvalDraftPayload,
   ) => {
-    setEvalDraftSaving(true);
     setEvalError("");
     try {
-      await annualReviewService.saveMentorDraft(reviewId, payload);
-      reloadDetail();
-      // Fires for both the explicit "Save Draft" click and the implicit
-      // auto-save when this page unmounts (route change). The toast
-      // provider lives at the app root, so it survives this component
-      // unmounting mid-save.
-      toast.success("Draft saved.");
-    } catch (err) {
-      setEvalError(getErrorMessage(err));
-    } finally {
-      setEvalDraftSaving(false);
+      await saveMentorDraftMutation.mutateAsync({ reviewId, payload });
+    } catch {
+      /* handled by onError */
     }
   };
 
@@ -352,8 +391,8 @@ export function MenteeDetail() {
               onSubmit={handleEvalSubmit}
               onSaveDraft={handleEvalSaveDraft}
               onClose={closeEval}
-              isSaving={evalSaving}
-              isDraftSaving={evalDraftSaving}
+              isSaving={submitMentorEvalMutation.isPending}
+              isDraftSaving={saveMentorDraftMutation.isPending}
               error={evalError}
             />
           )}
