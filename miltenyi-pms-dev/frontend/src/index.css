@@ -206,6 +206,7 @@
   background-color: rgba(30, 58, 138, 0.55);
 }
 :root.dark .text-blue-700,
+:root.dark .text-blue-800,
 :root.dark .text-blue-900,
 :root.dark .text-blue-600 {
   color: #93C5FD; /* blue-300 */
@@ -222,6 +223,7 @@
   background-color: rgba(20, 83, 45, 0.6);
 }
 :root.dark .text-green-700,
+:root.dark .text-green-800,
 :root.dark .text-green-600 {
   color: #6EE7B7; /* emerald-300 */
 }
@@ -401,13 +403,17 @@
   --tw-ring-color: var(--brand-accent);
 }
 
-/* Form inputs — explicit white backgrounds set per-field. The generic
-   `.bg-white` override above handles most; this catches `<input>` and
-   `<select>` elements that rely on UA defaults. */
+/* Form inputs — use the darker --background so fields sit visually
+   one level below the surrounding card (which is --surface). Without
+   this contrast in dark mode, inputs blend into the card and look
+   like there's no field there.  The .bg-white override above still
+   wins for inputs that explicitly set a white bg per Tailwind utility
+   order, mapping them to --surface — but those are rare for form
+   fields. */
 :root.dark input:not([type="checkbox"]):not([type="radio"]),
 :root.dark select,
 :root.dark textarea {
-  background-color: var(--surface);
+  background-color: var(--background);
   color: var(--text-main);
   color-scheme: dark;
 }
