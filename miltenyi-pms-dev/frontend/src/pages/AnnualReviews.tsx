@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { queryKeys } from "@/lib/queryKeys";
 import { ChevronDown } from "lucide-react";
@@ -105,9 +110,30 @@ export function AnnualReviews() {
     queryFn: annualReviewService.getMyReviewHistory,
     enabled: isStaff,
   });
-  const allReviewsQuery = useQuery({
+
+  // Paginated as of PR #19 (foundation for the pagination theme).
+  // useInfiniteQuery stores pages as { pages: PaginatedAnnualReviews[], pageParams: number[] }.
+  // We flatten data.pages.flatMap(p => p.items) for the rest of the
+  // component, which keeps every consumer that does .filter()/.sort()
+  // working unchanged.
+  //
+  // - initialPageParam: 0  → first request: GET /all?offset=0&limit=50
+  // - getNextPageParam: derives the next offset from the previous page's
+  //   has_more flag (server-computed). Return undefined to stop paging.
+  // - The cache key (queryKeys.annualReviews.org()) is the SAME as the
+  //   legacy single-query version, so any mutation that invalidates
+  //   this key triggers a refetch of the loaded pages.
+  const PAGE_SIZE = 50;
+  const allReviewsQuery = useInfiniteQuery({
     queryKey: queryKeys.annualReviews.org(),
-    queryFn: annualReviewService.getAllReviews,
+    queryFn: ({ pageParam }) =>
+      annualReviewService.getAllReviews({
+        limit: PAGE_SIZE,
+        offset: pageParam,
+      }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) =>
+      lastPage.has_more ? lastPage.offset + lastPage.limit : undefined,
     enabled: isHRMyOrg,
   });
 
@@ -115,10 +141,22 @@ export function AnnualReviews() {
   // even before the first fetch resolves. The cache stays the source of
   // truth — these are just renaming-for-readability locals.
   const reviews = myReviewsQuery.data ?? [];
-  const allReviews = allReviewsQuery.data ?? [];
+  // Flatten loaded pages into a single array. As the user clicks "Load
+  // more" this array grows; everything downstream (filter / sort /
+  // virtualizer) sees one combined list.
+  const allReviews =
+    allReviewsQuery.data?.pages.flatMap((p) => p.items) ?? [];
+  // Total count across ALL pages (taken from the most recent page's
+  // `total` field — the server returns the SAME total on every page).
+  // Used by the UI to render "Showing N of T" alongside Load more.
+  const allReviewsTotal =
+    allReviewsQuery.data?.pages[allReviewsQuery.data.pages.length - 1]
+      ?.total ?? 0;
   // Show the table skeleton while the role-relevant query is loading.
-  // Mentor users see TeamReviewTab's own loading state so this flag
-  // doesn't matter to them.
+  // For paginated queries, `isPending` is true only on the FIRST fetch
+  // (no pages loaded yet). Subsequent `fetchNextPage` calls flip
+  // `isFetchingNextPage` instead — handled separately near the Load
+  // More button below.
   const isLoading = isStaff
     ? myReviewsQuery.isPending
     : isHRMyOrg
@@ -341,7 +379,16 @@ export function AnnualReviews() {
           )}
           {isMentor && activeTab === "team" && <TeamReviewTab />}
           {isHRMyOrg && activeTab === "all" && (
-            <AllReviewsTab reviews={allReviews} isLoading={isLoading} />
+            <AllReviewsTab
+              reviews={allReviews}
+              isLoading={isLoading}
+              total={allReviewsTotal}
+              hasNextPage={Boolean(allReviewsQuery.hasNextPage)}
+              isFetchingNextPage={allReviewsQuery.isFetchingNextPage}
+              onLoadMore={() => {
+                void allReviewsQuery.fetchNextPage();
+              }}
+            />
           )}
         </div>
       </div>
@@ -392,9 +439,26 @@ const ALL_REVIEWS_OVERSCAN = 5;
 function AllReviewsTab({
   reviews,
   isLoading,
+  total,
+  hasNextPage,
+  isFetchingNextPage,
+  onLoadMore,
 }: {
   readonly reviews: AnnualReview[];
   readonly isLoading: boolean;
+  /** Total rows matching the underlying query across all pages. The
+   *  server returns this on every paginated response; we display it as
+   *  "Showing N of T" alongside the Load More button. */
+  readonly total: number;
+  /** True while at least one more page exists on the server (server-
+   *  derived from has_more on the most recent page). */
+  readonly hasNextPage: boolean;
+  /** True while a fetchNextPage() call is in flight — drives the Load
+   *  More button's spinner state without flashing the initial-load
+   *  skeleton. */
+  readonly isFetchingNextPage: boolean;
+  /** Trigger for fetchNextPage. Wired by the parent page. */
+  readonly onLoadMore: () => void;
 }) {
   const [cycleFilter, setCycleFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -591,7 +655,16 @@ function AllReviewsTab({
         )}
 
         <span className="text-xs text-text-muted">
-          {filtered.length} of {reviews.length}
+          {/* `total` is the server's count across ALL pages, not just
+              loaded ones. `reviews.length` is what's loaded so far on
+              the frontend. Filter applies to what's loaded — so a
+              filter like "function = Engineering" might match nothing
+              on the current page but match results in later pages
+              that haven't been fetched yet. The "Showing N of T"
+              framing is honest: T is the universe, N is what's
+              visible-after-filter from-what's-loaded. (Server-side
+              filtering moves to a future PR — see doc #19 part 7.) */}
+          {filtered.length} of {total}
         </span>
        </div>
        <div className="shrink-0">
@@ -767,6 +840,28 @@ function AllReviewsTab({
           )}
         </div>
       </div>
+
+      {/* Load More — sits BELOW the virtualized scroll card so HR can
+          see the "more available" affordance without scrolling to the
+          bottom of the 600px window. The button is hidden when no
+          more pages exist on the server (hasNextPage === false). The
+          live counter alongside it explains exactly what was loaded
+          vs what's available. */}
+      {hasNextPage && (
+        <div className="flex items-center gap-3 justify-center">
+          <button
+            type="button"
+            onClick={onLoadMore}
+            disabled={isFetchingNextPage}
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-white px-4 py-2 text-[13px] font-medium text-text-main hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+          >
+            {isFetchingNextPage ? "Loading…" : "Load more"}
+          </button>
+          <span className="text-xs text-text-muted">
+            Loaded {reviews.length} of {total}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

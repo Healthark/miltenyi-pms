@@ -219,9 +219,39 @@ export const annualReviewService = {
 
   // ── HR_MyOrg view-only ─────────────────────────────────────────
   /** Every annual review across the org, every cycle. HR_MyOrg-only;
-   *  the backend 403s any other role. Powers the "All Reviews" tab. */
-  getAllReviews: async (): Promise<AnnualReview[]> => {
-    const res = await apiClient.get<AnnualReview[]>("/annual-reviews/all");
+   *  the backend 403s any other role. Powers the "All Reviews" tab.
+   *
+   *  Paginated as of PR #19. The frontend pairs this with TanStack
+   *  Query's useInfiniteQuery — see doc #19 for the full pattern.
+   *  Server defaults: limit=50, offset=0. Server max: limit=200.
+   *  Response carries `has_more` so the UI can disable the "Load
+   *  more" button without arithmetic. */
+  getAllReviews: async (
+    params: { limit?: number; offset?: number } = {},
+  ): Promise<PaginatedAnnualReviews> => {
+    const res = await apiClient.get<PaginatedAnnualReviews>(
+      "/annual-reviews/all",
+      { params },
+    );
     return res.data;
   },
 };
+
+/** Generic paginated-response wrapper. Mirrors
+ *  backend/app/schemas/pagination.py — every paginated endpoint we add
+ *  in this theme returns this shape with its own item type. */
+export interface Paginated<T> {
+  /** Rows on THIS page (length ≤ limit). */
+  items: T[];
+  /** Total rows matching the underlying query. NOT just this page. */
+  total: number;
+  /** Page size that was honoured by the server. */
+  limit: number;
+  /** Rows skipped before this page. */
+  offset: number;
+  /** True iff (offset + items.length) < total — saves the UI an
+   *  arithmetic check when deciding "show Load More?" */
+  has_more: boolean;
+}
+
+export type PaginatedAnnualReviews = Paginated<AnnualReview>;

@@ -32,7 +32,7 @@ Security Layers:
 """
 
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy.orm import joinedload
 
 from app.api.dependencies import DbSession, CurrentUser
@@ -54,6 +54,7 @@ from app.schemas.annual_review_schemas import (
     CalibrationRow,
     MenteeAnnualReview,
 )
+from app.schemas.pagination import Paginated
 router = APIRouter()
 
 
@@ -404,28 +405,69 @@ def get_my_review_history(
     return reviews
 
 
-@router.get("/all", response_model=List[AnnualReviewResponse])
+@router.get("/all", response_model=Paginated[AnnualReviewResponse])
 def get_all_annual_reviews(
     db: DbSession,
     current_user: CurrentUser,
+    limit: int = Query(
+        50,
+        ge=1,
+        le=200,
+        description=(
+            "Maximum rows to return on this page. Server-clamped to "
+            "1..200 to bound payload + DB work."
+        ),
+    ),
+    offset: int = Query(
+        0,
+        ge=0,
+        description="Rows to skip before this page. 0 for the first page.",
+    ),
 ):
-    """HR_MyOrg-only: every annual review across the org, every cycle.
+    """HR_MyOrg-only: paginated annual reviews across the org, every cycle.
 
     Powers the view-only "All Reviews" tab on the AnnualReviews page.
     HR_MyOrg is the management role, so private ratings are NOT stripped —
     they need to see the full picture for calibration / auditing.
 
-    Resolves `employee_name` and `mentor_name` per row in two batched
-    lookups (no N+1) so the table can render directly.
+    Pagination convention: standard offset/limit. Frontend pairs this
+    with TanStack Query's `useInfiniteQuery` (see frontend doc #19).
+    Returns `Paginated[AnnualReviewResponse]` (see schemas/pagination.py)
+    with the page's rows plus `total` and `has_more`.
+
+    Why offset/limit and not cursor: the underlying data is mostly
+    stable within a calibration window (rows are appended at low
+    velocity). Cursor-based pagination's robustness against churn
+    isn't worth its added complexity here. Documented in doc #19.
+
+    Resolves `employee_name` and `mentor_name` for THIS PAGE in two
+    batched lookups (no N+1). Total count is a single COUNT(*) over
+    the filtered base query.
     """
     _require_hr_myorg(current_user)
+
+    # Filtered base query — shared between the count() and the windowed
+    # fetch so the totals match exactly what the windowed rows are
+    # drawn from. Build this once, reuse twice.
+    base_q = db.query(AnnualReview).filter(
+        AnnualReview.org_id == current_user.org_id
+    )
+
+    # Total count of matching rows. Used both for the response's
+    # `total` field and for the `has_more` flag. A single COUNT(*)
+    # adds one DB round-trip vs the legacy "fetch all then len()" but
+    # the savings on the windowed page fetch (DB does the LIMIT)
+    # massively dominate at scale — a 10000-row org used to ship
+    # 10000 rows on every call; now ships 50.
+    total = base_q.count()
+
     reviews = (
-        db.query(AnnualReview)
-        .filter(AnnualReview.org_id == current_user.org_id)
-        .order_by(
+        base_q.order_by(
             AnnualReview.cycle_name.desc(),
             AnnualReview.created_at.desc(),
         )
+        .offset(offset)
+        .limit(limit)
         .all()
     )
 
@@ -434,7 +476,9 @@ def get_all_annual_reviews(
     name_by_id: dict[int, str] = {}
     # Function + designation are only needed for the *employee* (review.user_id),
     # not for mentors. Loaded once via a batched user fetch with eager joins
-    # so the table can render with no per-row queries.
+    # so the table can render with no per-row queries. Bounded by `limit`
+    # (max 200) now, was previously unbounded for an HR with thousands of
+    # reviews.
     employee_meta: dict[int, tuple[Optional[str], Optional[str]]] = {}
     if user_ids:
         users = (
@@ -469,7 +513,13 @@ def get_all_annual_reviews(
                 else r.mentor_performance_rating
             )
 
-    return reviews
+    return Paginated[AnnualReviewResponse](
+        items=reviews,
+        total=total,
+        limit=limit,
+        offset=offset,
+        has_more=(offset + len(reviews)) < total,
+    )
 
 
 # =====================================================================
