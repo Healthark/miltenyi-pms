@@ -11,8 +11,9 @@
  * submitted. View and Edit affordances are gated per stage.
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   ChevronDown,
   ChevronUp,
@@ -71,6 +72,37 @@ const COLUMN_DEFS: Array<{ label: string; key: SortKey | null }> = [
   { label: "Management Rating",  key: "management_performance_rating" },
   { label: "Actions",            key: null },
 ];
+
+// Shared 10-column CSS Grid layout used by BOTH the (non-virtualized)
+// header row and the (virtualized) data rows. The values mirror the
+// pre-virtualization column widths derived from the table-layout
+// algorithm's natural sizing on representative data — User/Email/Mentor
+// get more room, badges and actions get just enough.
+//
+// Why CSS Grid instead of the old <table>'s automatic layout: virtualized
+// rows are absolutely positioned (transform: translateY(...)), which
+// breaks table-row cell alignment. CSS Grid gives us per-row alignment
+// that doesn't depend on a shared <table> context, and lets the header
+// stay perfectly aligned without us having to thread column widths
+// through a Context.
+const GRID_TEMPLATE_COLUMNS =
+  "minmax(160px, 1.6fr) minmax(200px, 2fr) minmax(150px, 1.4fr) minmax(130px, 1.2fr) minmax(150px, 1.4fr) minmax(150px, 1.4fr) minmax(110px, 1fr) minmax(110px, 1fr) minmax(130px, 1.2fr) minmax(120px, 1fr)";
+
+// Fixed row height (in px) the virtualizer uses to size the scrollbar
+// thumb and decide which rows are in-window. py-3.5 (28px total) +
+// content (~22px line-height) ≈ 50px; rounded to 52 to leave breathing
+// room for badge spacing without forcing measureElement.
+const ROW_HEIGHT_PX = 52;
+
+// Scroll container height. Fixed for now; viewport-relative sizing
+// (`calc(100vh - 320px)`) is a follow-up if the page header height
+// ever drifts. 600px keeps roughly 11 rows visible at once.
+const SCROLL_CONTAINER_HEIGHT_PX = 600;
+
+// How many rows beyond the viewport edges to render. Higher = smoother
+// scroll on slow devices, more DOM. 8 is the default sweet spot for
+// fixed-height rows.
+const VIRTUALIZER_OVERSCAN = 8;
 
 const STATUS_FILTER_OPTIONS: Array<{ value: StatusFilter; label: string }> = [
   { value: "all",                label: "All" },
@@ -262,6 +294,26 @@ export function ManagementReview() {
     });
   }, [rows, searchQuery, funcFilter, designationFilter, mentorFilter, statusFilter, sortKey, sortDir]);
 
+  // ── Virtualization ───────────────────────────────────────────────────
+  // useVirtualizer needs a scroll-container ref and an item count. It
+  // returns `getVirtualItems()` — the subset of rows whose index falls
+  // within the current scroll window (± overscan). Each item carries
+  // its precomputed `start` offset which we apply via translateY.
+  //
+  // Re-creating the virtualizer when `visibleRows.length` changes
+  // (filter / sort) is correct: the scroll position resets to top,
+  // which is the right UX for "I just narrowed the filter — show me
+  // the first match." If we ever want scroll-preservation across
+  // filter changes, we'd need to lift this state and snapshot/restore
+  // it explicitly.
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: visibleRows.length,
+    getScrollElement: () => scrollContainerRef.current,
+    estimateSize: () => ROW_HEIGHT_PX,
+    overscan: VIRTUALIZER_OVERSCAN,
+  });
+
   const handleSave = async () => {
     if (!editTarget) return;
     if (editTarget.row.review_id == null) {
@@ -433,7 +485,13 @@ export function ManagementReview() {
               </div>
             </div>
 
-            {/* Table / Empty state */}
+            {/* Virtualized table / empty state.
+                The empty-state branch is unchanged from the legacy
+                `<table>` implementation. The data branch swapped from a
+                `<table><thead/><tbody/></table>` to a CSS-Grid layout of
+                `role="row"` divs inside a fixed-height scroll container
+                so `useVirtualizer` can window the data rows. ARIA roles
+                preserve screen-reader semantics. */}
             {visibleRows.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-center">
                 <ShieldCheck
@@ -452,44 +510,100 @@ export function ManagementReview() {
                 </p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border bg-slate-50 text-left">
-                      {COLUMN_DEFS.map((col) => {
-                        // Capture the key once so TS narrows it inside the closure;
-                        // `col.key` is widened back to `SortKey | null` in the
-                        // arrow body and the type guard wouldn't carry through.
-                        const sortKey = col.key;
-                        return sortKey ? (
-                          <th
-                            key={col.label}
-                            className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-text-muted cursor-pointer select-none hover:text-text-main"
-                            onClick={() => handleSort(sortKey)}
-                          >
-                            <span className="inline-flex items-center gap-1">
-                              {col.label}
-                              {getSortIcon(sortKey)}
-                            </span>
-                          </th>
-                        ) : (
-                          <th
-                            key={col.label}
-                            className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-text-muted"
-                          >
+              <div
+                role="table"
+                aria-label="Management calibration grid"
+                aria-rowcount={visibleRows.length}
+                className="text-sm"
+              >
+                {/* Header row — NOT virtualized. Lives outside the
+                    scroll container so it stays visible while the body
+                    scrolls. Same grid template as data rows so the
+                    columns line up. */}
+                <div
+                  role="rowgroup"
+                  className="border-b border-border bg-slate-50"
+                >
+                  <div
+                    role="row"
+                    className="grid items-center"
+                    style={{ gridTemplateColumns: GRID_TEMPLATE_COLUMNS }}
+                  >
+                    {COLUMN_DEFS.map((col) => {
+                      // Capture key once so TS narrows it inside the
+                      // closure — `col.key` widens back to
+                      // `SortKey | null` in the arrow body.
+                      const columnSortKey = col.key;
+                      // `aria-sort` is "none" for unsorted columns,
+                      // "ascending" or "descending" for the active one.
+                      // Compare the page-level `sortKey` state with
+                      // this column's key (`columnSortKey`).
+                      const isActiveSort =
+                        columnSortKey !== null && sortKey === columnSortKey;
+                      return columnSortKey ? (
+                        <div
+                          role="columnheader"
+                          aria-sort={
+                            isActiveSort
+                              ? sortDir === "asc"
+                                ? "ascending"
+                                : "descending"
+                              : "none"
+                          }
+                          key={col.label}
+                          onClick={() => handleSort(columnSortKey)}
+                          className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-text-muted cursor-pointer select-none hover:text-text-main"
+                        >
+                          <span className="inline-flex items-center gap-1">
                             {col.label}
-                          </th>
-                        );
-                      })}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {visibleRows.map((r) => {
+                            {getSortIcon(columnSortKey)}
+                          </span>
+                        </div>
+                      ) : (
+                        <div
+                          role="columnheader"
+                          key={col.label}
+                          className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-text-muted"
+                        >
+                          {col.label}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Scrollable + virtualized body. The OUTER div is the
+                    scroll viewport (overflow-y: auto, fixed height). The
+                    INNER div is sized to the TOTAL list height so the
+                    browser draws a correct-length scrollbar. Each
+                    virtualized row is absolute-positioned inside it.
+
+                    Why fixed height instead of `flex-1` / viewport-
+                    relative: the virtualizer needs a definite container
+                    size to compute which rows are in-window. Once we
+                    have telemetry on real-world usage we can tune this
+                    to `calc(100vh - <page header>)` for adaptive sizing. */}
+                <div
+                  ref={scrollContainerRef}
+                  role="rowgroup"
+                  style={{ height: SCROLL_CONTAINER_HEIGHT_PX }}
+                  className="overflow-y-auto overflow-x-hidden"
+                >
+                  <div
+                    style={{
+                      height: rowVirtualizer.getTotalSize(),
+                      position: "relative",
+                      width: "100%",
+                    }}
+                  >
+                    {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                      const r = visibleRows[virtualRow.index];
                       // Action gating per stage:
-                      //   not_started / draft  -> no actions (mentee work is
-                      //     either nonexistent or private)
-                      //   pending_mentor       -> View only (self-review)
-                      //   pending_management / completed -> View + Edit
+                      //   not_started / draft   -> no actions (mentee
+                      //     work is either nonexistent or private)
+                      //   pending_mentor        -> View only (self-review)
+                      //   pending_management /
+                      //   completed             -> View + Edit
                       const canView =
                         r.review_id != null &&
                         (r.status === "pending_mentor" ||
@@ -500,43 +614,59 @@ export function ManagementReview() {
                         (r.status === "pending_management" ||
                           r.status === "completed");
                       return (
-                        <tr
+                        <div
+                          role="row"
+                          aria-rowindex={virtualRow.index + 1}
                           key={r.user_id}
-                          className="transition-colors hover:bg-slate-50"
+                          className="grid items-center border-b border-border transition-colors hover:bg-slate-50"
+                          style={{
+                            // Absolute positioning is how every virtual
+                            // list library works — the container reserves
+                            // the full scroll height, rows are stacked at
+                            // explicit offsets, and only the in-window
+                            // ones exist in the DOM.
+                            position: "absolute",
+                            top: 0,
+                            left: 0,
+                            width: "100%",
+                            height: virtualRow.size,
+                            transform: `translateY(${virtualRow.start}px)`,
+                            gridTemplateColumns: GRID_TEMPLATE_COLUMNS,
+                          }}
                         >
-                          <td className="px-5 py-3.5 font-medium text-text-main">
+                          <div role="cell" className="px-5 font-medium text-text-main truncate">
                             {r.employee_name}
-                          </td>
-                          <td className="px-5 py-3.5 text-text-muted">
+                          </div>
+                          <div role="cell" className="px-5 text-text-muted truncate">
                             {r.employee_email ?? "—"}
-                          </td>
-                          <td className="px-5 py-3.5 text-text-muted">
+                          </div>
+                          <div role="cell" className="px-5 text-text-muted truncate">
                             {r.mentor_name ?? "—"}
-                          </td>
-                          <td className="px-5 py-3.5 text-text-muted">
+                          </div>
+                          <div role="cell" className="px-5 text-text-muted truncate">
                             {r.function ?? "—"}
-                          </td>
-                          <td className="px-5 py-3.5 text-text-muted">
+                          </div>
+                          <div role="cell" className="px-5 text-text-muted truncate">
                             {r.designation ?? "—"}
-                          </td>
-                          <td className="px-5 py-3.5">
+                          </div>
+                          <div role="cell" className="px-5">
                             <ReviewStatusBadge status={r.status} />
-                          </td>
-                          <td className="px-5 py-3.5">
+                          </div>
+                          <div role="cell" className="px-5">
                             <PerformanceRatingBadge value={r.self_performance_rating} />
-                          </td>
-                          <td className="px-5 py-3.5">
-                            <PerformanceRatingBadge
-                              value={r.mentor_performance_rating}
-                            />
-                          </td>
-                          <td className="px-5 py-3.5">
-                            <PerformanceRatingBadge
-                              value={r.management_performance_rating}
-                            />
-                          </td>
-                          <td className="px-5 py-3.5">
-                            <div className="flex items-center gap-1.5 flex-wrap">
+                          </div>
+                          <div role="cell" className="px-5">
+                            <PerformanceRatingBadge value={r.mentor_performance_rating} />
+                          </div>
+                          <div role="cell" className="px-5">
+                            <PerformanceRatingBadge value={r.management_performance_rating} />
+                          </div>
+                          <div role="cell" className="px-5">
+                            {/* flex-nowrap (no `flex-wrap`) here so a
+                                row's height stays a constant 52px —
+                                variable heights would require
+                                measureElement() and slower scroll. */}
+                            <div className="flex items-center gap-1.5 flex-nowrap">
                               {canView && r.review_id != null && (
                                 <button
                                   type="button"
@@ -574,17 +704,15 @@ export function ManagementReview() {
                                 </button>
                               )}
                               {!canView && !canEdit && (
-                                <span className="text-xs italic text-text-muted">
-                                  —
-                                </span>
+                                <span className="text-xs italic text-text-muted">—</span>
                               )}
                             </div>
-                          </td>
-                        </tr>
+                          </div>
+                        </div>
                       );
                     })}
-                  </tbody>
-                </table>
+                  </div>
+                </div>
               </div>
             )}
           </>

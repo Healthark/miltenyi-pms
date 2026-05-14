@@ -1,6 +1,6 @@
 # 14 — SystemSettingsProvider: context-cache → useQuery 🏁
 
-> **PR:** _pending_
+> **PR:** [#31](https://github.com/Healthark/miltenyi-pms/pull/31)
 > **Files changed:** `frontend/src/lib/queryKeys.ts` (new `systemSettings.current()`), `frontend/src/contexts/SystemSettingsProvider.tsx` (full rewrite — same public context API).
 > **Headline result:** Final TanStack Query migration. The hand-rolled `useState + useEffect + useCallback` context-cache becomes a `useQuery` wrapper. 23 consumers of `useSystemSettings()` and 1 mutation site (AdminPanel) change **zero** lines.
 
