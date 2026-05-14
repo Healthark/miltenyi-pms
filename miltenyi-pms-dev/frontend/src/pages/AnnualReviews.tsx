@@ -1,5 +1,6 @@
-import { useEffect, useState, Fragment } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { queryKeys } from "@/lib/queryKeys";
 import { ChevronDown } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -367,6 +368,27 @@ export function AnnualReviews() {
 
 // ── HR_MyOrg "All Reviews" view-only table ──────────────────────────
 
+// Shared CSS Grid layout for the 8-column virtualized table (header
+// + body rows). `minmax(<floor>, <weight>fr)` keeps narrow columns
+// readable while letting wide ones expand. See PR #15 for the
+// rationale on table → div + CSS Grid.
+const ALL_REVIEWS_GRID_TEMPLATE_COLUMNS =
+  "minmax(180px, 1.8fr) minmax(120px, 1.2fr) minmax(140px, 1.4fr) " +
+  "minmax(100px, 1fr) minmax(120px, 1.1fr) minmax(80px, 0.8fr) " +
+  "minmax(80px, 0.8fr) minmax(80px, 0.8fr)";
+
+// Starting guess for a collapsed row's height (py-3 + text-[13px] line
+// height ≈ 46px; round up). Unlike PR #15's ManagementReview, this
+// table has VARIABLE-height rows (inline expansion). The virtualizer
+// uses `estimateSize` only for unmeasured rows; once a row has
+// rendered, `measureElement` records its real size and the
+// virtualizer uses that. Subsequent expansions trigger re-measurement
+// via the underlying ResizeObserver.
+const ALL_REVIEWS_ESTIMATE_ROW_PX = 48;
+
+const ALL_REVIEWS_SCROLL_HEIGHT_PX = 600;
+const ALL_REVIEWS_OVERSCAN = 5;
+
 function AllReviewsTab({
   reviews,
   isLoading,
@@ -420,6 +442,27 @@ function AllReviewsTab({
         return compareValues(get(a), get(b), kind, sort.direction);
       })
     : filtered;
+
+  // ── Virtualization (variable-height) ──────────────────────────────
+  // measureElement turns this into a variable-height virtualizer:
+  // estimateSize is used only for rows that haven't rendered yet;
+  // measured heights override the estimate via a ResizeObserver under
+  // the hood. When the user toggles expandedId, the affected row's
+  // outer div re-renders with the expansion panel inside, the
+  // ResizeObserver fires, the virtualizer updates its size cache and
+  // the total list height, and the scroll position stays sensible.
+  //
+  // overscan is intentionally smaller than PR #15 (5 vs 8) because
+  // measurement work is more expensive than fixed-size lookup —
+  // rendering extra rows that the user can't see costs a bit more
+  // here. Tune up if scrolling on slow devices flashes empty rows.
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: sorted.length,
+    getScrollElement: () => scrollContainerRef.current,
+    estimateSize: () => ALL_REVIEWS_ESTIMATE_ROW_PX,
+    overscan: ALL_REVIEWS_OVERSCAN,
+  });
 
   if (isLoading) {
     return (
@@ -556,108 +599,173 @@ function AllReviewsTab({
        </div>
       </div>
 
+      {/* Virtualized variable-height table.
+          - Outer div = x-scroll container (handles narrow viewports;
+            header + body scroll horizontally together via this).
+          - Header row lives outside the y-scroll container so it stays
+            pinned vertically while data scrolls below.
+          - Each data row is a single div with optional expanded panel
+            inside. measureElement records its real rendered height so
+            collapse/expand toggling correctly resizes the virtualizer's
+            total content. */}
       <div className="overflow-x-auto rounded-lg border border-border">
-        <table className="w-full text-[13px]">
-          <thead>
-            <tr className="bg-slate-50/80 border-b border-border">
-              <th className="text-left px-5 py-2.5">
+        <div
+          role="table"
+          aria-label="All annual reviews"
+          aria-rowcount={sorted.length}
+          className="text-[13px]"
+        >
+          {/* Header — non-virtualized, sticky at top of x-scroll viewport */}
+          <div role="rowgroup" className="bg-slate-50/80 border-b border-border">
+            <div
+              role="row"
+              className="grid items-center"
+              style={{ gridTemplateColumns: ALL_REVIEWS_GRID_TEMPLATE_COLUMNS }}
+            >
+              <div role="columnheader" className="text-left px-5 py-2.5">
                 <SortableHeader label="Employee" columnKey="employee_name" sort={sort} onSort={setSort} />
-              </th>
-              <th className="text-left px-4 py-2.5">
+              </div>
+              <div role="columnheader" className="text-left px-4 py-2.5">
                 <SortableHeader label="Function" columnKey="function" sort={sort} onSort={setSort} />
-              </th>
-              <th className="text-left px-4 py-2.5">
+              </div>
+              <div role="columnheader" className="text-left px-4 py-2.5">
                 <SortableHeader label="Designation" columnKey="designation" sort={sort} onSort={setSort} />
-              </th>
-              <th className="text-left px-4 py-2.5">
+              </div>
+              <div role="columnheader" className="text-left px-4 py-2.5">
                 <SortableHeader label="Cycle" columnKey="cycle_name" sort={sort} onSort={setSort} />
-              </th>
-              <th className="text-left px-4 py-2.5">
+              </div>
+              <div role="columnheader" className="text-left px-4 py-2.5">
                 <SortableHeader label="Status" columnKey="status" sort={sort} onSort={setSort} />
-              </th>
-              <th className="text-left px-4 py-2.5">
+              </div>
+              <div role="columnheader" className="text-left px-4 py-2.5">
                 <SortableHeader label="Self" columnKey="self_performance_rating" sort={sort} onSort={setSort} />
-              </th>
-              <th className="text-left px-4 py-2.5">
+              </div>
+              <div role="columnheader" className="text-left px-4 py-2.5">
                 <SortableHeader label="Mentor" columnKey="mentor_performance_rating" sort={sort} onSort={setSort} />
-              </th>
-              <th className="text-left px-4 py-2.5">
+              </div>
+              <div role="columnheader" className="text-left px-4 py-2.5">
                 <SortableHeader label="Final" columnKey="final_performance_rating" sort={sort} onSort={setSort} />
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border/50">
-            {sorted.length === 0 ? (
-              <tr>
-                <td colSpan={8} className="px-5 py-10 text-center">
-                  <p className="text-[13px] text-text-main font-medium">
-                    No matching reviews
-                  </p>
-                  <p className="text-[11px] text-text-muted mt-0.5">
-                    Try adjusting your filters or clearing the search.
-                  </p>
-                </td>
-              </tr>
-            ) : sorted.map((r) => {
-              const isExpanded = expandedId === r.id;
-              return (
-                <Fragment key={r.id}>
-                  <tr
-                    className={`cursor-pointer transition-colors ${
-                      isExpanded ? "bg-brand/5" : "hover:bg-slate-50/60"
-                    }`}
-                    onClick={() => setExpandedId(isExpanded ? null : r.id)}
-                  >
-                    <td className="px-5 py-3 font-medium text-text-main">
-                      <div className="flex items-center gap-2">
-                        <ChevronDown
-                          className={`h-4 w-4 text-text-muted shrink-0 transition-transform duration-200 ${
-                            isExpanded ? "rotate-180" : ""
-                          }`}
-                          aria-hidden="true"
-                        />
-                        {r.employee_name ?? `User #${r.user_id}`}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-text-muted">
-                      {r.function ?? "—"}
-                    </td>
-                    <td className="px-4 py-3 text-text-muted">
-                      {r.designation ?? "—"}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="text-[12px] font-semibold text-text-muted bg-slate-100 px-1.5 py-0.5 rounded">
-                        {r.cycle_name}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-text-muted capitalize">
-                      {r.status.replace("_", " ")}
-                    </td>
-                    <td className="px-4 py-3">
-                      <PerformanceRatingBadge value={r.self_performance_rating} />
-                    </td>
-                    <td className="px-4 py-3">
-                      <PerformanceRatingBadge value={r.mentor_performance_rating} />
-                    </td>
-                    <td className="px-4 py-3">
-                      <PerformanceRatingBadge value={r.final_performance_rating} />
-                    </td>
-                  </tr>
-                  {isExpanded && (
-                    <tr>
-                      <td
-                        colSpan={8}
-                        className="bg-slate-50/40 border-t border-brand/10 px-5 py-5"
+              </div>
+            </div>
+          </div>
+
+          {/* Body — either the no-matches message or the virtualized
+              scroll container. */}
+          {sorted.length === 0 ? (
+            <div className="px-5 py-10 text-center">
+              <p className="text-[13px] text-text-main font-medium">
+                No matching reviews
+              </p>
+              <p className="text-[11px] text-text-muted mt-0.5">
+                Try adjusting your filters or clearing the search.
+              </p>
+            </div>
+          ) : (
+            <div
+              ref={scrollContainerRef}
+              role="rowgroup"
+              style={{ height: ALL_REVIEWS_SCROLL_HEIGHT_PX }}
+              className="overflow-y-auto"
+            >
+              <div
+                style={{
+                  height: rowVirtualizer.getTotalSize(),
+                  position: "relative",
+                  width: "100%",
+                }}
+              >
+                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                  const r = sorted[virtualRow.index];
+                  const isExpanded = expandedId === r.id;
+                  return (
+                    <div
+                      role="row"
+                      aria-rowindex={virtualRow.index + 1}
+                      aria-expanded={isExpanded}
+                      key={r.id}
+                      // data-index is REQUIRED by measureElement — it's
+                      // how the virtualizer maps a ResizeObserver entry
+                      // back to a row index.
+                      data-index={virtualRow.index}
+                      ref={rowVirtualizer.measureElement}
+                      onClick={() => setExpandedId(isExpanded ? null : r.id)}
+                      style={{
+                        // No explicit height — measureElement reads the
+                        // natural offsetHeight after render and tells
+                        // the virtualizer the actual size.
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        width: "100%",
+                        transform: `translateY(${virtualRow.start}px)`,
+                      }}
+                      className={`cursor-pointer transition-colors border-b border-border/50 ${
+                        isExpanded ? "bg-brand/5" : "hover:bg-slate-50/60"
+                      }`}
+                    >
+                      {/* Base row (always rendered) */}
+                      <div
+                        className="grid items-center"
+                        style={{
+                          gridTemplateColumns:
+                            ALL_REVIEWS_GRID_TEMPLATE_COLUMNS,
+                        }}
                       >
-                        <ReviewNarrativePanel review={r} />
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              );
-            })}
-          </tbody>
-        </table>
+                        <div role="cell" className="px-5 py-3 font-medium text-text-main">
+                          <div className="flex items-center gap-2">
+                            <ChevronDown
+                              className={`h-4 w-4 text-text-muted shrink-0 transition-transform duration-200 ${
+                                isExpanded ? "rotate-180" : ""
+                              }`}
+                              aria-hidden="true"
+                            />
+                            {r.employee_name ?? `User #${r.user_id}`}
+                          </div>
+                        </div>
+                        <div role="cell" className="px-4 py-3 text-text-muted">
+                          {r.function ?? "—"}
+                        </div>
+                        <div role="cell" className="px-4 py-3 text-text-muted">
+                          {r.designation ?? "—"}
+                        </div>
+                        <div role="cell" className="px-4 py-3">
+                          <span className="text-[12px] font-semibold text-text-muted bg-slate-100 px-1.5 py-0.5 rounded">
+                            {r.cycle_name}
+                          </span>
+                        </div>
+                        <div role="cell" className="px-4 py-3 text-text-muted capitalize">
+                          {r.status.replace("_", " ")}
+                        </div>
+                        <div role="cell" className="px-4 py-3">
+                          <PerformanceRatingBadge value={r.self_performance_rating} />
+                        </div>
+                        <div role="cell" className="px-4 py-3">
+                          <PerformanceRatingBadge value={r.mentor_performance_rating} />
+                        </div>
+                        <div role="cell" className="px-4 py-3">
+                          <PerformanceRatingBadge value={r.final_performance_rating} />
+                        </div>
+                      </div>
+
+                      {/* Expanded narrative panel (conditional). This is
+                          INSIDE the row's outer div, so measureElement
+                          sees the row's total height grow when the
+                          panel appears and shrink when it disappears.
+                          ResizeObserver fires → virtualizer updates
+                          total size → scrollbar adjusts → other rows'
+                          translateY offsets recompute. */}
+                      {isExpanded && (
+                        <div className="bg-slate-50/40 border-t border-brand/10 px-5 py-5">
+                          <ReviewNarrativePanel review={r} />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
