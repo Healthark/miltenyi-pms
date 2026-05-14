@@ -27,7 +27,7 @@ import { AnnualReviewFunnelCard } from "@/components/dashboard/AnnualReviewFunne
 import { GoalApprovalFunnelCard } from "@/components/dashboard/GoalApprovalFunnelCard";
 import { ProjectReviewCompletionCard } from "@/components/dashboard/ProjectReviewCompletionCard";
 import { PendingActionsCard } from "@/components/dashboard/PendingActionsCard";
-import { MentorCoverageCard } from "@/components/dashboard/MentorCoverageCard";
+import { ActiveCycleWidget } from "@/components/dashboard/ActiveCycleWidget";
 
 export function HrDashboard() {
   const { user } = useAuth();
@@ -137,6 +137,30 @@ export function HrDashboard() {
         </div>
       </div>
 
+      {/* Row 1: Active Project Cycle | Active Goal Cycle — cycle
+          anchors at the top, matching the Staff/Mentor dashboards. The
+          goal cycle is hidden for Miltenyi HR since their scope
+          excludes annual goals (see header comment), so they get a
+          single full-width project cycle card instead. */}
+      <div
+        className={
+          isMiltenyiHR
+            ? "grid grid-cols-1 gap-4"
+            : "grid grid-cols-1 gap-4 md:grid-cols-2"
+        }
+      >
+        <ActiveCycleWidget
+          activeCycle={activeCycleName ?? null}
+          variant="project"
+        />
+        {!isMiltenyiHR && (
+          <ActiveCycleWidget
+            activeCycle={activeCycleName ?? null}
+            variant="goal"
+          />
+        )}
+      </div>
+
       {/* Summary grid — four progress cards in a 2×2 on the left, and
           the combined "Needs Attention" follow-up card spanning both
           rows on the right. Miltenyi HR doesn't see annual reviews or
@@ -175,7 +199,6 @@ export function HrDashboard() {
       {/* Mentor pairing health snapshot — full-width row of its own
           since it isn't FY-scoped and doesn't pair narratively with
           the summary grid above. */}
-      <MentorCoverageCard data={summary?.mentor_coverage ?? null} />
     </div>
   );
 }

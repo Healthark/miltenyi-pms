@@ -72,12 +72,18 @@ export function StaffDashboard() {
       {/* Row 1: Active Project Cycle | Active Goal Cycle — anchors at top */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         {summary ? (
-          <ActiveCycleWidget summary={summary} variant="project" />
+          <ActiveCycleWidget
+            activeCycle={summary.active_cycle}
+            variant="project"
+          />
         ) : (
           <CardSkeleton />
         )}
         {summary ? (
-          <ActiveCycleWidget summary={summary} variant="goal" />
+          <ActiveCycleWidget
+            activeCycle={summary.active_cycle}
+            variant="goal"
+          />
         ) : (
           <CardSkeleton />
         )}

@@ -1,10 +1,9 @@
 import { CalendarDays, Target } from "lucide-react";
-import type { DashboardSummary } from "@/services/dashboard.service";
 import { formatFyLabel } from "@/utils/fy";
 
 /**
  * ActiveCycleWidget — two display modes derived from the same active
- * cycle token stored in SystemSettings.
+ * cycle token (e.g. "H1 FY26-27").
  *
  *   variant="project" → "Active Project Cycle"
  *     Shows the raw cycle name ("H1 FY26-27" / "Q1 FY26-27") that
@@ -15,13 +14,14 @@ import { formatFyLabel } from "@/utils/fy";
  *     tagged to. Derived via formatFyLabel — the same helper used
  *     across goal surfaces — so the two cycle cards never drift.
  *
- * Both variants read from `summary.active_cycle`. When the org hasn't
- * configured a cycle yet, both fall back to the same neutral "Not
- * configured" state with role-appropriate copy.
+ * Callers pass the cycle string directly (from DashboardSummary on the
+ * Staff/Mentor dashboards, or from SystemSettings on the HR dashboard).
+ * When the org hasn't configured a cycle yet, both variants fall back
+ * to the same neutral "Not configured" state.
  */
 
 interface ActiveCycleWidgetProps {
-  readonly summary: DashboardSummary;
+  readonly activeCycle: string | null;
   /** Defaults to "project" to preserve the original callsite contract. */
   readonly variant?: "project" | "goal";
 }
@@ -49,13 +49,12 @@ const VARIANTS: Record<"project" | "goal", VariantCopy> = {
 };
 
 export function ActiveCycleWidget({
-  summary,
+  activeCycle,
   variant = "project",
 }: ActiveCycleWidgetProps) {
-  const { active_cycle } = summary;
   const copy = VARIANTS[variant];
   const Icon = copy.icon;
-  const value = active_cycle ? copy.resolveValue(active_cycle) : null;
+  const value = activeCycle ? copy.resolveValue(activeCycle) : null;
 
   return (
     <div className="rounded-xl border border-border bg-surface p-5 shadow-sm flex flex-col gap-4">
