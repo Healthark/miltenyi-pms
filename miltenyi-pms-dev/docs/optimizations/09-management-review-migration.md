@@ -1,6 +1,6 @@
 # 09 — ManagementReview: on-demand modal-driven queries and the rating-publish mutation
 
-> **PR:** _pending_
+> **PR:** [#26](https://github.com/Healthark/miltenyi-pms/pull/26)
 > **Files changed:** `frontend/src/lib/queryKeys.ts` (added `annualReviews.calibration()` + `annualReviews.detail(id)`), `frontend/src/pages/ManagementReview.tsx`.
 > **Headline result:** Last page-level migration done. New pattern documented: **modal-driven on-demand queries** — a query that fires only when the user opens a UI surface, replacing the imperative useEffect-on-prop-change pattern.
 

@@ -1,4 +1,6 @@
-import { useEffect, useState, Fragment } from "react";
+import { useCallback, useEffect, useState, Fragment } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/queryKeys";
 import { createPortal } from "react-dom";
 import {
   Search,
@@ -169,18 +171,20 @@ const SORT_CONFIG: Record<
 interface MenteeGoalsTabProps {
   readonly goals: TeamGoal[];
   readonly menteeName: string;
-  /** Called after an action (approve / request-changes) so the parent can re-fetch. */
-  readonly onReload: () => void;
+  /** Used to invalidate this specific mentee's detail entry after an
+   *  action. Replaces the old `onReload` callback the parent used to
+   *  pass — this component now manages its own cache invalidation. */
+  readonly menteeId: number;
 }
 
-export function MenteeGoalsTab({ goals, menteeName, onReload }: MenteeGoalsTabProps) {
+export function MenteeGoalsTab({ goals, menteeName, menteeId }: MenteeGoalsTabProps) {
   const toast = useToast();
   const snackbar = useSnackbar();
   const confirm = useConfirm();
+  const queryClient = useQueryClient();
   const { settings } = useSystemSettings();
   const cycleType = settings?.cycle_type ?? null;
 
-  const [isActing, setIsActing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [sort, setSort] = useState<SortState<MenteeGoalsSortKey> | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("table");
@@ -205,6 +209,60 @@ export function MenteeGoalsTab({ goals, menteeName, onReload }: MenteeGoalsTabPr
     setViewSelfReviewCycle(null);
   };
 
+  // ── Mutations ──────────────────────────────────────────────────────
+  // Invalidation footprint for any goal-approval change on this page:
+  //   - queryKeys.mentees.detail(menteeId)  — this mentee's detail
+  //     payload bakes goals_list directly, so updating the approval
+  //     here must invalidate that cache entry specifically (parent
+  //     MenteeDetail re-fetches and re-renders this tab with fresh
+  //     goals).
+  //   - queryKeys.goals.all                 — TeamGoalsTab's queue,
+  //     Staff's mine, HR's org. Broadcast catches all of them.
+  //   - queryKeys.dashboard.all             — dashboard counts
+  //     (mentor_goals_pending_approval, goal_approval_funnel).
+  //
+  // This is one of the few places we mix a SPECIFIC key (the per-mentee
+  // detail) with broadcast keys for sibling namespaces. The specific
+  // key is needed because the parent MenteeDetail is mounted but its
+  // query won't broadcast-invalidate from goals.all — `mentees.*` is a
+  // separate namespace.
+  const invalidateScope = useCallback(() => {
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.mentees.detail(menteeId),
+    });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.goals.all });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
+  }, [queryClient, menteeId]);
+
+  const approveGoalMutation = useMutation({
+    mutationFn: (vars: { goalId: number; ownerName: string }) =>
+      goalService.updateApproval(vars.goalId, {
+        approval_status: "approved",
+      }),
+    onSuccess: (_data, vars) => {
+      invalidateScope();
+      toast.success(`${vars.ownerName}'s goal approved.`);
+    },
+    onError: (err) => snackbar.error(getErrorMessage(err)),
+  });
+
+  const requestChangesMutation = useMutation({
+    mutationFn: (vars: { goalId: number; feedback: string }) =>
+      goalService.updateApproval(vars.goalId, {
+        approval_status: "changes_requested",
+        feedback: vars.feedback,
+      }),
+    onSuccess: () => {
+      invalidateScope();
+      setFeedbackTarget(null);
+      toast.success("Feedback sent.");
+    },
+    onError: (err) => setModalError(getErrorMessage(err)),
+  });
+
+  const isActing =
+    approveGoalMutation.isPending || requestChangesMutation.isPending;
+
   const handleApprove = async (goal: TeamGoal) => {
     const ok = await confirm({
       title: `Approve ${menteeName}'s goal?`,
@@ -213,34 +271,24 @@ export function MenteeGoalsTab({ goals, menteeName, onReload }: MenteeGoalsTabPr
       confirmText: "Approve",
     });
     if (!ok) return;
-    setIsActing(true);
-    try {
-      await goalService.updateApproval(goal.id, { approval_status: "approved" });
-      onReload();
-      toast.success(`${goal.owner_name}'s goal approved.`);
-    } catch (err) {
-      snackbar.error(getErrorMessage(err));
-    } finally {
-      setIsActing(false);
-    }
+    approveGoalMutation.mutate({
+      goalId: goal.id,
+      ownerName: goal.owner_name,
+    });
   };
 
+  // FeedbackModal awaits onSend to drive its "Saving..." spinner,
+  // so use mutateAsync + try/catch (matches the TeamGoalsTab pattern).
   const handleSendFeedback = async (feedback: string) => {
     if (!feedbackTarget) return;
-    setIsActing(true);
     setModalError("");
     try {
-      await goalService.updateApproval(feedbackTarget.id, {
-        approval_status: "changes_requested",
+      await requestChangesMutation.mutateAsync({
+        goalId: feedbackTarget.id,
         feedback,
       });
-      setFeedbackTarget(null);
-      onReload();
-      toast.success("Feedback sent.");
-    } catch (err) {
-      setModalError(getErrorMessage(err));
-    } finally {
-      setIsActing(false);
+    } catch {
+      /* handled by onError */
     }
   };
 

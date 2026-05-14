@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, Fragment } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/queryKeys";
 import { createPortal } from "react-dom";
 import {
   Users,
@@ -225,9 +227,19 @@ export function TeamGoalsTab() {
   const { settings } = useSystemSettings();
   const cycleType = settings?.cycle_type ?? null;
 
-  const [goals, setGoals] = useState<TeamGoal[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isActing, setIsActing] = useState(false);
+  const queryClient = useQueryClient();
+
+  // The mentor's goal-approval queue. Cached under
+  // queryKeys.goals.mentees() so any goal-mutation broadcast catches
+  // it. Cross-page cache sharing: when the mentor goes Staff dashboard
+  // (PR #19) -> dashboard mentor_goals_pending_approval shows the same
+  // count this query drives.
+  const teamGoalsQuery = useQuery({
+    queryKey: queryKeys.goals.mentees(),
+    queryFn: () => goalService.getTeamGoals("annual"),
+  });
+  const goals: TeamGoal[] = teamGoalsQuery.data ?? [];
+  const isLoading = teamGoalsQuery.isPending;
 
   // Filters
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -245,15 +257,134 @@ export function TeamGoalsTab() {
 
   // Bulk approve modal state
   const [bulkOpen, setBulkOpen] = useState(false);
-  const [bulkSaving, setBulkSaving] = useState(false);
   const [bulkError, setBulkError] = useState("");
 
   // Mentor review modal state
   const [reviewGoal, setReviewGoal] = useState<TeamGoal | null>(null);
   const [reviewCycle, setReviewCycle] = useState<SelfReviewCycleHalf | null>(null);
-  const [isSavingReview, setIsSavingReview] = useState(false);
-  const [isSavingReviewDraft, setIsSavingReviewDraft] = useState(false);
   const [reviewError, setReviewError] = useState("");
+
+  // ── Mutations ──────────────────────────────────────────────────────
+  // All five goal-side mutations broadcast-invalidate the same two
+  // namespaces: ['goals'] (catches mentor's queue + Staff's mine + HR's
+  // org) and ['dashboard'] (catches mentor_goals_pending_approval +
+  // goal_approval_funnel + the various completion counts).
+  //
+  // Single helper because all five mutations share this scope —
+  // following the same DRY pattern from PR #22 (AnnualGoals).
+  const invalidateGoalsScope = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.goals.all });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
+  }, [queryClient]);
+
+  // Approve a single goal. The owner name is passed alongside the id
+  // so the success toast can be personalized without us having to
+  // look it up after the mutation resolves (the goals list might
+  // already have been refetched).
+  const approveGoalMutation = useMutation({
+    mutationFn: (vars: { goalId: number; ownerName: string }) =>
+      goalService.updateApproval(vars.goalId, {
+        approval_status: "approved",
+      }),
+    onSuccess: (_data, vars) => {
+      invalidateGoalsScope();
+      toast.success(`${vars.ownerName}'s goal approved.`);
+    },
+    onError: (err) => snackbar.error(getErrorMessage(err)),
+  });
+
+  // Request-changes flow — same endpoint as approve, different status
+  // + a feedback message. Errors go to `modalError` (the feedback
+  // modal stays open on failure); approve errors go to snackbar
+  // (no modal context).
+  const requestChangesMutation = useMutation({
+    mutationFn: (vars: { goalId: number; feedback: string }) =>
+      goalService.updateApproval(vars.goalId, {
+        approval_status: "changes_requested",
+        feedback: vars.feedback,
+      }),
+    onSuccess: () => {
+      invalidateGoalsScope();
+      setFeedbackTarget(null);
+      toast.success("Feedback sent.");
+    },
+    onError: (err) => setModalError(getErrorMessage(err)),
+  });
+
+  // Bulk approve — partial-success-aware. The response carries
+  // approved_ids + failures; we toast a summary either way and surface
+  // the first failure reason if any.
+  const bulkApproveMutation = useMutation({
+    mutationFn: (goalIds: number[]) => goalService.bulkApprove(goalIds),
+    onSuccess: (result, goalIds) => {
+      invalidateGoalsScope();
+      if (result.failures.length === 0) {
+        toast.success(
+          `Approved ${result.approved_ids.length} goal${
+            result.approved_ids.length === 1 ? "" : "s"
+          }.`,
+        );
+        setBulkOpen(false);
+      } else {
+        toast.success(
+          `Approved ${result.approved_ids.length} of ${goalIds.length} goal${
+            goalIds.length === 1 ? "" : "s"
+          }.`,
+        );
+        const firstReason =
+          result.failures[0]?.reason ?? "Some goals could not be approved.";
+        const extra =
+          result.failures.length > 1
+            ? ` (+${result.failures.length - 1} more)`
+            : "";
+        setBulkError(`${firstReason}${extra}`);
+      }
+    },
+    onError: (err) => setBulkError(getErrorMessage(err)),
+  });
+
+  // Mentor review save-draft and submit are 3-arg service calls;
+  // standard pack-into-object pattern (doc #20 part 2).
+  const saveMentorReviewDraftMutation = useMutation({
+    mutationFn: (vars: {
+      goalId: number;
+      cycleHalf: SelfReviewCycleHalf;
+      payload: GoalMentorReviewPayload;
+    }) =>
+      goalService.saveMentorReviewDraft(
+        vars.goalId,
+        vars.cycleHalf,
+        vars.payload,
+      ),
+    onSuccess: () => {
+      invalidateGoalsScope();
+      toast.success("Draft saved.");
+    },
+    onError: (err) => setReviewError(getErrorMessage(err)),
+  });
+
+  const submitMentorReviewMutation = useMutation({
+    mutationFn: (vars: {
+      goalId: number;
+      cycleHalf: SelfReviewCycleHalf;
+      payload: GoalMentorReviewPayload;
+    }) =>
+      goalService.submitMentorReview(
+        vars.goalId,
+        vars.cycleHalf,
+        vars.payload,
+      ),
+    onSuccess: () => {
+      invalidateGoalsScope();
+      closeReview();
+    },
+    onError: (err) => setReviewError(getErrorMessage(err)),
+  });
+
+  // Combined acting flag for the approve / feedback row-level UI
+  // (some row-level UI disables itself while a mutation is in flight).
+  const isActing =
+    approveGoalMutation.isPending || requestChangesMutation.isPending;
 
   const openReview = (goal: TeamGoal, half: SelfReviewCycleHalf) => {
     setReviewError("");
@@ -266,27 +397,25 @@ export function TeamGoalsTab() {
     setReviewError("");
   };
 
+  // ── Handlers (thin wrappers over mutations) ────────────────────────
+  // Review modal handlers use mutateAsync because the review form
+  // modal awaits onSubmit / onSaveDraft to drive its "Saving..." spinner.
+  // The other mutations don't have callers that need to await — plain
+  // mutate() is the right choice. See doc #03 for the pattern.
   const handleSaveReviewDraft = async (
     cycleHalf: SelfReviewCycleHalf,
     payload: GoalMentorReviewPayload,
   ) => {
     if (!reviewGoal) return;
-    setIsSavingReviewDraft(true);
     setReviewError("");
     try {
-      const updated = await goalService.saveMentorReviewDraft(
-        reviewGoal.id,
+      await saveMentorReviewDraftMutation.mutateAsync({
+        goalId: reviewGoal.id,
         cycleHalf,
         payload,
-      );
-      setGoals((prev) =>
-        prev.map((g) => (g.id === updated.id ? { ...g, ...updated } : g)),
-      );
-      toast.success("Draft saved.");
-    } catch (err) {
-      setReviewError(getErrorMessage(err));
-    } finally {
-      setIsSavingReviewDraft(false);
+      });
+    } catch {
+      /* handled by onError */
     }
   };
 
@@ -303,40 +432,17 @@ export function TeamGoalsTab() {
       confirmText: "Submit Mentor Review",
     });
     if (!ok) return;
-    setIsSavingReview(true);
     setReviewError("");
     try {
-      const updated = await goalService.submitMentorReview(
-        reviewGoal.id,
+      await submitMentorReviewMutation.mutateAsync({
+        goalId: reviewGoal.id,
         cycleHalf,
         payload,
-      );
-      setGoals((prev) =>
-        prev.map((g) => (g.id === updated.id ? { ...g, ...updated } : g)),
-      );
-      closeReview();
-    } catch (err) {
-      setReviewError(getErrorMessage(err));
-    } finally {
-      setIsSavingReview(false);
+      });
+    } catch {
+      /* handled by onError */
     }
   };
-
-  const loadGoals = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const data = await goalService.getTeamGoals("annual");
-      setGoals(data);
-    } catch {
-      // Stays empty
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadGoals();
-  }, [loadGoals]);
 
   const handleApprove = async (goal: TeamGoal) => {
     const ok = await confirm({
@@ -346,82 +452,35 @@ export function TeamGoalsTab() {
       confirmText: "Approve",
     });
     if (!ok) return;
-    setIsActing(true);
-    try {
-      const updated = await goalService.updateApproval(goal.id, {
-        approval_status: "approved",
-      });
-      setGoals((prev) =>
-        prev.map((g) => (g.id === updated.id ? { ...g, ...updated } : g)),
-      );
-      toast.success(`${goal.owner_name}'s goal approved.`);
-    } catch (err) {
-      snackbar.error(getErrorMessage(err));
-    } finally {
-      setIsActing(false);
-    }
+    approveGoalMutation.mutate({
+      goalId: goal.id,
+      ownerName: goal.owner_name,
+    });
   };
 
+  // Bulk-approve and feedback modals both await their submit
+  // callback to drive their internal "Saving..." spinner, so
+  // mutateAsync + try/catch is required (same pattern as the other
+  // modal flows in this file).
   const handleBulkApprove = async (goalIds: number[]) => {
-    setBulkSaving(true);
     setBulkError("");
     try {
-      const result = await goalService.bulkApprove(goalIds);
-      if (result.approved_ids.length > 0) {
-        const approvedSet = new Set(result.approved_ids);
-        setGoals((prev) =>
-          prev.map((g) =>
-            approvedSet.has(g.id)
-              ? { ...g, approval_status: "approved", manager_feedback: null }
-              : g,
-          ),
-        );
-      }
-      if (result.failures.length === 0) {
-        toast.success(
-          `Approved ${result.approved_ids.length} goal${
-            result.approved_ids.length === 1 ? "" : "s"
-          }.`,
-        );
-        setBulkOpen(false);
-      } else {
-        toast.success(
-          `Approved ${result.approved_ids.length} of ${goalIds.length} goal${
-            goalIds.length === 1 ? "" : "s"
-          }.`,
-        );
-        const firstReason = result.failures[0]?.reason ?? "Some goals could not be approved.";
-        const extra =
-          result.failures.length > 1
-            ? ` (+${result.failures.length - 1} more)`
-            : "";
-        setBulkError(`${firstReason}${extra}`);
-      }
-    } catch (err) {
-      setBulkError(getErrorMessage(err));
-    } finally {
-      setBulkSaving(false);
+      await bulkApproveMutation.mutateAsync(goalIds);
+    } catch {
+      /* handled by onError */
     }
   };
 
   const handleSendFeedback = async (feedback: string) => {
     if (!feedbackTarget) return;
-    setIsActing(true);
     setModalError("");
     try {
-      const updated = await goalService.updateApproval(feedbackTarget.id, {
-        approval_status: "changes_requested",
+      await requestChangesMutation.mutateAsync({
+        goalId: feedbackTarget.id,
         feedback,
       });
-      setGoals((prev) =>
-        prev.map((g) => (g.id === updated.id ? { ...g, ...updated } : g)),
-      );
-      setFeedbackTarget(null);
-      toast.success("Feedback sent.");
-    } catch (err) {
-      setModalError(getErrorMessage(err));
-    } finally {
-      setIsActing(false);
+    } catch {
+      /* handled by onError */
     }
   };
 
@@ -895,7 +954,7 @@ export function TeamGoalsTab() {
             setBulkError("");
           }}
           onSubmit={handleBulkApprove}
-          isSaving={bulkSaving}
+          isSaving={bulkApproveMutation.isPending}
           error={bulkError}
         />
       )}
@@ -909,8 +968,8 @@ export function TeamGoalsTab() {
           onClose={closeReview}
           onSubmit={handleSubmitReview}
           onSaveDraft={handleSaveReviewDraft}
-          isSaving={isSavingReview}
-          isDraftSaving={isSavingReviewDraft}
+          isSaving={submitMentorReviewMutation.isPending}
+          isDraftSaving={saveMentorReviewDraftMutation.isPending}
           error={reviewError}
         />
       )}
