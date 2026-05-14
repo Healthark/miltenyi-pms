@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo, useEffect, type ReactNode } from "react";
 import { AuthContext, type AuthContextType } from "@/contexts/AuthContext";
 import { authService, type AuthResponse } from "@/services/auth.service";
+import { clearDismissedDashboardBanners } from "@/components/dashboard/DashboardAlerts";
 
 interface AuthProviderProps {
   children: ReactNode;
@@ -51,6 +52,11 @@ export function AuthProvider({ children }: Readonly<AuthProviderProps>) {
     void authService.logout();
     localStorage.removeItem("user");
     localStorage.removeItem("csrf_token");
+    // Wipe per-session dashboard-banner dismissals so the next login
+    // sees them again. Session storage clears on browser close anyway;
+    // this covers the case where the user logs out and logs back in
+    // without restarting the browser.
+    clearDismissedDashboardBanners();
     setUser(null);
   }, []);
 

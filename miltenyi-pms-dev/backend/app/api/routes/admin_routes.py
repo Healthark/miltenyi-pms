@@ -27,7 +27,6 @@ from sqlalchemy.orm import joinedload
 
 from app.api.dependencies import DbSession, CurrentUser
 from app.core.cache import (
-    admin_settings_cache,
     functions_cache,
     designations_cache,
     invalidate_settings,
@@ -37,7 +36,15 @@ from app.core.security import get_password_hash
 from app.models.user_models import User, Role, ADMIN_ROLES, PROTECTED_USER_ROLES
 from app.models.reference_models import Function, Designation
 from app.models.system_settings_models import SystemSettings, CycleType
-from app.core.cycle_utils import get_current_cycle_info
+from app.core.cycle_utils import (
+    apply_rollover_resets,
+    extract_fy_label,
+    get_current_cycle_info,
+    resolve_today,
+)
+from app.models.annual_review_models import AnnualReview, ReviewStatus
+from app.models.goal_models import Goal, GoalType
+from sqlalchemy import func as sql_func
 from app.services.send_email import (
     is_smtp_configured,
     send_welcome_user_email,
@@ -453,10 +460,23 @@ def get_admin_settings(
                 detail="System settings have not been configured.",
             )
 
+        # active_cycle is computed on-the-fly so it never goes stale
+        # between settings saves; resolve_today honours simulated_today.
+        live_active_cycle = get_current_cycle_info(
+            resolve_today(row),
+            CycleType(row.cycle_type),
+            row.fiscal_start_month,
+        )
+        # On cycle rollover, reset the org-wide submission /
+        # visibility flags so HR opens the new cycle deliberately.
+        # `annual_goals_edit_enabled` is preserved.
+        if apply_rollover_resets(row, live_active_cycle):
+            db.commit()
+            invalidate_settings(current_user.org_id)
         return AdminSettingsResponse(
             id=row.id,
             org_id=row.org_id,
-            active_cycle=row.active_cycle_name,
+            active_cycle=live_active_cycle,
             cycle_type=row.cycle_type,
             fiscal_start_month=row.fiscal_start_month,
             goals_edit_enabled=row.goals_edit_enabled,
@@ -464,10 +484,14 @@ def get_admin_settings(
             project_ratings_visible=row.project_ratings_visible,
             annual_reviews_enabled=row.annual_reviews_enabled,
             annual_review_final_rating_visible=row.annual_review_final_rating_visible,
+            simulated_today=row.simulated_today,
+            simulation_allowed=settings.ALLOW_DATE_SIMULATION,
             updated_at=row.updated_at,
         )
 
-    return admin_settings_cache.get_or_compute(current_user.org_id, _query)
+    # Bypass the admin_settings_cache because the live active_cycle
+    # depends on today's date and a cached value would go stale.
+    return _query()
 
 
 @router.patch("/settings", response_model=AdminSettingsResponse)
@@ -484,56 +508,238 @@ def update_admin_settings(
     """
     _require_hr_any(current_user)
 
-    settings = db.query(SystemSettings).filter(
+    # Snapshot the env flag before the local `settings` variable shadows
+    # the imported config-settings module.
+    simulation_allowed = settings.ALLOW_DATE_SIMULATION
+
+    settings_row = db.query(SystemSettings).filter(
         SystemSettings.org_id == current_user.org_id,
     ).first()
 
-    if not settings:
+    if not settings_row:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="System settings have not been configured.",
         )
 
-    if settings_in.cycle_type is not None:
-        settings.cycle_type = settings_in.cycle_type
-    if settings_in.fiscal_start_month is not None:
-        settings.fiscal_start_month = settings_in.fiscal_start_month
-    if settings_in.goals_edit_enabled is not None:
-        settings.goals_edit_enabled = settings_in.goals_edit_enabled
-    if settings_in.annual_goals_edit_enabled is not None:
-        settings.annual_goals_edit_enabled = settings_in.annual_goals_edit_enabled
-    if settings_in.project_ratings_visible is not None:
-        settings.project_ratings_visible = settings_in.project_ratings_visible
-    if settings_in.annual_reviews_enabled is not None:
-        settings.annual_reviews_enabled = settings_in.annual_reviews_enabled
-    if settings_in.annual_review_final_rating_visible is not None:
-        settings.annual_review_final_rating_visible = settings_in.annual_review_final_rating_visible
-
-    # Recompute the cycle label from the (possibly updated) cadence + fiscal month
-    settings.active_cycle_name = get_current_cycle_info(
-        date.today(),
-        CycleType(settings.cycle_type),
-        settings.fiscal_start_month,
+    # simulated_today is gated behind ALLOW_DATE_SIMULATION env flag so
+    # production deployments are safe from accidental cycle-time shifts.
+    # Validate the gate before mutating anything.
+    wants_simulation_write = (
+        settings_in.simulated_today is not None
+        or bool(settings_in.clear_simulated_today)
     )
-    settings.updated_by_id = current_user.id
+    if wants_simulation_write and not simulation_allowed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Date simulation is disabled for this deployment. "
+                "Set ALLOW_DATE_SIMULATION=true on the backend to enable."
+            ),
+        )
+
+    # Apply cadence / fiscal / simulated_today changes FIRST so the
+    # rollover detection below sees the new cycle text. Other field
+    # updates (the flag overrides) come AFTER the rollover reset, so
+    # HR's intentional toggle changes in this same save aren't clobbered.
+    if settings_in.cycle_type is not None:
+        settings_row.cycle_type = settings_in.cycle_type
+    if settings_in.fiscal_start_month is not None:
+        settings_row.fiscal_start_month = settings_in.fiscal_start_month
+    if settings_in.clear_simulated_today:
+        settings_row.simulated_today = None
+    elif settings_in.simulated_today is not None:
+        settings_row.simulated_today = settings_in.simulated_today
+
+    # Cycle rollover — reset the time-bound flags before HR's explicit
+    # toggle values are applied below. Also pins
+    # `settings_row.active_cycle_name` to the fresh value.
+    fresh_cycle = get_current_cycle_info(
+        resolve_today(settings_row),
+        CycleType(settings_row.cycle_type),
+        settings_row.fiscal_start_month,
+    )
+    rollover_fired = apply_rollover_resets(settings_row, fresh_cycle)
+
+    # `annual_goals_edit_enabled` and `goals_edit_enabled` are never part
+    # of the rollover reset, so HR's overrides for them always apply.
+    if settings_in.goals_edit_enabled is not None:
+        settings_row.goals_edit_enabled = settings_in.goals_edit_enabled
+    if settings_in.annual_goals_edit_enabled is not None:
+        settings_row.annual_goals_edit_enabled = settings_in.annual_goals_edit_enabled
+
+    # The three time-bound flags: only apply HR's override when NO
+    # rollover happened this save. When a rollover fires, the UI's
+    # toggle values reflect the pre-rollover view and would otherwise
+    # silently re-enable what we just cleared. HR re-opens these
+    # deliberately in a subsequent save.
+    if not rollover_fired:
+        if settings_in.project_ratings_visible is not None:
+            settings_row.project_ratings_visible = settings_in.project_ratings_visible
+        if settings_in.annual_reviews_enabled is not None:
+            settings_row.annual_reviews_enabled = settings_in.annual_reviews_enabled
+        if settings_in.annual_review_final_rating_visible is not None:
+            settings_row.annual_review_final_rating_visible = settings_in.annual_review_final_rating_visible
+
+    settings_row.updated_by_id = current_user.id
 
     db.commit()
-    db.refresh(settings)
+    db.refresh(settings_row)
     invalidate_settings(current_user.org_id)
 
     return AdminSettingsResponse(
-        id=settings.id,
-        org_id=settings.org_id,
-        active_cycle=settings.active_cycle_name,
-        cycle_type=settings.cycle_type,
-        fiscal_start_month=settings.fiscal_start_month,
-        goals_edit_enabled=settings.goals_edit_enabled,
-        annual_goals_edit_enabled=settings.annual_goals_edit_enabled,
-        project_ratings_visible=settings.project_ratings_visible,
-        annual_reviews_enabled=settings.annual_reviews_enabled,
-        annual_review_final_rating_visible=settings.annual_review_final_rating_visible,
-        updated_at=settings.updated_at,
+        id=settings_row.id,
+        org_id=settings_row.org_id,
+        active_cycle=settings_row.active_cycle_name,
+        cycle_type=settings_row.cycle_type,
+        fiscal_start_month=settings_row.fiscal_start_month,
+        goals_edit_enabled=settings_row.goals_edit_enabled,
+        annual_goals_edit_enabled=settings_row.annual_goals_edit_enabled,
+        project_ratings_visible=settings_row.project_ratings_visible,
+        annual_reviews_enabled=settings_row.annual_reviews_enabled,
+        annual_review_final_rating_visible=settings_row.annual_review_final_rating_visible,
+        simulated_today=settings_row.simulated_today,
+        simulation_allowed=simulation_allowed,
+        updated_at=settings_row.updated_at,
     )
+
+
+@router.get("/settings/preflight")
+def settings_preflight(
+    db: DbSession,
+    current_user: CurrentUser,
+):
+    """
+    Return per-setting "in-flight" counts so the frontend can show an
+    advisory confirmation before HR flips a toggle off mid-cycle. The
+    response shape is:
+
+        {
+            "<setting_key>": {"in_flight_count": int, "warning": str | None},
+            ...
+        }
+
+    Visibility-only flags always return count 0 — they don't lock anyone
+    out, so there's nothing to warn about. The two action gates
+    (`annual_goals_edit_enabled`, `annual_reviews_enabled`) compute real
+    counts so the UI can name exactly who would be stranded.
+    """
+    _require_hr_any(current_user)
+
+    settings_row = db.query(SystemSettings).filter(
+        SystemSettings.org_id == current_user.org_id,
+    ).first()
+    if not settings_row:
+        # No settings = no in-flight work to worry about.
+        return {
+            "annual_goals_edit_enabled":          {"in_flight_count": 0, "warning": None},
+            "annual_reviews_enabled":             {"in_flight_count": 0, "warning": None},
+            "project_ratings_visible":            {"in_flight_count": 0, "warning": None},
+            "annual_review_final_rating_visible": {"in_flight_count": 0, "warning": None},
+        }
+
+    active_cycle = get_current_cycle_info(
+        resolve_today(settings_row),
+        CycleType(settings_row.cycle_type),
+        settings_row.fiscal_start_month,
+    )
+    active_fy = extract_fy_label(active_cycle)
+
+    # ── annual_goals_edit_enabled ───────────────────────────────────
+    # Count active Staff in this org with zero annual Goal rows for the
+    # active FY. They're the users who would be locked out by flipping
+    # this off mid-cycle.
+    staff_ids_subq = (
+        db.query(User.id)
+        .filter(
+            User.org_id == current_user.org_id,
+            User.role == Role.STAFF.value,
+            User.is_deleted == False,  # noqa: E712
+        )
+        .subquery()
+    )
+    goal_user_ids_subq = (
+        db.query(Goal.user_id)
+        .filter(
+            Goal.org_id == current_user.org_id,
+            Goal.goal_type == GoalType.ANNUAL.value,
+            Goal.cycle_name == active_fy,
+        )
+        .distinct()
+        .subquery()
+    )
+    staff_without_goals = (
+        db.query(sql_func.count(staff_ids_subq.c.id))
+        .filter(staff_ids_subq.c.id.notin_(db.query(goal_user_ids_subq.c.user_id)))
+        .scalar()
+        or 0
+    )
+
+    # ── annual_reviews_enabled ──────────────────────────────────────
+    # Two buckets, summed:
+    #   1. Reviews already started but not yet past the mentor stage
+    #      (draft / pending_mentor) — they can't progress while paused.
+    #   2. Active Staff with no AnnualReview row for the active FY at
+    #      all — they can't even create one while paused.
+    in_flight_reviews = (
+        db.query(sql_func.count(AnnualReview.id))
+        .filter(
+            AnnualReview.org_id == current_user.org_id,
+            AnnualReview.cycle_name == active_fy,
+            AnnualReview.status.in_([
+                ReviewStatus.DRAFT.value,
+                ReviewStatus.PENDING_MENTOR.value,
+            ]),
+        )
+        .scalar()
+        or 0
+    )
+    review_user_ids_subq = (
+        db.query(AnnualReview.user_id)
+        .filter(
+            AnnualReview.org_id == current_user.org_id,
+            AnnualReview.cycle_name == active_fy,
+        )
+        .distinct()
+        .subquery()
+    )
+    staff_without_reviews = (
+        db.query(sql_func.count(staff_ids_subq.c.id))
+        .filter(staff_ids_subq.c.id.notin_(db.query(review_user_ids_subq.c.user_id)))
+        .scalar()
+        or 0
+    )
+    review_in_flight = in_flight_reviews + staff_without_reviews
+
+    def _msg(count: int, kind: str) -> str | None:
+        if count <= 0:
+            return None
+        noun = "employee" if count == 1 else "employees"
+        verb = "hasn't" if count == 1 else "haven't"
+        if kind == "goals":
+            return (
+                f"{count} {noun} {verb} created annual goals for {active_fy} yet. "
+                f"Disabling will block them from doing so until you re-enable."
+            )
+        return (
+            f"{count} {noun} {verb} completed self-review/mentor evaluation for {active_fy}. "
+            f"Disabling will block new submissions until you re-enable."
+        )
+
+    return {
+        "annual_goals_edit_enabled": {
+            "in_flight_count": staff_without_goals,
+            "warning": _msg(staff_without_goals, "goals"),
+        },
+        "annual_reviews_enabled": {
+            "in_flight_count": review_in_flight,
+            "warning": _msg(review_in_flight, "reviews"),
+        },
+        # Visibility-only — flipping off doesn't lock anyone out, so no
+        # preflight warning is needed.
+        "project_ratings_visible":            {"in_flight_count": 0, "warning": None},
+        "annual_review_final_rating_visible": {"in_flight_count": 0, "warning": None},
+    }
 
 
 # =====================================================================

@@ -31,6 +31,7 @@ import {
 import { getErrorMessage } from "@/utils/errors";
 import { ActionItemsWidget } from "@/components/dashboard/ActionItemsWidget";
 import { ActiveCycleWidget } from "@/components/dashboard/ActiveCycleWidget";
+import { DashboardAlerts } from "@/components/dashboard/DashboardAlerts";
 import { GoalsWidget } from "@/components/dashboard/GoalsWidget";
 import { MyAnnualReviewWidget } from "@/components/dashboard/MyAnnualReviewWidget";
 
@@ -59,6 +60,10 @@ export function StaffDashboard() {
 
   return (
     <div className="space-y-6">
+      {/* State-derived alert banners (paused submissions, hidden
+          ratings, cycle rollover dismiss). */}
+      <DashboardAlerts />
+
       {/* Header */}
       <div>
         <h1 className="font-display text-xl font-semibold text-text-main">

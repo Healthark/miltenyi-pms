@@ -66,6 +66,14 @@ class User(Base):
     # "light" so existing users get the historical appearance until they
     # opt into dark mode via the topbar toggle.
     theme_preference = Column(String, nullable=False, default="light", server_default="light")
+    # The active cycle string this user last acknowledged on their
+    # dashboard. When it diverges from the org's current active cycle,
+    # the dashboard renders a "cycle rolled over to X" banner; clicking
+    # dismiss bumps this column to the current cycle so the banner
+    # disappears for that user. Null until the user dismisses for the
+    # first time — existing users see the first banner on their next
+    # dashboard visit.
+    last_seen_cycle = Column(String, nullable=True)
     is_deleted = Column(Boolean, default=False)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())

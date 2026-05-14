@@ -36,6 +36,10 @@ export interface SystemSettingsResponse {
    *  `cycle_window_override` and unlocks the calendar-gated frontend
    *  menus so stakeholders can drive the whole cycle in one session. */
   cycle_window_override: boolean;
+  /** Demo / QA date simulation. ISO date string when HR has pinned a
+   *  fake "today" for the system; null otherwise. The app shell shows
+   *  an amber banner whenever this is set. */
+  simulated_today: string | null;
   updated_by_id: number | null;
   created_at: string;
   updated_at: string | null;

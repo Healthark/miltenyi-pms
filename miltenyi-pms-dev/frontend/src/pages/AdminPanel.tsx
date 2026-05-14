@@ -56,6 +56,15 @@ export default function AdminPanel() {
   const [annualGoalsEditEnabled, setAnnualGoalsEditEnabled] = useState(false);
   const [projectRatingsVisible, setProjectRatingsVisible] = useState(false);
   const [annualReviewFinalRatingVisible, setAnnualReviewFinalRatingVisible] = useState(false);
+  // Dev/QA date simulation. simulatedToday is an ISO date string (or
+  // empty when unset). simulationAllowed mirrors the backend's env
+  // flag so the field hides itself outside dev/staging.
+  const [simulatedToday, setSimulatedToday] = useState<string>("");
+  const [simulationAllowed, setSimulationAllowed] = useState(false);
+  // Tracks whether the next save should send `clear_simulated_today`
+  // — set when HR clicks Clear so the PATCH explicitly drops the
+  // stored value (PATCH semantics treat omission as "leave unchanged").
+  const [clearSimulatedTodayPending, setClearSimulatedTodayPending] = useState(false);
 
   const { refreshSettings } = useSystemSettings();
   const toast = useToast();
@@ -87,6 +96,9 @@ export default function AdminPanel() {
       setAnnualGoalsEditEnabled(settingsData.annual_goals_edit_enabled ?? false);
       setProjectRatingsVisible(settingsData.project_ratings_visible ?? false);
       setAnnualReviewFinalRatingVisible(settingsData.annual_review_final_rating_visible ?? false);
+      setSimulatedToday(settingsData.simulated_today ?? "");
+      setSimulationAllowed(settingsData.simulation_allowed ?? false);
+      setClearSimulatedTodayPending(false);
     } catch {
       // Errors handled per-operation below
     } finally {
@@ -202,6 +214,14 @@ export default function AdminPanel() {
         project_ratings_visible: projectRatingsVisible,
         annual_review_final_rating_visible: annualReviewFinalRatingVisible,
       };
+      // Simulated-today payload: only include when we have something to
+      // say. Empty string + no clear-pending means "leave unchanged"
+      // (PATCH semantics). A pending clear sends the explicit signal.
+      if (clearSimulatedTodayPending) {
+        payload.clear_simulated_today = true;
+      } else if (simulatedToday) {
+        payload.simulated_today = simulatedToday;
+      }
       await adminService.updateSettings(payload);
       // Re-fetch from DB so local state always reflects what was actually persisted.
       const fresh = await adminService.getSettings();
@@ -212,6 +232,9 @@ export default function AdminPanel() {
       setAnnualGoalsEditEnabled(fresh.annual_goals_edit_enabled ?? false);
       setProjectRatingsVisible(fresh.project_ratings_visible ?? false);
       setAnnualReviewFinalRatingVisible(fresh.annual_review_final_rating_visible ?? false);
+      setSimulatedToday(fresh.simulated_today ?? "");
+      setSimulationAllowed(fresh.simulation_allowed ?? false);
+      setClearSimulatedTodayPending(false);
       await refreshSettings();
       toast.success("Configuration saved.");
     } catch (err) {
@@ -332,6 +355,16 @@ export default function AdminPanel() {
             onProjectRatingsVisibleChange={setProjectRatingsVisible}
             annualReviewFinalRatingVisible={annualReviewFinalRatingVisible}
             onAnnualReviewFinalRatingVisibleChange={setAnnualReviewFinalRatingVisible}
+            simulatedToday={simulatedToday || null}
+            simulationAllowed={simulationAllowed}
+            onSimulatedTodayChange={(date) => {
+              setSimulatedToday(date);
+              setClearSimulatedTodayPending(false);
+            }}
+            onClearSimulatedToday={() => {
+              setSimulatedToday("");
+              setClearSimulatedTodayPending(true);
+            }}
             onSave={handleSaveSettings}
             isSaving={isSaving}
           />

@@ -9,7 +9,7 @@ via a computed field so neither side needs to change.
 
 from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, date
 
 
 # ── Reference Data (Dropdowns) ───────────────────────────────────────
@@ -106,6 +106,13 @@ class AdminSettingsResponse(BaseModel):
     project_ratings_visible: bool
     annual_reviews_enabled: bool
     annual_review_final_rating_visible: bool
+    # Dev / QA escape hatch. When set, the system treats this as today
+    # for every cycle-determination and review-window check.
+    simulated_today: Optional[date] = None
+    # Tells the UI whether the date-simulation field should be shown at
+    # all. Mirrors the backend's ALLOW_DATE_SIMULATION env flag — the
+    # field stays hidden (and writes are rejected) when False.
+    simulation_allowed: bool = False
     updated_at: Optional[datetime] = None
 
 
@@ -118,3 +125,11 @@ class AdminSettingsUpdate(BaseModel):
     project_ratings_visible: Optional[bool] = None
     annual_reviews_enabled: Optional[bool] = None
     annual_review_final_rating_visible: Optional[bool] = None
+    # Use the sentinel `Optional[date]` plus the per-request `clear`
+    # convention: pass `null` to clear an existing simulated_today, or
+    # a real date to set one. Omit entirely to leave unchanged.
+    simulated_today: Optional[date] = None
+    # Companion flag — when True, the patch wants to clear the
+    # `simulated_today` value (since omitting the key is "leave
+    # unchanged" in PATCH semantics, we need an explicit clear signal).
+    clear_simulated_today: Optional[bool] = None

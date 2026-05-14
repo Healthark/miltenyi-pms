@@ -43,6 +43,13 @@ export interface SystemSettings {
   project_ratings_visible: boolean;
   annual_reviews_enabled: boolean;
   annual_review_final_rating_visible: boolean;
+  /** ISO date string. Non-null when HR has pinned a simulated "today"
+   *  for demo / QA purposes. The whole app shows an amber banner when set. */
+  simulated_today: string | null;
+  /** Mirrors the backend's ALLOW_DATE_SIMULATION env flag. When false,
+   *  the simulated_today field is hidden from the System Settings UI
+   *  and PATCHing a non-null value is rejected with 400. */
+  simulation_allowed: boolean;
   updated_at: string | null;
 }
 
@@ -54,6 +61,26 @@ export interface AdminSettingsUpdatePayload {
   project_ratings_visible?: boolean;
   annual_reviews_enabled?: boolean;
   annual_review_final_rating_visible?: boolean;
+  /** ISO date string to set as the simulated "today". Send null + the
+   *  companion `clear_simulated_today: true` to clear an existing
+   *  value (PATCH semantics treat omission as "leave unchanged"). */
+  simulated_today?: string | null;
+  clear_simulated_today?: boolean;
+}
+
+export interface SettingsPreflightEntry {
+  in_flight_count: number;
+  warning: string | null;
+}
+
+/** Map of setting key → in-flight count + warning copy. Returned by
+ *  GET /admin/settings/preflight; the UI consults this before flipping a
+ *  toggle off so HR can confirm they're not stranding in-flight users. */
+export interface SettingsPreflight {
+  annual_goals_edit_enabled: SettingsPreflightEntry;
+  annual_reviews_enabled: SettingsPreflightEntry;
+  project_ratings_visible: SettingsPreflightEntry;
+  annual_review_final_rating_visible: SettingsPreflightEntry;
 }
 
 // ---------------------------------------------------------------------------
@@ -139,6 +166,13 @@ export const adminService = {
 
   updateSettings: async (payload: AdminSettingsUpdatePayload): Promise<SystemSettings> => {
     const res = await apiClient.patch<SystemSettings>("/admin/settings", payload);
+    return res.data;
+  },
+
+  /** Per-setting "in-flight count" check, used to power the confirm
+   *  modal that warns HR before they freeze users mid-cycle. */
+  getSettingsPreflight: async (): Promise<SettingsPreflight> => {
+    const res = await apiClient.get<SettingsPreflight>("/admin/settings/preflight");
     return res.data;
   },
 };

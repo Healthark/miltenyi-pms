@@ -17,8 +17,13 @@ from enum import Enum
 from fastapi import APIRouter, HTTPException, status
 
 from app.api.dependencies import DbSession, CurrentUser
-from app.core.cache import invalidate_settings, system_settings_cache
-from app.models.system_settings_models import SystemSettings
+from app.core.cache import invalidate_settings
+from app.core.cycle_utils import (
+    apply_rollover_resets,
+    get_current_cycle_info,
+    resolve_today,
+)
+from app.models.system_settings_models import SystemSettings, CycleType
 from app.schemas.system_settings_schemas import (
     SystemSettingsCreate,
     SystemSettingsResponse,
@@ -40,24 +45,38 @@ def get_system_settings(
     because the Topbar component needs to display the active cycle name on every page.
     Tenant isolation is still enforced — you only ever see your own org's settings.
 
-    Cached per-org via app.core.cache.system_settings_cache. Invalidated on every
-    write to SystemSettings (POST/PATCH here and admin PATCH /admin/settings) so a
-    save reflects immediately rather than waiting for the TTL.
+    Not cached — the active cycle is computed on the fly from today's
+    date, so a stale cache would re-introduce the pre-change staleness
+    bug. Per-request SELECT is cheap (single indexed row).
     """
-    def _query() -> SystemSettingsResponse:
-        row = db.query(SystemSettings).filter(
-            SystemSettings.org_id == current_user.org_id
-        ).first()
+    row = db.query(SystemSettings).filter(
+        SystemSettings.org_id == current_user.org_id
+    ).first()
 
-        if not row:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="System settings have not been configured for this organization."
-            )
+    if not row:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="System settings have not been configured for this organization."
+        )
 
-        return SystemSettingsResponse.model_validate(row, from_attributes=True)
+    # Compute the active cycle on the fly so it never goes stale between
+    # admin saves. resolve_today honours simulated_today so QA / demos
+    # see a consistent cycle string everywhere.
+    fresh_cycle = get_current_cycle_info(
+        resolve_today(row),
+        CycleType(row.cycle_type),
+        row.fiscal_start_month,
+    )
+    # Auto-reset visibility / submission flags on cycle rollover so HR
+    # opens each cycle deliberately. The first read after a rollover
+    # commits the reset; subsequent reads see no change.
+    if apply_rollover_resets(row, fresh_cycle):
+        db.commit()
+        invalidate_settings(current_user.org_id)
 
-    return system_settings_cache.get_or_compute(current_user.org_id, _query)
+    response = SystemSettingsResponse.model_validate(row, from_attributes=True)
+    response.active_cycle_name = fresh_cycle
+    return response
 
 
 @router.post(

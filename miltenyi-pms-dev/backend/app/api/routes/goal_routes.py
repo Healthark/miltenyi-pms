@@ -50,6 +50,7 @@ from app.core.cycle_utils import (
     cycles_before,
     get_goal_cycle_name,
     is_review_window_open,
+    resolve_today,
 )
 
 router = APIRouter()
@@ -790,7 +791,7 @@ def submit_goal_self_review(
             detail="Goal has no fiscal year on record; cannot submit reviews.",
         )
     if not is_review_window_open(
-        half, fy_year, date.today(), settings.fiscal_start_month,
+        half, fy_year, resolve_today(settings), settings.fiscal_start_month,
         override=settings.cycle_window_override,
     ):
         raise HTTPException(
@@ -879,7 +880,7 @@ def save_goal_self_review_draft(
             detail="Goal has no fiscal year on record; cannot draft reviews.",
         )
     if not is_review_window_open(
-        half, fy_year, date.today(), settings.fiscal_start_month,
+        half, fy_year, resolve_today(settings), settings.fiscal_start_month,
         override=settings.cycle_window_override,
     ):
         raise HTTPException(
@@ -977,7 +978,7 @@ def submit_goal_mentor_review(
             detail="Goal has no fiscal year on record; cannot submit reviews.",
         )
     if not is_review_window_open(
-        half, fy_year, date.today(), settings.fiscal_start_month,
+        half, fy_year, resolve_today(settings), settings.fiscal_start_month,
         override=settings.cycle_window_override,
     ):
         raise HTTPException(
@@ -1076,7 +1077,7 @@ def save_goal_mentor_review_draft(
             detail="Goal has no fiscal year on record; cannot draft reviews.",
         )
     if not is_review_window_open(
-        half, fy_year, date.today(), settings.fiscal_start_month,
+        half, fy_year, resolve_today(settings), settings.fiscal_start_month,
         override=settings.cycle_window_override,
     ):
         raise HTTPException(

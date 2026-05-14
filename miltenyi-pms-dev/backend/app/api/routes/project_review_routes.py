@@ -27,7 +27,12 @@ from fastapi import APIRouter, HTTPException, status
 from sqlalchemy.orm import joinedload
 
 from app.api.dependencies import DbSession, CurrentUser
-from app.core.cycle_utils import cycle_date_range, parse_cycle_name
+from app.core.cycle_utils import (
+    cycle_date_range,
+    parse_cycle_name,
+    get_current_cycle_info,
+    resolve_today,
+)
 from app.models.project_models import (
     Project, ProjectAssignment, PROJECT_STATUS_COMPLETED,
 )
@@ -35,7 +40,7 @@ from app.models.project_review_models import (
     ProjectReview, ProjectReviewStatus,
     ProjectReviewEvaluator, EvaluatorStatus,
 )
-from app.models.system_settings_models import SystemSettings
+from app.models.system_settings_models import SystemSettings, CycleType
 from app.models.user_models import User, ADMIN_ROLES
 from app.models.reference_models import Function, Designation
 from app.models.role_expectation_models import RoleExpectation
@@ -83,19 +88,34 @@ def _pm_review_has_draft_content(review: ProjectReview) -> bool:
     return False
 
 
+def _compute_active_cycle_name(settings: SystemSettings) -> str:
+    """Derive the canonical active cycle name from settings + today.
+
+    Reads the date through `resolve_today` so a simulated_today shifts
+    cycles. The stored `active_cycle_name` column is treated as a cache
+    populated on settings save; this function always returns a fresh
+    value so it can't stale between admin saves.
+    """
+    return get_current_cycle_info(
+        resolve_today(settings),
+        CycleType(settings.cycle_type),
+        settings.fiscal_start_month,
+    )
+
+
 def _get_active_cycle(db: DbSession, org_id: int) -> str:
-    """Return the admin-configured active cycle name from SystemSettings."""
+    """Return the org's canonical active cycle name, computed fresh."""
     settings = db.query(SystemSettings).filter(
         SystemSettings.org_id == org_id
     ).first()
 
-    if not settings or not settings.active_cycle_name:
+    if not settings:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No active performance cycle configured.",
         )
 
-    return settings.active_cycle_name
+    return _compute_active_cycle_name(settings)
 
 
 def _get_fiscal_start_month(db: DbSession, org_id: int) -> int:
@@ -104,6 +124,58 @@ def _get_fiscal_start_month(db: DbSession, org_id: int) -> int:
         SystemSettings.org_id == org_id
     ).first()
     return settings.fiscal_start_month if settings else 4
+
+
+def _get_settings_row(db: DbSession, org_id: int) -> Optional[SystemSettings]:
+    """Return the org's SystemSettings row, or None if not yet configured.
+
+    Used by rating-visibility gating so batch endpoints can look settings
+    up once and pass to each response builder rather than querying per row.
+    """
+    return db.query(SystemSettings).filter(
+        SystemSettings.org_id == org_id
+    ).first()
+
+
+def _redacted_rating(
+    review: ProjectReview,
+    viewer: User,
+    settings: Optional[SystemSettings],
+    active_cycle_name: Optional[str] = None,
+) -> Optional[int]:
+    """Decide whether `viewer` is allowed to see `review.performance_group`.
+
+    Returns the rating when any of these holds:
+      - The review is from a **past cycle**. Once a cycle has rolled
+        over the org-wide hide-toggle no longer applies — historical
+        ratings must stay visible regardless of the flag.
+      - The org-wide `project_ratings_visible` flag is True, OR
+      - The viewer is HR (HR_MyOrg / HR_Miltenyi — HR sees ratings any
+        time, that's the point of the override), OR
+      - The viewer authored the rating themselves (a PM looking at their
+        own submitted reviews should always see what they entered).
+
+    Otherwise returns None so the API payload genuinely doesn't contain
+    the rating — the frontend's hide-toggle was previously the only gate,
+    which a curious user could bypass via DevTools.
+
+    `active_cycle_name` should be the canonical "right now" cycle string
+    (e.g. `"Q1 FY26-27"`). Callers can compute it once per request via
+    `_compute_active_cycle_name(settings)` and pass it to every review.
+    """
+    is_current_cycle = (
+        active_cycle_name is not None and review.cycle == active_cycle_name
+    )
+    if not is_current_cycle:
+        # Past (or future-via-override) cycle — toggle never applies.
+        return review.performance_group
+
+    flag_on = bool(settings and settings.project_ratings_visible)
+    is_admin = viewer.role in ADMIN_ROLES
+    is_reviewer = review.reviewer_id == viewer.id
+    if flag_on or is_admin or is_reviewer:
+        return review.performance_group
+    return None
 
 
 def _assignment_active_for_cycle(
@@ -139,16 +211,28 @@ def _assignment_active_for_cycle(
 def _build_review_response(
     review: ProjectReview,
     db: DbSession,
-    viewer_user_id: Optional[int] = None,
+    viewer: User,
+    settings: Optional[SystemSettings] = None,
 ) -> ProjectReviewResponse:
     """
     Convert a ProjectReview ORM row to its API response shape.
 
-    `viewer_user_id` is used to decide whether to include in-progress
-    secondary-evaluator drafts: an evaluator can see their own draft (so
-    reopening the modal pre-populates), but other viewers (PM, mentor,
-    mentee, admin) only see submitted impact statements.
+    `viewer` drives two visibility decisions:
+      1. In-progress secondary-evaluator drafts are included only for
+         their own author — other viewers (PM, mentor, mentee, admin)
+         only see submitted impact statements.
+      2. `performance_group` is redacted (returned as None) when the
+         org-wide project_ratings_visible flag is off AND the viewer is
+         not HR AND the viewer didn't author the rating themselves.
+
+    `settings` is optional — batch callers should pre-fetch the row once
+    and pass it in to avoid N+1 queries; single-response callers can
+    omit and let this helper fetch it.
     """
+    if settings is None:
+        settings = _get_settings_row(db, viewer.org_id)
+    active_cycle = _compute_active_cycle_name(settings) if settings else None
+    viewer_user_id = viewer.id
     employee = db.query(User).filter(User.id == review.user_id).first()
     reviewer = db.query(User).filter(User.id == review.reviewer_id).first() if review.reviewer_id else None
     project = db.query(Project).filter(Project.id == review.project_id).first()
@@ -202,7 +286,7 @@ def _build_review_response(
         comment_communication=review.comment_communication,
         comment_mentoring=review.comment_mentoring,
         comment_competency_skills=review.comment_competency_skills,
-        performance_group=review.performance_group,
+        performance_group=_redacted_rating(review, viewer, settings, active_cycle),
         impact_statement=review.impact_statement,
         secondary_evaluations=secondary_responses,
         created_at=review.created_at,
@@ -233,6 +317,7 @@ def get_my_projects(
     """
     current_cycle = _get_active_cycle(db, current_user.org_id)
     fiscal_start = _get_fiscal_start_month(db, current_user.org_id)
+    settings_row = _get_settings_row(db, current_user.org_id)
 
     assignments = (
         db.query(ProjectAssignment)
@@ -286,7 +371,9 @@ def get_my_projects(
                 assignment_role=a.assignment_role,
                 function_name=func_obj.name if func_obj else None,
                 review_status=review.status,
-                performance_group=review.performance_group,
+                performance_group=_redacted_rating(
+                    review, current_user, settings_row, current_cycle,
+                ),
                 pm_name=pm_user.full_name if pm_user else None,
                 cycle=review.cycle,
             ))
@@ -345,6 +432,7 @@ def get_pm_evaluation_queue(
     """
     active_cycle = _get_active_cycle(db, current_user.org_id)
     fiscal_start = _get_fiscal_start_month(db, current_user.org_id)
+    settings_row = _get_settings_row(db, current_user.org_id)
 
     # Find projects where current user is the PM (project-level FK).
     # Skip completed projects — past reviews remain editable through the
@@ -422,7 +510,9 @@ def get_pm_evaluation_queue(
                     designation_name=desig.name if desig else None,
                     assigned_date=ta.assigned_date,
                     review_status=review.status,
-                    performance_group=review.performance_group,
+                    performance_group=_redacted_rating(
+                        review, current_user, settings_row, active_cycle,
+                    ),
                     cycle=review.cycle,
                     has_draft_content=_pm_review_has_draft_content(review),
                 ))
@@ -620,7 +710,7 @@ def submit_pm_evaluation(
     db.commit()
     db.refresh(review)
 
-    return _build_review_response(review, db, viewer_user_id=current_user.id)
+    return _build_review_response(review, db, viewer=current_user)
 
 
 @router.patch("/{project_id}/evaluate/{user_id}/draft", response_model=ProjectReviewResponse)
@@ -730,7 +820,7 @@ def save_pm_evaluation_draft(
 
     db.commit()
     db.refresh(review)
-    return _build_review_response(review, db, viewer_user_id=current_user.id)
+    return _build_review_response(review, db, viewer=current_user)
 
 
 # =====================================================================
@@ -781,7 +871,8 @@ def get_secondary_evaluation_queue(
         .all()
     )
 
-    return [_build_review_response(r, db, viewer_user_id=current_user.id) for r in reviews]
+    settings_row = _get_settings_row(db, current_user.org_id)
+    return [_build_review_response(r, db, viewer=current_user, settings=settings_row) for r in reviews]
 
 
 # =====================================================================
@@ -828,7 +919,8 @@ def get_mentees_project_reviews(
         .all()
     )
 
-    return [_build_review_response(r, db, viewer_user_id=current_user.id) for r in reviews]
+    settings_row = _get_settings_row(db, current_user.org_id)
+    return [_build_review_response(r, db, viewer=current_user, settings=settings_row) for r in reviews]
 
 
 @router.post("/{review_id}/secondary", response_model=SecondaryEvalResponse, status_code=status.HTTP_201_CREATED)
@@ -1072,7 +1164,8 @@ def get_all_reviews(
         .all()
     )
 
-    return [_build_review_response(r, db, viewer_user_id=current_user.id) for r in reviews]
+    settings_row = _get_settings_row(db, current_user.org_id)
+    return [_build_review_response(r, db, viewer=current_user, settings=settings_row) for r in reviews]
 
 
 # =====================================================================
@@ -1099,7 +1192,9 @@ def get_management_overview(
             detail="HR only.",
         )
 
-    resolved_cycle = cycle if cycle else _get_active_cycle(db, current_user.org_id)
+    active_cycle = _get_active_cycle(db, current_user.org_id)
+    resolved_cycle = cycle if cycle else active_cycle
+    settings_row = _get_settings_row(db, current_user.org_id)
 
     # Single query: projects + assignments + users + functions
     projects = (
@@ -1153,7 +1248,9 @@ def get_management_overview(
                 assignment_role=a.assignment_role,
                 function_name=a.function.name if a.function else None,
                 review_status=review_status,
-                performance_group=review.performance_group if review else None,
+                performance_group=_redacted_rating(
+                    review, current_user, settings_row, active_cycle,
+                ) if review else None,
             ))
 
         if members:
@@ -1221,7 +1318,7 @@ def update_review(
     db.commit()
     db.refresh(review)
 
-    return _build_review_response(review, db, viewer_user_id=current_user.id)
+    return _build_review_response(review, db, viewer=current_user)
 
 
 @router.get("/{review_id}", response_model=ProjectReviewResponse)
@@ -1301,4 +1398,4 @@ def get_review(
             detail="Your review has not been completed yet.",
         )
 
-    return _build_review_response(review, db, viewer_user_id=current_user.id)
+    return _build_review_response(review, db, viewer=current_user)
