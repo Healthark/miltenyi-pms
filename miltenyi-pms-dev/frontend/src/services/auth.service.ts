@@ -23,6 +23,11 @@ export interface SessionClaims {
   // Saved UI theme — "light" | "dark". The frontend applies this at
   // login so the user lands in the appearance they last picked.
   theme_preference: ThemePreference;
+  // Active cycle this user last dismissed on their dashboard. When it
+  // diverges from `settings.active_cycle_name`, the dashboard shows a
+  // "cycle rolled over" banner; click dismiss bumps this to the
+  // current cycle. Null until the user dismisses for the first time.
+  last_seen_cycle: string | null;
 }
 
 export type ThemePreference = "light" | "dark";
@@ -89,6 +94,18 @@ export const authService = {
     const response = await apiClient.patch<SessionClaims>("/auth/me/theme", {
       theme_preference: theme,
     });
+    return response.data;
+  },
+
+  /**
+   * Stamp the user's `last_seen_cycle` to the current active cycle so
+   * the dashboard's "cycle rolled over" banner disappears for them.
+   * Returns refreshed session claims for the caller to refresh state.
+   */
+  dismissCycleBanner: async (): Promise<SessionClaims> => {
+    const response = await apiClient.post<SessionClaims>(
+      "/auth/me/dismiss-cycle-banner",
+    );
     return response.data;
   },
 };
