@@ -1,6 +1,6 @@
 # 18 — Virtualization arc complete 🏁: AnnualGoals AllGoalsTab
 
-> **PR:** _pending_
+> **PR:** [#35](https://github.com/Healthark/miltenyi-pms/pull/35)
 > **Files changed:** `frontend/src/pages/AnnualGoals.tsx` only.
 > **Headline result:** Final virtualization target — the largest and most structurally complex of the four. Per-user groups with sub-header + N goal rows per expansion. After this PR **every HR-scale list in the codebase is virtualized**. Bundle: +0.51 KB gzip on the AnnualGoals chunk.
 
