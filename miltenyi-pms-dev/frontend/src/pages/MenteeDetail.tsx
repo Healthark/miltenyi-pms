@@ -355,7 +355,7 @@ export function MenteeDetail() {
                 <MenteeGoalsTab
                   goals={data.goals_list}
                   menteeName={data.full_name}
-                  onReload={reloadDetail}
+                  menteeId={menteeId}
                 />
               )}
               {activeTab === "summary" && (
