@@ -24,17 +24,12 @@
  * own skeleton in place — the grid is stable from first paint.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useSnackbar } from "@/hooks/useSnackbar";
-import {
-  dashboardService,
-  type DashboardSummary,
-} from "@/services/dashboard.service";
-import {
-  menteeService,
-  type MenteeSummary,
-} from "@/services/mentee.service";
+import { dashboardService } from "@/services/dashboard.service";
+import { menteeService } from "@/services/mentee.service";
 import { getErrorMessage } from "@/utils/errors";
 import { ActiveCycleWidget } from "@/components/dashboard/ActiveCycleWidget";
 import { PendingMentorWorkWidget } from "@/components/dashboard/PendingMentorWorkWidget";
@@ -47,38 +42,35 @@ export function MentorDashboard() {
   const { user } = useAuth();
   const snackbar = useSnackbar();
 
-  const [summary, setSummary] = useState<DashboardSummary | null>(null);
-  const [mentees, setMentees] = useState<MenteeSummary[] | null>(null);
+  // Two independent queries — they run in parallel (TanStack Query does
+  // not serialise them). Both share global defaults from queryClient
+  // (30s staleTime, 5min gcTime, refetch-on-focus).
+  //
+  // Note ['dashboard', 'summary'] matches StaffDashboard's key on purpose:
+  // a Mentor who also lands on /dashboard sees the same cached entry,
+  // and any future mutation that invalidates ['dashboard'] refreshes
+  // BOTH variants at once.
+  const { data: summary, error: summaryError } = useQuery({
+    queryKey: ["dashboard", "summary"],
+    queryFn: dashboardService.getSummary,
+  });
+
+  const { data: mentees, error: menteesError } = useQuery({
+    queryKey: ["mentees", "summaries"],
+    queryFn: menteeService.getSummaries,
+  });
+
+  // One snackbar effect per query: keeps each query's error surfacing
+  // independent. If both queries fail in the same render, both toasts
+  // fire — which is what the user wants (they need to know both
+  // resources are broken, not just whichever errored first).
+  useEffect(() => {
+    if (summaryError) snackbar.error(getErrorMessage(summaryError));
+  }, [summaryError, snackbar]);
 
   useEffect(() => {
-    let cancelled = false;
-    dashboardService
-      .getSummary()
-      .then((res) => {
-        if (!cancelled) setSummary(res);
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) snackbar.error(getErrorMessage(err));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [snackbar]);
-
-  useEffect(() => {
-    let cancelled = false;
-    menteeService
-      .getSummaries()
-      .then((res) => {
-        if (!cancelled) setMentees(res);
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) snackbar.error(getErrorMessage(err));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [snackbar]);
+    if (menteesError) snackbar.error(getErrorMessage(menteesError));
+  }, [menteesError, snackbar]);
 
   const firstName = user?.full_name?.split(" ")[0] ?? "there";
 
@@ -119,9 +111,14 @@ export function MentorDashboard() {
       </div>
 
       {/* Row 2: Mentee Goal Funnel | Mentee Annual Review Funnel */}
+      {/* useQuery returns `undefined` for not-yet-loaded data; the
+          widgets predate the migration and were typed for `null` as
+          their loading sentinel. The `?? null` here is the smallest
+          possible bridge — fixing it "properly" means changing every
+          dashboard widget's prop type, which is a follow-up cleanup. */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <MenteeGoalFunnelCard mentees={mentees} />
-        <MenteeReviewFunnelCard mentees={mentees} />
+        <MenteeGoalFunnelCard mentees={mentees ?? null} />
+        <MenteeReviewFunnelCard mentees={mentees ?? null} />
       </div>
 
       {/* Row 3: Pending Mentor Work (col-span-2) | My Mentees count */}

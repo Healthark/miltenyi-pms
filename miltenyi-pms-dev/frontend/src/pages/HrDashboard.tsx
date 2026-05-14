@@ -13,10 +13,8 @@
  */
 
 import { useEffect, useState } from "react";
-import {
-  dashboardService,
-  type HrDashboardSummary,
-} from "@/services/dashboard.service";
+import { useQuery } from "@tanstack/react-query";
+import { dashboardService } from "@/services/dashboard.service";
 import { useAuth } from "@/hooks/useAuth";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
 import { useSnackbar } from "@/hooks/useSnackbar";
@@ -41,8 +39,6 @@ export function HrDashboard() {
   // are hidden for them.
   const isMiltenyiHR = user?.role === "HR_Miltenyi";
 
-  const [summary, setSummary] = useState<HrDashboardSummary | null>(null);
-
   // Active FY drives the picker's default selection. Read straight from
   // settings since it's needed during render. Settings load is async, so
   // this is null on the first paint and the picker stays disabled until
@@ -60,16 +56,27 @@ export function HrDashboard() {
     setSelectedFy(activeFyStart);
   }
 
-  // Reset the summary to its skeleton state the moment the FY changes,
-  // *before* the next effect tick fires. Doing this with a during-render
-  // compare keeps the loading transition synchronous (no flash of stale
-  // data) without triggering the cascading-renders ESLint warning that
-  // setState-inside-useEffect would.
-  const [trackedFy, setTrackedFy] = useState<number | null>(null);
-  if (trackedFy !== selectedFy) {
-    setTrackedFy(selectedFy);
-    setSummary(null);
-  }
+  // The FY is part of the queryKey, so switching the picker from
+  // FY26-27 to FY25-26 transparently swaps cache entries:
+  //   - First switch to FY25-26: data is undefined (skeleton), fetch fires
+  //   - Switch back to FY26-27: cache hit, data renders instantly, silent
+  //     background refetch confirms freshness
+  //   - Each FY's data is independently cached and gc'd (5min default)
+  //
+  // We no longer need the `trackedFy` state machine that wiped `summary`
+  // to null on FY change — useQuery returns `undefined` for `data` while
+  // the new key's request is in flight, which the JSX below already
+  // treats as "show skeleton". One state, one source of truth.
+  //
+  // `enabled` gates the fetch on the picker actually having a value.
+  // Before settings load, selectedFy is null and we don't want to fire
+  // a request with `fy=undefined` (which would return the default FY
+  // and then immediately be discarded when settings arrive).
+  const { data: summary, error } = useQuery({
+    queryKey: ["dashboard", "hr-summary", selectedFy],
+    queryFn: () => dashboardService.getHrSummary(selectedFy ?? undefined),
+    enabled: selectedFy !== null,
+  });
 
   // Picker options come from the backend — they reflect the FYs that
   // actually have annual-review or annual-goal rows in this org, plus
@@ -78,24 +85,10 @@ export function HrDashboard() {
   const availableYears: number[] = summary?.available_fys
     ?? (activeFyStart !== null ? [activeFyStart] : []);
 
-  // Fetch the summary every time the FY changes. Widgets that ignore
-  // the FY (like headcount) get the same numbers regardless, but the
-  // batched-endpoint contract lets cycle-bound widgets reuse the same
-  // request when they land.
+  // Surface fetch errors through the existing snackbar pattern.
   useEffect(() => {
-    let cancelled = false;
-    dashboardService
-      .getHrSummary(selectedFy ?? undefined)
-      .then((res) => {
-        if (!cancelled) setSummary(res);
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) snackbar.error(getErrorMessage(err));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedFy, snackbar]);
+    if (error) snackbar.error(getErrorMessage(error));
+  }, [error, snackbar]);
 
   const firstName = user?.full_name?.split(" ")[0] ?? "there";
 
