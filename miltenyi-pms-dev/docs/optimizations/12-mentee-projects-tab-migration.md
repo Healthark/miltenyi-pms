@@ -1,6 +1,6 @@
 # 12 — MenteeProjectsTab: closing the bridge-pattern loop
 
-> **PR:** _pending_
+> **PR:** [#29](https://github.com/Healthark/miltenyi-pms/pull/29)
 > **Files changed:** `frontend/src/lib/queryKeys.ts` (added `projectReviews.detail(id)`), `frontend/src/components/mentees/MenteeProjectsTab.tsx`, `frontend/src/pages/MenteeDetail.tsx` (deleted the `reloadDetail` callback entirely).
 > **Headline result:** 2 queries + 6 mutations migrated. The `onReload` bridge prop introduced in PR #25 fully unwinds here — both child consumers (`MenteeGoalsTab` in PR #27, `MenteeProjectsTab` in this PR) now self-manage cache invalidation, so `MenteeDetail.reloadDetail` is deleted.
 

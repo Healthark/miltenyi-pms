@@ -1,23 +1,42 @@
-import { useEffect, useReducer } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   projectReviewService,
   type ProjectReviewResponse,
 } from "@/services/project-review.service";
+import { queryKeys } from "@/lib/queryKeys";
 
 /**
  * Fetches a single ProjectReview by id, exposing an atomic
  * `{ details, isFetching, error }` state.
  *
  * Both `ReviewDetailPanel` (My Reviews grid view) and `TableExpandedRow`
- * (My Reviews table view) need this exact loading lifecycle. Doing it
- * inline with multiple `useState` setters and a `useEffect` body that
- * called them synchronously triggered cascading-render warnings (sonar
- * S6447 / "calling setState within effect"). Folding everything into a
- * single `useReducer` collapses each transition into one dispatch, so
- * React only commits one update per state change.
+ * (My Reviews table view) need this exact loading lifecycle. Pass `null`
+ * to clear/reset; the hook will return the idle state and skip the
+ * network request.
  *
- * Pass `null` to clear/reset; the hook will return the idle state and
- * skip the network request.
+ * Internals:
+ *   The hook used to wrap `useReducer + useEffect + dispatch + a
+ *   cancelled-flag race-condition guard` to dodge cascading-render
+ *   warnings (sonar S6447 / "calling setState within effect"). The
+ *   useQuery-based version sidesteps that whole class of issue —
+ *   TanStack Query commits a single state update per cache transition
+ *   and handles unmount-mid-fetch via AbortController internally.
+ *
+ *   queryKey: queryKeys.projectReviews.detail(id) — same key used by
+ *   MenteeProjectsTab's impact modal (PR #12). When a Staff user's
+ *   ReviewDetailPanel and a Mentor's MenteeProjectsTab impact modal
+ *   reference the same review row at the same time (rare but possible),
+ *   they share one cache entry.
+ *
+ * Return-shape note:
+ *   The public contract `{ details, isFetching, error }` is preserved
+ *   so the two existing consumers don't need updates. `isFetching`
+ *   maps to useQuery's `isPending` (true only on first-ever fetch for
+ *   a given queryKey). Background refetches caused by stale-while-
+ *   revalidate or focus-refetch keep `data` visible without flipping
+ *   the consumer's loading skeleton — same UX the legacy hook
+ *   delivered, but with the upgrade of automatic freshness on the
+ *   user returning to the page.
  */
 
 interface ReviewDetailsState {
@@ -26,59 +45,20 @@ interface ReviewDetailsState {
   readonly error: string;
 }
 
-const INITIAL: ReviewDetailsState = {
-  details: null,
-  isFetching: false,
-  error: "",
-};
+export function useReviewDetails(reviewId: number | null): ReviewDetailsState {
+  // `?? -1` is a closed-state sentinel — `enabled: false` keeps the
+  // inert cache entry from ever firing a request, matching the
+  // pattern from PR #11 (ManagementReview Rate modal) and PR #12
+  // (MenteeProjectsTab impact modal).
+  const query = useQuery({
+    queryKey: queryKeys.projectReviews.detail(reviewId ?? -1),
+    queryFn: () => projectReviewService.getReview(reviewId as number),
+    enabled: reviewId !== null,
+  });
 
-type Action =
-  | { type: "reset" }
-  | { type: "start" }
-  | { type: "success"; details: ProjectReviewResponse }
-  | { type: "error"; message: string };
-
-function reducer(state: ReviewDetailsState, action: Action): ReviewDetailsState {
-  switch (action.type) {
-    case "reset":
-      return INITIAL;
-    case "start":
-      return { details: null, isFetching: true, error: "" };
-    case "success":
-      return { details: action.details, isFetching: false, error: "" };
-    case "error":
-      return { details: null, isFetching: false, error: action.message };
-    default:
-      return state;
-  }
-}
-
-export function useReviewDetails(reviewId: number | null) {
-  const [state, dispatch] = useReducer(reducer, INITIAL);
-
-  useEffect(() => {
-    if (reviewId == null) {
-      dispatch({ type: "reset" });
-      return;
-    }
-    let cancelled = false;
-    dispatch({ type: "start" });
-    projectReviewService
-      .getReview(reviewId)
-      .then((details) => {
-        if (!cancelled) dispatch({ type: "success", details });
-      })
-      .catch(() => {
-        if (!cancelled)
-          dispatch({
-            type: "error",
-            message: "Failed to fetch evaluation details",
-          });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [reviewId]);
-
-  return state;
+  return {
+    details: query.data ?? null,
+    isFetching: reviewId !== null && query.isPending,
+    error: query.isError ? "Failed to fetch evaluation details" : "",
+  };
 }
