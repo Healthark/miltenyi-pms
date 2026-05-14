@@ -115,6 +115,10 @@
     "mtime": 1777959899.6498127,
     "hash": "1e5c24a5553d3825a91cfbdac066d288"
   },
+  "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\backend\\alembic\\versions\\e8b5c6a9d214_add_user_theme_preference.py": {
+    "mtime": 1778673554.1892757,
+    "hash": "17f5f78e1fe45c8c258ce9905663df50"
+  },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\backend\\alembic\\versions\\f2a8b1c93e04_add_is_management.py": {
     "mtime": 1777959899.6498127,
     "hash": "c6dd7aeca67731942eb31c4c9e16b961"
@@ -140,12 +144,12 @@
     "hash": "2a9330e668b4371abbf335c75fbdd957"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\backend\\app\\api\\routes\\annual_review_routes.py": {
-    "mtime": 1778656696.2315488,
-    "hash": "b38d9b6c991914421aa82225165dacc1"
+    "mtime": 1778672397.3214953,
+    "hash": "5f33f5ac155b6595497fcd4a60c85364"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\backend\\app\\api\\routes\\auth_routes.py": {
-    "mtime": 1778500594.6379192,
-    "hash": "466ffe89ead0cbea8d07c2f9ea4a3abd"
+    "mtime": 1778673554.19099,
+    "hash": "b735d496c2fe18d5c450badd72bfaf66"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\backend\\app\\api\\routes\\dashboard_routes.py": {
     "mtime": 1778500594.639585,
@@ -208,8 +212,8 @@
     "hash": "d4db6c788423f924b8ee850eccdadd17"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\backend\\app\\models\\annual_review_models.py": {
-    "mtime": 1777974877.0960782,
-    "hash": "7d551ed990c722c780e6e7fddc8995c7"
+    "mtime": 1778672397.322513,
+    "hash": "516cea1015586d3c1338f3c3ed2d08fb"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\backend\\app\\models\\export_audit_log_models.py": {
     "mtime": 1778500594.6458905,
@@ -264,8 +268,8 @@
     "hash": "1826d17dbf3897a47e16eb13298c5be1"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\backend\\app\\models\\user_models.py": {
-    "mtime": 1778045699.7033324,
-    "hash": "68794ec8d3485482a2b2c8ca6689c131"
+    "mtime": 1778673554.1920269,
+    "hash": "e0008c56af5f763624b2b05529fe3238"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\backend\\app\\models\\__init__.py": {
     "mtime": 1778500594.6453712,
@@ -276,12 +280,12 @@
     "hash": "17e610647f9b5de794313eb75c0453fc"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\backend\\app\\schemas\\annual_review_schemas.py": {
-    "mtime": 1778154367.3899908,
-    "hash": "5b1ef8a0f8df2a57d8a18ec0da70a8e4"
+    "mtime": 1778672397.324828,
+    "hash": "f8377282d12ec42f338547206f3e29a6"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\backend\\app\\schemas\\auth_schemas.py": {
-    "mtime": 1778045699.7048483,
-    "hash": "5d73bcf7fedd3aa5e1db021a313edb19"
+    "mtime": 1778673554.1930034,
+    "hash": "0a96a38af572c3e0740586ac5c659c4b"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\backend\\app\\schemas\\dashboard_schemas.py": {
     "mtime": 1778500594.6475058,
@@ -340,12 +344,12 @@
     "hash": "fa09b13d53f76344076f8e8275ea2b13"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\App.tsx": {
-    "mtime": 1778476440.496925,
-    "hash": "4ca41cff4bd1c764e05ef8ab1602e196"
+    "mtime": 1778672397.32633,
+    "hash": "b0e30f55dc9b832861bcbb0e998d237f"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\main.tsx": {
-    "mtime": 1778476440.5914328,
-    "hash": "0f642c1703bd77b6c36882b9cce90d60"
+    "mtime": 1778673554.20927,
+    "hash": "c399cd7de5989c4c165cd88b22937fbb"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\components\\ProtectedRoute.tsx": {
     "mtime": 1778476440.4991593,
@@ -363,10 +367,6 @@
     "mtime": 1778500594.6531732,
     "hash": "e3c10c3554aa11234c637e8c7902e634"
   },
-  "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\components\\admin\\ManagementReviewTab.tsx": {
-    "mtime": 1778476440.5284917,
-    "hash": "b3126d2d3e209a642dbc2fe9ae540996"
-  },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\components\\admin\\ProjectModal.tsx": {
     "mtime": 1778591284.221318,
     "hash": "80c48010b7300746a6d14edf289e3b6a"
@@ -376,24 +376,24 @@
     "hash": "a3e16cc8bf57ca9d4fc412f62b7cee35"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\components\\admin\\RoleBadge.tsx": {
-    "mtime": 1778154861.9484427,
-    "hash": "aaa49cba18db55fe3df99fedf704755a"
+    "mtime": 1778673554.1940165,
+    "hash": "17e188e140b52c2990a9e35abb1179e6"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\components\\admin\\StatusBadge.tsx": {
     "mtime": 1777959899.6833403,
     "hash": "93441f5564f89c7ed4a2beb1e6a8b9d6"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\components\\admin\\SystemSettingsTab.tsx": {
-    "mtime": 1778656696.2426665,
-    "hash": "1bab6a47355ea6b9de47ae92e1ffbd0b"
+    "mtime": 1778673554.1950123,
+    "hash": "413cba46f85914e253e5d7ef350a6e7e"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\components\\admin\\UserModal.tsx": {
-    "mtime": 1778476440.5284917,
-    "hash": "cc3eddd5ef67698137e24b4495a14cef"
+    "mtime": 1778672397.327847,
+    "hash": "5fec360566ea62c9da6c0c46dacbb8d7"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\components\\admin\\UsersTab.tsx": {
-    "mtime": 1778500594.6560335,
-    "hash": "f726286c1788b0f4355b35608f04097b"
+    "mtime": 1778672397.3288577,
+    "hash": "9766a2d5f6bf21712c5073cf61e65200"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\components\\common\\StringCombobox.tsx": {
     "mtime": 1778476440.5284917,
@@ -412,48 +412,52 @@
     "hash": "830292d8e60c9cddde3b648516e926d7"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\components\\dashboard\\AnnualReviewFunnelCard.tsx": {
-    "mtime": 1778500594.6570728,
-    "hash": "a8976ba797d9bbf65ce33ab09effbcb4"
+    "mtime": 1778672103.526296,
+    "hash": "66531d1bb7d5ab91f0d99a5497bf3521"
+  },
+  "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\components\\dashboard\\DonutChart.tsx": {
+    "mtime": 1778667262.9226646,
+    "hash": "a4cc4b1baf536c952630ace6bda20740"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\components\\dashboard\\GoalApprovalFunnelCard.tsx": {
-    "mtime": 1778500594.658073,
-    "hash": "f0d096c94dba0b4b78edbad682bbf25a"
+    "mtime": 1778672504.2694368,
+    "hash": "63676660565495c5c3fd072bde4f3f68"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\components\\dashboard\\GoalsWidget.tsx": {
     "mtime": 1778476440.5353847,
     "hash": "48232b312d9fde62778c9510c3c6a1f6"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\components\\dashboard\\HeadcountCard.tsx": {
-    "mtime": 1778500594.659073,
-    "hash": "b59a42c56d939cc878d080a8a4bedcc4"
+    "mtime": 1778672126.6392746,
+    "hash": "6f021dd940f410b52a9566ed1b200a39"
+  },
+  "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\components\\dashboard\\InsightStripe.tsx": {
+    "mtime": 1778670640.539543,
+    "hash": "c0403006d86d4818a6a0d27b6dffad7b"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\components\\dashboard\\MenteesWidget.tsx": {
     "mtime": 1778476440.5353847,
     "hash": "863e3e6430b1624710eb9effe1143ce0"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\components\\dashboard\\MentorCoverageCard.tsx": {
-    "mtime": 1778500594.659073,
-    "hash": "9ba053d7327fca08675f449ab0d4ae90"
-  },
-  "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\components\\dashboard\\MissingAnnualReviewsCard.tsx": {
-    "mtime": 1778500594.6605577,
-    "hash": "0535349ebf9a3befb1e28bce2089de8f"
+    "mtime": 1778673554.1960177,
+    "hash": "79f996ecc0f2f31b45fd89f4ba2f24e2"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\components\\dashboard\\MyAnnualReviewWidget.tsx": {
     "mtime": 1778476440.5353847,
     "hash": "f31b0061873ebd04da876bd3bcf13142"
+  },
+  "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\components\\dashboard\\PendingActionsCard.tsx": {
+    "mtime": 1778673554.1980157,
+    "hash": "28061b483a2ac8793d663ae12e7b7537"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\components\\dashboard\\PendingMentorWorkWidget.tsx": {
     "mtime": 1778476440.5353847,
     "hash": "4a1c1a85f5589a06070fe98b2e5f4947"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\components\\dashboard\\ProjectReviewCompletionCard.tsx": {
-    "mtime": 1778500594.6621234,
-    "hash": "946bc4a5ee73cff12f1c8802f1a3a52c"
-  },
-  "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\components\\dashboard\\StalledGoalsCard.tsx": {
-    "mtime": 1778500594.6621234,
-    "hash": "7680144b4792ba8779aac133bd041164"
+    "mtime": 1778672111.2317564,
+    "hash": "2ca16c038c3ce25c794678f5b6838e94"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\components\\feedback\\ConfirmDialog.tsx": {
     "mtime": 1778476440.5404217,
@@ -548,7 +552,7 @@
     "hash": "0ba219acced688885463a0175e66c4fb"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\components\\mentees\\MenteeToolbar.tsx": {
-    "mtime": 1777959899.6998496,
+    "mtime": 1778671587.2568927,
     "hash": "664b03bde0197da499f8230b0656184e"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\components\\profile\\PasswordChangeCard.tsx": {
@@ -556,8 +560,8 @@
     "hash": "467bb33dbb8f8b58fbaa03646632ee09"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\components\\profile\\ProfileInfoCard.tsx": {
-    "mtime": 1778476440.5596752,
-    "hash": "73901ce6e1d4ee1c0402fae6e5bc3f6a"
+    "mtime": 1778674037.2698796,
+    "hash": "2ecb60037d86f77656ff9802192f8a22"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\components\\project-reviews\\CompetencyBlock.tsx": {
     "mtime": 1778476440.5596752,
@@ -636,16 +640,16 @@
     "hash": "09059b311a202f4247b9c4637209091a"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\components\\reviews\\PerformanceRatingBadge.tsx": {
-    "mtime": 1778130739.4218693,
-    "hash": "46aa43b8d4149165c3bb7235ee92da79"
+    "mtime": 1778673554.1993954,
+    "hash": "358dbc3270686db8f04bddc5132caf93"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\components\\reviews\\PerformanceRatingSelect.tsx": {
     "mtime": 1777959899.7070956,
     "hash": "04d22b43029cab94418d9d7d3c34d890"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\components\\reviews\\ReviewStatusBadge.tsx": {
-    "mtime": 1778476440.5721965,
-    "hash": "2a4c2c20adeb5b85f2f15d79c7f6d3f2"
+    "mtime": 1778672397.3313758,
+    "hash": "c5dde3d9b406d7e66dfc2c98e42603c2"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\components\\reviews\\SelfReviewFormModal.tsx": {
     "mtime": 1778476440.5737984,
@@ -707,6 +711,14 @@
     "mtime": 1778476440.582125,
     "hash": "6da5625b72a1416c748e14e0e08f9297"
   },
+  "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\contexts\\ThemeContext.ts": {
+    "mtime": 1778673554.200875,
+    "hash": "64232da184ca430a39a62c05574888ed"
+  },
+  "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\contexts\\ThemeProvider.tsx": {
+    "mtime": 1778673554.2019472,
+    "hash": "a09b136dd7d07914d0c82c939535d8ad"
+  },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\contexts\\ToastContext.ts": {
     "mtime": 1778069707.5894933,
     "hash": "410a14f920e5d45c1e48c8a003bdde7e"
@@ -743,25 +755,29 @@
     "mtime": 1778476440.5871491,
     "hash": "00ed69f6693f3d08e9846b364f003435"
   },
+  "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\hooks\\useTheme.ts": {
+    "mtime": 1778673554.2030218,
+    "hash": "c41685fbc6a35481a727b30c78c80447"
+  },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\hooks\\useToast.ts": {
     "mtime": 1778476440.589156,
     "hash": "5bb09811668a029ac0f112f356d9370a"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\layouts\\Sidebar.tsx": {
-    "mtime": 1778476440.589736,
-    "hash": "dcae2a3ee68fd836a9f668edb5a6ee82"
+    "mtime": 1778673554.2064776,
+    "hash": "c8fd6c066ce767a2544e83b17c8374af"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\layouts\\Topbar.tsx": {
-    "mtime": 1778476440.5904262,
-    "hash": "c88e9a096ebc62c0936828185720ffbb"
+    "mtime": 1778673554.2064776,
+    "hash": "db484d67b72394753249e657c38b9f9f"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\pages\\AdminPanel.tsx": {
-    "mtime": 1778656696.2437036,
-    "hash": "45e9baee50ab33be704882f1a041cfab"
+    "mtime": 1778672397.3349514,
+    "hash": "b864508553799dcb71d91249db66d2cf"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\pages\\AnnualGoals.tsx": {
-    "mtime": 1778591284.2321665,
-    "hash": "465ab1a61158dd5b205900810aba0f41"
+    "mtime": 1778672397.337119,
+    "hash": "1a99cda2d94b0fd0ad95dae58cead091"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\pages\\AnnualReviews.tsx": {
     "mtime": 1778591284.2331653,
@@ -776,12 +792,16 @@
     "hash": "5a259180ab00e841c1b58fe6d99ad29e"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\pages\\HrDashboard.tsx": {
-    "mtime": 1778656696.245095,
-    "hash": "616458659f10719e48150e6770b3f727"
+    "mtime": 1778671253.577632,
+    "hash": "4bbf97b07d5328e79a4d4db712bcf80d"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\pages\\Login.tsx": {
     "mtime": 1778500594.6807413,
     "hash": "c81e8de6bbd9b0e56d6c1364c0a40f3e"
+  },
+  "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\pages\\ManagementReview.tsx": {
+    "mtime": 1778673554.2102685,
+    "hash": "661b801485da4a773631d154b71999fe"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\pages\\MenteeDetail.tsx": {
     "mtime": 1778476440.63555,
@@ -812,16 +832,16 @@
     "hash": "992bebc7c9c091b326c7da83ee1bfd3a"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\services\\annual-review.service.ts": {
-    "mtime": 1778476440.6404376,
-    "hash": "05013a255808ce29ee5e7f288cae2175"
+    "mtime": 1778672397.3406029,
+    "hash": "cc6473e5b40a0454b7da088983ce47f7"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\services\\api.client.ts": {
     "mtime": 1778500594.682287,
     "hash": "b8318cb15cf63485a64730d97ee9b013"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\services\\auth.service.ts": {
-    "mtime": 1778476440.6414666,
-    "hash": "de052549aa448315a32ba5c9af2083e8"
+    "mtime": 1778673554.2117736,
+    "hash": "f5c7018870775ccc8fab044c08f36363"
   },
   "D:\\PMS\\miltenyi-pms\\miltenyi-pms-dev\\frontend\\src\\services\\dashboard.service.ts": {
     "mtime": 1778500594.6833484,
