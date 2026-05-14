@@ -1,6 +1,6 @@
 # 08 — MyMentees + MenteeDetail: dynamic-key queries, cross-page cache sharing, and finishing deferred mentor-eval mutations
 
-> **PR:** _pending_
+> **PR:** [#25](https://github.com/Healthark/miltenyi-pms/pull/25)
 > **Files changed:** `frontend/src/lib/queryKeys.ts` (added `mentees.detail(id)` + `mentees.pairings()`), `frontend/src/pages/MyMentees.tsx`, `frontend/src/pages/MenteeDetail.tsx`.
 > **Headline result:** Three queries migrated (one with dynamic per-mentee key), two mutations that were deliberately deferred from PR #21 finally land in the cache architecture. Two cross-cutting teaching points reinforced: **cross-page cache sharing** (different pages, same key, one cache entry) and **`isPending` vs `isFetching`** (the `silent: true` reload pattern becomes obsolete).
 

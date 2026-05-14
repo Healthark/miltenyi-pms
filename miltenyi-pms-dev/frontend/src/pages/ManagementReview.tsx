@@ -11,7 +11,8 @@
  * submitted. View and Edit affordances are gated per stage.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ChevronDown,
   ChevronUp,
@@ -25,10 +26,10 @@ import {
 } from "lucide-react";
 import {
   annualReviewService,
-  type AnnualReview,
   type CalibrationRow,
   type ReviewStatus,
 } from "@/services/annual-review.service";
+import { queryKeys } from "@/lib/queryKeys";
 import { PerformanceRatingBadge } from "@/components/reviews/PerformanceRatingBadge";
 import { PerformanceRatingSelect } from "@/components/reviews/PerformanceRatingSelect";
 import { ReviewStatusBadge } from "@/components/reviews/ReviewStatusBadge";
@@ -98,9 +99,21 @@ export function ManagementReview() {
       settings.active_cycle_name
     : null;
 
-  const [rows, setRows] = useState<CalibrationRow[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState("");
+  const queryClient = useQueryClient();
+  const confirm = useConfirm();
+
+  // ── Queries ────────────────────────────────────────────────────────
+  // 1. The calibration grid (page-level table). Single fetch on mount;
+  //    background-refreshes via the broadcast invalidation in
+  //    setManagementRating's onSuccess (and on window focus via the
+  //    global default).
+  const gridQuery = useQuery({
+    queryKey: queryKeys.annualReviews.calibration(),
+    queryFn: annualReviewService.getCalibrationGrid,
+  });
+  const rows: CalibrationRow[] = gridQuery.data ?? [];
+  const isLoading = gridQuery.isPending;
+  const loadError = gridQuery.isError ? getErrorMessage(gridQuery.error) : "";
 
   const [searchQuery, setSearchQuery] = useState("");
   const [funcFilter, setFuncFilter] = useState<string>("all");
@@ -112,53 +125,64 @@ export function ManagementReview() {
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
-  // Full review details fetched when the Rate modal opens so management
-  // can read the mentee's self-review and the mentor's evaluation
-  // alongside the rating selector. CalibrationRow only carries the
-  // rating values, not the long-form text.
-  const [editReview, setEditReview] = useState<AnnualReview | null>(null);
-  const [isEditReviewLoading, setIsEditReviewLoading] = useState(false);
-  const [editReviewError, setEditReviewError] = useState("");
-  const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
-  const confirm = useConfirm();
 
-  // Hydrate the full review the moment the Rate modal opens. Skipping
-  // when there's no review_id is defensive — canEdit already gates this.
-  useEffect(() => {
-    const reviewId = editTarget?.row.review_id;
-    if (reviewId == null) {
-      setEditReview(null);
-      setIsEditReviewLoading(false);
-      setEditReviewError("");
-      return;
-    }
-    let alive = true;
-    setIsEditReviewLoading(true);
-    setEditReview(null);
-    setEditReviewError("");
-    annualReviewService
-      .getReview(reviewId)
-      .then((r) => {
-        if (alive) setEditReview(r);
-      })
-      .catch((err) => {
-        if (alive) setEditReviewError(getErrorMessage(err));
-      })
-      .finally(() => {
-        if (alive) setIsEditReviewLoading(false);
-      });
-    return () => {
-      alive = false;
-    };
-  }, [editTarget?.row.review_id]);
+  // 2. The per-review detail — on-demand. `enabled` gates on the Rate
+  //    modal actually being open AND having a valid review_id. The
+  //    queryKey embeds the id, so opening successive Rate modals
+  //    populates separate cache entries (visit two HR sessions, close
+  //    the first, and the second is still cached for next-open).
+  //
+  //    Tradeoff vs the old useEffect: same network round-trip on first
+  //    open, but a second open of the SAME review is instant (cache
+  //    hit). The legacy code refetched every time the modal opened.
+  const editReviewId = editTarget?.row.review_id ?? null;
+  const editReviewQuery = useQuery({
+    queryKey: queryKeys.annualReviews.detail(editReviewId ?? -1),
+    queryFn: () =>
+      annualReviewService.getReview(editReviewId as number),
+    enabled: editReviewId !== null,
+  });
+  const editReview = editReviewQuery.data ?? null;
+  const isEditReviewLoading = editReviewId !== null && editReviewQuery.isPending;
+  const editReviewError = editReviewQuery.isError
+    ? getErrorMessage(editReviewQuery.error)
+    : "";
 
   const closeEdit = () => {
     setEditTarget(null);
-    setEditReview(null);
-    setEditReviewError("");
     setSaveError("");
   };
+
+  // ── Mutation ───────────────────────────────────────────────────────
+  // Publishes the management rating for a single review. Broadcast-
+  // invalidates everything under `annual-reviews` (catches calibration
+  // grid + this review's detail + mentee history + HR's all-reviews)
+  // and `dashboard` (the AnnualReviewFunnelCard's completed-count
+  // moves when management ratings publish).
+  //
+  // We could narrow the invalidation to just calibration + detail(id)
+  // + dashboard, but the broadcast pattern (established in PR #22) is
+  // cleaner — three keys catch every consumer of the affected data,
+  // and the wasted-refetch cost on dormant entries is essentially
+  // zero (no observer = no refetch).
+  const setRatingMutation = useMutation({
+    mutationFn: (vars: { reviewId: number; rating: number }) =>
+      annualReviewService.setManagementRating(vars.reviewId, {
+        management_performance_rating: vars.rating,
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.annualReviews.all,
+      });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.dashboard.all,
+      });
+      closeEdit();
+    },
+    onError: (err) => setSaveError(getErrorMessage(err)),
+  });
+  const isSaving = setRatingMutation.isPending;
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -174,22 +198,6 @@ export function ManagementReview() {
     if (sortDir === "asc") return <ChevronUp className="h-3 w-3" aria-hidden="true" />;
     return <ChevronDown className="h-3 w-3" aria-hidden="true" />;
   };
-
-  const load = useCallback(async () => {
-    setIsLoading(true);
-    setLoadError("");
-    try {
-      setRows(await annualReviewService.getCalibrationGrid());
-    } catch (err) {
-      setLoadError(getErrorMessage(err));
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
 
   const availableFuncs = useMemo(
     () =>
@@ -280,19 +288,14 @@ export function ManagementReview() {
       confirmText: isOverwrite ? "Overwrite Rating" : "Publish Rating",
     });
     if (!ok) return;
-    setIsSaving(true);
     setSaveError("");
-    try {
-      await annualReviewService.setManagementRating(editTarget.row.review_id, {
-        management_performance_rating: editTarget.draft,
-      });
-      closeEdit();
-      await load();
-    } catch (err) {
-      setSaveError(getErrorMessage(err));
-    } finally {
-      setIsSaving(false);
-    }
+    // Fire-and-forget — onSuccess closes the modal, onError surfaces
+    // saveError inline. No caller awaits the result, so plain
+    // mutate() is correct (mutateAsync would force an unused await).
+    setRatingMutation.mutate({
+      reviewId: editTarget.row.review_id,
+      rating: editTarget.draft,
+    });
   };
 
   return (
