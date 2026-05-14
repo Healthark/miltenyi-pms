@@ -48,6 +48,11 @@ class SessionResponse(BaseModel):
     # Per-user UI theme. "light" | "dark". Returned so the frontend can
     # apply the saved preference at login time without a follow-up call.
     theme_preference: str = "light"
+    # The active cycle this user last dismissed on their dashboard. The
+    # frontend compares it to the org's active cycle and renders a
+    # "cycle rolled over" banner when they diverge. Null when the user
+    # has never dismissed (or hasn't run since the migration landed).
+    last_seen_cycle: str | None = None
 
 
 class ThemePreferenceUpdate(BaseModel):

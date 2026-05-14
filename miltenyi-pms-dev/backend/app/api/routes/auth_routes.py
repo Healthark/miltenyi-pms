@@ -11,9 +11,11 @@ from datetime import datetime, timedelta, timezone
 from app.core.database import get_db
 from app.core.security import verify_password, get_password_hash
 from app.core.config import settings
+from app.core.cycle_utils import get_current_cycle_info, resolve_today
 from app.models.user_models import User
 from app.models.organization_models import Organization
 from app.models.password_reset_token_models import PasswordResetToken
+from app.models.system_settings_models import SystemSettings, CycleType
 from app.schemas.auth_schemas import (
     SessionResponse,
     TokenResponse,
@@ -70,6 +72,7 @@ def _build_session(user: User, db: Session) -> dict:
         "has_mentor": has_mentor,
         "must_change_password": bool(user.must_change_password),
         "theme_preference": user.theme_preference or "light",
+        "last_seen_cycle": user.last_seen_cycle,
     }
 
 
@@ -293,6 +296,36 @@ def update_theme_preference(
     without a separate /auth/session call.
     """
     current_user.theme_preference = payload.theme_preference
+    db.commit()
+    db.refresh(current_user)
+    return _build_session(current_user, db)
+
+
+@router.post("/me/dismiss-cycle-banner", response_model=SessionResponse)
+def dismiss_cycle_banner(
+    current_user: CurrentUser,
+    db: DbSession,
+):
+    """
+    Stamp the user's `last_seen_cycle` to the org's current active
+    cycle, suppressing the "cycle rolled over" banner for them. Driven
+    by the dismiss button on the dashboard banner.
+
+    The active cycle is computed fresh here (not read from the stored
+    column) so the dismiss sticks even if `system_settings.active_cycle_name`
+    is briefly out of date between rollover and the next settings save.
+    """
+    settings_row = db.query(SystemSettings).filter(
+        SystemSettings.org_id == current_user.org_id,
+    ).first()
+    if settings_row is not None:
+        current_user.last_seen_cycle = get_current_cycle_info(
+            resolve_today(settings_row),
+            CycleType(settings_row.cycle_type),
+            settings_row.fiscal_start_month,
+        )
+    # If there's no settings row yet, there's no cycle to dismiss; stamp
+    # null and the banner stays hidden by virtue of nothing-to-compare-to.
     db.commit()
     db.refresh(current_user)
     return _build_session(current_user, db)
