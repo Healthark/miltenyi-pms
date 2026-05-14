@@ -1,6 +1,6 @@
 # 05 — AnnualGoals migration with broadcast-key invalidation + `setQueryData` hot paths
 
-> **PR:** _pending_
+> **PR:** [#22](https://github.com/Healthark/miltenyi-pms/pull/22)
 > **Files changed:** `frontend/src/pages/AnnualGoals.tsx` only.
 > **Headline result:** 3 queries, 5 mutations, plus the criterion-toggle hot path now uses `setQueryData` for instant feedback. Two new patterns introduced: **broadcast-key invalidation** and **hot-path `setQueryData`** for mutations the user fires repeatedly.
 

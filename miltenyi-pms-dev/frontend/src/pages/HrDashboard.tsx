@@ -14,6 +14,7 @@
 
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/queryKeys";
 import { dashboardService } from "@/services/dashboard.service";
 import { useAuth } from "@/hooks/useAuth";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
@@ -73,7 +74,7 @@ export function HrDashboard() {
   // a request with `fy=undefined` (which would return the default FY
   // and then immediately be discarded when settings arrive).
   const { data: summary, error } = useQuery({
-    queryKey: ["dashboard", "hr-summary", selectedFy],
+    queryKey: queryKeys.dashboard.hrSummary(selectedFy),
     queryFn: () => dashboardService.getHrSummary(selectedFy ?? undefined),
     enabled: selectedFy !== null,
   });

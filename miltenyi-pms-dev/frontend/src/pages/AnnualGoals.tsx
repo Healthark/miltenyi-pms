@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, Fragment } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/queryKeys";
 import {
   Plus, Target, Lock, Search,
   LayoutGrid, Table2, ChevronDown, BookOpen,
@@ -261,16 +262,16 @@ export function AnnualGoals() {
   // Role-expectations is everyone-fetches: every role sees the
   // collapsible "What's expected at my level" panel, so no gate.
   const expectationsQuery = useQuery({
-    queryKey: ["profile", "expectations"],
+    queryKey: queryKeys.profile.expectations(),
     queryFn: profileService.getMyExpectations,
   });
   const myGoalsQuery = useQuery({
-    queryKey: ["goals", "mine", "annual"],
+    queryKey: queryKeys.goals.mine("annual"),
     queryFn: () => goalService.getMyGoals("annual"),
     enabled: isStaff,
   });
   const allGoalsQuery = useQuery({
-    queryKey: ["goals", "all"],
+    queryKey: queryKeys.goals.org(),
     queryFn: goalService.getAllGoals,
     enabled: isHRMyOrg,
   });
@@ -329,9 +330,12 @@ export function AnnualGoals() {
   // under a parent (mine, all, mentees, plus future per-user keys), a
   // parent-key invalidation is shorter, future-proof, and matches
   // TanStack Query's prefix-matching semantics perfectly.
+  // Uses the factory's `.all` properties to broadcast-invalidate every
+  // cache entry under each namespace. ['goals'] catches all 4 goal
+  // queries; ['dashboard'] catches the summary + HR summary entries.
   const invalidateGoalsAndDashboard = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: ["goals"] });
-    void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.goals.all });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
   }, [queryClient]);
 
   const createGoalMutation = useMutation({
@@ -507,7 +511,7 @@ export function AnnualGoals() {
   const handleCriterionUpdate = useCallback(
     (goalId: number, updated: Criterion) => {
       queryClient.setQueryData<Goal[]>(
-        ["goals", "mine", "annual"],
+        queryKeys.goals.mine("annual"),
         (prev) => {
           if (!prev) return prev;
           return prev.map((g) => {
@@ -523,7 +527,7 @@ export function AnnualGoals() {
           });
         },
       );
-      void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
     },
     [queryClient],
   );

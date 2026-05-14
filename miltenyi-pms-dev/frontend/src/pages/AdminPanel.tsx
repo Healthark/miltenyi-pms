@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/queryKeys";
 import {
   UserPlus, Users, Settings, FolderOpen, Plus, Download,
 } from "lucide-react";
@@ -55,19 +56,19 @@ export default function AdminPanel() {
   // this guard, alt-tabbing while editing a half-typed FY would silently
   // clobber the form with the server's current values.
   const usersQuery = useQuery({
-    queryKey: ["admin", "users"],
+    queryKey: queryKeys.admin.users(),
     queryFn: adminService.getUsers,
   });
   const functionsQuery = useQuery({
-    queryKey: ["admin", "functions"],
+    queryKey: queryKeys.admin.functions(),
     queryFn: adminService.getFunctions,
   });
   const designationsQuery = useQuery({
-    queryKey: ["admin", "designations"],
+    queryKey: queryKeys.admin.designations(),
     queryFn: adminService.getDesignations,
   });
   const settingsQuery = useQuery({
-    queryKey: ["admin", "settings"],
+    queryKey: queryKeys.admin.settings(),
     queryFn: adminService.getSettings,
     refetchOnWindowFocus: false,
   });
@@ -170,7 +171,7 @@ export default function AdminPanel() {
     mutationFn: (payload: UserCreatePayload) =>
       adminService.createUser(payload),
     onSuccess: (created) => {
-      void queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.admin.users() });
       closeUserModal();
       toast.success(`${created.full_name} created.`);
     },
@@ -184,7 +185,7 @@ export default function AdminPanel() {
     mutationFn: (vars: { id: number; payload: UserUpdatePayload }) =>
       adminService.updateUser(vars.id, vars.payload),
     onSuccess: (updated) => {
-      void queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.admin.users() });
       closeUserModal();
       toast.success(`${updated.full_name} updated.`);
     },
@@ -207,7 +208,7 @@ export default function AdminPanel() {
       return target;
     },
     onSuccess: (target) => {
-      void queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.admin.users() });
       toast.success(`${target.full_name} deactivated.`);
     },
     onError: (err) => snackbar.error(getErrorMessage(err)),
@@ -217,7 +218,7 @@ export default function AdminPanel() {
     mutationFn: (target: UserResponse) =>
       adminService.reactivateUser(target.id),
     onSuccess: (updated) => {
-      void queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.admin.users() });
       toast.success(`${updated.full_name} reactivated.`);
     },
     onError: (err) => snackbar.error(getErrorMessage(err)),
@@ -301,7 +302,7 @@ export default function AdminPanel() {
     mutationFn: (payload: AdminSettingsUpdatePayload) =>
       adminService.updateSettings(payload),
     onSuccess: (fresh) => {
-      queryClient.setQueryData(["admin", "settings"], fresh);
+      queryClient.setQueryData(queryKeys.admin.settings(), fresh);
       setCycleType((fresh.cycle_type as CycleType) ?? "half_yearly");
       setFiscalStartMonth(fresh.fiscal_start_month ?? 4);
       setAnnualReviewsEnabled(fresh.annual_reviews_enabled ?? false);
