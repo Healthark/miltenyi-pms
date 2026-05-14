@@ -1,6 +1,6 @@
 # 03 — AdminPanel mutations with `useMutation` + `invalidateQueries`
 
-> **PR:** _pending_
+> **PR:** [#20](https://github.com/Healthark/miltenyi-pms/pull/20)
 > **Files changed:** `frontend/src/pages/AdminPanel.tsx` only.
 > **Headline result:** 4 user mutations + 1 settings mutation migrated to `useMutation`. Cross-component cache invalidation, `mutate` vs `mutateAsync`, `setQueryData` vs `invalidateQueries`, form-state isolation from background refetches.
 

@@ -18,7 +18,8 @@ Read top-to-bottom in numeric order if you're learning the topic for the first t
 |---|---|---|---|
 | [01](./01-bundle-splitting-and-lazy-routes.md) | Bundle splitting + lazy routes + vendor chunks | [#18](https://github.com/Healthark/miltenyi-pms/pull/18) | Initial JS download: **185 KB → 67 KB** gzip (−64%) before vendor chunks; per-deploy invalidation **−87%** after vendor chunks |
 | [02](./02-server-state-caching.md) | Server-state caching with TanStack Query | [#19](https://github.com/Healthark/miltenyi-pms/pull/19) | Cache + dedup + stale-while-revalidate on three Dashboard variants; +10 KB gzip vendor cost for the foundation |
-| [03](./03-admin-panel-mutations.md) | AdminPanel mutations with `useMutation` + `invalidateQueries` | _pending_ | 4 user mutations + 1 settings mutation migrated; cross-component refresh, mutate vs mutateAsync, setQueryData vs invalidate |
+| [03](./03-admin-panel-mutations.md) | AdminPanel mutations with `useMutation` + `invalidateQueries` | [#20](https://github.com/Healthark/miltenyi-pms/pull/20) | 4 user mutations + 1 settings mutation migrated; cross-component refresh, mutate vs mutateAsync, setQueryData vs invalidate |
+| [04](./04-annual-reviews-migration.md) | AnnualReviews + TeamReviewTab migration: role-gated queries with `enabled` | _pending_ | Two role-gated queries, two write mutations, one cross-key invalidation pattern (`['annual-reviews', 'mine'\|'all']`) |
 
 ---
 
