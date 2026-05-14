@@ -1,17 +1,26 @@
 /**
- * MentorDashboard — landing page for users with one or more direct mentees.
+ * MentorDashboard — landing page for users with one or more direct
+ * mentees. Cards on this page are scoped to the mentor's relationship
+ * with their mentees, not the mentor's own employee data — mentors in
+ * this org structure do not maintain their own goals or annual review,
+ * so the personal "My Goals" / "My Review" / "My Action Items" widgets
+ * that the Staff dashboard renders are deliberately omitted.
  *
- * Composes seven widgets answering two recurring mentor questions:
- *   "What do I owe my mentees?" → M1 Pending Mentor Work, M5 Mentee Health,
- *                                  M6 My Action Items (own employee queue).
- *   "Where do I stand myself?"   → M3 My Annual Review, M4 My Annual Goals,
- *                                  M2 My Mentees count, M7 Active Cycle.
+ * Layout:
+ *   Row 1: Active Project Cycle | Active Goal Cycle    — cycle anchors,
+ *          identical to the Mentee/Staff dashboard's top row.
+ *   Row 2: Mentee Goal Funnel | Mentee Annual Review   — HR-style donut
+ *          cards aggregated across every mentee. Surface where work
+ *          sits in the approval / evaluation pipeline.
+ *   Row 3: Pending Mentor Work (col-span-2) | My Mentees  — focused
+ *          action list + the mentee count tile.
  *
  * Owns two fetches at the page level:
- *   /dashboard/summary  → DashboardSummary  (drives M1–M4, M6, M7)
- *   /mentees/summary    → MenteeSummary[]   (drives M5)
+ *   /dashboard/summary  → DashboardSummary  (drives the cycle cards and
+ *                          the mentor-only fields on PendingMentorWork)
+ *   /mentees/summary    → MenteeSummary[]   (drives both funnel cards)
  *
- * Each widget receives either its loaded slice or null and renders its
+ * Each card receives either its loaded slice or null and renders its
  * own skeleton in place — the grid is stable from first paint.
  */
 
@@ -27,13 +36,11 @@ import {
   type MenteeSummary,
 } from "@/services/mentee.service";
 import { getErrorMessage } from "@/utils/errors";
+import { ActiveCycleWidget } from "@/components/dashboard/ActiveCycleWidget";
 import { PendingMentorWorkWidget } from "@/components/dashboard/PendingMentorWorkWidget";
 import { MenteesWidget } from "@/components/dashboard/MenteesWidget";
-import { MyAnnualReviewWidget } from "@/components/dashboard/MyAnnualReviewWidget";
-import { GoalsWidget } from "@/components/dashboard/GoalsWidget";
-import { ActionItemsWidget } from "@/components/dashboard/ActionItemsWidget";
-import { ActiveCycleWidget } from "@/components/dashboard/ActiveCycleWidget";
-import { MenteeHealthListCard } from "@/components/dashboard/MenteeHealthListCard";
+import { MenteeGoalFunnelCard } from "@/components/dashboard/MenteeGoalFunnelCard";
+import { MenteeReviewFunnelCard } from "@/components/dashboard/MenteeReviewFunnelCard";
 
 export function MentorDashboard() {
   const { user } = useAuth();
@@ -42,7 +49,6 @@ export function MentorDashboard() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [mentees, setMentees] = useState<MenteeSummary[] | null>(null);
 
-  // Personal summary fetch — drives M1–M4, M6, M7.
   useEffect(() => {
     let cancelled = false;
     dashboardService
@@ -58,8 +64,6 @@ export function MentorDashboard() {
     };
   }, [snackbar]);
 
-  // Mentee list fetch — drives M5 only. Kept separate so a slow
-  // /mentees/summary doesn't gate the rest of the page from rendering.
   useEffect(() => {
     let cancelled = false;
     menteeService
@@ -85,11 +89,31 @@ export function MentorDashboard() {
           Welcome back, {firstName}
         </h1>
         <p className="mt-0.5 text-sm text-text-muted">
-          Mentee pending work, your own queue, and review status.
+          Where your mentees stand on goals, reviews, and what's owed to you.
         </p>
       </div>
 
-      {/* Row 1: Pending Mentor Work (span 2) | My Mentees */}
+      {/* Row 1: Active Project Cycle | Active Goal Cycle */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        {summary ? (
+          <ActiveCycleWidget summary={summary} variant="project" />
+        ) : (
+          <CardSkeleton />
+        )}
+        {summary ? (
+          <ActiveCycleWidget summary={summary} variant="goal" />
+        ) : (
+          <CardSkeleton />
+        )}
+      </div>
+
+      {/* Row 2: Mentee Goal Funnel | Mentee Annual Review Funnel */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <MenteeGoalFunnelCard mentees={mentees} />
+        <MenteeReviewFunnelCard mentees={mentees} />
+      </div>
+
+      {/* Row 3: Pending Mentor Work (col-span-2) | My Mentees count */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         <div className="xl:col-span-2">
           {summary ? (
@@ -100,33 +124,12 @@ export function MentorDashboard() {
         </div>
         {summary ? <MenteesWidget summary={summary} /> : <CardSkeleton />}
       </div>
-
-      {/* Row 2: My Annual Review | My Annual Goals */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        {summary ? (
-          <MyAnnualReviewWidget summary={summary} />
-        ) : (
-          <CardSkeleton />
-        )}
-        {summary ? <GoalsWidget summary={summary} /> : <CardSkeleton />}
-      </div>
-
-      {/* Row 3: full-width mentee health radar */}
-      <MenteeHealthListCard mentees={mentees} />
-
-      {/* Row 4: My Action Items | Active Cycle */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        {summary ? <ActionItemsWidget summary={summary} /> : <CardSkeleton />}
-        {summary ? <ActiveCycleWidget summary={summary} /> : <CardSkeleton />}
-      </div>
     </div>
   );
 }
 
 // Generic per-card skeleton matching the surface + padding of the
-// loaded widgets, so the grid doesn't reflow when data lands. The
-// individual widgets do not accept a null prop — gating at the page
-// is simpler than refactoring six widgets to add a loading state.
+// loaded widgets, so the grid doesn't reflow when data lands.
 function CardSkeleton() {
   return (
     <div className="rounded-xl border border-border bg-surface p-5 shadow-sm flex flex-col gap-4 animate-pulse h-44">

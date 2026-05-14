@@ -2,8 +2,14 @@
  * StaffDashboard — landing page for Staff, PM, and any role without
  * direct mentees. Answers the two recurring employee questions:
  *
- *   "What do I owe?"   → S1 My Action Items, S2 Active Cycle.
- *   "How am I doing?"  → S3 My Annual Goals, S4 My Annual Review.
+ *   "What do I owe?"   → S1 My Action Items.
+ *   "How am I doing?"  → S3 My Annual Goals (funnel + completion),
+ *                        S4 My Annual Review.
+ *
+ * Two cycle cards anchor the page at the top so the rest of the
+ * numbers read against the right time horizon:
+ *   - Active Project Cycle (left)  — H1/H2/Q1..Q4, used by project reviews.
+ *   - Active Goal Cycle (right)    — FY span, used by annual goals.
  *
  * PMs land here too: their pending project-review queue surfaces inside
  * ActionItemsWidget via DashboardSummary.project_reviews_pending_primary
@@ -63,15 +69,21 @@ export function StaffDashboard() {
         </p>
       </div>
 
-      {/* Row 1: Action Items (span 2) | Active Cycle */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <div className="xl:col-span-2">
-          {summary ? <ActionItemsWidget summary={summary} /> : <CardSkeleton />}
-        </div>
-        {summary ? <ActiveCycleWidget summary={summary} /> : <CardSkeleton />}
+      {/* Row 1: Active Project Cycle | Active Goal Cycle — anchors at top */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        {summary ? (
+          <ActiveCycleWidget summary={summary} variant="project" />
+        ) : (
+          <CardSkeleton />
+        )}
+        {summary ? (
+          <ActiveCycleWidget summary={summary} variant="goal" />
+        ) : (
+          <CardSkeleton />
+        )}
       </div>
 
-      {/* Row 2: Annual Goals | Annual Review */}
+      {/* Row 2: Annual Goals (funnel + completion) | Annual Review */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         {summary ? <GoalsWidget summary={summary} /> : <CardSkeleton />}
         {summary ? (
@@ -80,6 +92,9 @@ export function StaffDashboard() {
           <CardSkeleton />
         )}
       </div>
+
+      {/* Row 3: full-width Action Items — the personal queue */}
+      {summary ? <ActionItemsWidget summary={summary} /> : <CardSkeleton />}
     </div>
   );
 }
