@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   UserPlus, Users, Settings, FolderOpen, Plus, Download,
 } from "lucide-react";
@@ -8,9 +9,6 @@ import {
   type UserResponse,
   type UserCreatePayload,
   type UserUpdatePayload,
-  type FunctionBrief,
-  type DesignationBrief,
-  type SystemSettings,
   type AdminSettingsUpdatePayload,
 } from "@/services/admin.service";
 import type { CycleType } from "@/services/system-settings.service";
@@ -34,22 +32,67 @@ type ActiveTab =
   | "settings";
 
 export default function AdminPanel() {
-  // ── Data ──────────────────────────────────────────────────────────────────
-  const [users, setUsers] = useState<UserResponse[]>([]);
-  const [functions, setFunctions] = useState<FunctionBrief[]>([]);
-  const [designations, setDesignations] = useState<DesignationBrief[]>([]);
-  const [settings, setSettings] = useState<SystemSettings | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const { refreshSettings } = useSystemSettings();
+  const toast = useToast();
+  const snackbar = useSnackbar();
+  const confirm = useConfirm();
+  const queryClient = useQueryClient();
+
+  const projectsTabRef = useRef<ProjectsTabHandle>(null);
+
+  const { user } = useAuth();
+  // Exports tab is HR_MyOrg-only (same backend gate as /export/*.xlsx).
+  const canSeeExports = user?.role === "HR_MyOrg";
+
+  // ── Server state ──────────────────────────────────────────────────────────
+  // Four independent queries that fire in parallel on mount. Each owns
+  // its own cache entry under the ['admin', ...] namespace. Mutations
+  // below invalidate by key so cross-component updates (e.g. another
+  // mounted view of users) refresh automatically.
+  //
+  // The settings query opts OUT of refetch-on-window-focus because the
+  // form state below initializes from it once on first arrival. Without
+  // this guard, alt-tabbing while editing a half-typed FY would silently
+  // clobber the form with the server's current values.
+  const usersQuery = useQuery({
+    queryKey: ["admin", "users"],
+    queryFn: adminService.getUsers,
+  });
+  const functionsQuery = useQuery({
+    queryKey: ["admin", "functions"],
+    queryFn: adminService.getFunctions,
+  });
+  const designationsQuery = useQuery({
+    queryKey: ["admin", "designations"],
+    queryFn: adminService.getDesignations,
+  });
+  const settingsQuery = useQuery({
+    queryKey: ["admin", "settings"],
+    queryFn: adminService.getSettings,
+    refetchOnWindowFocus: false,
+  });
+
+  // `data = []` defaults keep the rest of the component working with
+  // arrays (avoids `users?.filter(...)` ceremony everywhere). The
+  // queries above remain the source of truth.
+  const users = usersQuery.data ?? [];
+  const functions = functionsQuery.data ?? [];
+  const designations = designationsQuery.data ?? [];
+  const settings = settingsQuery.data ?? null;
+  const isLoading = usersQuery.isPending;
 
   // ── UI state ──────────────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<ActiveTab>("users");
   const [searchQuery, setSearchQuery] = useState("");
   const [showUserModal, setShowUserModal] = useState(false);
   const [editingUser, setEditingUser] = useState<UserResponse | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
   const [modalError, setModalError] = useState("");
 
-  // Settings form state
+  // Settings form state — local because HR is mid-edit between the
+  // initial fetch and the save click. Initialized once when the
+  // settings query first resolves (see effect below); subsequent
+  // refetches do NOT clobber the form. Post-save sync happens in the
+  // mutation's onSuccess so the response's server-computed fields land.
   const [cycleType, setCycleType] = useState<CycleType>("half_yearly");
   const [fiscalStartMonth, setFiscalStartMonth] = useState(4);
   const [annualReviewsEnabled, setAnnualReviewsEnabled] = useState(false);
@@ -66,49 +109,27 @@ export default function AdminPanel() {
   // stored value (PATCH semantics treat omission as "leave unchanged").
   const [clearSimulatedTodayPending, setClearSimulatedTodayPending] = useState(false);
 
-  const { refreshSettings } = useSystemSettings();
-  const toast = useToast();
-  const snackbar = useSnackbar();
-  const confirm = useConfirm();
-
-  const projectsTabRef = useRef<ProjectsTabHandle>(null);
-
-  const { user } = useAuth();
-  // Exports tab is HR_MyOrg-only (same backend gate as /export/*.xlsx).
-  const canSeeExports = user?.role === "HR_MyOrg";
-  // ── Bootstrap ─────────────────────────────────────────────────────────────
-  const loadData = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const [usersData, funcData, desigData, settingsData] = await Promise.all([
-        adminService.getUsers(),
-        adminService.getFunctions(),
-        adminService.getDesignations(),
-        adminService.getSettings(),
-      ]);
-      setUsers(usersData);
-      setFunctions(funcData);
-      setDesignations(desigData);
-      setSettings(settingsData);
-      setCycleType((settingsData.cycle_type as CycleType) ?? "half_yearly");
-      setFiscalStartMonth(settingsData.fiscal_start_month ?? 4);
-      setAnnualReviewsEnabled(settingsData.annual_reviews_enabled ?? false);
-      setAnnualGoalsEditEnabled(settingsData.annual_goals_edit_enabled ?? false);
-      setProjectRatingsVisible(settingsData.project_ratings_visible ?? false);
-      setAnnualReviewFinalRatingVisible(settingsData.annual_review_final_rating_visible ?? false);
-      setSimulatedToday(settingsData.simulated_today ?? "");
-      setSimulationAllowed(settingsData.simulation_allowed ?? false);
-      setClearSimulatedTodayPending(false);
-    } catch {
-      // Errors handled per-operation below
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
+  // Sync the local settings form ONCE when the query first resolves.
+  // Re-syncs on the *server's* terms also need to land here (e.g. the
+  // settings mutation's onSuccess uses queryClient.setQueryData to
+  // freshen the cache, which triggers this effect). The
+  // `hasInitializedForm` flag prevents background refetches from
+  // overwriting an in-progress edit.
+  const [hasInitializedForm, setHasInitializedForm] = useState(false);
   useEffect(() => {
-    void loadData();
-  }, [loadData]);
+    if (settings && !hasInitializedForm) {
+      setCycleType((settings.cycle_type as CycleType) ?? "half_yearly");
+      setFiscalStartMonth(settings.fiscal_start_month ?? 4);
+      setAnnualReviewsEnabled(settings.annual_reviews_enabled ?? false);
+      setAnnualGoalsEditEnabled(settings.annual_goals_edit_enabled ?? false);
+      setProjectRatingsVisible(settings.project_ratings_visible ?? false);
+      setAnnualReviewFinalRatingVisible(settings.annual_review_final_rating_visible ?? false);
+      setSimulatedToday(settings.simulated_today ?? "");
+      setSimulationAllowed(settings.simulation_allowed ?? false);
+      setClearSimulatedTodayPending(false);
+      setHasInitializedForm(true);
+    }
+  }, [settings, hasInitializedForm]);
 
   // ── Derived ───────────────────────────────────────────────────────────────
   // Any active user can mentor — Manager/Principal/Admin gating is a UX
@@ -133,99 +154,154 @@ export default function AdminPanel() {
     setModalError("");
   };
 
+  // ── User mutations ─────────────────────────────────────────────────────
+  // The same invalidation key (['admin', 'users']) is used by every user
+  // mutation. After any write, TanStack Query refetches the users list
+  // and every observer of that key re-renders with the new data. This
+  // replaces the manual setUsers((prev) => ...) shuffles below.
+  //
+  // Why we invalidate instead of writing the response into the cache
+  // directly: the server may compute things we didn't send (timestamps,
+  // related counts), so re-asking it is the safest single-source-of-
+  // truth move. For a hot-path mutation we'd consider setQueryData with
+  // the response, but user CRUD isn't hot enough to bother.
+
+  const createUserMutation = useMutation({
+    mutationFn: (payload: UserCreatePayload) =>
+      adminService.createUser(payload),
+    onSuccess: (created) => {
+      void queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
+      closeUserModal();
+      toast.success(`${created.full_name} created.`);
+    },
+    onError: (err) => setModalError(getErrorMessage(err)),
+  });
+
+  // useMutation's mutate() takes ONE argument. updateUser needs two
+  // (id + payload), so we pack them into an object. This is the
+  // canonical pattern for any multi-arg mutation.
+  const updateUserMutation = useMutation({
+    mutationFn: (vars: { id: number; payload: UserUpdatePayload }) =>
+      adminService.updateUser(vars.id, vars.payload),
+    onSuccess: (updated) => {
+      void queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
+      closeUserModal();
+      toast.success(`${updated.full_name} updated.`);
+    },
+    onError: (err) => setModalError(getErrorMessage(err)),
+  });
+
+  // Combined "is the modal in a saving state" flag. With two separate
+  // mutations powering one modal we OR their pending flags so the
+  // existing isSaving prop still tells the UI to show a spinner.
+  const isSavingUser =
+    createUserMutation.isPending || updateUserMutation.isPending;
+
+  // Deactivate/Reactivate take a user object (we need full_name for
+  // the toast). Returning the user from the mutationFn lets onSuccess
+  // receive it as the first arg without us having to capture it via
+  // a closure.
+  const deactivateMutation = useMutation({
+    mutationFn: async (target: UserResponse) => {
+      await adminService.deactivateUser(target.id);
+      return target;
+    },
+    onSuccess: (target) => {
+      void queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
+      toast.success(`${target.full_name} deactivated.`);
+    },
+    onError: (err) => snackbar.error(getErrorMessage(err)),
+  });
+
+  const reactivateMutation = useMutation({
+    mutationFn: (target: UserResponse) =>
+      adminService.reactivateUser(target.id),
+    onSuccess: (updated) => {
+      void queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
+      toast.success(`${updated.full_name} reactivated.`);
+    },
+    onError: (err) => snackbar.error(getErrorMessage(err)),
+  });
+
+  // Uses mutateAsync (not mutate) because the UserModal awaits onSave
+  // to drive its internal "Saving..." state and only un-disables the
+  // submit button when the Promise resolves. We catch the rejection
+  // here so the existing onError -> setModalError flow stays in
+  // charge of UI error messaging (matching the contract the modal
+  // was written against: onSave always resolves).
+  //
+  // mutate vs mutateAsync rule of thumb:
+  //   - mutate:      fire-and-forget; success/failure handled by
+  //                  onSuccess/onError callbacks. Use when you don't
+  //                  need to coordinate the caller's flow with the
+  //                  mutation lifecycle.
+  //   - mutateAsync: returns a Promise that resolves with the data or
+  //                  rejects with the error. Use when the caller needs
+  //                  to await completion (e.g. a modal that's awaiting
+  //                  before closing, or sequential mutations).
   const handleSaveUser = async (
     payload: UserCreatePayload | UserUpdatePayload,
-  ) => {
-    setIsSaving(true);
+  ): Promise<void> => {
     setModalError("");
     try {
       if (editingUser) {
-        const updated = await adminService.updateUser(
-          editingUser.id,
-          payload as UserUpdatePayload,
-        );
-        setUsers((prev) =>
-          prev.map((u) => (u.id === updated.id ? updated : u)),
-        );
-        closeUserModal();
-        toast.success(`${updated.full_name} updated.`);
+        await updateUserMutation.mutateAsync({
+          id: editingUser.id,
+          payload: payload as UserUpdatePayload,
+        });
       } else {
-        const created = await adminService.createUser(
-          payload as UserCreatePayload,
-        );
-        setUsers((prev) => [created, ...prev]);
-        closeUserModal();
-        toast.success(`${created.full_name} created.`);
+        await createUserMutation.mutateAsync(payload as UserCreatePayload);
       }
-    } catch (err) {
-      setModalError(getErrorMessage(err));
-    } finally {
-      setIsSaving(false);
+    } catch {
+      // onError already set modalError. Swallow so the modal's await
+      // never sees an exception (preserves the legacy contract).
     }
   };
 
-  const handleDeactivate = async (user: UserResponse) => {
+  const handleDeactivate = async (target: UserResponse) => {
     const ok = await confirm({
       title: "Deactivate user?",
-      message: `Deactivate ${user.full_name}? They will no longer be able to log in. This can be reversed by reactivating the user.`,
+      message: `Deactivate ${target.full_name}? They will no longer be able to log in. This can be reversed by reactivating the user.`,
       variant: "danger",
       confirmText: "Deactivate",
     });
     if (!ok) return;
-
-    try {
-      await adminService.deactivateUser(user.id);
-      setUsers((prev) =>
-        prev.map((u) => (u.id === user.id ? { ...u, is_deleted: true } : u)),
-      );
-      toast.success(`${user.full_name} deactivated.`);
-    } catch (err) {
-      snackbar.error(getErrorMessage(err));
-    }
+    deactivateMutation.mutate(target);
   };
 
-  const handleReactivate = async (user: UserResponse) => {
+  const handleReactivate = async (target: UserResponse) => {
     const ok = await confirm({
       title: "Reactivate user?",
-      message: `Reactivate ${user.full_name}? They will regain access immediately using their previous password. Historical goals, reviews, and mentor assignment are preserved.`,
+      message: `Reactivate ${target.full_name}? They will regain access immediately using their previous password. Historical goals, reviews, and mentor assignment are preserved.`,
       variant: "default",
       confirmText: "Reactivate",
     });
     if (!ok) return;
-
-    try {
-      const updated = await adminService.reactivateUser(user.id);
-      setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
-      toast.success(`${updated.full_name} reactivated.`);
-    } catch (err) {
-      snackbar.error(getErrorMessage(err));
-    }
+    reactivateMutation.mutate(target);
   };
 
-  // ── Settings handler ──────────────────────────────────────────────────────
-  const handleSaveSettings = async () => {
-    setIsSaving(true);
-    try {
-      const payload: AdminSettingsUpdatePayload = {
-        cycle_type: cycleType,
-        fiscal_start_month: fiscalStartMonth,
-        annual_reviews_enabled: annualReviewsEnabled,
-        annual_goals_edit_enabled: annualGoalsEditEnabled,
-        project_ratings_visible: projectRatingsVisible,
-        annual_review_final_rating_visible: annualReviewFinalRatingVisible,
-      };
-      // Simulated-today payload: only include when we have something to
-      // say. Empty string + no clear-pending means "leave unchanged"
-      // (PATCH semantics). A pending clear sends the explicit signal.
-      if (clearSimulatedTodayPending) {
-        payload.clear_simulated_today = true;
-      } else if (simulatedToday) {
-        payload.simulated_today = simulatedToday;
-      }
-      await adminService.updateSettings(payload);
-      // Re-fetch from DB so local state always reflects what was actually persisted.
-      const fresh = await adminService.getSettings();
-      setSettings(fresh);
+  // ── Settings mutation ──────────────────────────────────────────────────
+  // The previous handler did: PATCH → GET → setSettings → re-sync form
+  // state. With useMutation, the response of PATCH is already the fresh
+  // server view (the backend returns the updated row), so we:
+  //   1. Push the response straight into the ['admin', 'settings'] cache
+  //      via setQueryData. This skips an extra GET round-trip.
+  //   2. Re-sync the local form state from the response (the server may
+  //      have computed `active_cycle` from cycle_type + fiscal_start_month,
+  //      or normalized `simulation_allowed`).
+  //   3. Tell the global SystemSettingsProvider to refresh — it has its
+  //      own context-cached copy that drives banners and gates elsewhere.
+  //
+  // We deliberately use setQueryData here instead of invalidateQueries:
+  // setQueryData is synchronous and avoids a refetch round-trip when we
+  // already have the canonical response. For a save flow that's the
+  // right trade. invalidateQueries would also work but would add a
+  // wasted GET.
+  const updateSettingsMutation = useMutation({
+    mutationFn: (payload: AdminSettingsUpdatePayload) =>
+      adminService.updateSettings(payload),
+    onSuccess: (fresh) => {
+      queryClient.setQueryData(["admin", "settings"], fresh);
       setCycleType((fresh.cycle_type as CycleType) ?? "half_yearly");
       setFiscalStartMonth(fresh.fiscal_start_month ?? 4);
       setAnnualReviewsEnabled(fresh.annual_reviews_enabled ?? false);
@@ -235,13 +311,30 @@ export default function AdminPanel() {
       setSimulatedToday(fresh.simulated_today ?? "");
       setSimulationAllowed(fresh.simulation_allowed ?? false);
       setClearSimulatedTodayPending(false);
-      await refreshSettings();
+      void refreshSettings();
       toast.success("Configuration saved.");
-    } catch (err) {
-      snackbar.error(getErrorMessage(err));
-    } finally {
-      setIsSaving(false);
+    },
+    onError: (err) => snackbar.error(getErrorMessage(err)),
+  });
+
+  const handleSaveSettings = () => {
+    const payload: AdminSettingsUpdatePayload = {
+      cycle_type: cycleType,
+      fiscal_start_month: fiscalStartMonth,
+      annual_reviews_enabled: annualReviewsEnabled,
+      annual_goals_edit_enabled: annualGoalsEditEnabled,
+      project_ratings_visible: projectRatingsVisible,
+      annual_review_final_rating_visible: annualReviewFinalRatingVisible,
+    };
+    // Simulated-today payload: only include when we have something to
+    // say. Empty string + no clear-pending means "leave unchanged"
+    // (PATCH semantics). A pending clear sends the explicit signal.
+    if (clearSimulatedTodayPending) {
+      payload.clear_simulated_today = true;
+    } else if (simulatedToday) {
+      payload.simulated_today = simulatedToday;
     }
+    updateSettingsMutation.mutate(payload);
   };
 
   // ── Tab style helper ──────────────────────────────────────────────────────
@@ -366,7 +459,7 @@ export default function AdminPanel() {
               setClearSimulatedTodayPending(true);
             }}
             onSave={handleSaveSettings}
-            isSaving={isSaving}
+            isSaving={updateSettingsMutation.isPending}
           />
         )}
       </div>
@@ -385,7 +478,7 @@ export default function AdminPanel() {
         functions={functions}
         designations={designations}
         managers={mentorOptions}
-        isSaving={isSaving}
+        isSaving={isSavingUser}
         error={modalError}
       />
 

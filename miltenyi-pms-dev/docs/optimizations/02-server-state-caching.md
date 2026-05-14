@@ -1,6 +1,6 @@
 # 02 — Server-state caching with TanStack Query
 
-> **PR:** _pending_
+> **PR:** [#19](https://github.com/Healthark/miltenyi-pms/pull/19)
 > **Files changed:** `frontend/package.json` + lockfile (2 new deps), new `frontend/src/lib/queryClient.ts`, `frontend/src/main.tsx`, `frontend/src/contexts/AuthProvider.tsx`, 3 dashboard pages (`StaffDashboard`, `MentorDashboard`, `HrDashboard`), `frontend/vite.config.ts` (added `query-vendor` chunk).
 > **Headline result:** Cache + dedup + stale-while-revalidate now available everywhere. Three Dashboard variants migrated as the teaching example. Bundle cost: **+10 KB gzip** in a cacheable vendor chunk.
 
