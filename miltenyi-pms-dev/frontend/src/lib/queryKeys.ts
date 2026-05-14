@@ -97,4 +97,25 @@ export const queryKeys = {
     all: ["profile"] as const,
     expectations: () => [...queryKeys.profile.all, "expectations"] as const,
   },
+
+  // ── Project review rows ────────────────────────────────────────────
+  // The five page-level reads on /project-reviews. The PM and secondary
+  // mutation flows live in child tabs (PrimaryEvaluationTab,
+  // SecondaryEvalTab) which will add their own keys (pmQueue, single
+  // review detail) when those components are migrated in their own PRs.
+  //
+  // Note: this namespace's `roleExpectations` is project-scoped (covers
+  // exp_task_execution, exp_ownership, etc.) and is distinct from
+  // `profile.expectations` which is the annual-goal role-level
+  // expectation. Separate endpoints, separate cache entries.
+  projectReviews: {
+    all: ["project-reviews"] as const,
+    mine: () => [...queryKeys.projectReviews.all, "mine"] as const,
+    mentees: () => [...queryKeys.projectReviews.all, "mentees"] as const,
+    org: () => [...queryKeys.projectReviews.all, "org"] as const,
+    secondaryQueue: () =>
+      [...queryKeys.projectReviews.all, "secondary-queue"] as const,
+    roleExpectations: () =>
+      [...queryKeys.projectReviews.all, "role-expectations"] as const,
+  },
 } as const;

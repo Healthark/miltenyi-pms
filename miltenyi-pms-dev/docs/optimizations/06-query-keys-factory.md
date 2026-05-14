@@ -1,6 +1,6 @@
 # 06 — Query keys factory: single source of truth for every cache key
 
-> **PR:** _pending_
+> **PR:** [#23](https://github.com/Healthark/miltenyi-pms/pull/23)
 > **Files changed:** new `frontend/src/lib/queryKeys.ts`; 7 consumer files (`AdminPanel`, `StaffDashboard`, `MentorDashboard`, `HrDashboard`, `AnnualReviews`, `TeamReviewTab`, `AnnualGoals`).
 > **Headline result:** Every `queryKey: [...]`, `invalidateQueries({ queryKey: [...] })`, and `setQueryData([...], ...)` call site now goes through a typed factory. Typos are compile errors. Renaming a key only touches the factory.
 
