@@ -2,6 +2,7 @@ import { useState, useCallback, useMemo, useEffect, type ReactNode } from "react
 import { AuthContext, type AuthContextType } from "@/contexts/AuthContext";
 import { authService, type AuthResponse } from "@/services/auth.service";
 import { clearDismissedDashboardBanners } from "@/components/dashboard/DashboardAlerts";
+import { queryClient } from "@/lib/queryClient";
 
 interface AuthProviderProps {
   children: ReactNode;
@@ -57,6 +58,11 @@ export function AuthProvider({ children }: Readonly<AuthProviderProps>) {
     // this covers the case where the user logs out and logs back in
     // without restarting the browser.
     clearDismissedDashboardBanners();
+    // Drop every cached query so the next user on the same machine
+    // doesn't see flashes of the previous user's data while their
+    // queries refetch. `clear()` cancels in-flight fetches and resets
+    // all observers — safe to call even with no active queries.
+    queryClient.clear();
     setUser(null);
   }, []);
 

@@ -21,13 +21,11 @@
  * from first paint.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useSnackbar } from "@/hooks/useSnackbar";
-import {
-  dashboardService,
-  type DashboardSummary,
-} from "@/services/dashboard.service";
+import { dashboardService } from "@/services/dashboard.service";
 import { getErrorMessage } from "@/utils/errors";
 import { ActionItemsWidget } from "@/components/dashboard/ActionItemsWidget";
 import { ActiveCycleWidget } from "@/components/dashboard/ActiveCycleWidget";
@@ -39,22 +37,27 @@ export function StaffDashboard() {
   const { user } = useAuth();
   const snackbar = useSnackbar();
 
-  const [summary, setSummary] = useState<DashboardSummary | null>(null);
+  // useQuery replaces the useEffect + useState ceremony:
+  //   - The cache is keyed by ['dashboard', 'summary'], so MentorDashboard
+  //     (which uses the same key) will hit the same cache entry. Navigate
+  //     Staff → Mentor → Staff and the second Staff mount reads cache
+  //     instantly while a silent background refetch validates freshness.
+  //   - data is undefined until the first fetch resolves; the existing
+  //     `summary ? <Widget /> : <Skeleton />` ternaries below already
+  //     handle that, so the JSX is unchanged.
+  //   - The race-condition `cancelled` flag is gone — TanStack Query
+  //     handles unmount-mid-fetch internally via AbortController.
+  const { data: summary, error } = useQuery({
+    queryKey: ["dashboard", "summary"],
+    queryFn: dashboardService.getSummary,
+  });
 
+  // Surface fetch errors through the existing snackbar pattern. Kept as
+  // a separate effect rather than inlined into the queryFn so the
+  // snackbar stays out of the cache layer's concerns.
   useEffect(() => {
-    let cancelled = false;
-    dashboardService
-      .getSummary()
-      .then((res) => {
-        if (!cancelled) setSummary(res);
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) snackbar.error(getErrorMessage(err));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [snackbar]);
+    if (error) snackbar.error(getErrorMessage(error));
+  }, [error, snackbar]);
 
   const firstName = user?.full_name?.split(" ")[0] ?? "there";
 

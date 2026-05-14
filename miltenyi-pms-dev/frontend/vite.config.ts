@@ -62,6 +62,14 @@ export default defineConfig({
             if (/[\\/]node_modules[\\/]axios[\\/]/.test(id)) {
               return 'http-vendor';
             }
+            // TanStack Query core + devtools. Pair them so the devtools
+            // tree-shake cleanly in prod (the import.meta.env.DEV guard
+            // in main.tsx makes the entire devtools branch dead code,
+            // and Rolldown drops the chunk dependency). Cache-stable,
+            // bumped rarely.
+            if (/[\\/]node_modules[\\/]@tanstack[\\/]/.test(id)) {
+              return 'query-vendor';
+            }
             // Rolls the 80+ individual lucide icon chunks into one
             // cacheable file. Trades per-icon code-splitting (which
             // we weren't really benefiting from) for fewer HTTP

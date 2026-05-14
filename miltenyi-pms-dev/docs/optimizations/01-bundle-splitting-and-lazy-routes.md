@@ -1,6 +1,6 @@
 # 01 — Bundle splitting, lazy routes, and vendor chunks
 
-> **PR:** _pending_
+> **PR:** [#18](https://github.com/Healthark/miltenyi-pms/pull/18)
 > **Files changed:** `frontend/vite.config.ts`, `frontend/src/App.tsx`, plus 2 unrelated TS-error fixes (`SystemSettingsTab.tsx`, `MenteeAnnualSummaryTab.tsx`) that were blocking the build, plus new `frontend/analyze-bundle.cjs` helper script.
 > **Headline result:** Initial JS download dropped **185 KB → 67 KB gzip** after `React.lazy`. After adding vendor chunks the first-load came back up to **~115 KB** but per-deploy invalidation dropped to **~10–25 KB** (from 185 KB).
 
