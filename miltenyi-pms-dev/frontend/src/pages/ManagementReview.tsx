@@ -39,6 +39,7 @@ import {
 } from "@/services/annual-review.service";
 import { queryKeys } from "@/lib/queryKeys";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { patchRowsAcross } from "@/lib/optimistic";
 import { PerformanceRatingBadge } from "@/components/reviews/PerformanceRatingBadge";
 import { PerformanceRatingSelect } from "@/components/reviews/PerformanceRatingSelect";
 import { ReviewStatusBadge } from "@/components/reviews/ReviewStatusBadge";
@@ -278,21 +279,66 @@ export function ManagementReview() {
   // cleaner — three keys catch every consumer of the affected data,
   // and the wasted-refetch cost on dormant entries is essentially
   // zero (no observer = no refetch).
+  // Optimistic update (PR #50, doc 32). The user-visible payoff:
+  // clicking "Publish Rating" flips the row's status to "completed"
+  // and populates the management-rating column INSTANTLY in the
+  // calibration grid, before the network round-trip completes.
+  // The modal stays open until the server confirms — keeping it open
+  // means errors land in the existing in-modal `saveError` slot
+  // (recoverable: user can retry without losing context). The
+  // "instant feel" win comes from the row update, not the modal close.
+  //
+  // Patches across the entire `annual-reviews` namespace because the
+  // same review can appear in multiple cache entries (calibration
+  // grid + HR's `/annual-reviews/all` if HR has that tab loaded too).
   const setRatingMutation = useMutation({
     mutationFn: (vars: { reviewId: number; rating: number }) =>
       annualReviewService.setManagementRating(vars.reviewId, {
         management_performance_rating: vars.rating,
       }),
+    onMutate: async (vars) => {
+      // Cancel any in-flight refetches under `annual-reviews` so a
+      // stale response can't land AFTER the optimistic patch and
+      // overwrite it.
+      await queryClient.cancelQueries({
+        queryKey: queryKeys.annualReviews.all,
+      });
+      // Apply the patch across every cache entry containing this
+      // review row. `final_performance_rating` mirrors the backend's
+      // synthesized fallback (management ?? mentor) so the published
+      // value appears immediately.
+      const snapshot = patchRowsAcross<CalibrationRow>(
+        queryClient,
+        queryKeys.annualReviews.all,
+        (r) => r.review_id === vars.reviewId,
+        {
+          management_performance_rating: vars.rating,
+          final_performance_rating: vars.rating,
+          final_rating_enabled: true,
+          status: "completed",
+        },
+      );
+      return { snapshot };
+    },
     onSuccess: () => {
+      closeEdit();
+    },
+    onError: (err, _vars, context) => {
+      // Rollback — restore every cache entry the patch touched.
+      context?.snapshot.restore();
+      setSaveError(getErrorMessage(err));
+    },
+    onSettled: () => {
+      // Revalidate against server truth (success OR failure path).
+      // Catches anything the optimistic patch missed — e.g. dashboard
+      // counter rollups under `queryKeys.dashboard.all`.
       void queryClient.invalidateQueries({
         queryKey: queryKeys.annualReviews.all,
       });
       void queryClient.invalidateQueries({
         queryKey: queryKeys.dashboard.all,
       });
-      closeEdit();
     },
-    onError: (err) => setSaveError(getErrorMessage(err)),
   });
   const isSaving = setRatingMutation.isPending;
 
