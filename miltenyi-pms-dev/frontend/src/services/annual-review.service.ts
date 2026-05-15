@@ -157,9 +157,18 @@ export const annualReviewService = {
   },
 
   // ── Stage 2: Mentor ─────────────────────────────────────────────
-  getMenteeReviews: async (): Promise<MenteeAnnualReview[]> => {
-    const res = await apiClient.get<MenteeAnnualReview[]>(
+  /** Mentor's mentees' annual reviews across every cycle.
+   *
+   *  Paginated as of PR #40 (doc 23) — consistency-play pagination.
+   *  Mentor scale is small (most callers see one page), but the same
+   *  template applies for predictability + uniform Load More UI.
+   *  Server defaults: limit=50, max=200. Pair with `useInfiniteQuery`. */
+  getMenteeReviews: async (
+    params: { limit?: number; offset?: number } = {},
+  ): Promise<PaginatedMenteeReviews> => {
+    const res = await apiClient.get<PaginatedMenteeReviews>(
       "/annual-reviews/mentees",
+      { params },
     );
     return res.data;
   },
@@ -260,3 +269,7 @@ export type PaginatedAnnualReviews = Paginated<AnnualReview>;
  *  Per-row identity is the Staff user; `total` and `items.length` are
  *  the same unit (one calibration row per user). */
 export type PaginatedCalibration = Paginated<CalibrationRow>;
+/** Paginated response from GET /annual-reviews/mentees (PR #40).
+ *  Per-row identity is the AnnualReview; `total` and `items.length`
+ *  are the same unit (review-row count). */
+export type PaginatedMenteeReviews = Paginated<MenteeAnnualReview>;
