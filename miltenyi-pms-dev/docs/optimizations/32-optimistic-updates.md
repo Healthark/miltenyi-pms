@@ -1,6 +1,6 @@
 # 32 — Optimistic updates: instant-feel mutations via `onMutate` + rollback
 
-> **PR:** _pending_
+> **PR:** [#50](https://github.com/Healthark/miltenyi-pms/pull/50)
 > **Files changed:** `frontend/src/lib/optimistic.ts` (new), `frontend/src/pages/ManagementReview.tsx`, `frontend/src/components/goals/TeamGoalsTab.tsx`, `frontend/src/pages/MenteeDetail.tsx`.
 > **Headline result:** Opens theme 6 — the first non-data-volume optimization in the arc. After 31 docs of "fetch less / render less / sort in SQL," this one's about **perceived latency**: clicking "Approve" or "Publish Rating" no longer waits for the network round-trip before the UI reflects the change. New shared `patchRowsAcross` helper handles both `useQuery<T[]>` and `useInfiniteQuery` paginated-cache shapes — important because theme 5 baked filter/sort into queryKeys, so a single affected row can live in many cache entries that all need patching. Applied to four high-frequency mutations; deliberately skipped one (documented). Bundle: ~+0.4 KB gzip across three pages for the helper + four call-site rewrites.
 
