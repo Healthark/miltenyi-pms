@@ -95,11 +95,17 @@ export const queryKeys = {
      *  catch every filter-variant of this key. */
     org: (filters: Record<string, string | undefined> = {}) =>
       [...queryKeys.annualReviews.all, "org", filters] as const,
-    mentees: () => [...queryKeys.annualReviews.all, "mentees"] as const,
+    /** Mentor's mentees' annual reviews. Filter set baked into the key
+     *  (PR #46, doc 29) so each filter combination is its own cache
+     *  entry; broadcast invalidation on `annualReviews.all` catches
+     *  every variant. */
+    mentees: (filters: Record<string, string | number | undefined> = {}) =>
+      [...queryKeys.annualReviews.all, "mentees", filters] as const,
     /** Management Review calibration grid — every annual review in the
-     *  active FY for HR to publish management ratings on. */
-    calibration: () =>
-      [...queryKeys.annualReviews.all, "calibration"] as const,
+     *  active FY for HR to publish management ratings on. Filter set
+     *  baked into the key (PR #46, doc 29). */
+    calibration: (filters: Record<string, string | undefined> = {}) =>
+      [...queryKeys.annualReviews.all, "calibration", filters] as const,
     /** Per-review detail (full text + ratings), dynamic key. Used by
      *  the ManagementReview Rate modal to load self + mentor narratives
      *  alongside the rating selector. */

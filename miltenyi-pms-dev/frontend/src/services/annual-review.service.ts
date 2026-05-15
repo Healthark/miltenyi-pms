@@ -162,9 +162,13 @@ export const annualReviewService = {
    *  Paginated as of PR #40 (doc 23) — consistency-play pagination.
    *  Mentor scale is small (most callers see one page), but the same
    *  template applies for predictability + uniform Load More UI.
+   *
+   *  Server-side filters added in PR #46 (doc 29). Filter set is small:
+   *  fy_year (LIKE-OR vs cycle_name), status (direct column), mentee
+   *  (exact equality), search (substring ILIKE on mentee name).
    *  Server defaults: limit=50, max=200. Pair with `useInfiniteQuery`. */
   getMenteeReviews: async (
-    params: { limit?: number; offset?: number } = {},
+    params: MenteeReviewsRequestParams = {},
   ): Promise<PaginatedMenteeReviews> => {
     const res = await apiClient.get<PaginatedMenteeReviews>(
       "/annual-reviews/mentees",
@@ -206,9 +210,14 @@ export const annualReviewService = {
    *  row corresponds to exactly one Staff user, so unlike /goals/all
    *  (doc 20) `total` and `items.length` are the same unit — the
    *  user-row count for the page. Pair with `useInfiniteQuery`.
+   *
+   *  Server-side filters added in PR #46 (doc 29). Five dimensions:
+   *  function, designation, mentor (user-attribute filters);
+   *  status (EXISTS / NOT EXISTS against active-cycle review);
+   *  search (substring ILIKE on User.full_name AND User.email).
    *  Server defaults: limit=50, max=200. */
   getCalibrationGrid: async (
-    params: { limit?: number; offset?: number } = {},
+    params: CalibrationRequestParams = {},
   ): Promise<PaginatedCalibration> => {
     const res = await apiClient.get<PaginatedCalibration>(
       "/annual-reviews/calibration",
@@ -304,3 +313,39 @@ export type PaginatedCalibration = Paginated<CalibrationRow>;
  *  Per-row identity is the AnnualReview; `total` and `items.length`
  *  are the same unit (review-row count). */
 export type PaginatedMenteeReviews = Paginated<MenteeAnnualReview>;
+
+/** Filter set for GET /annual-reviews/calibration (PR #46, doc 29).
+ *  All optional. function/designation/mentor are exact-match user
+ *  attributes. status is the lifecycle state (or "not_started" for
+ *  users without a review in the active cycle). search is a substring
+ *  match on User.full_name OR User.email. */
+export interface CalibrationFilters {
+  function?: string;
+  designation?: string;
+  mentor?: string;
+  status?: ReviewStatus;
+  /** Substring match; frontend debounces before piping into queryKey. */
+  search?: string;
+}
+
+export type CalibrationRequestParams = CalibrationFilters & {
+  limit?: number;
+  offset?: number;
+};
+
+/** Filter set for GET /annual-reviews/mentees (PR #46, doc 29). */
+export interface MenteeReviewsFilters {
+  /** Fiscal-year integer (e.g. 2026); matches AnnualReview.cycle_name
+   *  via the same LIKE-OR pattern as /goals/all (doc 27). */
+  fy_year?: number;
+  status?: ReviewStatus;
+  /** Exact match on mentee full_name. */
+  mentee?: string;
+  /** Substring match on mentee full_name. Frontend debounces. */
+  search?: string;
+}
+
+export type MenteeReviewsRequestParams = MenteeReviewsFilters & {
+  limit?: number;
+  offset?: number;
+};

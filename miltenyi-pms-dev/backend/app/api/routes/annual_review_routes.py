@@ -33,7 +33,8 @@ Security Layers:
 
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Query, status
-from sqlalchemy.orm import joinedload
+from sqlalchemy import or_
+from sqlalchemy.orm import aliased, joinedload
 
 from app.api.dependencies import DbSession, CurrentUser
 from app.core.cycle_utils import (
@@ -637,6 +638,34 @@ def get_mentee_reviews(
         ge=0,
         description="Reviews to skip before this page. 0 for the first page.",
     ),
+    # ── Server-side filters (PR #46, doc 29) ─────────────────────────
+    fy_year: Optional[int] = Query(
+        None,
+        description=(
+            "Fiscal-year integer (2026, 2025, …). Matches review."
+            "cycle_name against modern 'FY26'-style and legacy "
+            "'H1 2026'-style formats via the same LIKE-OR pattern "
+            "used by /goals/all (doc 27 Part 3)."
+        ),
+    ),
+    status_: Optional[str] = Query(
+        None,
+        alias="status",
+        description="Exact match on review.status.",
+    ),
+    mentee: Optional[str] = Query(
+        None,
+        description="Exact match on the mentee's (review.user_id's) full_name.",
+    ),
+    search: Optional[str] = Query(
+        None,
+        description=(
+            "Substring search (ILIKE) on the mentee's full_name. "
+            "Single-column because the TeamReviewTab's search input "
+            "only narrows by name. Frontend debounces input (doc 29 "
+            "Part 4)."
+        ),
+    ),
 ):
     """
     Paginated reviews for the current user's direct mentees across every
@@ -687,6 +716,27 @@ def get_mentee_reviews(
         AnnualReview.org_id == current_user.org_id,
         AnnualReview.user_id.in_(mentee_ids),
     )
+
+    # ── Apply filters ─────────────────────────────────────────────
+    # Year filter mirrors the LIKE-OR pattern from /goals/all (doc 27
+    # Part 3). Status is a direct column. Mentee + search both target
+    # User.full_name; join User lazily.
+    if fy_year is not None:
+        yy = fy_year % 100
+        base_q = base_q.filter(
+            or_(
+                AnnualReview.cycle_name.like(f"FY{yy:02d}%"),
+                AnnualReview.cycle_name.like(f"%{fy_year}%"),
+            )
+        )
+    if status_:
+        base_q = base_q.filter(AnnualReview.status == status_)
+    if mentee or search:
+        base_q = base_q.join(User, User.id == AnnualReview.user_id)
+        if mentee:
+            base_q = base_q.filter(User.full_name == mentee)
+        if search:
+            base_q = base_q.filter(User.full_name.ilike(f"%{search}%"))
 
     total = base_q.with_entities(AnnualReview.id).count()
 
@@ -855,6 +905,45 @@ def get_calibration_grid(
         ge=0,
         description="Staff users to skip before this page. 0 for the first page.",
     ),
+    # ── Server-side filters (PR #46, doc 29) ─────────────────────────
+    # All exact-match equality except `search` which is substring (ILIKE).
+    function_: Optional[str] = Query(
+        None,
+        alias="function",
+        description="Exact match on the Staff user's Function name.",
+    ),
+    designation: Optional[str] = Query(
+        None,
+        description="Exact match on the Staff user's Designation name.",
+    ),
+    mentor: Optional[str] = Query(
+        None,
+        description=(
+            "Exact match on the user's LIVE mentor full_name (User.mentor "
+            "relationship). The frontend's `mentor_name` column prefers "
+            "the snapshotted review.mentor_id when a review exists — the "
+            "two diverge if a mentor changed mid-cycle. Documented in "
+            "doc 29 Part 3."
+        ),
+    ),
+    status_: Optional[str] = Query(
+        None,
+        alias="status",
+        description=(
+            "Filter by review status. `not_started` matches users with "
+            "no AnnualReview in the active cycle (via NOT EXISTS); other "
+            "values match users whose review has that status (via "
+            "EXISTS)."
+        ),
+    ),
+    search: Optional[str] = Query(
+        None,
+        description=(
+            "Substring search (ILIKE) across User.full_name AND "
+            "User.email. Frontend debounces input before passing it to "
+            "the queryKey to avoid a request per keystroke (doc 29 Part 4)."
+        ),
+    ),
 ):
     """
     Paginated calibration grid for the active cycle. Management-only.
@@ -874,11 +963,14 @@ def get_calibration_grid(
     instead of Python-side) and then batch-fetch reviews + mentors for
     just the page's user IDs.
 
+    ── Server-side filters (PR #46, doc 29) ─────────────────────────
+    Each filter narrows the user universe BEFORE pagination, so `total`
+    is the count of users matching ALL filters. Five dimensions:
+    function, designation, mentor (user-attribute), status (review-
+    attribute via EXISTS), search (substring across name + email).
+
     Sort moves into SQL — `User.full_name.asc()` — because OFFSET/LIMIT
-    only makes sense over a stable order. The old endpoint sorted in
-    Python after fetching every staff user, which is fine when you
-    have the whole list in memory but breaks once you only have a
-    page.
+    only makes sense over a stable order.
 
     Returns `Paginated[CalibrationRow]` (the standard wire shape from
     PR #36).
@@ -894,6 +986,53 @@ def get_calibration_grid(
         User.role == Role.STAFF.value,
         User.is_deleted == False,  # noqa: E712
     )
+
+    # ── Apply filters ─────────────────────────────────────────────
+    # User-attribute filters (function, designation) join the reference
+    # tables conditionally. Mentor uses an aliased User join (same
+    # pattern as doc 27 — User.mentor_id is the second FK to users).
+    # Status uses EXISTS / NOT EXISTS against the active-cycle review.
+    # Search uses ILIKE on name + email.
+    if function_:
+        base_q = base_q.join(Function, Function.id == User.function_id).filter(
+            Function.name == function_
+        )
+    if designation:
+        base_q = base_q.join(
+            Designation, Designation.id == User.designation_id
+        ).filter(Designation.name == designation)
+    if mentor:
+        MentorAlias = aliased(User)
+        base_q = base_q.join(MentorAlias, MentorAlias.id == User.mentor_id).filter(
+            MentorAlias.full_name == mentor
+        )
+    if status_:
+        review_exists = (
+            db.query(AnnualReview.id)
+            .filter(
+                AnnualReview.user_id == User.id,
+                AnnualReview.org_id == current_user.org_id,
+                AnnualReview.cycle_name == cycle_name,
+            )
+        )
+        if status_ == ReviewStatus.NOT_STARTED.value:
+            # "Not started" = no AnnualReview row for this user in the
+            # active cycle. NOT EXISTS is the correct semantic.
+            base_q = base_q.filter(~review_exists.exists())
+        else:
+            # Any other status = a review with that status exists. The
+            # frontend's status column reads `review.status` for users
+            # who have one, so this is symmetric.
+            review_exists = review_exists.filter(AnnualReview.status == status_)
+            base_q = base_q.filter(review_exists.exists())
+    if search:
+        pattern = f"%{search}%"
+        base_q = base_q.filter(
+            or_(
+                User.full_name.ilike(pattern),
+                User.email.ilike(pattern),
+            )
+        )
 
     # Total of matching users — pairs with `has_more` below. Pre-page
     # the page-relevant count is essentially free here (no joins,
