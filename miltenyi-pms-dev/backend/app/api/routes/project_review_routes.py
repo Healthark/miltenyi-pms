@@ -25,7 +25,7 @@ Endpoints:
 from dataclasses import dataclass, field
 from typing import Iterable, List, Optional
 from fastapi import APIRouter, HTTPException, Query, status
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import aliased, joinedload
 
 from app.api.dependencies import DbSession, CurrentUser
 from app.core.cycle_utils import (
@@ -1310,6 +1310,43 @@ def get_all_reviews(
         ge=0,
         description="Reviews to skip before this page. 0 for the first page.",
     ),
+    # ── Server-side filters (PR #45, doc 28) ─────────────────────────
+    # Each filter narrows the universe BEFORE pagination, so `total`
+    # reports the count of matching reviews and Load More pages through
+    # only those. All filters apply with AND. Exact-match equality
+    # everywhere (matches the frontend combobox/select UI which commits
+    # exact values; substring search would be a future PR).
+    cycle: Optional[str] = Query(
+        None,
+        description="Exact match on review.cycle (e.g. 'Q1 FY26-27').",
+    ),
+    status_: Optional[str] = Query(
+        None,
+        alias="status",
+        description=(
+            "Exact match on review.status. ProjectReviewStatus values "
+            "are 'pending' / 'reviewed' — the frontend's '4-stage' "
+            "status mapping is computed client-side from extra signals."
+        ),
+    ),
+    pm: Optional[str] = Query(
+        None,
+        description=(
+            "Exact match on the Project's assigned PM full_name. "
+            "Distinct from the reviewer (PM_id is set at project "
+            "creation; reviewer_id only stamped on submit). Joins User "
+            "via an aliased manager join so it doesn't collide with "
+            "the employee filter's User join."
+        ),
+    ),
+    employee: Optional[str] = Query(
+        None,
+        description="Exact match on the review subject's full_name.",
+    ),
+    project: Optional[str] = Query(
+        None,
+        description="Exact match on Project.name.",
+    ),
 ):
     """HR-only: paginated project reviews across the org, every cycle.
 
@@ -1317,6 +1354,12 @@ def get_all_reviews(
     has visibility into project reviews per the role spec. Returns every
     cycle so the frontend can render a full read-only history with a
     cycle filter; pagination caps how many rows are streamed per request.
+
+    Pagination + filtering (PR #45, doc 28): each filter narrows the
+    universe BEFORE pagination, so `total` is the count of rows
+    matching ALL active filters and Load More pages through what
+    matches. The frontend bakes the filter set into the queryKey, so
+    each filter combination gets its own cache entry.
 
     Pagination convention: standard offset/limit with `Paginated[T]` wire
     shape (doc 19). Pair with `useInfiniteQuery` on the frontend; each
@@ -1340,6 +1383,39 @@ def get_all_reviews(
         ProjectReview.org_id == current_user.org_id,
         ProjectReview.is_deleted == False,  # noqa: E712
     )
+
+    # ── Apply filters ─────────────────────────────────────────────
+    # Direct-column filters first (no joins). Then joins added lazily
+    # only when filters that need them are active. Three potential
+    # joins (Project, User-as-employee, User-as-pm); each is conditional.
+    if cycle:
+        base_q = base_q.filter(ProjectReview.cycle == cycle)
+    if status_:
+        base_q = base_q.filter(ProjectReview.status == status_)
+
+    needs_project_join = bool(pm or project)
+    if needs_project_join:
+        base_q = base_q.join(Project, Project.id == ProjectReview.project_id)
+        if project:
+            base_q = base_q.filter(Project.name == project)
+        if pm:
+            # `pm` filter joins User a second time via aliased(). The
+            # outer User-as-employee join (added below) is on
+            # ProjectReview.user_id; this one is on Project.pm_id. Same
+            # pattern as doc 27 (Goal.user_id vs Goal.manager_id) — two
+            # FKs into the same table need disambiguation.
+            PMUserAlias = aliased(User)
+            base_q = base_q.join(
+                PMUserAlias, PMUserAlias.id == Project.pm_id
+            ).filter(PMUserAlias.full_name == pm)
+
+    if employee:
+        # The employee filter targets the review subject (the person
+        # being reviewed), not the reviewer. `ProjectReview.user_id` is
+        # the subject; reviewer_id is the PM/secondary who wrote it.
+        base_q = base_q.join(User, User.id == ProjectReview.user_id).filter(
+            User.full_name == employee
+        )
 
     # Total of matching reviews — single COUNT(*) over an indexed filter.
     # The savings vs the legacy "fetch all + len()" pattern dominate at

@@ -292,9 +292,13 @@ export const projectReviewService = {
    *  corresponds to exactly one ProjectReview, so `total` and
    *  `items.length` are the same unit — the review-row count (no
    *  parent/child split like /goals/all, doc 20).
-   *  Server defaults: limit=50, max=200. Pair with `useInfiniteQuery`. */
+   *
+   *  Server-side filters added in PR #45 (doc 28). Each filter narrows
+   *  the universe BEFORE pagination, so `total` is the filtered count
+   *  and Load More pages through what matches. Filters AND together.
+   *  Server defaults: limit=50, max=200. */
   getAllReviews: async (
-    params: { limit?: number; offset?: number } = {},
+    params: AllProjectReviewsRequestParams = {},
   ): Promise<PaginatedProjectReviews> => {
     const res = await apiClient.get<PaginatedProjectReviews>(
       "/project-reviews/all",
@@ -315,3 +319,26 @@ export const projectReviewService = {
  *  Per-row identity is the ProjectReview; `total` and `items.length`
  *  are the same unit (one review per row). */
 export type PaginatedProjectReviews = Paginated<ProjectReviewResponse>;
+
+/** Filter set accepted by GET /project-reviews/all (PR #45, doc 28).
+ *  All fields optional; omitted fields don't narrow. Exact-match
+ *  equality. The frontend's combobox/select UI commits exact values
+ *  so partial-match isn't needed yet. */
+export interface AllProjectReviewsFilters {
+  /** Exact match on review.cycle (e.g. "Q1 FY26-27"). */
+  cycle?: string;
+  /** Exact match on review.status. */
+  status?: string;
+  /** Exact match on the project's assigned PM full_name. */
+  pm?: string;
+  /** Exact match on the review subject's full_name. */
+  employee?: string;
+  /** Exact match on Project.name. */
+  project?: string;
+}
+
+/** Full request shape: pagination knobs + filter dimensions. */
+export type AllProjectReviewsRequestParams = AllProjectReviewsFilters & {
+  limit?: number;
+  offset?: number;
+};
