@@ -1,0 +1,11 @@
+# Test-only dependencies. Keep separate from `requirements.txt` so
+# production deploys don't pull pytest into the image.
+#
+# Install locally:
+#   pip install -r requirements.txt -r requirements-dev.txt
+#
+# Run tests:
+#   cd backend && pytest
+
+pytest==8.3.4
+httpx==0.27.2
