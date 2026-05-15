@@ -42,6 +42,7 @@ from app.core.cycle_utils import (
     resolve_today,
 )
 from app.models.annual_review_models import AnnualReview, ReviewStatus
+from app.models.reference_models import Function, Designation
 from app.models.system_settings_models import SystemSettings, CycleType
 from app.models.user_models import User, Role
 from app.schemas.annual_review_schemas import (
@@ -423,6 +424,46 @@ def get_all_annual_reviews(
         ge=0,
         description="Rows to skip before this page. 0 for the first page.",
     ),
+    # ── Server-side filters (PR #43, doc 26) ─────────────────────────
+    # Each filter narrows the universe BEFORE pagination, so `total`
+    # reports the count of matching rows and Load More pages through
+    # only those. Filters apply with AND semantics — passing multiple
+    # narrows further. All filters are exact-match equality (matches
+    # the frontend's combobox/select UI which commits exact values).
+    # Substring search is a future PR.
+    cycle: Optional[str] = Query(
+        None,
+        description="Exact match on review.cycle_name (e.g. 'Q1 FY26-27').",
+    ),
+    # `status` and `function` collide with the imported `status` module
+    # and the Python builtin `function` type. Use Python-side `_`
+    # suffixes and `alias=` to keep the wire-name clean.
+    status_: Optional[str] = Query(
+        None,
+        alias="status",
+        description="Exact match on review.status (one of the ReviewStatus values).",
+    ),
+    function_: Optional[str] = Query(
+        None,
+        alias="function",
+        description=(
+            "Exact match on the employee's Function name. Joins to "
+            "User → Function so a reference-table relationship is "
+            "traversed; no per-row queries."
+        ),
+    ),
+    designation: Optional[str] = Query(
+        None,
+        description="Exact match on the employee's Designation name.",
+    ),
+    employee: Optional[str] = Query(
+        None,
+        description=(
+            "Exact match on the employee's full_name. The frontend's "
+            "typeable combobox commits exact values, so equality is "
+            "correct here. Substring search would be a future PR."
+        ),
+    ),
 ):
     """HR_MyOrg-only: paginated annual reviews across the org, every cycle.
 
@@ -430,15 +471,28 @@ def get_all_annual_reviews(
     HR_MyOrg is the management role, so private ratings are NOT stripped —
     they need to see the full picture for calibration / auditing.
 
-    Pagination convention: standard offset/limit. Frontend pairs this
-    with TanStack Query's `useInfiniteQuery` (see frontend doc #19).
-    Returns `Paginated[AnnualReviewResponse]` (see schemas/pagination.py)
-    with the page's rows plus `total` and `has_more`.
+    Pagination + filtering: the frontend bakes the filter set into the
+    TanStack Query queryKey, so each filter combination gets its own
+    cache entry. Changing a filter triggers a new paginated fetch from
+    scratch (offset resets to 0). See doc 26.
+
+    Returns `Paginated[AnnualReviewResponse]` where `total` is the count
+    of rows matching ALL active filters (not the org-wide count).
+    `has_more` indicates whether more pages of the FILTERED universe
+    exist — Load More on a filtered view pages through what matches,
+    not the whole org.
+
+    Filter semantics:
+      • All filters apply with AND. Missing filters mean "no narrowing".
+      • All filters are exact-match equality.
+      • user-attribute filters (function/designation/employee) require
+        a JOIN to User; the join is added conditionally so unfiltered
+        requests stay fast.
 
     Why offset/limit and not cursor: the underlying data is mostly
     stable within a calibration window (rows are appended at low
     velocity). Cursor-based pagination's robustness against churn
-    isn't worth its added complexity here. Documented in doc #19.
+    isn't worth its added complexity here. Documented in doc 19.
 
     Resolves `employee_name` and `mentor_name` for THIS PAGE in two
     batched lookups (no N+1). Total count is a single COUNT(*) over
@@ -453,6 +507,37 @@ def get_all_annual_reviews(
         AnnualReview.org_id == current_user.org_id
     )
 
+    # ── Apply filters ─────────────────────────────────────────────
+    # Each filter narrows base_q with an AND-WHERE. Direct columns
+    # (cycle_name, status) hit AnnualReview without a join. User-
+    # attribute filters require joining the User row first; we add the
+    # join lazily so unfiltered requests stay single-table.
+    if cycle:
+        base_q = base_q.filter(AnnualReview.cycle_name == cycle)
+    if status_:
+        base_q = base_q.filter(AnnualReview.status == status_)
+
+    needs_user_join = bool(function_ or designation or employee)
+    if needs_user_join:
+        # INNER JOIN is correct here: every AnnualReview has a non-null
+        # user_id (FK constraint), so the join never drops legitimate
+        # rows. The user-attribute filters then narrow further.
+        base_q = base_q.join(User, User.id == AnnualReview.user_id)
+        if employee:
+            base_q = base_q.filter(User.full_name == employee)
+        if function_:
+            # Joining via the FK to the Function reference table. We
+            # could use User.function.has(...) which emits an EXISTS
+            # subquery; an explicit join is more readable and has the
+            # same plan in Postgres.
+            base_q = base_q.join(Function, Function.id == User.function_id).filter(
+                Function.name == function_
+            )
+        if designation:
+            base_q = base_q.join(
+                Designation, Designation.id == User.designation_id
+            ).filter(Designation.name == designation)
+
     # Total count of matching rows. Used both for the response's
     # `total` field and for the `has_more` flag. A single COUNT(*)
     # adds one DB round-trip vs the legacy "fetch all then len()" but
@@ -465,6 +550,11 @@ def get_all_annual_reviews(
         base_q.order_by(
             AnnualReview.cycle_name.desc(),
             AnnualReview.created_at.desc(),
+            # Tiebreaker (doc 22 lesson). Required even more now that
+            # filters can change the effective ordering — two rows with
+            # the same (cycle_name, created_at) must keep a deterministic
+            # position across pages of the FILTERED universe.
+            AnnualReview.id.desc(),
         )
         .offset(offset)
         .limit(limit)

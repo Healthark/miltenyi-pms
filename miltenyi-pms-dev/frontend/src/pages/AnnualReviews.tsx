@@ -22,6 +22,7 @@ import { SortableHeader } from "@/components/SortableHeader";
 import { compareValues, type SortKind, type SortState, type SortValue } from "@/utils/sort";
 import {
   annualReviewService,
+  type AllReviewsFilters,
   type AnnualReview,
   type SelfReviewPayload,
   type SelfReviewDraftPayload,
@@ -114,20 +115,41 @@ export function AnnualReviews() {
   // Paginated as of PR #19 (foundation for the pagination theme).
   // useInfiniteQuery stores pages as { pages: PaginatedAnnualReviews[], pageParams: number[] }.
   // We flatten data.pages.flatMap(p => p.items) for the rest of the
-  // component, which keeps every consumer that does .filter()/.sort()
-  // working unchanged.
+  // component, which keeps every consumer that does .sort() working
+  // unchanged.
+  //
+  // ── Server-side filters (PR #43, doc 26) ─────────────────────────
+  // Filter state lives at this page-level so it can be baked into the
+  // queryKey. Each distinct filter set is its own cache entry; changing
+  // a filter triggers a fresh paginated fetch from offset=0 (TanStack
+  // Query handles the reset automatically — different key, different
+  // pages array). AllReviewsTab consumes filters + setter as props.
   //
   // - initialPageParam: 0  → first request: GET /all?offset=0&limit=50
   // - getNextPageParam: derives the next offset from the previous page's
   //   has_more flag (server-computed). Return undefined to stop paging.
-  // - The cache key (queryKeys.annualReviews.org()) is the SAME as the
-  //   legacy single-query version, so any mutation that invalidates
-  //   this key triggers a refetch of the loaded pages.
+  // - queryKey: queryKeys.annualReviews.org(filterParams) bakes the
+  //   non-empty filter values into the cache key. Existing broadcast
+  //   invalidations on `queryKeys.annualReviews.all` still catch every
+  //   filter-variant entry under it.
   const PAGE_SIZE = 50;
+  const [allReviewsFilters, setAllReviewsFilters] = useState<AllReviewsFilters>(
+    {},
+  );
+  // Drop undefined/empty values so cache keys for "no filter X" and
+  // "filter X = '' " collapse to the same entry. Without this the
+  // queryKey would carry noise and never match a previously-cached
+  // entry on the same filter set.
+  const filterParams: Record<string, string> = Object.fromEntries(
+    Object.entries(allReviewsFilters).filter(
+      ([, v]) => v !== undefined && v !== "",
+    ),
+  ) as Record<string, string>;
   const allReviewsQuery = useInfiniteQuery({
-    queryKey: queryKeys.annualReviews.org(),
+    queryKey: queryKeys.annualReviews.org(filterParams),
     queryFn: ({ pageParam }) =>
       annualReviewService.getAllReviews({
+        ...filterParams,
         limit: PAGE_SIZE,
         offset: pageParam,
       }),
@@ -388,6 +410,8 @@ export function AnnualReviews() {
               onLoadMore={() => {
                 void allReviewsQuery.fetchNextPage();
               }}
+              filters={allReviewsFilters}
+              onFiltersChange={setAllReviewsFilters}
             />
           )}
         </div>
@@ -443,15 +467,20 @@ function AllReviewsTab({
   hasNextPage,
   isFetchingNextPage,
   onLoadMore,
+  filters,
+  onFiltersChange,
 }: {
   readonly reviews: AnnualReview[];
   readonly isLoading: boolean;
-  /** Total rows matching the underlying query across all pages. The
-   *  server returns this on every paginated response; we display it as
-   *  "Showing N of T" alongside the Load More button. */
+  /** Total rows matching the SERVER FILTER across all pages. Equal to
+   *  the org-wide review count when no filters are active; smaller as
+   *  filters narrow. The server returns this on every paginated
+   *  response (same value across pages of the same filter set). */
   readonly total: number;
-  /** True while at least one more page exists on the server (server-
-   *  derived from has_more on the most recent page). */
+  /** True while at least one more page exists on the server FOR THE
+   *  CURRENT FILTER SET (server-derived from has_more). When filters
+   *  change, the cache entry resets and `hasNextPage` recomputes
+   *  against the new universe. */
   readonly hasNextPage: boolean;
   /** True while a fetchNextPage() call is in flight — drives the Load
    *  More button's spinner state without flashing the initial-load
@@ -459,21 +488,28 @@ function AllReviewsTab({
   readonly isFetchingNextPage: boolean;
   /** Trigger for fetchNextPage. Wired by the parent page. */
   readonly onLoadMore: () => void;
+  /** Current filter set. Controlled by the page so the values flow
+   *  into the useInfiniteQuery's queryKey (PR #43, doc 26). */
+  readonly filters: AllReviewsFilters;
+  /** Setter for the filter set. Each call replaces the entire object;
+   *  helpers below produce new objects via `{ ...filters, X: value }`. */
+  readonly onFiltersChange: (next: AllReviewsFilters) => void;
 }) {
-  const [cycleFilter, setCycleFilter] = useState<string>("all");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [functionFilter, setFunctionFilter] = useState<string>("all");
-  const [designationFilter, setDesignationFilter] = useState<string>("all");
-  // Employee filter is a typeable combobox (StringCombobox) — looks like a
-  // standard scrollable dropdown but accepts free-text typing to narrow
-  // the list. Empty string means "no employee filter applied".
-  const [employeeQuery, setEmployeeQuery] = useState<string>("");
+  // Local-only state remains local: sort + expansion. Filters were
+  // moved up to the page so they can flow into the queryKey.
   const [sort, setSort] = useState<SortState<AllReviewsSortKey> | null>(null);
   // Inline expansion: clicking a row reveals the self + mentor narrative
   // side-by-side. Only one row at a time; clicking the same row again
   // collapses it.
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
+  // Faceted-style dropdown options — derived from the LOADED reviews,
+  // which is the filtered universe (since the server already filtered).
+  // Trade-off: when a filter narrows the universe, OTHER dropdowns
+  // only show values present in that narrow set. Workaround: clear a
+  // dropdown to see its full option list refresh on the next fetch.
+  // A future "facets endpoint" could return all distinct values
+  // regardless of filters — out of scope for this PR (doc 26 Part 4).
   const cycles = Array.from(
     new Set(reviews.map((r) => r.cycle_name).filter(Boolean)),
   ).sort((a, b) => b.localeCompare(a));
@@ -489,23 +525,30 @@ function AllReviewsTab({
     new Set(reviews.map((r) => r.designation).filter((n): n is string => !!n)),
   ).sort();
 
-  const filtered = reviews.filter((r) => {
-    if (cycleFilter !== "all" && r.cycle_name !== cycleFilter) return false;
-    if (statusFilter !== "all" && r.status !== statusFilter) return false;
-    if (functionFilter !== "all" && r.function !== functionFilter) return false;
-    if (designationFilter !== "all" && r.designation !== designationFilter) return false;
-    // Combobox commits the exact selected name, so an equality check is
-    // both faster and consistent with the other dropdown filters.
-    if (employeeQuery && r.employee_name !== employeeQuery) return false;
-    return true;
-  });
-
+  // No client-side filter loop anymore — `reviews` IS the filtered
+  // universe (the server applied the filters and returned matching
+  // rows). Sort stays client-side because it operates on the loaded
+  // pages; server-side sort is a future PR (would need ?sort_by= +
+  // ?sort_dir= params and a stable secondary tiebreaker).
   const sorted = sort
-    ? filtered.slice().sort((a, b) => {
+    ? reviews.slice().sort((a, b) => {
         const { kind, get } = ALL_REVIEWS_SORT_CONFIG[sort.key];
         return compareValues(get(a), get(b), kind, sort.direction);
       })
-    : filtered;
+    : reviews;
+
+  // Helpers that adapt the "all"/"" sentinel values used by the
+  // dropdown/combobox UI to the AllReviewsFilters shape (undefined =
+  // no narrowing on this dim). Pure functions, no React state.
+  const setFilter = <K extends keyof AllReviewsFilters>(
+    key: K,
+    value: AllReviewsFilters[K] | "" | "all",
+  ) => {
+    onFiltersChange({
+      ...filters,
+      [key]: value === "" || value === "all" ? undefined : value,
+    });
+  };
 
   // ── Virtualization (variable-height) ──────────────────────────────
   // measureElement turns this into a variable-height virtualizer:
@@ -535,15 +578,26 @@ function AllReviewsTab({
       </div>
     );
   }
+  // Empty-state messaging splits between "org has no reviews" and
+  // "your filter set returned nothing" because the two demand
+  // different remediation. Pre-PR-#43 the loaded array could only be
+  // empty for the first reason; now the server can return zero rows
+  // for any filter the user picks, so we name what happened.
+  const hasActiveFilters = Object.values(filters).some(
+    (v) => v !== undefined && v !== "",
+  );
   if (reviews.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border py-16 text-center bg-background/50">
         <p className="font-display text-base font-medium text-text-main">
-          No annual reviews recorded
+          {hasActiveFilters
+            ? "No reviews match these filters"
+            : "No annual reviews recorded"}
         </p>
         <p className="mt-1 text-sm text-text-muted">
-          Reviews will appear here once Staff submit self-reviews and mentors
-          start evaluating.
+          {hasActiveFilters
+            ? "Try clearing one or more filters above to broaden the result."
+            : "Reviews will appear here once Staff submit self-reviews and mentors start evaluating."}
         </p>
       </div>
     );
@@ -568,8 +622,8 @@ function AllReviewsTab({
           <StringCombobox
             id="all-rev-employee"
             options={employees}
-            value={employeeQuery}
-            onChange={setEmployeeQuery}
+            value={filters.employee ?? ""}
+            onChange={(v) => setFilter("employee", v)}
             placeholder="Type a name…"
           />
         </div>
@@ -580,8 +634,8 @@ function AllReviewsTab({
           </label>
           <select
             id="all-rev-cycle"
-            value={cycleFilter}
-            onChange={(e) => setCycleFilter(e.target.value)}
+            value={filters.cycle ?? "all"}
+            onChange={(e) => setFilter("cycle", e.target.value)}
             className={`${selectCls} min-w-[120px]`}
           >
             <option value="all">All</option>
@@ -599,8 +653,10 @@ function AllReviewsTab({
           </label>
           <select
             id="all-rev-status"
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
+            value={filters.status ?? "all"}
+            onChange={(e) =>
+              setFilter("status", e.target.value as AllReviewsFilters["status"] | "all")
+            }
             className={`${selectCls} min-w-[150px]`}
           >
             <option value="all">All</option>
@@ -619,8 +675,8 @@ function AllReviewsTab({
             </label>
             <select
               id="all-rev-function"
-              value={functionFilter}
-              onChange={(e) => setFunctionFilter(e.target.value)}
+              value={filters.function ?? "all"}
+              onChange={(e) => setFilter("function", e.target.value)}
               className={`${selectCls} min-w-[130px]`}
             >
               <option value="all">All</option>
@@ -640,8 +696,8 @@ function AllReviewsTab({
             </label>
             <select
               id="all-rev-designation"
-              value={designationFilter}
-              onChange={(e) => setDesignationFilter(e.target.value)}
+              value={filters.designation ?? "all"}
+              onChange={(e) => setFilter("designation", e.target.value)}
               className={`${selectCls} min-w-[150px]`}
             >
               <option value="all">All</option>
@@ -655,16 +711,13 @@ function AllReviewsTab({
         )}
 
         <span className="text-xs text-text-muted">
-          {/* `total` is the server's count across ALL pages, not just
-              loaded ones. `reviews.length` is what's loaded so far on
-              the frontend. Filter applies to what's loaded — so a
-              filter like "function = Engineering" might match nothing
-              on the current page but match results in later pages
-              that haven't been fetched yet. The "Showing N of T"
-              framing is honest: T is the universe, N is what's
-              visible-after-filter from-what's-loaded. (Server-side
-              filtering moves to a future PR — see doc #19 part 7.) */}
-          {filtered.length} of {total}
+          {/* `total` is the server's count of rows matching the active
+              filter set (PR #43, doc 26). Equal to the org-wide
+              review count when no filters are active; smaller as
+              filters narrow. The "loaded of total" counter beside the
+              Load More button below tracks paging progress through
+              the filtered universe. */}
+          {total} {total === 1 ? "match" : "matches"}
         </span>
        </div>
        <div className="shrink-0">
