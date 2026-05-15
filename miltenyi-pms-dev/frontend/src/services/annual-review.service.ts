@@ -246,9 +246,17 @@ export const annualReviewService = {
    *  Query's useInfiniteQuery — see doc #19 for the full pattern.
    *  Server defaults: limit=50, offset=0. Server max: limit=200.
    *  Response carries `has_more` so the UI can disable the "Load
-   *  more" button without arithmetic. */
+   *  more" button without arithmetic.
+   *
+   *  Server-side filters added in PR #43 (doc 26). Each filter narrows
+   *  the universe BEFORE pagination, so `total` is the count of rows
+   *  matching ALL active filters and Load More pages through what
+   *  matches. Filters apply with AND. Pass `undefined` (or omit) to
+   *  not filter on a dimension. The frontend bakes the filter object
+   *  into the queryKey, so changing a filter triggers a fresh
+   *  paginated fetch from offset 0. */
   getAllReviews: async (
-    params: { limit?: number; offset?: number } = {},
+    params: AllReviewsRequestParams = {},
   ): Promise<PaginatedAnnualReviews> => {
     const res = await apiClient.get<PaginatedAnnualReviews>(
       "/annual-reviews/all",
@@ -256,6 +264,29 @@ export const annualReviewService = {
     );
     return res.data;
   },
+};
+
+/** Filter set accepted by GET /annual-reviews/all (PR #43, doc 26).
+ *  All fields optional; omitted fields don't narrow. All matches are
+ *  exact-equality (the frontend's combobox/select UI commits exact
+ *  values — substring search is a future PR). */
+export interface AllReviewsFilters {
+  /** Exact match on cycle_name (e.g. "Q1 FY26-27"). */
+  cycle?: string;
+  /** Exact match on ReviewStatus (e.g. "draft", "pending_mentor"). */
+  status?: ReviewStatus;
+  /** Exact match on the employee's Function name. */
+  function?: string;
+  /** Exact match on the employee's Designation name. */
+  designation?: string;
+  /** Exact match on the employee's full_name. */
+  employee?: string;
+}
+
+/** Full request shape: pagination knobs + the filter dimensions. */
+export type AllReviewsRequestParams = AllReviewsFilters & {
+  limit?: number;
+  offset?: number;
 };
 
 /** Generic paginated-response wrapper lives in `@/lib/pagination` so it

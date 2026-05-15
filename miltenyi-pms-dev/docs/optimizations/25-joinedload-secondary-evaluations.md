@@ -1,6 +1,6 @@
 # 25 — Joinedload polish: collapse N lazy loads on `secondary_evaluations`
 
-> **PR:** _pending_
+> **PR:** [#42](https://github.com/Healthark/miltenyi-pms/pull/42)
 > **Files changed:** `backend/app/api/routes/project_review_routes.py`.
 > **Headline result:** Closes the doc-24 sub-arc. The prefetch helper from PR #41 collapsed `5N` per-row entity queries into 2 batched ones, but **still triggered N lazy loads** when iterating each review's `secondary_evaluations` relationship to collect evaluator ids. One `.options(joinedload(ProjectReview.secondary_evaluations))` per batch route folds those into the parent SELECT via a LEFT JOIN. At `limit=50`, query count drops from **~52 to ~5** — a true constant regardless of page size.
 

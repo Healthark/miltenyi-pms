@@ -86,7 +86,15 @@ export const queryKeys = {
   annualReviews: {
     all: ["annual-reviews"] as const,
     mine: () => [...queryKeys.annualReviews.all, "mine"] as const,
-    org: () => [...queryKeys.annualReviews.all, "org"] as const,
+    /** HR_MyOrg's org-wide "All Reviews" cache entry. Filters are baked
+     *  into the key (PR #43, doc 26) so each filter combination is its
+     *  own paginated cache entry. Passing `{}` (or no argument) is the
+     *  "no filter" universe — TanStack Query deep-equals the key, so
+     *  `org()` and `org({})` resolve to the same entry. Existing
+     *  broadcast invalidations on `queryKeys.annualReviews.all` still
+     *  catch every filter-variant of this key. */
+    org: (filters: Record<string, string | undefined> = {}) =>
+      [...queryKeys.annualReviews.all, "org", filters] as const,
     mentees: () => [...queryKeys.annualReviews.all, "mentees"] as const,
     /** Management Review calibration grid — every annual review in the
      *  active FY for HR to publish management ratings on. */
