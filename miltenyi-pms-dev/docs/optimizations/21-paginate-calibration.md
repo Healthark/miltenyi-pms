@@ -1,6 +1,6 @@
 # 21 — Paginate `GET /annual-reviews/calibration`: the degenerate list-of-parents
 
-> **PR:** _pending_
+> **PR:** [#38](https://github.com/Healthark/miltenyi-pms/pull/38)
 > **Files changed:** `backend/app/api/routes/annual_review_routes.py`, `frontend/src/services/annual-review.service.ts`, `frontend/src/pages/ManagementReview.tsx`.
 > **Headline result:** Third paginated endpoint. Each calibration row corresponds to exactly one Staff user (reviews are 0-or-1 per user in the active cycle), so the list-of-parents pattern from PR #37 collapses to "paginate the rows" — `total` and `items.length` measure the same thing again. The change is a near-mechanical application of the template, with one subtle gotcha that's worth its own section: **the sort moves from Python into SQL**, because OFFSET/LIMIT is meaningless without a stable ORDER BY. Bundle: ManagementReview **17.21 → 17.96 KB raw, 4.44 → 4.65 KB gzip** (+0.21 KB gzip).
 
