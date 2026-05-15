@@ -1,6 +1,6 @@
 # 31 — Server-side sort rollout: 4 endpoints, template at full speed
 
-> **PR:** _pending_
+> **PR:** [#48](https://github.com/Healthark/miltenyi-pms/pull/48)
 > **Files changed:** `backend/app/api/routes/goal_routes.py`, `backend/app/api/routes/project_review_routes.py`, `backend/app/api/routes/annual_review_routes.py`, `frontend/src/services/goal.service.ts`, `frontend/src/services/project-review.service.ts`, `frontend/src/services/annual-review.service.ts`, `frontend/src/pages/AnnualGoals.tsx`, `frontend/src/pages/ProjectReviews.tsx`, `frontend/src/pages/ManagementReview.tsx`, `frontend/src/components/reviews/TeamReviewTab.tsx`.
 > **Headline result:** Applies doc 30's server-side sort template to the remaining four paginated endpoints (`/goals/all`, `/project-reviews/all`, `/calibration`, `/mentees`). Theme 5 is now complete — every paginated list endpoint in the codebase has server-side filter AND sort. Per-endpoint wrinkles documented (list-of-parents preservation, module-level aliased joins, OUTER JOIN for review-derived columns, deliberate lifecycle → lexical status-sort shift). Three of four bundles shrink; ProjectReviews adds 0.09 KB gzip for dual-mode component plumbing.
 
