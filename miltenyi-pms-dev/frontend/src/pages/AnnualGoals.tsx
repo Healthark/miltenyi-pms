@@ -1,5 +1,10 @@
 import { useEffect, useCallback, useRef, useState, Fragment } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { queryKeys } from "@/lib/queryKeys";
 import {
@@ -271,16 +276,56 @@ export function AnnualGoals() {
     queryFn: () => goalService.getMyGoals("annual"),
     enabled: isStaff,
   });
-  const allGoalsQuery = useQuery({
+  // Paginated as of PR #37 (doc 20). Same useInfiniteQuery shape as the
+  // AnnualReviews "All Reviews" tab (doc 19), but the server here
+  // paginates by EMPLOYEE not by goal row — see goalService.getAllGoals
+  // for the rationale. Practical consequences:
+  //
+  //   • `flatMap(p => p.items)` still yields a goal array; the existing
+  //     `buildAllGoalsGroups` consumes it unchanged, producing complete
+  //     per-employee groups (no employee straddles two pages).
+  //   • `total` returned by the server is the EMPLOYEE count, not the
+  //     goal-row count. The UI counter renders "Loaded N of T
+  //     employees · M goals" — both units, because both matter to HR.
+  //   • The cache key (queryKeys.goals.org()) is the SAME as the legacy
+  //     single-query version, so the broadcast invalidation on
+  //     queryKeys.goals.all (see mutations below) refetches whatever
+  //     pages are currently loaded.
+  //
+  // - initialPageParam: 0  → first request: GET /goals/all?offset=0&limit=50
+  // - getNextPageParam: derives the next offset from the previous page's
+  //   has_more flag (server-computed). Return undefined to stop paging.
+  const ALL_GOALS_PAGE_SIZE = 50;
+  const allGoalsQuery = useInfiniteQuery({
     queryKey: queryKeys.goals.org(),
-    queryFn: goalService.getAllGoals,
+    queryFn: ({ pageParam }) =>
+      goalService.getAllGoals({
+        limit: ALL_GOALS_PAGE_SIZE,
+        offset: pageParam,
+      }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) =>
+      lastPage.has_more ? lastPage.offset + lastPage.limit : undefined,
     enabled: isHRMyOrg,
   });
 
   const roleExpectation: UserRoleExpectation | null =
     expectationsQuery.data ?? null;
   const goals: Goal[] = myGoalsQuery.data ?? [];
-  const allGoals: TeamGoal[] = allGoalsQuery.data ?? [];
+  // Flatten loaded pages into a single goal array. Every consumer
+  // downstream (filters, sort, grouping) sees one combined list as the
+  // user loads more pages. Empty array on the first render before any
+  // page resolves.
+  const allGoals: TeamGoal[] =
+    allGoalsQuery.data?.pages.flatMap((p) => p.items) ?? [];
+  // Total employee count across ALL pages (the server returns the same
+  // value on every paginated response, so we read it off the latest
+  // page). 0 before the first page resolves.
+  const allGoalsTotalEmployees =
+    allGoalsQuery.data?.pages[allGoalsQuery.data.pages.length - 1]?.total ?? 0;
+  // For paginated queries `isPending` covers ONLY the first-page fetch
+  // (no pages loaded yet); subsequent fetchNextPage() calls flip
+  // `isFetchingNextPage` instead, handled at the Load More button below.
   const isLoading = isStaff
     ? myGoalsQuery.isPending
     : isHRMyOrg
@@ -923,7 +968,16 @@ export function AnnualGoals() {
 
           {/* ── HR_MyOrg view-only "All Goals" tab ── */}
           {isHRMyOrg && activeTab === "all" && (
-            <AllGoalsTab goals={allGoals} isLoading={isLoading} />
+            <AllGoalsTab
+              goals={allGoals}
+              isLoading={isLoading}
+              totalEmployees={allGoalsTotalEmployees}
+              hasNextPage={Boolean(allGoalsQuery.hasNextPage)}
+              isFetchingNextPage={allGoalsQuery.isFetchingNextPage}
+              onLoadMore={() => {
+                void allGoalsQuery.fetchNextPage();
+              }}
+            />
           )}
         </div>
       </div>
@@ -995,9 +1049,27 @@ const ALL_GOALS_OVERSCAN = 4;
 function AllGoalsTab({
   goals,
   isLoading,
+  totalEmployees,
+  hasNextPage,
+  isFetchingNextPage,
+  onLoadMore,
 }: {
   readonly goals: TeamGoal[];
   readonly isLoading: boolean;
+  /** Total employees-with-goals matching the underlying query across all
+   *  pages. The pagination unit is employees, not goal rows — see
+   *  goalService.getAllGoals. Used by the UI counter alongside the
+   *  loaded-goals count. */
+  readonly totalEmployees: number;
+  /** True while at least one more PAGE of employees exists on the
+   *  server (server-derived from has_more on the latest page). */
+  readonly hasNextPage: boolean;
+  /** True while a fetchNextPage() call is in flight — drives the Load
+   *  More button's spinner state without flashing the initial-load
+   *  skeleton. */
+  readonly isFetchingNextPage: boolean;
+  /** Trigger for fetchNextPage. Wired by the parent page. */
+  readonly onLoadMore: () => void;
 }) {
   const [yearFilter, setYearFilter] = useState<string>("all");
   const [functionFilter, setFunctionFilter] = useState<string>("all");
@@ -1204,6 +1276,10 @@ function AllGoalsTab({
           </select>
         </div>
         <span className="text-xs text-text-muted">
+          {/* Counter for FILTERED view. The "loaded N of T employees on
+              server" denominator (the pagination unit) lives next to
+              the Load More button below — keeping the two distinct so
+              filter-vs-server slices don't fight for the same line. */}
           {sortedGroups.length} {sortedGroups.length === 1 ? "employee" : "employees"} ·{" "}
           {filtered.length} of {goals.length} goals
         </span>
@@ -1420,6 +1496,30 @@ function AllGoalsTab({
           </div>
         </div>
       </div>
+
+      {/* Load More — sits BELOW the virtualized scroll card so HR can
+          see the "more available" affordance without scrolling to the
+          bottom of the 600px window. Hidden when the server reports
+          no more pages (hasNextPage === false). The counter alongside
+          names the pagination unit (employees) — not the filtered
+          group count above. Distinct-user_ids over the unfiltered
+          `goals` array is the right "how many parents has the server
+          shipped so far" number; filters don't change it. */}
+      {hasNextPage && (
+        <div className="flex items-center gap-3 justify-center">
+          <button
+            type="button"
+            onClick={onLoadMore}
+            disabled={isFetchingNextPage}
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-white px-4 py-2 text-[13px] font-medium text-text-main hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+          >
+            {isFetchingNextPage ? "Loading…" : "Load more"}
+          </button>
+          <span className="text-xs text-text-muted">
+            Loaded {new Set(goals.map((g) => g.user_id)).size} of {totalEmployees} employees
+          </span>
+        </div>
+      )}
 
       {viewGoal && (
         <GoalReviewDetailsModal

@@ -9,6 +9,7 @@
  */
 
 import apiClient from "@/services/api.client";
+import type { Paginated } from "@/lib/pagination";
 
 // ── Enums ───────────────────────────────────────────────────────────
 
@@ -322,9 +323,29 @@ export const goalService = {
 
   // ── HR_MyOrg view-only ─────────────────────────────────────────
   /** Every annual goal across the org, every cycle (DRAFT excluded).
-   *  HR_MyOrg-only; backend 403s any other role. Powers the "All Goals" tab. */
-  getAllGoals: async (): Promise<TeamGoal[]> => {
-    const res = await apiClient.get<TeamGoal[]>("/goals/all");
+   *  HR_MyOrg-only; backend 403s any other role. Powers the "All Goals" tab.
+   *
+   *  Paginated as of PR #37 (doc 20). Unusual semantics: the server
+   *  paginates by EMPLOYEE (the parent), then ships every goal for the
+   *  page's employees in `items`. This keeps the AllGoalsTab's
+   *  per-user expandable groups whole — no employee straddles two
+   *  pages. Consequently `total` is the EMPLOYEE count, not the goal
+   *  count; the UI counter says "Loaded N of T employees · M goals".
+   *
+   *  Server defaults: limit=50, max=200. Pair with
+   *  `useInfiniteQuery`; `flatMap(p => p.items)` produces a goal array
+   *  that `buildAllGoalsGroups` consumes unchanged. */
+  getAllGoals: async (
+    params: { limit?: number; offset?: number } = {},
+  ): Promise<PaginatedAllGoals> => {
+    const res = await apiClient.get<PaginatedAllGoals>("/goals/all", {
+      params,
+    });
     return res.data;
   },
 };
+
+/** Paginated response from GET /goals/all. `items` is the goal rows on
+ *  this page; `total` is the EMPLOYEE count (the pagination unit) — see
+ *  the service docstring above for why. */
+export type PaginatedAllGoals = Paginated<TeamGoal>;

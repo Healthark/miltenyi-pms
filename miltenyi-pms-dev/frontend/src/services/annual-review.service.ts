@@ -13,6 +13,7 @@
  */
 
 import apiClient from "@/services/api.client";
+import type { Paginated } from "@/lib/pagination";
 
 // ── Enums ───────────────────────────────────────────────────────────
 
@@ -237,21 +238,10 @@ export const annualReviewService = {
   },
 };
 
-/** Generic paginated-response wrapper. Mirrors
- *  backend/app/schemas/pagination.py — every paginated endpoint we add
- *  in this theme returns this shape with its own item type. */
-export interface Paginated<T> {
-  /** Rows on THIS page (length ≤ limit). */
-  items: T[];
-  /** Total rows matching the underlying query. NOT just this page. */
-  total: number;
-  /** Page size that was honoured by the server. */
-  limit: number;
-  /** Rows skipped before this page. */
-  offset: number;
-  /** True iff (offset + items.length) < total — saves the UI an
-   *  arithmetic check when deciding "show Load More?" */
-  has_more: boolean;
-}
-
+/** Generic paginated-response wrapper lives in `@/lib/pagination` so it
+ *  can be reused across services (PR #37 extracted it once a second
+ *  caller — /goals/all — needed it). Re-exported here so existing
+ *  consumers that imported `Paginated` / `PaginatedAnnualReviews` from
+ *  this module keep compiling without churn. */
+export type { Paginated };
 export type PaginatedAnnualReviews = Paginated<AnnualReview>;
