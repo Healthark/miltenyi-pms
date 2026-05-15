@@ -53,7 +53,7 @@ createRoot(root).render(
           <ReactQueryDevtools> subtree is dead-code-eliminated from
           production bundles. */}
       {import.meta.env.DEV && (
-        <ReactQueryDevtools initialIsOpen={false} buttonPosition="bottom-left" />
+        <ReactQueryDevtools initialIsOpen={false} buttonPosition="bottom-right" />
       )}
     </QueryClientProvider>
   </StrictMode>,
