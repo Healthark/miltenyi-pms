@@ -1,6 +1,6 @@
 # 23 — Paginate `GET /annual-reviews/mentees`: the consistency play
 
-> **PR:** _pending_
+> **PR:** [#40](https://github.com/Healthark/miltenyi-pms/pull/40)
 > **Files changed:** `backend/app/api/routes/annual_review_routes.py`, `frontend/src/services/annual-review.service.ts`, `frontend/src/components/reviews/TeamReviewTab.tsx`.
 > **Headline result:** Fifth paginated endpoint, mechanical application of the foundation template (doc 19). The interesting question is **whether to paginate at all** — mentor scale is small (most callers see < 50 review rows total), so the practical payoff is modest. We paginate anyway, for **template uniformity**. The doc explains why "small N" isn't a reason to skip pagination, and what you give up if you do. Bundle: AnnualReviews **41.32 → 42.08 KB raw, 8.32 → 8.36 KB gzip** (+0.04 KB gzip).
 
