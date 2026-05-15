@@ -1,6 +1,6 @@
 # 27 — Server-side filters on `/goals/all`: filter-then-group + aliased FK joins
 
-> **PR:** _pending_
+> **PR:** [#44](https://github.com/Healthark/miltenyi-pms/pull/44)
 > **Files changed:** `backend/app/api/routes/goal_routes.py`, `frontend/src/services/goal.service.ts`, `frontend/src/lib/queryKeys.ts`, `frontend/src/pages/AnnualGoals.tsx`.
 > **Headline result:** Second application of doc 26's server-side filter template, applied to the more interesting "list-of-parents" pagination shape from doc 20. Filters split into two groups — **Goal-level** (`fy_year`, `mentor`) applied INSIDE the EXISTS subquery that finds qualifying parents AND inside the goals fetch, and **User-level** (`employee`, `function`, `designation`) applied on the parent pagination query. New `_apply_goal_level_filters` helper, `aliased(User)` for joining the same table twice via different FKs, LIKE-OR matcher for the year filter bridging modern + legacy `cycle_name` formats. Bundle: AnnualGoals **76.48 → 76.70 KB raw, 15.18 → 15.33 KB gzip** (+0.15 KB gzip).
 

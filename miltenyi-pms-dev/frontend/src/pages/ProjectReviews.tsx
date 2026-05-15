@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 import {
   projectReviewService,
+  type AllProjectReviewsFilters,
   type MyProjectCard,
   type ProjectReviewResponse,
   type RoleExpectation,
@@ -162,24 +163,37 @@ export function ProjectReviews() {
     enabled: isMentor,
   });
   // Paginated as of PR #39 (doc 22). Same useInfiniteQuery template as
-  // PR #36's /annual-reviews/all and PR #38's /annual-reviews/calibration:
-  // each row corresponds to one ProjectReview, so `total` and
-  // `items.length` are the same unit (no parent/child asymmetry).
+  // PR #36's /annual-reviews/all: each row = one ProjectReview, so
+  // `total` and `items.length` are the same unit.
   //
-  // The cache key (queryKeys.projectReviews.org()) is unchanged from the
-  // legacy useQuery — any existing broadcast invalidation
-  // (queryKeys.projectReviews.all) refetches the loaded pages without
-  // touching mutation code.
+  // ── Server-side filters (PR #45, doc 28) ─────────────────────────
+  // Filter state lives at this page-level so it can be baked into the
+  // queryKey. Each distinct filter set is its own cache entry; changing
+  // a filter triggers a fresh paginated fetch from offset=0. ReadOnly-
+  // ReviewsList consumes the filter state + setter via optional props
+  // (the Mentor consumer doesn't pass them and keeps its legacy
+  // local-state behavior — it's not paginated).
   //
   // - initialPageParam: 0  → first request: ?offset=0&limit=50
   // - getNextPageParam: derives from has_more on the latest page.
   // - enabled: isHR  → Mentor and Staff don't pre-fetch this; HR's
   //                     mentees query has its own key + observer.
   const ALL_REVIEWS_PAGE_SIZE = 50;
+  const [allReviewsFilters, setAllReviewsFilters] =
+    useState<AllProjectReviewsFilters>({});
+  // Strip empty / undefined values so cache keys for "no filter X" and
+  // "filter X = '' " collapse to the same entry. See doc 26 Part 2's
+  // "empty-filters trap" for the rationale.
+  const allReviewsFilterParams: Record<string, string> = Object.fromEntries(
+    Object.entries(allReviewsFilters).filter(
+      ([, v]) => v !== undefined && v !== "",
+    ),
+  ) as Record<string, string>;
   const allReviewsQuery = useInfiniteQuery({
-    queryKey: queryKeys.projectReviews.org(),
+    queryKey: queryKeys.projectReviews.org(allReviewsFilterParams),
     queryFn: ({ pageParam }) =>
       projectReviewService.getAllReviews({
+        ...allReviewsFilterParams,
         limit: ALL_REVIEWS_PAGE_SIZE,
         offset: pageParam,
       }),
@@ -458,6 +472,13 @@ export function ProjectReviews() {
                 employeeColumnLabel="Employee"
                 emptyTitle="No project reviews recorded"
                 emptySubtitle="Reviews will appear here once PMs start evaluating their teams."
+                // Server-side filter mode (PR #45, doc 28). Passing
+                // these triggers the controlled-filter code path in
+                // ReadOnlyReviewsList; the Mentor consumer below
+                // continues to use local state.
+                filters={allReviewsFilters}
+                onFiltersChange={setAllReviewsFilters}
+                serverTotal={allReviewsTotal}
               />
 
               {/* Load More — outside ReadOnlyReviewsList because that
@@ -535,6 +556,9 @@ function ReadOnlyReviewsList({
   employeeColumnLabel,
   emptyTitle,
   emptySubtitle,
+  filters,
+  onFiltersChange,
+  serverTotal,
 }: {
   readonly isLoading: boolean;
   readonly reviews: ProjectReviewResponse[];
@@ -542,17 +566,41 @@ function ReadOnlyReviewsList({
   readonly employeeColumnLabel: string;
   readonly emptyTitle: string;
   readonly emptySubtitle: string;
+  /** Controlled-mode filter state. Pass together with
+   *  `onFiltersChange` (HR consumer, PR #45 / doc 28). When BOTH are
+   *  omitted the component falls back to local state (Mentor consumer
+   *  which isn't paginated). When provided, the component skips its
+   *  client-side filter loop — `reviews` is assumed to already match
+   *  the active filter set (server-filtered). */
+  readonly filters?: AllProjectReviewsFilters;
+  /** Setter for the controlled-mode filter state. */
+  readonly onFiltersChange?: (next: AllProjectReviewsFilters) => void;
+  /** Server-side count of reviews matching the active filter set.
+   *  Provided in controlled mode so the counter reads filtered total
+   *  (matching what Load More pages through) instead of the loaded
+   *  array length. */
+  readonly serverTotal?: number;
 }) {
-  const [cycleFilter, setCycleFilter] = useState<string>("all");
-  // Employee + Project use typeable StringCombobox — empty string = no filter
-  // (its convention), the other dropdowns stay as plain selects with "all".
-  // The standalone search bar was dropped once Employee/Project became
-  // typeable; project_code search died with it but is rarely the way HR
-  // looks for a project anyway.
-  const [projectFilter, setProjectFilter] = useState<string>("");
-  const [pmFilter, setPmFilter] = useState<string>("all");
-  const [employeeFilter, setEmployeeFilter] = useState<string>("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  // Local fallback state — used only when the parent doesn't pass
+  // `filters` + `onFiltersChange`. Mentor's mentees view is the
+  // current uncontrolled consumer (not paginated). Three legacy
+  // sentinels remain (`""` for combobox, `"all"` for select) so the
+  // local-state path keeps the existing UI conventions; the
+  // controlled-mode `filters` object uses `undefined` for "no filter
+  // applied" (matching the pattern from docs 26 + 27).
+  const [localFilters, setLocalFilters] = useState<AllProjectReviewsFilters>(
+    {},
+  );
+  const isControlled = filters !== undefined && onFiltersChange !== undefined;
+  const activeFilters: AllProjectReviewsFilters = filters ?? localFilters;
+  const setActiveFilters = onFiltersChange ?? setLocalFilters;
+  // Boolean used by counter + empty-state branching to decide which
+  // narrative to show. In controlled mode this means "server-filtered
+  // and at least one dim is non-empty"; in uncontrolled mode it means
+  // "user has narrowed via the local dropdowns".
+  const hasActiveFilters = Object.values(activeFilters).some(
+    (v) => v !== undefined && v !== "",
+  );
   const [sort, setSort] = useState<SortState<ReadOnlySortKey> | null>(null);
   // Read-only modal target. Mentors and HR both need a way to read the
   // PM's competency comments + impact statement, not just the rating —
@@ -593,15 +641,25 @@ function ReadOnlyReviewsList({
   );
 
   const filtered = useMemo(() => {
+    // In controlled (server-filtered) mode, `reviews` already matches
+    // the active filter set — skip the client-side narrowing entirely.
+    // In uncontrolled (Mentor) mode this is what does the actual
+    // filtering.
+    if (isControlled) return reviews;
     return reviews.filter((r) => {
-      if (cycleFilter !== "all" && r.cycle !== cycleFilter) return false;
-      if (projectFilter && r.project_name !== projectFilter) return false;
-      if (pmFilter !== "all" && (r.pm_name ?? r.reviewer_name) !== pmFilter) return false;
-      if (employeeFilter && r.employee_name !== employeeFilter) return false;
-      if (statusFilter !== "all" && r.status !== statusFilter) return false;
+      if (activeFilters.cycle && r.cycle !== activeFilters.cycle) return false;
+      if (activeFilters.project && r.project_name !== activeFilters.project) return false;
+      if (
+        activeFilters.pm &&
+        (r.pm_name ?? r.reviewer_name) !== activeFilters.pm
+      ) {
+        return false;
+      }
+      if (activeFilters.employee && r.employee_name !== activeFilters.employee) return false;
+      if (activeFilters.status && r.status !== activeFilters.status) return false;
       return true;
     });
-  }, [reviews, cycleFilter, projectFilter, pmFilter, employeeFilter, statusFilter]);
+  }, [reviews, activeFilters, isControlled]);
 
   const sorted = useMemo(() => {
     if (!sort) return filtered;
@@ -627,7 +685,13 @@ function ReadOnlyReviewsList({
   if (isLoading) {
     return <TableSkeleton />;
   }
+  // Empty-state branching for the controlled (HR) case: empty
+  // `reviews` can now mean either "no reviews in the org" or "filter
+  // set returned nothing on the server". The Mentor consumer's empty
+  // case keeps the legacy copy because there's no filter universe to
+  // narrow against (their `reviews` is the full mentee set).
   if (reviews.length === 0) {
+    const filtersEmpty = isControlled && hasActiveFilters;
     return (
       <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border py-16 text-center bg-background/50">
         <Briefcase
@@ -635,9 +699,13 @@ function ReadOnlyReviewsList({
           aria-hidden="true"
         />
         <p className="font-display text-base font-medium text-text-main">
-          {emptyTitle}
+          {filtersEmpty ? "No reviews match these filters" : emptyTitle}
         </p>
-        <p className="mt-1 text-sm text-text-muted">{emptySubtitle}</p>
+        <p className="mt-1 text-sm text-text-muted">
+          {filtersEmpty
+            ? "Try clearing one or more filters above to broaden the result."
+            : emptySubtitle}
+        </p>
       </div>
     );
   }
@@ -655,85 +723,112 @@ function ReadOnlyReviewsList({
           from the loaded rows so empty options never appear. */}
       <div className="flex items-start justify-between gap-4">
        <div className="flex items-center gap-4 flex-wrap flex-1 min-w-0">
-          {employees.length > 0 && (
-            <div className="flex items-center gap-2">
-              <label htmlFor="ro-employee-filter" className={filterLabelCls}>
-                {employeeColumnLabel}
-              </label>
-              <StringCombobox
-                id="ro-employee-filter"
-                options={employees}
-                value={employeeFilter}
-                onChange={setEmployeeFilter}
-                placeholder="Type a name…"
-              />
-            </div>
-          )}
-          {projects.length > 0 && (
-            <div className="flex items-center gap-2">
-              <label htmlFor="ro-project-filter" className={filterLabelCls}>
-                Project
-              </label>
-              <StringCombobox
-                id="ro-project-filter"
-                options={projects}
-                value={projectFilter}
-                onChange={setProjectFilter}
-                placeholder="Type a project…"
-              />
-            </div>
-          )}
-          {pms.length > 0 && (
-            <div className="flex items-center gap-2">
-              <label htmlFor="ro-pm-filter" className={filterLabelCls}>
-                PM
-              </label>
-              <select
-                id="ro-pm-filter"
-                value={pmFilter}
-                onChange={(e) => setPmFilter(e.target.value)}
-                className={`${filterSelectCls} min-w-[140px]`}
-              >
-                <option value="all">All</option>
-                {pms.map((n) => (
-                  <option key={n} value={n}>{n}</option>
-                ))}
-              </select>
-            </div>
-          )}
-          <div className="flex items-center gap-2">
-            <label htmlFor="ro-cycle-filter" className={filterLabelCls}>
-              Cycle
-            </label>
-            <select
-              id="ro-cycle-filter"
-              value={cycleFilter}
-              onChange={(e) => setCycleFilter(e.target.value)}
-              className={`${filterSelectCls} min-w-[120px]`}
-            >
-              <option value="all">All</option>
-              {cycles.map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
-          </div>
-          <div className="flex items-center gap-2">
-            <label htmlFor="ro-status-filter" className={filterLabelCls}>
-              Status
-            </label>
-            <select
-              id="ro-status-filter"
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className={`${filterSelectCls} min-w-[120px]`}
-            >
-              <option value="all">All</option>
-              <option value="pending">Pending PM</option>
-              <option value="reviewed">Reviewed</option>
-            </select>
-          </div>
+          {/* Helper to write a single filter dimension. Reads "all" /
+              "" sentinels from the UI and maps to undefined inside the
+              filters object; the controlled-mode parent uses that
+              shape, the uncontrolled local-state path also does. */}
+          {(() => {
+            const setFilter = <K extends keyof AllProjectReviewsFilters>(
+              key: K,
+              value: AllProjectReviewsFilters[K] | "" | "all",
+            ) => {
+              setActiveFilters({
+                ...activeFilters,
+                [key]: value === "" || value === "all" ? undefined : value,
+              });
+            };
+            return (
+              <>
+                {employees.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <label htmlFor="ro-employee-filter" className={filterLabelCls}>
+                      {employeeColumnLabel}
+                    </label>
+                    <StringCombobox
+                      id="ro-employee-filter"
+                      options={employees}
+                      value={activeFilters.employee ?? ""}
+                      onChange={(v) => setFilter("employee", v)}
+                      placeholder="Type a name…"
+                    />
+                  </div>
+                )}
+                {projects.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <label htmlFor="ro-project-filter" className={filterLabelCls}>
+                      Project
+                    </label>
+                    <StringCombobox
+                      id="ro-project-filter"
+                      options={projects}
+                      value={activeFilters.project ?? ""}
+                      onChange={(v) => setFilter("project", v)}
+                      placeholder="Type a project…"
+                    />
+                  </div>
+                )}
+                {pms.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <label htmlFor="ro-pm-filter" className={filterLabelCls}>
+                      PM
+                    </label>
+                    <select
+                      id="ro-pm-filter"
+                      value={activeFilters.pm ?? "all"}
+                      onChange={(e) => setFilter("pm", e.target.value)}
+                      className={`${filterSelectCls} min-w-[140px]`}
+                    >
+                      <option value="all">All</option>
+                      {pms.map((n) => (
+                        <option key={n} value={n}>{n}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div className="flex items-center gap-2">
+                  <label htmlFor="ro-cycle-filter" className={filterLabelCls}>
+                    Cycle
+                  </label>
+                  <select
+                    id="ro-cycle-filter"
+                    value={activeFilters.cycle ?? "all"}
+                    onChange={(e) => setFilter("cycle", e.target.value)}
+                    className={`${filterSelectCls} min-w-[120px]`}
+                  >
+                    <option value="all">All</option>
+                    {cycles.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <label htmlFor="ro-status-filter" className={filterLabelCls}>
+                    Status
+                  </label>
+                  <select
+                    id="ro-status-filter"
+                    value={activeFilters.status ?? "all"}
+                    onChange={(e) => setFilter("status", e.target.value)}
+                    className={`${filterSelectCls} min-w-[120px]`}
+                  >
+                    <option value="all">All</option>
+                    <option value="pending">Pending PM</option>
+                    <option value="reviewed">Reviewed</option>
+                  </select>
+                </div>
+              </>
+            );
+          })()}
           <span className="text-xs text-text-muted">
-            {filtered.length} of {reviews.length}
+            {/* Controlled mode (HR): serverTotal is the universe count
+                matching active filters; `filtered.length` equals
+                `reviews.length` because the client-side loop is
+                skipped — so "{serverTotal} matches" is the clean read.
+                Uncontrolled mode (Mentor): legacy "filtered / total"
+                framing where total is the un-paginated mentee count. */}
+            {isControlled
+              ? `${serverTotal ?? 0} ${(serverTotal ?? 0) === 1 ? "match" : "matches"}`
+              : `${filtered.length} of ${reviews.length}`}
           </span>
          </div>
          <div className="shrink-0">

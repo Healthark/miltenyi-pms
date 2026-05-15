@@ -157,7 +157,13 @@ export const queryKeys = {
     all: ["project-reviews"] as const,
     mine: () => [...queryKeys.projectReviews.all, "mine"] as const,
     mentees: () => [...queryKeys.projectReviews.all, "mentees"] as const,
-    org: () => [...queryKeys.projectReviews.all, "org"] as const,
+    /** HR's "All Reviews" cache entry. Filters are baked into the key
+     *  (PR #45, doc 28) so each filter combination is its own
+     *  paginated cache entry. Same shape as `annualReviews.org()` and
+     *  `goals.org()`. Broadcast invalidations on `projectReviews.all`
+     *  still catch every variant. */
+    org: (filters: Record<string, string | undefined> = {}) =>
+      [...queryKeys.projectReviews.all, "org", filters] as const,
     /** PM's queue of pending evaluations on their projects. Consumed by
      *  PrimaryEvaluationTab; not pre-warmed by any parent (the PM tab
      *  is the first thing that asks for it). */
