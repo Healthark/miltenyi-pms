@@ -33,6 +33,7 @@ import {
 import {
   projectReviewService,
   type AllProjectReviewsFilters,
+  type AllProjectReviewsSortBy,
   type MyProjectCard,
   type ProjectReviewResponse,
   type RoleExpectation,
@@ -181,6 +182,9 @@ export function ProjectReviews() {
   const ALL_REVIEWS_PAGE_SIZE = 50;
   const [allReviewsFilters, setAllReviewsFilters] =
     useState<AllProjectReviewsFilters>({});
+  const [allReviewsSort, setAllReviewsSort] = useState<
+    SortState<ReadOnlySortKey> | null
+  >(null);
   // Strip empty / undefined values so cache keys for "no filter X" and
   // "filter X = '' " collapse to the same entry. See doc 26 Part 2's
   // "empty-filters trap" for the rationale.
@@ -189,11 +193,20 @@ export function ProjectReviews() {
       ([, v]) => v !== undefined && v !== "",
     ),
   ) as Record<string, string>;
+  // Merge sort into request params (doc 30 Part 1).
+  const allReviewsRequestParams: Record<string, string> = {
+    ...allReviewsFilterParams,
+    ...(allReviewsSort
+      ? { sort_by: allReviewsSort.key, sort_dir: allReviewsSort.direction }
+      : {}),
+  };
   const allReviewsQuery = useInfiniteQuery({
-    queryKey: queryKeys.projectReviews.org(allReviewsFilterParams),
+    queryKey: queryKeys.projectReviews.org(allReviewsRequestParams),
     queryFn: ({ pageParam }) =>
       projectReviewService.getAllReviews({
-        ...allReviewsFilterParams,
+        ...(allReviewsRequestParams as Record<string, string> & {
+          sort_by?: AllProjectReviewsSortBy;
+        }),
         limit: ALL_REVIEWS_PAGE_SIZE,
         offset: pageParam,
       }),
@@ -472,13 +485,15 @@ export function ProjectReviews() {
                 employeeColumnLabel="Employee"
                 emptyTitle="No project reviews recorded"
                 emptySubtitle="Reviews will appear here once PMs start evaluating their teams."
-                // Server-side filter mode (PR #45, doc 28). Passing
-                // these triggers the controlled-filter code path in
-                // ReadOnlyReviewsList; the Mentor consumer below
-                // continues to use local state.
+                // Server-side filter mode (PR #45, doc 28) + sort
+                // mode (PR #48, doc 31). Passing these triggers the
+                // controlled code paths in ReadOnlyReviewsList; the
+                // Mentor consumer below continues to use local state.
                 filters={allReviewsFilters}
                 onFiltersChange={setAllReviewsFilters}
                 serverTotal={allReviewsTotal}
+                sort={allReviewsSort}
+                onSortChange={setAllReviewsSort}
               />
 
               {/* Load More — outside ReadOnlyReviewsList because that
@@ -559,6 +574,8 @@ function ReadOnlyReviewsList({
   filters,
   onFiltersChange,
   serverTotal,
+  sort: controlledSort,
+  onSortChange,
 }: {
   readonly isLoading: boolean;
   readonly reviews: ProjectReviewResponse[];
@@ -580,6 +597,12 @@ function ReadOnlyReviewsList({
    *  (matching what Load More pages through) instead of the loaded
    *  array length. */
   readonly serverTotal?: number;
+  /** Controlled-mode sort state (PR #48, doc 31). Pass together with
+   *  `onSortChange`. When both omitted, falls back to local state
+   *  (Mentor consumer's client-side sort). */
+  readonly sort?: SortState<ReadOnlySortKey> | null;
+  /** Setter for the controlled-mode sort. */
+  readonly onSortChange?: (next: SortState<ReadOnlySortKey> | null) => void;
 }) {
   // Local fallback state — used only when the parent doesn't pass
   // `filters` + `onFiltersChange`. Mentor's mentees view is the
@@ -601,7 +624,17 @@ function ReadOnlyReviewsList({
   const hasActiveFilters = Object.values(activeFilters).some(
     (v) => v !== undefined && v !== "",
   );
-  const [sort, setSort] = useState<SortState<ReadOnlySortKey> | null>(null);
+  // Sort: same dual-mode pattern. Controlled when both `controlledSort`
+  // and `onSortChange` are supplied (HR / server-side); otherwise
+  // local state drives the legacy client-side sort (Mentor consumer).
+  const [localSort, setLocalSort] = useState<
+    SortState<ReadOnlySortKey> | null
+  >(null);
+  const isSortControlled =
+    controlledSort !== undefined && onSortChange !== undefined;
+  const sort: SortState<ReadOnlySortKey> | null =
+    controlledSort ?? localSort;
+  const setSort = onSortChange ?? setLocalSort;
   // Read-only modal target. Mentors and HR both need a way to read the
   // PM's competency comments + impact statement, not just the rating —
   // setting this opens the detail modal in place.
@@ -662,12 +695,14 @@ function ReadOnlyReviewsList({
   }, [reviews, activeFilters, isControlled]);
 
   const sorted = useMemo(() => {
+    // In controlled mode, server already ordered; passthrough.
+    if (isSortControlled) return filtered;
     if (!sort) return filtered;
     return filtered.slice().sort((a, b) => {
       const { kind, get } = READ_ONLY_SORT_CONFIG[sort.key];
       return compareValues(get(a), get(b), kind, sort.direction);
     });
-  }, [filtered, sort]);
+  }, [filtered, sort, isSortControlled]);
 
   // Variable-height virtualizer (same template as PR #16 / doc #16).
   // We use measureElement here primarily for the long-project-name

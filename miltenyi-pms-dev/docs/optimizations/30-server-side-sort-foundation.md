@@ -1,6 +1,6 @@
 # 30 — Server-side sort foundation: ORDER BY + the tiebreaker that survives
 
-> **PR:** _pending_
+> **PR:** [#47](https://github.com/Healthark/miltenyi-pms/pull/47)
 > **Files changed:** `backend/app/api/routes/annual_review_routes.py`, `frontend/src/services/annual-review.service.ts`, `frontend/src/pages/AnnualReviews.tsx`.
 > **Headline result:** Conceptual pivot from filter to sort. Introduces `?sort_by=&sort_dir=` on `/annual-reviews/all` with `Literal[...]` validation. The crucial design choice: **the `id.desc()` tiebreaker from doc 22 stays as the final ORDER BY clause under any primary sort** — without it, two rows sharing the same `sort_by` value would swap positions across pages. Frontend deletes the client-side sort entirely; the page now just owns the `(filter, sort)` tuple and lets the server do the work. Bundle: AnnualReviews **42.50 → 42.02 KB raw, 8.57 → 8.55 KB gzip** — code SHRINKS because client-sort machinery goes away.
 
