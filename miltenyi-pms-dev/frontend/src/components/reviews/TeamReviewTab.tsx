@@ -14,7 +14,7 @@
  */
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/queryKeys";
 import { useNavigate } from "react-router-dom";
 import {
@@ -166,15 +166,38 @@ export function TeamReviewTab() {
 
   // The mentor's view of every mentee's annual review. Cache-keyed
   // under ['annual-reviews', 'mentees']. EvalDrawer / useReviewDetails
-  // are the writers (not migrated in this PR) — when those land, their
-  // mutations will invalidate this key so the table refreshes after a
-  // submit. For now, refetchOnWindowFocus (default true) handles the
+  // mutations invalidate this key so the table refreshes after a
+  // submit. refetchOnWindowFocus (default true) also handles the
   // "I just reviewed a mentee in another tab" case.
-  const reviewsQuery = useQuery({
+  //
+  // Paginated as of PR #40 (doc 23). At mentor scale the typical
+  // response fits in one page (50 reviews covers most mentors), but
+  // the template is applied for **consistency** — every HR/mentor
+  // list endpoint behaves identically (same Load More button, same
+  // counter, same flatMap pattern). Long-tenured mentors who
+  // accumulate > 50 review rows across years see the Load More button
+  // appear naturally; everyone else never sees it (hasNextPage stays
+  // false).
+  const MENTEE_REVIEWS_PAGE_SIZE = 50;
+  const reviewsQuery = useInfiniteQuery({
     queryKey: queryKeys.annualReviews.mentees(),
-    queryFn: annualReviewService.getMenteeReviews,
+    queryFn: ({ pageParam }) =>
+      annualReviewService.getMenteeReviews({
+        limit: MENTEE_REVIEWS_PAGE_SIZE,
+        offset: pageParam,
+      }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) =>
+      lastPage.has_more ? lastPage.offset + lastPage.limit : undefined,
   });
-  const reviews: MenteeAnnualReview[] = reviewsQuery.data ?? [];
+  // Flatten loaded pages → review array. Downstream filter / sort code
+  // sees one combined list as the user clicks Load More.
+  const reviews: MenteeAnnualReview[] =
+    reviewsQuery.data?.pages.flatMap((p) => p.items) ?? [];
+  // Total review count returned by the server (same on every page,
+  // we read it off the latest one). Drives the "Loaded N of T" counter.
+  const totalReviews =
+    reviewsQuery.data?.pages[reviewsQuery.data.pages.length - 1]?.total ?? 0;
   const isLoading = reviewsQuery.isPending;
 
   const availableYears = Array.from(
@@ -491,6 +514,30 @@ export function TeamReviewTab() {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Load More — appears below either view mode (grid or table)
+          when the server reports more pages. Hidden in the common case
+          (mentor's full history fits in one page). Same UI as the
+          AllReviewsTab template; consistent affordance across every
+          HR/mentor paginated list. See doc 23 for the "consistency
+          play" rationale. */}
+      {reviewsQuery.hasNextPage && (
+        <div className="flex items-center gap-3 justify-center">
+          <button
+            type="button"
+            onClick={() => {
+              void reviewsQuery.fetchNextPage();
+            }}
+            disabled={reviewsQuery.isFetchingNextPage}
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-white px-4 py-2 text-[13px] font-medium text-text-main hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+          >
+            {reviewsQuery.isFetchingNextPage ? "Loading…" : "Load more"}
+          </button>
+          <span className="text-xs text-text-muted">
+            Loaded {reviews.length} of {totalReviews}
+          </span>
         </div>
       )}
 

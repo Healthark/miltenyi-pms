@@ -526,16 +526,34 @@ def get_all_annual_reviews(
 # STAGE 2 — MENTOR EVALUATION
 # =====================================================================
 
-@router.get("/mentees", response_model=List[MenteeAnnualReview])
+@router.get("/mentees", response_model=Paginated[MenteeAnnualReview])
 def get_mentee_reviews(
     db: DbSession,
     current_user: CurrentUser,
+    limit: int = Query(
+        50,
+        ge=1,
+        le=200,
+        description=(
+            "Maximum reviews to return on this page. Server-clamped to "
+            "1..200. Most mentors will see all their mentees' reviews on "
+            "one page; the parameter exists for consistency with the "
+            "other paginated endpoints and to bound payload for "
+            "long-tenured mentors who accumulate years of history."
+        ),
+    ),
+    offset: int = Query(
+        0,
+        ge=0,
+        description="Reviews to skip before this page. 0 for the first page.",
+    ),
 ):
     """
-    All reviews for the current user's direct mentees across every cycle/status.
-    Each row is enriched with employee_name / function / designation.
-    Final ratings are nulled when the org-wide visibility flag is off so the
-    Mentee Review tab can conditionally hide the Ratings column.
+    Paginated reviews for the current user's direct mentees across every
+    cycle/status. Each row is enriched with employee_name / function /
+    designation. Final ratings are nulled when the org-wide visibility
+    flag is off so the Mentee Review tab can conditionally hide the
+    Ratings column.
 
     Resolution is by *current* mentor relationship (User.mentor_id), not by
     the mentor_id snapshot on the review row. The snapshot is still used as
@@ -543,6 +561,17 @@ def get_mentee_reviews(
     not submit) — but for listing purposes we want to match what the
     My Mentees surface shows so historical / pre-migration rows with a
     NULL mentor_id are still visible.
+
+    Pagination convention: standard offset/limit with `Paginated[T]` wire
+    shape (doc 19). The unit is review rows (one per review), same as
+    PR #36 + PR #39 — no parent/child split. At mentor scale, most
+    callers will see one page (the default limit of 50 covers a
+    mentor with 50 review rows across all cycles); paginating anyway
+    is a **consistency play** so every HR/mentor list endpoint behaves
+    identically. See doc 23 for the discussion.
+
+    Stable ORDER BY uses `created_at DESC, id DESC` — same tiebreaker
+    pattern as doc 21/22.
     """
     settings = _get_settings(db, current_user.org_id)
 
@@ -554,15 +583,34 @@ def get_mentee_reviews(
         ).all()
     ]
     if not mentee_ids:
-        return []
+        return Paginated[MenteeAnnualReview](
+            items=[],
+            total=0,
+            limit=limit,
+            offset=offset,
+            has_more=False,
+        )
+
+    # Filtered base query — shared by COUNT and the windowed fetch so the
+    # `total` matches the exact universe the page is drawn from.
+    base_q = db.query(AnnualReview).filter(
+        AnnualReview.org_id == current_user.org_id,
+        AnnualReview.user_id.in_(mentee_ids),
+    )
+
+    total = base_q.with_entities(AnnualReview.id).count()
 
     reviews = (
-        db.query(AnnualReview)
-        .filter(
-            AnnualReview.org_id == current_user.org_id,
-            AnnualReview.user_id.in_(mentee_ids),
+        base_q
+        .order_by(
+            AnnualReview.created_at.desc(),
+            # Tiebreaker — two reviews submitted in the same second
+            # (test seeds, batch imports) must keep a deterministic
+            # order across pages.
+            AnnualReview.id.desc(),
         )
-        .order_by(AnnualReview.created_at.desc())
+        .offset(offset)
+        .limit(limit)
         .all()
     )
 
@@ -601,7 +649,14 @@ def get_mentee_reviews(
             function=u.function.name if u and u.function else None,
             designation=u.designation.name if u and u.designation else None,
         ))
-    return rows
+
+    return Paginated[MenteeAnnualReview](
+        items=rows,
+        total=total,
+        limit=limit,
+        offset=offset,
+        has_more=(offset + len(rows)) < total,
+    )
 
 
 @router.patch("/{review_id}/mentor-eval", response_model=AnnualReviewResponse)

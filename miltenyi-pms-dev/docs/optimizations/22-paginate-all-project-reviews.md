@@ -1,6 +1,6 @@
 # 22 — Paginate `GET /project-reviews/all`: applying the flat-list template + scoping out N+1
 
-> **PR:** _pending_
+> **PR:** [#39](https://github.com/Healthark/miltenyi-pms/pull/39)
 > **Files changed:** `backend/app/api/routes/project_review_routes.py`, `frontend/src/services/project-review.service.ts`, `frontend/src/pages/ProjectReviews.tsx`.
 > **Headline result:** Fourth paginated endpoint. The hand is now fully practised — mechanical application of the flat-list template from doc 19. The interesting parts are (a) **scoping the change cleanly even though there's a known N+1 in `_build_review_response`** that pagination doesn't fix, and (b) **a small UX architecture choice**: where to put the Load More button when the underlying virtualized list is rendered by a shared component (`ReadOnlyReviewsList`) that two different consumers use. Bundle: ProjectReviews **72.87 → 73.67 KB raw, 12.66 → 12.92 KB gzip** (+0.26 KB gzip).
 
