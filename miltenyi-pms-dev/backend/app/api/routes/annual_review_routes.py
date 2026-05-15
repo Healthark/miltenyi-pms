@@ -772,11 +772,11 @@ def get_mentee_reviews(
                 if r.management_performance_rating is not None
                 else r.mentor_performance_rating
             )
-        # Drop any name fields the parent already populated as None — we
-        # provide our own resolved `employee_name` below, and otherwise
-        # Python complains about duplicate kwargs when spreading `base`.
+        # Drop any name/org fields the parent already populated as None — we
+        # provide our own resolved values below, and otherwise Python
+        # complains about duplicate kwargs when spreading `base`.
         base = AnnualReviewResponse.model_validate(r).model_dump(
-            exclude={"employee_name", "mentor_name"},
+            exclude={"employee_name", "mentor_name", "function", "designation"},
         )
         if not settings.annual_review_final_rating_visible:
             base["final_performance_rating"] = None
