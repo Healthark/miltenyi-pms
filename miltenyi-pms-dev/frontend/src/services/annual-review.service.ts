@@ -292,11 +292,34 @@ export interface AllReviewsFilters {
   employee?: string;
 }
 
-/** Full request shape: pagination knobs + the filter dimensions. */
-export type AllReviewsRequestParams = AllReviewsFilters & {
-  limit?: number;
-  offset?: number;
-};
+/** Sort columns accepted by GET /annual-reviews/all (PR #47, doc 30).
+ *  Mirrors the backend's `_ALL_REVIEWS_SORT_COLUMNS` map exactly.
+ *  The frontend's `AllReviewsSortKey` enum in AnnualReviews.tsx is the
+ *  same literal-union. */
+export type AllReviewsSortBy =
+  | "employee_name"
+  | "function"
+  | "designation"
+  | "cycle_name"
+  | "status"
+  | "self_performance_rating"
+  | "mentor_performance_rating"
+  | "final_performance_rating";
+
+export interface AllReviewsSort {
+  /** Primary sort column. Omit for default ordering
+   *  (cycle_name DESC, created_at DESC). */
+  sort_by?: AllReviewsSortBy;
+  /** Direction. Default "asc". */
+  sort_dir?: "asc" | "desc";
+}
+
+/** Full request shape: pagination + filters + sort. */
+export type AllReviewsRequestParams = AllReviewsFilters &
+  AllReviewsSort & {
+    limit?: number;
+    offset?: number;
+  };
 
 /** Generic paginated-response wrapper lives in `@/lib/pagination` so it
  *  can be reused across services (PR #37 extracted it once a second
