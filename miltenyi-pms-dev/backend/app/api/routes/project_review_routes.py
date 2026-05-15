@@ -23,7 +23,7 @@ Endpoints:
 """
 
 from dataclasses import dataclass, field
-from typing import Iterable, List, Optional
+from typing import Iterable, List, Literal, Optional
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy.orm import aliased, joinedload
 
@@ -56,6 +56,30 @@ from app.schemas.project_review_schemas import (
 from app.schemas.pagination import Paginated
 
 router = APIRouter()
+
+
+# ── Module-level User alias for the "project PM" join (PR #48, doc 31)
+# Stable, named alias so both filter and sort can reference the same
+# join target. Two User joins coexist in `/project-reviews/all` when
+# both employee and pm filters/sorts are active:
+#   - `User`           — the review subject (ProjectReview.user_id)
+#   - `_ProjectPMUser` — the project's PM (Project.pm_id)
+# Without a module-level alias the sort-column map (below) couldn't
+# reference the PM column — local `aliased()` calls would compile to a
+# fresh alias per request.
+_ProjectPMUser = aliased(User, name="pm_user")
+
+
+# ── Sort column map for GET /project-reviews/all (PR #48, doc 31) ───
+# Mirrors the frontend's ReadOnlySortKey literal-union exactly.
+_PROJECT_REVIEWS_SORT_COLUMNS = {
+    "project_name": Project.name,
+    "employee_name": User.full_name,
+    "pm_name": _ProjectPMUser.full_name,
+    "cycle": ProjectReview.cycle,
+    "status": ProjectReview.status,
+    "performance_group": ProjectReview.performance_group,
+}
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
@@ -1347,6 +1371,29 @@ def get_all_reviews(
         None,
         description="Exact match on Project.name.",
     ),
+    # ── Server-side sort (PR #48, doc 31) ─────────────────────────────
+    sort_by: Optional[
+        Literal[
+            "project_name",
+            "employee_name",
+            "pm_name",
+            "cycle",
+            "status",
+            "performance_group",
+        ]
+    ] = Query(
+        None,
+        description=(
+            "Primary sort column. Mirrors the frontend's "
+            "ReadOnlySortKey enum. Sort dimensions that need joins "
+            "(project_name, employee_name, pm_name) trigger those "
+            "joins even without an active filter."
+        ),
+    ),
+    sort_dir: Literal["asc", "desc"] = Query(
+        "asc",
+        description="Sort direction. Default 'asc'.",
+    ),
 ):
     """HR-only: paginated project reviews across the org, every cycle.
 
@@ -1384,43 +1431,59 @@ def get_all_reviews(
         ProjectReview.is_deleted == False,  # noqa: E712
     )
 
-    # ── Apply filters ─────────────────────────────────────────────
-    # Direct-column filters first (no joins). Then joins added lazily
-    # only when filters that need them are active. Three potential
-    # joins (Project, User-as-employee, User-as-pm); each is conditional.
+    # ── Apply filters + figure out which joins sort also needs ────────
+    # Joins compose filter ∪ sort needs — sorting by `pm_name` requires
+    # the Project + PMUser joins even with no `pm` filter. Same doc-30
+    # Part 3 pattern.
     if cycle:
         base_q = base_q.filter(ProjectReview.cycle == cycle)
     if status_:
         base_q = base_q.filter(ProjectReview.status == status_)
 
-    needs_project_join = bool(pm or project)
+    needs_project_join = bool(pm or project) or sort_by in ("project_name", "pm_name")
+    needs_pm_user_join = bool(pm) or sort_by == "pm_name"
+    needs_employee_join = bool(employee) or sort_by == "employee_name"
+
     if needs_project_join:
         base_q = base_q.join(Project, Project.id == ProjectReview.project_id)
         if project:
             base_q = base_q.filter(Project.name == project)
-        if pm:
-            # `pm` filter joins User a second time via aliased(). The
-            # outer User-as-employee join (added below) is on
-            # ProjectReview.user_id; this one is on Project.pm_id. Same
-            # pattern as doc 27 (Goal.user_id vs Goal.manager_id) — two
-            # FKs into the same table need disambiguation.
-            PMUserAlias = aliased(User)
+        if needs_pm_user_join:
+            # Module-level `_ProjectPMUser` alias (see top of file)
+            # disambiguates the second User join. Same pattern as doc 27
+            # (Goal.user_id vs Goal.manager_id).
             base_q = base_q.join(
-                PMUserAlias, PMUserAlias.id == Project.pm_id
-            ).filter(PMUserAlias.full_name == pm)
+                _ProjectPMUser, _ProjectPMUser.id == Project.pm_id
+            )
+            if pm:
+                base_q = base_q.filter(_ProjectPMUser.full_name == pm)
 
-    if employee:
+    if needs_employee_join:
         # The employee filter targets the review subject (the person
         # being reviewed), not the reviewer. `ProjectReview.user_id` is
         # the subject; reviewer_id is the PM/secondary who wrote it.
-        base_q = base_q.join(User, User.id == ProjectReview.user_id).filter(
-            User.full_name == employee
-        )
+        base_q = base_q.join(User, User.id == ProjectReview.user_id)
+        if employee:
+            base_q = base_q.filter(User.full_name == employee)
 
     # Total of matching reviews — single COUNT(*) over an indexed filter.
     # The savings vs the legacy "fetch all + len()" pattern dominate at
     # HR scale (1000+ reviews shrinking to 50 per page).
     total = base_q.with_entities(ProjectReview.id).count()
+
+    # ORDER BY — default (cycle DESC, created_at DESC) when no user-
+    # picked sort; user sort replaces the default and the id.desc()
+    # tiebreaker survives (doc 30 Part 2).
+    if sort_by is None:
+        order_clauses = [
+            ProjectReview.cycle.desc(),
+            ProjectReview.created_at.desc(),
+            ProjectReview.id.desc(),
+        ]
+    else:
+        sort_column = _PROJECT_REVIEWS_SORT_COLUMNS[sort_by]
+        primary = sort_column.asc() if sort_dir == "asc" else sort_column.desc()
+        order_clauses = [primary, ProjectReview.id.desc()]
 
     reviews = (
         base_q
@@ -1429,15 +1492,7 @@ def get_all_reviews(
         # eager-load would be wasted work. See doc 25 for why the
         # joinedload belongs here and not on base_q.
         .options(joinedload(ProjectReview.secondary_evaluations))
-        .order_by(
-            ProjectReview.cycle.desc(),
-            ProjectReview.created_at.desc(),
-            # Stable-pagination tiebreaker. Without it, two reviews
-            # created in the same second can swap positions across page
-            # boundaries — the canonical OFFSET/LIMIT footgun (see doc
-            # 21 Part 2 for the discussion).
-            ProjectReview.id.desc(),
-        )
+        .order_by(*order_clauses)
         .offset(offset)
         .limit(limit)
         .all()

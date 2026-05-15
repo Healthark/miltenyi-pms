@@ -351,10 +351,31 @@ export interface CalibrationFilters {
   search?: string;
 }
 
-export type CalibrationRequestParams = CalibrationFilters & {
-  limit?: number;
-  offset?: number;
-};
+/** Sort columns accepted by GET /annual-reviews/calibration (PR #48,
+ *  doc 31). Review-derived dimensions (status + ratings) require an
+ *  outer join on the backend; users with no active-cycle review sort
+ *  as NULL. */
+export type CalibrationSortBy =
+  | "employee_name"
+  | "employee_email"
+  | "mentor_name"
+  | "function"
+  | "designation"
+  | "status"
+  | "self_performance_rating"
+  | "mentor_performance_rating"
+  | "management_performance_rating";
+
+export interface CalibrationSort {
+  sort_by?: CalibrationSortBy;
+  sort_dir?: "asc" | "desc";
+}
+
+export type CalibrationRequestParams = CalibrationFilters &
+  CalibrationSort & {
+    limit?: number;
+    offset?: number;
+  };
 
 /** Filter set for GET /annual-reviews/mentees (PR #46, doc 29). */
 export interface MenteeReviewsFilters {
@@ -368,7 +389,22 @@ export interface MenteeReviewsFilters {
   search?: string;
 }
 
-export type MenteeReviewsRequestParams = MenteeReviewsFilters & {
-  limit?: number;
-  offset?: number;
-};
+/** Sort columns accepted by GET /annual-reviews/mentees (PR #48, doc 31). */
+export type MenteeReviewsSortBy =
+  | "employee_name"
+  | "cycle_name"
+  | "status"
+  | "self_performance_rating"
+  | "mentor_performance_rating"
+  | "management_performance_rating";
+
+export interface MenteeReviewsSort {
+  sort_by?: MenteeReviewsSortBy;
+  sort_dir?: "asc" | "desc";
+}
+
+export type MenteeReviewsRequestParams = MenteeReviewsFilters &
+  MenteeReviewsSort & {
+    limit?: number;
+    offset?: number;
+  };

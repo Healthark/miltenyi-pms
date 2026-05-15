@@ -16,6 +16,7 @@ import {
 import {
   goalService,
   type AllGoalsFilters,
+  type AllGoalsSortBy,
   type Goal,
   type TeamGoal,
   type GoalCreatePayload,
@@ -108,23 +109,16 @@ interface AllGoalsEmployeeGroup {
   goals: TeamGoal[];
 }
 
-type AllGoalsSortKey =
-  | "owner_name"
-  | "function_name"
-  | "designation_name"
-  | "latest_fy_year"
-  | "latest_manager_name";
-
-const ALL_GOALS_SORT_CONFIG: Record<
-  AllGoalsSortKey,
-  { kind: SortKind; get: (g: AllGoalsEmployeeGroup) => SortValue }
-> = {
-  owner_name:          { kind: "alpha",   get: (g) => g.owner_name },
-  function_name:       { kind: "alpha",   get: (g) => g.function_name },
-  designation_name:    { kind: "alpha",   get: (g) => g.designation_name },
-  latest_fy_year:      { kind: "numeric", get: (g) => g.latest_fy_year },
-  latest_manager_name: { kind: "alpha",   get: (g) => g.latest_manager_name },
-};
+// Server-side sort dimensions (PR #48, doc 31). Matches backend's
+// `_ALL_GOALS_SORT_COLUMNS` map exactly. Re-exported as the wire-type
+// `AllGoalsSortBy` from goal.service.ts. Derived columns
+// (`latest_fy_year`, `latest_manager_name`) used to be sortable
+// client-side; on the server they'd need correlated MAX subqueries —
+// deferred. Those column headers stay rendered as plain text.
+type AllGoalsSortKey = AllGoalsSortBy;
+// ALL_GOALS_SORT_CONFIG used to live here (per-key {kind, get}
+// accessors driving the client-side sort). Server-side sort makes the
+// accessors unnecessary — backend SQL ORDER BY owns the semantics.
 
 function buildAllGoalsGroups(goals: readonly TeamGoal[]): AllGoalsEmployeeGroup[] {
   const map = new Map<number, AllGoalsEmployeeGroup>();
@@ -296,6 +290,9 @@ export function AnnualGoals() {
   //   has_more flag (server-computed). Return undefined to stop paging.
   const ALL_GOALS_PAGE_SIZE = 50;
   const [allGoalsFilters, setAllGoalsFilters] = useState<AllGoalsFilters>({});
+  const [allGoalsSort, setAllGoalsSort] = useState<
+    SortState<AllGoalsSortKey> | null
+  >(null);
   // Strip empty / undefined values so cache keys and request payloads
   // collapse to a clean shape — see doc 26 Part 2's "empty-filters trap".
   const allGoalsFilterParams: Record<string, string | number> =
@@ -304,11 +301,20 @@ export function AnnualGoals() {
         ([, v]) => v !== undefined && v !== "",
       ),
     ) as Record<string, string | number>;
+  // Merge sort into the request params (doc 30 Part 1).
+  const allGoalsRequestParams: Record<string, string | number> = {
+    ...allGoalsFilterParams,
+    ...(allGoalsSort
+      ? { sort_by: allGoalsSort.key, sort_dir: allGoalsSort.direction }
+      : {}),
+  };
   const allGoalsQuery = useInfiniteQuery({
-    queryKey: queryKeys.goals.org(allGoalsFilterParams),
+    queryKey: queryKeys.goals.org(allGoalsRequestParams),
     queryFn: ({ pageParam }) =>
       goalService.getAllGoals({
-        ...allGoalsFilterParams,
+        ...(allGoalsRequestParams as Record<string, string | number> & {
+          sort_by?: AllGoalsSortBy;
+        }),
         limit: ALL_GOALS_PAGE_SIZE,
         offset: pageParam,
       }),
@@ -988,6 +994,8 @@ export function AnnualGoals() {
               }}
               filters={allGoalsFilters}
               onFiltersChange={setAllGoalsFilters}
+              sort={allGoalsSort}
+              onSortChange={setAllGoalsSort}
             />
           )}
         </div>
@@ -1066,34 +1074,23 @@ function AllGoalsTab({
   onLoadMore,
   filters,
   onFiltersChange,
+  sort,
+  onSortChange,
 }: {
   readonly goals: TeamGoal[];
   readonly isLoading: boolean;
-  /** Total employees-with-goals matching the SERVER FILTER across all
-   *  pages. The pagination unit is employees, not goal rows — see
-   *  goalService.getAllGoals. Equal to the full org count when no
-   *  filters are active; smaller as filters narrow. */
   readonly totalEmployees: number;
-  /** True while at least one more PAGE of employees exists on the
-   *  server FOR THE CURRENT FILTER SET (server-derived from has_more). */
   readonly hasNextPage: boolean;
-  /** True while a fetchNextPage() call is in flight — drives the Load
-   *  More button's spinner state without flashing the initial-load
-   *  skeleton. */
   readonly isFetchingNextPage: boolean;
-  /** Trigger for fetchNextPage. Wired by the parent page. */
   readonly onLoadMore: () => void;
-  /** Current filter set. Controlled by the page so the values flow
-   *  into the useInfiniteQuery's queryKey (PR #44, doc 27). */
   readonly filters: AllGoalsFilters;
-  /** Setter — receives a full replacement filter object. Helpers
-   *  below produce new objects via `{ ...filters, X: value }`. */
   readonly onFiltersChange: (next: AllGoalsFilters) => void;
+  /** Current sort. Controlled by the page (doc 30 / 31). */
+  readonly sort: SortState<AllGoalsSortKey> | null;
+  readonly onSortChange: (next: SortState<AllGoalsSortKey> | null) => void;
 }) {
-  // Local-only state: sort, expansion, and the view-goal modal target.
-  // The filter dimensions moved to the page (lifted state pattern, see
-  // doc 26 Part 1).
-  const [sort, setSort] = useState<SortState<AllGoalsSortKey> | null>(null);
+  // Only the modal target + row expansion are local now — filters AND
+  // sort moved to the page.
   const [expandedUserId, setExpandedUserId] = useState<number | null>(null);
   // The goal whose self/mentor reviews are currently being read in the
   // details modal. null = modal closed.
@@ -1125,25 +1122,13 @@ function AllGoalsTab({
     new Set(goals.map((g) => g.manager_name).filter((m): m is string => !!m)),
   ).sort();
 
-  // No client-side `filtered` loop anymore — `goals` IS the filtered
-  // universe (server-side filter applied in step 4 of /goals/all's
-  // pipeline). Grouping runs directly over the server-filtered set;
-  // each user's group contains only their MATCHING goals (a user
-  // filtered to fy_year=2026 doesn't show their 2025 goals).
-  const groups = buildAllGoalsGroups(goals);
-
-  const sortedGroups = sort
-    ? groups.slice().sort((a, b) => {
-        const { kind, get } = ALL_GOALS_SORT_CONFIG[sort.key];
-        return compareValues(get(a), get(b), kind, sort.direction);
-      })
-    : groups
-        .slice()
-        .sort((a, b) =>
-          a.owner_name.localeCompare(b.owner_name, undefined, {
-            sensitivity: "base",
-          }),
-        );
+  // `goals` is the server-filtered AND server-sorted universe. The
+  // grouping function preserves ordering: it iterates `goals` in the
+  // received order, so the resulting groups follow the server-ORDER-BY
+  // (by parent's owner_name / function_name / designation_name when
+  // sort_by is set, alphabetical default otherwise). No client-side
+  // sort here.
+  const sortedGroups = buildAllGoalsGroups(goals);
 
   // Helpers that adapt the dropdown/combobox UI sentinels ("all" / "")
   // to the AllGoalsFilters shape (undefined = no narrowing on this dim).
@@ -1352,19 +1337,29 @@ function AllGoalsTab({
               style={{ gridTemplateColumns: ALL_GOALS_GRID_TEMPLATE_COLUMNS }}
             >
               <div role="columnheader" className="text-left px-5 py-2.5">
-                <SortableHeader label="Employee" columnKey="owner_name" sort={sort} onSort={setSort} />
+                <SortableHeader label="Employee" columnKey="owner_name" sort={sort} onSort={onSortChange} />
               </div>
               <div role="columnheader" className="text-left px-4 py-2.5">
-                <SortableHeader label="Function" columnKey="function_name" sort={sort} onSort={setSort} />
+                <SortableHeader label="Function" columnKey="function_name" sort={sort} onSort={onSortChange} />
               </div>
               <div role="columnheader" className="text-left px-4 py-2.5">
-                <SortableHeader label="Designation" columnKey="designation_name" sort={sort} onSort={setSort} />
+                <SortableHeader label="Designation" columnKey="designation_name" sort={sort} onSort={onSortChange} />
+              </div>
+              {/* Year + Mentor headers — not sortable in this PR. Doc 31
+                  Part 2 explains the deferral (they're derived from the
+                  group's latest goal, which needs a correlated MAX
+                  subquery to sort server-side). Rendered as plain
+                  text to match the visual style of the sortable
+                  headers above but without the chevron affordance. */}
+              <div role="columnheader" className="text-left px-4 py-2.5">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-text-muted">
+                  Year
+                </span>
               </div>
               <div role="columnheader" className="text-left px-4 py-2.5">
-                <SortableHeader label="Year" columnKey="latest_fy_year" sort={sort} onSort={setSort} />
-              </div>
-              <div role="columnheader" className="text-left px-4 py-2.5">
-                <SortableHeader label="Mentor" columnKey="latest_manager_name" sort={sort} onSort={setSort} />
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-text-muted">
+                  Mentor
+                </span>
               </div>
             </div>
           </div>

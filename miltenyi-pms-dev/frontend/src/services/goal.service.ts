@@ -376,8 +376,23 @@ export interface AllGoalsFilters {
   designation?: string;
 }
 
-/** Full request shape: pagination knobs + the filter dimensions. */
-export type AllGoalsRequestParams = AllGoalsFilters & {
-  limit?: number;
-  offset?: number;
-};
+/** Sort columns accepted by GET /goals/all (PR #48, doc 31).
+ *  Direct user-attribute columns only — derived columns
+ *  (`latest_fy_year`, `latest_manager_name`) are deferred since they'd
+ *  need correlated MAX subqueries. See doc 31 Part 2. */
+export type AllGoalsSortBy =
+  | "owner_name"
+  | "function_name"
+  | "designation_name";
+
+export interface AllGoalsSort {
+  sort_by?: AllGoalsSortBy;
+  sort_dir?: "asc" | "desc";
+}
+
+/** Full request shape: pagination + filters + sort. */
+export type AllGoalsRequestParams = AllGoalsFilters &
+  AllGoalsSort & {
+    limit?: number;
+    offset?: number;
+  };

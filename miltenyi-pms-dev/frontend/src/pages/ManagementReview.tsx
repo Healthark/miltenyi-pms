@@ -34,6 +34,7 @@ import {
   annualReviewService,
   type CalibrationFilters,
   type CalibrationRow,
+  type CalibrationSortBy,
   type ReviewStatus,
 } from "@/services/annual-review.service";
 import { queryKeys } from "@/lib/queryKeys";
@@ -120,15 +121,9 @@ const STATUS_FILTER_OPTIONS: Array<{ value: StatusFilter; label: string }> = [
   { value: "completed",          label: "Completed" },
 ];
 
-// Sort weight for the synthetic `Status` column so an asc/desc click
-// orders the stages by lifecycle progression rather than alphabetically.
-const STATUS_SORT_WEIGHT: Record<ReviewStatus, number> = {
-  not_started:        0,
-  draft:              1,
-  pending_mentor:     2,
-  pending_management: 3,
-  completed:          4,
-};
+// STATUS_SORT_WEIGHT used to drive lifecycle-progression ordering on
+// the client-side sort. Server-side sort (PR #48, doc 31) orders
+// AnnualReview.status lexically. Documented in doc 31 Part 3.
 
 export function ManagementReview() {
   const { settings } = useSystemSettings();
@@ -141,10 +136,13 @@ export function ManagementReview() {
   const queryClient = useQueryClient();
   const confirm = useConfirm();
 
-  // ── Filter state (PR #46, doc 29) ──────────────────────────────────
+  // ── Filter state (PR #46, doc 29) + sort state (PR #48, doc 31) ────
   // Single consolidated filter object so each value can flow into the
   // queryKey atomically. `search` is debounced before reaching the
   // queryKey so typing a query doesn't fire a request per keystroke.
+  // Sort state stays as the existing `sortKey` + `sortDir` two-piece
+  // (it's a stable local convention in this file). Both feed into the
+  // queryKey via `requestParams` below.
   const [filters, setFilters] = useState<CalibrationFilters>({});
   const [searchInput, setSearchInput] = useState("");
   // 300ms is the standard "just enough to feel reactive without
@@ -164,6 +162,12 @@ export function ManagementReview() {
     ),
   ) as Record<string, string>;
 
+  // Sort state — moved up so the queryKey + queryFn (below) can read
+  // it. Default to alphabetical ascending; client-side sort used to
+  // own this state, server-side sort owns it now (PR #48, doc 31).
+  const [sortKey, setSortKey] = useState<SortKey>("employee_name");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+
   // ── Queries ────────────────────────────────────────────────────────
   // 1. The calibration grid (page-level table).
   //    Paginated as of PR #38 (doc 21). The shape is the simplest case
@@ -182,11 +186,21 @@ export function ManagementReview() {
   //    - initialPageParam: 0  → first request: ?offset=0&limit=50
   //    - getNextPageParam: derives from has_more on the latest page.
   const CALIBRATION_PAGE_SIZE = 50;
+  // Sort state — declared earlier (employee_name asc default). Wire
+  // it into the request params alongside filters. `requestParams` is
+  // a superset of `filterParams` that includes the active sort.
+  const requestParams: Record<string, string> = {
+    ...filterParams,
+    sort_by: sortKey,
+    sort_dir: sortDir,
+  };
   const gridQuery = useInfiniteQuery({
-    queryKey: queryKeys.annualReviews.calibration(filterParams),
+    queryKey: queryKeys.annualReviews.calibration(requestParams),
     queryFn: ({ pageParam }) =>
       annualReviewService.getCalibrationGrid({
-        ...filterParams,
+        ...(requestParams as Record<string, string> & {
+          sort_by?: CalibrationSortBy;
+        }),
         limit: CALIBRATION_PAGE_SIZE,
         offset: pageParam,
       }),
@@ -221,9 +235,6 @@ export function ManagementReview() {
       [key]: value === "" || value === "all" ? undefined : value,
     });
   };
-
-  const [sortKey, setSortKey] = useState<SortKey>("employee_name");
-  const [sortDir, setSortDir] = useState<SortDir>("asc");
 
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
   const [saveError, setSaveError] = useState("");
@@ -330,27 +341,11 @@ export function ManagementReview() {
   // active filter dim). No client-side narrowing needed; sort stays
   // client-side, applied directly to `rows`. See doc 29 for why we
   // skip the local filter loop and what it means for the sort.
-  const visibleRows = useMemo(() => {
-    return rows.slice().sort((a, b) => {
-      // Status sorts by lifecycle order (Not Started -> Completed) so
-      // toggling asc/desc reads as workflow progress, not alphabetically.
-      if (sortKey === "status") {
-        const av = STATUS_SORT_WEIGHT[a.status] ?? -1;
-        const bv = STATUS_SORT_WEIGHT[b.status] ?? -1;
-        return sortDir === "asc" ? av - bv : bv - av;
-      }
-      const av = a[sortKey];
-      const bv = b[sortKey];
-      if (av == null && bv == null) return 0;
-      if (av == null) return 1;
-      if (bv == null) return -1;
-      const cmp =
-        typeof av === "string"
-          ? av.localeCompare(bv as string)
-          : (av as number) - (bv as number);
-      return sortDir === "asc" ? cmp : -cmp;
-    });
-  }, [rows, sortKey, sortDir]);
+  // `rows` is already server-sorted per the active `sortKey` + `sortDir`
+  // (PR #48, doc 31). The previous lifecycle-weighted Status sort
+  // (Not Started → Completed) is now lexical on the server — see doc
+  // 31 Part 3 for the deliberate behaviour shift.
+  const visibleRows = rows;
 
   // Empty-state branching: empty `rows` can now mean either "org has
   // no Staff users" or "filter set returned nothing". Computed
