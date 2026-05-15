@@ -1,6 +1,6 @@
 # 20 — Paginate `GET /goals/all`: "list-of-parents" pagination
 
-> **PR:** _pending_
+> **PR:** [#37](https://github.com/Healthark/miltenyi-pms/pull/37)
 > **Files changed:** `backend/app/api/routes/goal_routes.py`, `frontend/src/lib/pagination.ts` (new), `frontend/src/services/goal.service.ts`, `frontend/src/services/annual-review.service.ts`, `frontend/src/pages/AnnualGoals.tsx`.
 > **Headline result:** Second endpoint paginated under the foundation from PR #36 (doc #19). But "All Goals" groups goals by employee — a naive row-paginator would split a single employee's goals across pages. The fix: paginate by **employee** (the parent), then ship every goal for that page's employees in one batched fetch. New shared type at `lib/pagination.ts`. Bundle: AnnualGoals **76.32 KB → 76.48 KB raw, gzip 15.13 KB → 15.18 KB** (+0.05 KB gzip).
 

@@ -12,7 +12,12 @@
  */
 
 import { useMemo, useRef, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   ChevronDown,
@@ -135,15 +140,48 @@ export function ManagementReview() {
   const confirm = useConfirm();
 
   // ── Queries ────────────────────────────────────────────────────────
-  // 1. The calibration grid (page-level table). Single fetch on mount;
-  //    background-refreshes via the broadcast invalidation in
-  //    setManagementRating's onSuccess (and on window focus via the
-  //    global default).
-  const gridQuery = useQuery({
+  // 1. The calibration grid (page-level table).
+  //    Paginated as of PR #38 (doc 21). The shape is the simplest case
+  //    of the pagination template: each row = one Staff user, so
+  //    `total` and `items.length` are the same unit (vs the parent/
+  //    child split in doc 20). We still use `useInfiniteQuery` here for
+  //    consistency with the other paginated endpoints — `flatMap` over
+  //    pages produces a row array that the rest of the component
+  //    (filters, virtualizer) consumes unchanged. The cache key
+  //    (queryKeys.annualReviews.calibration()) is the SAME as the
+  //    legacy useQuery, so the broadcast invalidation in
+  //    setManagementRating's onSuccess refreshes whatever pages are
+  //    loaded.
+  //
+  //    - initialPageParam: 0  → first request: ?offset=0&limit=50
+  //    - getNextPageParam: derives from has_more on the latest page.
+  //    - background-refreshes via the broadcast invalidation in
+  //      setManagementRating's onSuccess (and on window focus via the
+  //      global default).
+  const CALIBRATION_PAGE_SIZE = 50;
+  const gridQuery = useInfiniteQuery({
     queryKey: queryKeys.annualReviews.calibration(),
-    queryFn: annualReviewService.getCalibrationGrid,
+    queryFn: ({ pageParam }) =>
+      annualReviewService.getCalibrationGrid({
+        limit: CALIBRATION_PAGE_SIZE,
+        offset: pageParam,
+      }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) =>
+      lastPage.has_more ? lastPage.offset + lastPage.limit : undefined,
   });
-  const rows: CalibrationRow[] = gridQuery.data ?? [];
+  // Flatten loaded pages → row array. As HR clicks "Load more" this
+  // grows; every downstream consumer (filters, sort, virtualizer) sees
+  // one combined list.
+  const rows: CalibrationRow[] =
+    gridQuery.data?.pages.flatMap((p) => p.items) ?? [];
+  // Total Staff-user count returned by the server (same on every page,
+  // we read it off the latest one). Drives the "Loaded N of T" counter.
+  const totalUsers =
+    gridQuery.data?.pages[gridQuery.data.pages.length - 1]?.total ?? 0;
+  // For paginated queries, `isPending` is true only on the FIRST fetch.
+  // Subsequent fetchNextPage() calls flip `isFetchingNextPage` instead —
+  // handled separately near the Load More button below.
   const isLoading = gridQuery.isPending;
   const loadError = gridQuery.isError ? getErrorMessage(gridQuery.error) : "";
 
@@ -718,6 +756,31 @@ export function ManagementReview() {
           </>
         )}
       </div>
+
+      {/* Load More — sits BELOW the calibration card so HR can see the
+          "more available" affordance without scrolling to the bottom of
+          the 600px virtualized window. Hidden when the server reports
+          no more pages (hasNextPage === false). The counter reads
+          "Loaded N of T" — same unit on both sides because each row
+          corresponds to one Staff user (vs doc 20 where total was the
+          parent count and items.length was the child count). */}
+      {gridQuery.hasNextPage && (
+        <div className="flex items-center gap-3 justify-center">
+          <button
+            type="button"
+            onClick={() => {
+              void gridQuery.fetchNextPage();
+            }}
+            disabled={gridQuery.isFetchingNextPage}
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-white px-4 py-2 text-[13px] font-medium text-text-main hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+          >
+            {gridQuery.isFetchingNextPage ? "Loading…" : "Load more"}
+          </button>
+          <span className="text-xs text-text-muted">
+            Loaded {rows.length} of {totalUsers}
+          </span>
+        </div>
+      )}
 
       {editTarget && (
         <div

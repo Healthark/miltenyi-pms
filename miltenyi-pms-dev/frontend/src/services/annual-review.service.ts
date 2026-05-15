@@ -190,9 +190,20 @@ export const annualReviewService = {
   },
 
   // ── Stage 3: Management ─────────────────────────────────────────
-  getCalibrationGrid: async (): Promise<CalibrationRow[]> => {
-    const res = await apiClient.get<CalibrationRow[]>(
+  /** Calibration grid for the active cycle (every active Staff user in
+   *  the org, LEFT-joined against their AnnualReview).
+   *
+   *  Paginated as of PR #38 (doc 21). Standard offset/limit shape; each
+   *  row corresponds to exactly one Staff user, so unlike /goals/all
+   *  (doc 20) `total` and `items.length` are the same unit — the
+   *  user-row count for the page. Pair with `useInfiniteQuery`.
+   *  Server defaults: limit=50, max=200. */
+  getCalibrationGrid: async (
+    params: { limit?: number; offset?: number } = {},
+  ): Promise<PaginatedCalibration> => {
+    const res = await apiClient.get<PaginatedCalibration>(
       "/annual-reviews/calibration",
+      { params },
     );
     return res.data;
   },
@@ -245,3 +256,7 @@ export const annualReviewService = {
  *  this module keep compiling without churn. */
 export type { Paginated };
 export type PaginatedAnnualReviews = Paginated<AnnualReview>;
+/** Paginated response from GET /annual-reviews/calibration (PR #38).
+ *  Per-row identity is the Staff user; `total` and `items.length` are
+ *  the same unit (one calibration row per user). */
+export type PaginatedCalibration = Paginated<CalibrationRow>;

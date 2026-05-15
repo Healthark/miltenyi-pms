@@ -692,43 +692,105 @@ def save_mentor_draft(
 # STAGE 3 — MANAGEMENT CALIBRATION & FINALIZATION
 # =====================================================================
 
-@router.get("/calibration", response_model=List[CalibrationRow])
+@router.get("/calibration", response_model=Paginated[CalibrationRow])
 def get_calibration_grid(
     db: DbSession,
     current_user: CurrentUser,
+    limit: int = Query(
+        50,
+        ge=1,
+        le=200,
+        description=(
+            "Maximum staff users to return on this page. Server-clamped "
+            "to 1..200 to bound payload + DB work."
+        ),
+    ),
+    offset: int = Query(
+        0,
+        ge=0,
+        description="Staff users to skip before this page. 0 for the first page.",
+    ),
 ):
     """
-    Every active Staff user in the org for the active cycle, LEFT-joined
-    against their AnnualReview row. Staff who haven't created a review
-    yet appear with status="not_started" and null ratings; the frontend
-    gates actions per stage. Management-only.
+    Paginated calibration grid for the active cycle. Management-only.
+
+    Every active Staff user in the org appears as one row, LEFT-joined
+    against their AnnualReview for the active cycle. Staff who haven't
+    created a review yet still appear with status="not_started" and
+    null ratings — the frontend gates per-row actions per stage.
+
+    ── Pagination strategy: paginate the user (the row identity) ──────
+    Each calibration row corresponds to exactly one Staff user; reviews
+    are 0-or-1 per user in the active cycle. So the "list-of-parents"
+    pattern from PR #37 (doc 20) degenerates here: `total` equals the
+    Staff-user count AND `items.length` equals the user count for the
+    page. The two-step pattern still applies — we paginate users via
+    OFFSET/LIMIT in SQL (so sorting + paging is consistent with the DB
+    instead of Python-side) and then batch-fetch reviews + mentors for
+    just the page's user IDs.
+
+    Sort moves into SQL — `User.full_name.asc()` — because OFFSET/LIMIT
+    only makes sense over a stable order. The old endpoint sorted in
+    Python after fetching every staff user, which is fine when you
+    have the whole list in memory but breaks once you only have a
+    page.
+
+    Returns `Paginated[CalibrationRow]` (the standard wire shape from
+    PR #36).
     """
     _require_management(current_user)
     cycle_name = _get_active_cycle(db, current_user.org_id)
 
-    staff_users = (
-        db.query(User)
+    # Filtered base query, ordered by full_name so OFFSET/LIMIT is
+    # deterministic. The eager-load options are applied via the page
+    # fetch below (eager loads on a count() are wasted work).
+    base_q = db.query(User).filter(
+        User.org_id == current_user.org_id,
+        User.role == Role.STAFF.value,
+        User.is_deleted == False,  # noqa: E712
+    )
+
+    # Total of matching users — pairs with `has_more` below. Pre-page
+    # the page-relevant count is essentially free here (no joins,
+    # single COUNT over an indexed filter).
+    total_users = base_q.with_entities(User.id).count()
+
+    # Page through the user list. The secondary `User.id.asc()` tiebreaker
+    # keeps pagination stable when two users share a full_name (the
+    # alternative — duplicates appearing on consecutive pages or being
+    # silently dropped — is the canonical pagination footgun).
+    page_users = (
+        base_q
         .options(
             joinedload(User.function),
             joinedload(User.designation),
         )
-        .filter(
-            User.org_id == current_user.org_id,
-            User.role == Role.STAFF.value,
-            User.is_deleted == False,  # noqa: E712
-        )
+        .order_by(User.full_name.asc(), User.id.asc())
+        .offset(offset)
+        .limit(limit)
         .all()
     )
-    if not staff_users:
-        return []
 
-    staff_ids = [u.id for u in staff_users]
+    if not page_users:
+        return Paginated[CalibrationRow](
+            items=[],
+            total=total_users,
+            limit=limit,
+            offset=offset,
+            has_more=False,
+        )
+
+    page_user_ids = [u.id for u in page_users]
+
+    # Reviews for just THIS page's users. Bounded by `limit`, so the
+    # filter list is at most 200 entries — well within Postgres's
+    # in-list comfort zone.
     reviews = (
         db.query(AnnualReview)
         .filter(
             AnnualReview.org_id == current_user.org_id,
             AnnualReview.cycle_name == cycle_name,
-            AnnualReview.user_id.in_(staff_ids),
+            AnnualReview.user_id.in_(page_user_ids),
         )
         .all()
     )
@@ -737,9 +799,10 @@ def get_calibration_grid(
     # Resolve mentor names in a single round-trip. For users with a
     # review, prefer the snapshotted review.mentor_id (so the grid stays
     # consistent with the review). For users without a review, fall back
-    # to the live User.mentor_id assignment.
+    # to the live User.mentor_id assignment. Both are scoped to the
+    # page's users, so the mentor fetch is similarly bounded.
     mentor_ids: set[int] = set()
-    for u in staff_users:
+    for u in page_users:
         review = reviews_by_user.get(u.id)
         snapshot_id = review.mentor_id if review else None
         live_id = u.mentor_id
@@ -753,7 +816,7 @@ def get_calibration_grid(
     } if mentor_ids else {}
 
     rows: list[CalibrationRow] = []
-    for u in staff_users:
+    for u in page_users:
         review = reviews_by_user.get(u.id)
         if review is not None:
             mentor = (
@@ -798,8 +861,14 @@ def get_calibration_grid(
                 final_rating_enabled=False,
             ))
 
-    rows.sort(key=lambda r: r.employee_name.lower())
-    return rows
+    # No Python sort here — SQL ORDER BY already ordered the page.
+    return Paginated[CalibrationRow](
+        items=rows,
+        total=total_users,
+        limit=limit,
+        offset=offset,
+        has_more=(offset + len(rows)) < total_users,
+    )
 
 
 @router.patch("/{review_id}/management-rating", response_model=AnnualReviewResponse)
