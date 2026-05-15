@@ -22,7 +22,8 @@ Endpoints:
     GET   /project-reviews/all                      → All reviews for the org (flat list)
 """
 
-from typing import List, Optional
+from dataclasses import dataclass, field
+from typing import Iterable, List, Optional
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy.orm import joinedload
 
@@ -209,11 +210,115 @@ def _assignment_active_for_cycle(
     return True
 
 
+@dataclass
+class ReviewBatchDeps:
+    """Pre-fetched lookup maps shared by every `_build_review_response`
+    call in a batch endpoint. Replaces the per-row queries the helper
+    used to issue.
+
+    Construction is `_prefetch_review_dependencies(reviews, db)` —
+    callers do it ONCE per request before the per-row loop.
+
+    Why a dataclass instead of four loose dicts: keeps the helper's
+    signature stable as we add more lookups, and the type system can
+    catch "you passed users where projects was expected" mistakes.
+    Also gives the doc/code a single name to refer to — "the deps
+    bundle" — which is genuinely useful when explaining the pattern.
+
+    Maps are `dict[int, User]` / `dict[int, Project]` so a missing key
+    is a clean "row references a deleted entity" case the helper
+    handles with the same `"Unknown"` / `"???"` fallbacks the legacy
+    code used.
+    """
+
+    users_by_id: dict[int, User] = field(default_factory=dict)
+    projects_by_id: dict[int, Project] = field(default_factory=dict)
+
+
+def _prefetch_review_dependencies(
+    reviews: Iterable[ProjectReview],
+    db: DbSession,
+) -> ReviewBatchDeps:
+    """Build the lookup maps for a batch of reviews in 2 SQL queries.
+
+    Before this helper, `_build_review_response(r)` issued up to 5
+    queries per row (employee + reviewer + project + project.pm + per
+    secondary-evaluation evaluator). For N reviews that's `≥ 5N`
+    round-trips — the textbook N+1.
+
+    Strategy: collect every entity ID referenced by the batch, then
+    fetch each entity type in ONE batched query.
+
+    Queries emitted:
+      1. `SELECT * FROM users WHERE id IN (…employee_ids, reviewer_ids,
+         pm_ids, secondary_evaluator_ids…)`
+      2. `SELECT * FROM projects WHERE id IN (…project_ids…)`
+
+    That's `2` queries regardless of `N`. The legacy `5N` shrinks to
+    `2` constant; the savings dominate even more as `N` grows. For
+    the new paginated `/all` endpoint (doc 22) at `limit=50`, this
+    drops `≥ 250` round-trips per page to `≤ 2`.
+
+    Notes:
+    - We don't joinedload `Project.pm` because we need PMs in the same
+      `users_by_id` bucket the helper reads from anyway, and the
+      collected `pm_ids` go into the User query directly. Saves one
+      duplicate query path.
+    - Empty input is fine — both queries short-circuit on an empty IN
+      list (we guard explicitly to avoid the SQL syntax oddity).
+    - `secondary_evaluations` is the SQLAlchemy relationship; it's
+      loaded lazily here, but FastAPI's response-shaping already
+      iterates it inside `_build_review_response`, so the lazy load
+      fires on first access during the batch loop. If profiling shows
+      this is the next bottleneck, we'd add `joinedload(
+      ProjectReview.secondary_evaluations)` to the page-fetch queries
+      upstream (a one-liner). Out of scope here.
+    """
+    reviews_list = list(reviews)
+    if not reviews_list:
+        return ReviewBatchDeps()
+
+    project_ids = {r.project_id for r in reviews_list if r.project_id is not None}
+    user_ids: set[int] = set()
+    for r in reviews_list:
+        if r.user_id is not None:
+            user_ids.add(r.user_id)
+        if r.reviewer_id is not None:
+            user_ids.add(r.reviewer_id)
+        for ev in r.secondary_evaluations:
+            if ev.evaluator_id is not None:
+                user_ids.add(ev.evaluator_id)
+
+    projects_by_id: dict[int, Project] = {}
+    if project_ids:
+        projects_by_id = {
+            p.id: p
+            for p in db.query(Project).filter(Project.id.in_(project_ids)).all()
+        }
+        # Now that we've got the projects, fold in their PM ids — must
+        # happen BEFORE the user fetch so PMs land in the same batch.
+        for p in projects_by_id.values():
+            if p.pm_id is not None:
+                user_ids.add(p.pm_id)
+
+    users_by_id: dict[int, User] = {}
+    if user_ids:
+        users_by_id = {
+            u.id: u for u in db.query(User).filter(User.id.in_(user_ids)).all()
+        }
+
+    return ReviewBatchDeps(
+        users_by_id=users_by_id,
+        projects_by_id=projects_by_id,
+    )
+
+
 def _build_review_response(
     review: ProjectReview,
     db: DbSession,
     viewer: User,
     settings: Optional[SystemSettings] = None,
+    deps: Optional[ReviewBatchDeps] = None,
 ) -> ProjectReviewResponse:
     """
     Convert a ProjectReview ORM row to its API response shape.
@@ -229,22 +334,49 @@ def _build_review_response(
     `settings` is optional — batch callers should pre-fetch the row once
     and pass it in to avoid N+1 queries; single-response callers can
     omit and let this helper fetch it.
+
+    `deps` is optional. When provided (by `_prefetch_review_dependencies`),
+    the helper reads employee / reviewer / project / pm / secondary
+    evaluator entities from the pre-fetched maps instead of issuing
+    per-row queries. Single-row callers (`POST /evaluate`, `GET /{id}`,
+    etc.) leave it `None` — the legacy per-row path runs and is fine
+    at constant cost. Batch callers MUST pass it to avoid the N+1.
     """
     if settings is None:
         settings = _get_settings_row(db, viewer.org_id)
     active_cycle = _compute_active_cycle_name(settings) if settings else None
     viewer_user_id = viewer.id
-    employee = db.query(User).filter(User.id == review.user_id).first()
-    reviewer = db.query(User).filter(User.id == review.reviewer_id).first() if review.reviewer_id else None
-    project = db.query(Project).filter(Project.id == review.project_id).first()
-    # The project's currently-assigned PM. Distinct from `reviewer` because
-    # `reviewer_id` is only stamped when a review is submitted, but the PM
-    # exists on the project from creation. Read-only views (Mentor / HR /
-    # Staff "My Reviews") need this so a pending row can still show the PM.
-    pm_user = (
-        db.query(User).filter(User.id == project.pm_id).first()
-        if project and project.pm_id else None
-    )
+
+    # ── Employee / reviewer / project / PM lookups ──
+    # Two paths: with `deps` we read from pre-fetched maps (cheap
+    # dict.get); without it we issue per-row queries (legacy path,
+    # used by single-row callers where the constant cost is fine).
+    if deps is not None:
+        employee = deps.users_by_id.get(review.user_id) if review.user_id else None
+        reviewer = (
+            deps.users_by_id.get(review.reviewer_id)
+            if review.reviewer_id else None
+        )
+        project = (
+            deps.projects_by_id.get(review.project_id)
+            if review.project_id else None
+        )
+        pm_user = (
+            deps.users_by_id.get(project.pm_id)
+            if project and project.pm_id else None
+        )
+    else:
+        employee = db.query(User).filter(User.id == review.user_id).first()
+        reviewer = db.query(User).filter(User.id == review.reviewer_id).first() if review.reviewer_id else None
+        project = db.query(Project).filter(Project.id == review.project_id).first()
+        # The project's currently-assigned PM. Distinct from `reviewer` because
+        # `reviewer_id` is only stamped when a review is submitted, but the PM
+        # exists on the project from creation. Read-only views (Mentor / HR /
+        # Staff "My Reviews") need this so a pending row can still show the PM.
+        pm_user = (
+            db.query(User).filter(User.id == project.pm_id).first()
+            if project and project.pm_id else None
+        )
 
     secondary_responses: list[SecondaryEvalResponse] = []
     for ev in review.secondary_evaluations:
@@ -257,7 +389,10 @@ def _build_review_response(
                 and ev.evaluator_id == viewer_user_id
             )
         ):
-            ev_user = db.query(User).filter(User.id == ev.evaluator_id).first()
+            if deps is not None:
+                ev_user = deps.users_by_id.get(ev.evaluator_id) if ev.evaluator_id else None
+            else:
+                ev_user = db.query(User).filter(User.id == ev.evaluator_id).first()
             secondary_responses.append(SecondaryEvalResponse(
                 id=ev.id,
                 evaluator_id=ev.evaluator_id,
@@ -872,8 +1007,15 @@ def get_secondary_evaluation_queue(
         .all()
     )
 
+    # Pre-fetch the batch's entity dependencies (users + projects) in
+    # 2 SQL queries instead of letting `_build_review_response` issue
+    # 5 per row. See doc 24 for the pattern.
     settings_row = _get_settings_row(db, current_user.org_id)
-    return [_build_review_response(r, db, viewer=current_user, settings=settings_row) for r in reviews]
+    deps = _prefetch_review_dependencies(reviews, db)
+    return [
+        _build_review_response(r, db, viewer=current_user, settings=settings_row, deps=deps)
+        for r in reviews
+    ]
 
 
 # =====================================================================
@@ -920,8 +1062,13 @@ def get_mentees_project_reviews(
         .all()
     )
 
+    # Pre-fetch the batch's entity dependencies in 2 queries — see doc 24.
     settings_row = _get_settings_row(db, current_user.org_id)
-    return [_build_review_response(r, db, viewer=current_user, settings=settings_row) for r in reviews]
+    deps = _prefetch_review_dependencies(reviews, db)
+    return [
+        _build_review_response(r, db, viewer=current_user, settings=settings_row, deps=deps)
+        for r in reviews
+    ]
 
 
 @router.post("/{review_id}/secondary", response_model=SecondaryEvalResponse, status_code=status.HTTP_201_CREATED)
@@ -1204,16 +1351,17 @@ def get_all_reviews(
         .all()
     )
 
-    # Settings is read once per request and threaded into every
-    # _build_review_response call to avoid the per-row settings fetch.
-    # Note: _build_review_response still does per-row lookups for
-    # employee / reviewer / project / pm_user (and per-secondary-eval
-    # evaluator). At limit=50 the round-trip cost is bounded but
-    # non-zero — see doc 22 "What this PR does NOT solve" for the
-    # follow-up that batches them.
+    # Settings is read once per request, threaded into every
+    # _build_review_response call so the visibility-gate check doesn't
+    # re-query. `deps` carries pre-fetched user + project maps so the
+    # helper's per-row queries (employee / reviewer / project / pm /
+    # secondary-eval evaluator) all become dict lookups instead.
+    # Together: each request issues a fixed handful of queries
+    # regardless of page size. See doc 24 for the pattern.
     settings_row = _get_settings_row(db, current_user.org_id)
+    deps = _prefetch_review_dependencies(reviews, db)
     items = [
-        _build_review_response(r, db, viewer=current_user, settings=settings_row)
+        _build_review_response(r, db, viewer=current_user, settings=settings_row, deps=deps)
         for r in reviews
     ]
 
