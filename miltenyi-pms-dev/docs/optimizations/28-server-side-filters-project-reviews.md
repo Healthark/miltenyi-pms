@@ -1,6 +1,6 @@
 # 28 — Server-side filters on `/project-reviews/all`: the controlled / uncontrolled component shape
 
-> **PR:** _pending_
+> **PR:** [#45](https://github.com/Healthark/miltenyi-pms/pull/45)
 > **Files changed:** `backend/app/api/routes/project_review_routes.py`, `frontend/src/services/project-review.service.ts`, `frontend/src/lib/queryKeys.ts`, `frontend/src/pages/ProjectReviews.tsx`.
 > **Headline result:** Third application of the server-side filter template (docs 26 + 27). The **backend** half is mechanical — five new query params, conditional joins, same `aliased(User)` trick from doc 27 (Project's PM is a second FK to `users` alongside the employee-side join). The **interesting** half is the frontend: `ReadOnlyReviewsList` is shared by HR (paginated, needs server filters) AND Mentor (unpaginated, fine with client filters). The component grows an optional controlled-mode set of props so HR can drive filters from the page level while Mentor keeps the legacy local-state path. Bundle: ProjectReviews **73.67 → 74.26 KB raw, 12.92 → 13.23 KB gzip** (+0.31 KB gzip).
 

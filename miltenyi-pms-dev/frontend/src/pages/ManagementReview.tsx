@@ -32,10 +32,12 @@ import {
 } from "lucide-react";
 import {
   annualReviewService,
+  type CalibrationFilters,
   type CalibrationRow,
   type ReviewStatus,
 } from "@/services/annual-review.service";
 import { queryKeys } from "@/lib/queryKeys";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { PerformanceRatingBadge } from "@/components/reviews/PerformanceRatingBadge";
 import { PerformanceRatingSelect } from "@/components/reviews/PerformanceRatingSelect";
 import { ReviewStatusBadge } from "@/components/reviews/ReviewStatusBadge";
@@ -139,6 +141,29 @@ export function ManagementReview() {
   const queryClient = useQueryClient();
   const confirm = useConfirm();
 
+  // ── Filter state (PR #46, doc 29) ──────────────────────────────────
+  // Single consolidated filter object so each value can flow into the
+  // queryKey atomically. `search` is debounced before reaching the
+  // queryKey so typing a query doesn't fire a request per keystroke.
+  const [filters, setFilters] = useState<CalibrationFilters>({});
+  const [searchInput, setSearchInput] = useState("");
+  // 300ms is the standard "just enough to feel reactive without
+  // request spam" window. See useDebouncedValue + doc 29 Part 4.
+  const debouncedSearch = useDebouncedValue(searchInput, 300);
+  // Merge debounced search back into the filter object before piping
+  // to the queryKey. Source of truth: the input element binds to
+  // `searchInput` (always current); the query reads `effectiveFilters`
+  // (search lags by `delayMs`).
+  const effectiveFilters: CalibrationFilters = {
+    ...filters,
+    search: debouncedSearch || undefined,
+  };
+  const filterParams: Record<string, string> = Object.fromEntries(
+    Object.entries(effectiveFilters).filter(
+      ([, v]) => v !== undefined && v !== "",
+    ),
+  ) as Record<string, string>;
+
   // ── Queries ────────────────────────────────────────────────────────
   // 1. The calibration grid (page-level table).
   //    Paginated as of PR #38 (doc 21). The shape is the simplest case
@@ -147,22 +172,21 @@ export function ManagementReview() {
   //    child split in doc 20). We still use `useInfiniteQuery` here for
   //    consistency with the other paginated endpoints — `flatMap` over
   //    pages produces a row array that the rest of the component
-  //    (filters, virtualizer) consumes unchanged. The cache key
-  //    (queryKeys.annualReviews.calibration()) is the SAME as the
-  //    legacy useQuery, so the broadcast invalidation in
-  //    setManagementRating's onSuccess refreshes whatever pages are
-  //    loaded.
+  //    consumes unchanged.
+  //
+  //    Server-side filters added in PR #46 (doc 29). Each distinct
+  //    `filterParams` produces its own cache entry; broadcast
+  //    invalidation on `annualReviews.all` still catches every variant
+  //    when setManagementRating's onSuccess fires.
   //
   //    - initialPageParam: 0  → first request: ?offset=0&limit=50
   //    - getNextPageParam: derives from has_more on the latest page.
-  //    - background-refreshes via the broadcast invalidation in
-  //      setManagementRating's onSuccess (and on window focus via the
-  //      global default).
   const CALIBRATION_PAGE_SIZE = 50;
   const gridQuery = useInfiniteQuery({
-    queryKey: queryKeys.annualReviews.calibration(),
+    queryKey: queryKeys.annualReviews.calibration(filterParams),
     queryFn: ({ pageParam }) =>
       annualReviewService.getCalibrationGrid({
+        ...filterParams,
         limit: CALIBRATION_PAGE_SIZE,
         offset: pageParam,
       }),
@@ -185,11 +209,18 @@ export function ManagementReview() {
   const isLoading = gridQuery.isPending;
   const loadError = gridQuery.isError ? getErrorMessage(gridQuery.error) : "";
 
-  const [searchQuery, setSearchQuery] = useState("");
-  const [funcFilter, setFuncFilter] = useState<string>("all");
-  const [designationFilter, setDesignationFilter] = useState<string>("all");
-  const [mentorFilter, setMentorFilter] = useState<string>("all");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  // Filter state lives ABOVE the queries (see `filters`, `searchInput`,
+  // `debouncedSearch` near the top of the component). Local-only UI
+  // helper to translate sentinel values for the dropdown UI:
+  const setFilter = <K extends keyof CalibrationFilters>(
+    key: K,
+    value: CalibrationFilters[K] | "" | "all",
+  ) => {
+    setFilters({
+      ...filters,
+      [key]: value === "" || value === "all" ? undefined : value,
+    });
+  };
 
   const [sortKey, setSortKey] = useState<SortKey>("employee_name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
@@ -295,23 +326,12 @@ export function ManagementReview() {
     [rows],
   );
 
+  // `rows` is the server-filtered universe (the queryKey reflects every
+  // active filter dim). No client-side narrowing needed; sort stays
+  // client-side, applied directly to `rows`. See doc 29 for why we
+  // skip the local filter loop and what it means for the sort.
   const visibleRows = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    const result = rows.filter((r) => {
-      if (funcFilter !== "all" && (r.function ?? "") !== funcFilter) return false;
-      if (designationFilter !== "all" && (r.designation ?? "") !== designationFilter) return false;
-      if (mentorFilter !== "all" && (r.mentor_name ?? "") !== mentorFilter) return false;
-      if (statusFilter !== "all" && r.status !== statusFilter) return false;
-      if (!q) return true;
-      return (
-        r.employee_name.toLowerCase().includes(q) ||
-        (r.employee_email ?? "").toLowerCase().includes(q) ||
-        (r.mentor_name ?? "").toLowerCase().includes(q) ||
-        (r.function ?? "").toLowerCase().includes(q)
-      );
-    });
-
-    return result.sort((a, b) => {
+    return rows.slice().sort((a, b) => {
       // Status sorts by lifecycle order (Not Started -> Completed) so
       // toggling asc/desc reads as workflow progress, not alphabetically.
       if (sortKey === "status") {
@@ -330,7 +350,14 @@ export function ManagementReview() {
           : (av as number) - (bv as number);
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [rows, searchQuery, funcFilter, designationFilter, mentorFilter, statusFilter, sortKey, sortDir]);
+  }, [rows, sortKey, sortDir]);
+
+  // Empty-state branching: empty `rows` can now mean either "org has
+  // no Staff users" or "filter set returned nothing". Computed
+  // alongside the filters so the toolbar + empty UI agree.
+  const hasActiveFilters =
+    searchInput !== "" ||
+    Object.values(filters).some((v) => v !== undefined && v !== "");
 
   // ── Virtualization ───────────────────────────────────────────────────
   // useVirtualizer needs a scroll-container ref and an item count. It
@@ -427,9 +454,9 @@ export function ManagementReview() {
                 />
                 <input
                   type="search"
-                  placeholder="Search name, email, mentor…"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search name or email…"
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
                   className="w-full rounded-lg border border-border bg-white py-2 pl-9 pr-4 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-brand"
                   aria-label="Search management reviews"
                 />
@@ -445,8 +472,8 @@ export function ManagementReview() {
                   </label>
                   <select
                     id="mgmt-review-func-filter"
-                    value={funcFilter}
-                    onChange={(e) => setFuncFilter(e.target.value)}
+                    value={filters.function ?? "all"}
+                    onChange={(e) => setFilter("function", e.target.value)}
                     className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand min-w-[140px] cursor-pointer"
                   >
                     <option value="all">All Functions</option>
@@ -467,8 +494,8 @@ export function ManagementReview() {
                   </label>
                   <select
                     id="mgmt-review-desig-filter"
-                    value={designationFilter}
-                    onChange={(e) => setDesignationFilter(e.target.value)}
+                    value={filters.designation ?? "all"}
+                    onChange={(e) => setFilter("designation", e.target.value)}
                     className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand min-w-[150px] cursor-pointer"
                   >
                     <option value="all">All Designations</option>
@@ -489,8 +516,8 @@ export function ManagementReview() {
                   </label>
                   <select
                     id="mgmt-review-mentor-filter"
-                    value={mentorFilter}
-                    onChange={(e) => setMentorFilter(e.target.value)}
+                    value={filters.mentor ?? "all"}
+                    onChange={(e) => setFilter("mentor", e.target.value)}
                     className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand min-w-[160px] cursor-pointer"
                   >
                     <option value="all">All Mentors</option>
@@ -511,8 +538,13 @@ export function ManagementReview() {
                   </label>
                   <select
                     id="mgmt-review-status-filter"
-                    value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+                    value={filters.status ?? "all"}
+                    onChange={(e) =>
+                      setFilter(
+                        "status",
+                        e.target.value as CalibrationFilters["status"] | "all",
+                      )
+                    }
                     className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand min-w-[170px] cursor-pointer"
                   >
                     {STATUS_FILTER_OPTIONS.map((o) => (
@@ -537,14 +569,14 @@ export function ManagementReview() {
                   aria-hidden="true"
                 />
                 <p className="font-display text-base font-medium text-text-main">
-                  {rows.length === 0
-                    ? "No reviews yet"
-                    : "No reviews match your filters"}
+                  {hasActiveFilters
+                    ? "No reviews match your filters"
+                    : "No reviews yet"}
                 </p>
                 <p className="mt-1 text-sm text-text-muted">
-                  {rows.length === 0
-                    ? "No active Staff users in this cycle yet."
-                    : "Try a different search term or adjust your filters."}
+                  {hasActiveFilters
+                    ? "Try a different search term or adjust your filters."
+                    : "No active Staff users in this cycle yet."}
                 </p>
               </div>
             ) : (

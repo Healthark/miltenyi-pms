@@ -24,13 +24,15 @@ import {
 import {
   annualReviewService,
   type MenteeAnnualReview,
+  type MenteeReviewsFilters,
 } from "@/services/annual-review.service";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { ReviewStatusBadge } from "@/components/reviews/ReviewStatusBadge";
 import { PerformanceRatingBadge } from "@/components/reviews/PerformanceRatingBadge";
 import { AnnualReviewDetailModal } from "@/components/reviews/AnnualReviewDetailModal";
 import { SortableHeader } from "@/components/SortableHeader";
 import { compareValues, type SortKind, type SortState, type SortValue } from "@/utils/sort";
-import { extractFyToken, formatFyLabel } from "@/utils/fy";
+import { extractFyToken, formatFyLabel, fyTokenToStartYear } from "@/utils/fy";
 
 type ViewMode = "grid" | "table";
 type SortKey =
@@ -157,10 +159,50 @@ function EmptyState({ hasFilter }: { readonly hasFilter: boolean }) {
 export function TeamReviewTab() {
   const navigate = useNavigate();
   const [viewMode, setViewMode] = useState<ViewMode>("table");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [yearFilter, setYearFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [menteeFilter, setMenteeFilter] = useState("all");
+
+  // ── Filter state (PR #46, doc 29) ───────────────────────────────
+  // Consolidated filter object that flows into the queryKey. `search`
+  // is debounced before reaching the queryKey to avoid a request per
+  // keystroke (see useDebouncedValue + doc 29 Part 4). The input
+  // element keeps binding to `searchInput` for instant echo; the
+  // query reads `effectiveFilters` which lags by `delayMs`.
+  const [filters, setFilters] = useState<MenteeReviewsFilters>({});
+  const [searchInput, setSearchInput] = useState("");
+  const debouncedSearch = useDebouncedValue(searchInput, 300);
+  const effectiveFilters: MenteeReviewsFilters = {
+    ...filters,
+    search: debouncedSearch || undefined,
+  };
+  const filterParams: Record<string, string | number> = Object.fromEntries(
+    Object.entries(effectiveFilters).filter(
+      ([, v]) => v !== undefined && v !== "",
+    ),
+  ) as Record<string, string | number>;
+
+  const setFilter = <K extends keyof MenteeReviewsFilters>(
+    key: K,
+    value: MenteeReviewsFilters[K] | "" | "all",
+  ) => {
+    setFilters({
+      ...filters,
+      [key]: value === "" || value === "all" ? undefined : value,
+    });
+  };
+  // The dropdown stores FY tokens like "FY26-27" / "FY26"; the backend
+  // expects an integer fy_year (2026). fyTokenToStartYear converts;
+  // null falls through to "no filter" (defensive — shouldn't fire for
+  // valid dropdown options). The reverse-mapping for the dropdown's
+  // `value` prop is computed inline near the <select> below since
+  // `reviews` (the option source) isn't in scope here.
+  const setYearFilter = (value: string) => {
+    if (value === "" || value === "all") {
+      setFilters({ ...filters, fy_year: undefined });
+      return;
+    }
+    const year = fyTokenToStartYear(value);
+    setFilters({ ...filters, fy_year: year ?? undefined });
+  };
+
   const [sort, setSort] = useState<SortState<SortKey> | null>(null);
   const [viewTarget, setViewTarget] = useState<MenteeAnnualReview | null>(null);
 
@@ -173,16 +215,19 @@ export function TeamReviewTab() {
   // Paginated as of PR #40 (doc 23). At mentor scale the typical
   // response fits in one page (50 reviews covers most mentors), but
   // the template is applied for **consistency** — every HR/mentor
-  // list endpoint behaves identically (same Load More button, same
-  // counter, same flatMap pattern). Long-tenured mentors who
-  // accumulate > 50 review rows across years see the Load More button
-  // appear naturally; everyone else never sees it (hasNextPage stays
-  // false).
+  // list endpoint behaves identically.
+  //
+  // Server-side filters added in PR #46 (doc 29). `filterParams` is
+  // baked into the queryKey so each filter combination is its own
+  // paginated cache entry. Broadcast invalidation on
+  // `annualReviews.all` (fired by EvalDrawer's mutations) catches
+  // every variant.
   const MENTEE_REVIEWS_PAGE_SIZE = 50;
   const reviewsQuery = useInfiniteQuery({
-    queryKey: queryKeys.annualReviews.mentees(),
+    queryKey: queryKeys.annualReviews.mentees(filterParams),
     queryFn: ({ pageParam }) =>
       annualReviewService.getMenteeReviews({
+        ...filterParams,
         limit: MENTEE_REVIEWS_PAGE_SIZE,
         offset: pageParam,
       }),
@@ -220,28 +265,21 @@ export function TeamReviewTab() {
     { value: "completed",          label: "Completed" },
   ];
 
-  const filtered = reviews
-    .filter(
-      (r) => yearFilter === "all" || extractFyToken(r.cycle_name) === yearFilter,
-    )
-    .filter(
-      (r) => statusFilter === "all" || r.status === statusFilter,
-    )
-    .filter(
-      (r) => menteeFilter === "all" || r.employee_name === menteeFilter,
-    )
-    .filter(
-      (r) =>
-        searchQuery.trim() === "" ||
-        r.employee_name.toLowerCase().includes(searchQuery.toLowerCase()),
-    );
-
+  // `reviews` IS the server-filtered universe (the queryKey reflects
+  // every active filter dim). No client-side narrowing needed. Sort
+  // stays client-side; applied directly to `reviews`. Doc 29 Part 5
+  // explains the server-side-sort follow-up.
   const sorted = sort
-    ? filtered.slice().sort((a, b) => {
+    ? reviews.slice().sort((a, b) => {
         const { kind, get } = SORT_CONFIG[sort.key];
         return compareValues(get(a), get(b), kind, sort.direction);
       })
-    : filtered;
+    : reviews;
+
+  // Boolean used by counter + empty-state branching.
+  const hasActiveFilters =
+    searchInput !== "" ||
+    Object.values(filters).some((v) => v !== undefined && v !== "");
 
   const viewBtnCls = (mode: ViewMode) =>
     `flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] font-medium transition-colors ${
@@ -260,8 +298,10 @@ export function TeamReviewTab() {
 
   return (
     <div className="space-y-4">
-      {/* Toolbar */}
-      {reviews.length > 0 && (
+      {/* Toolbar. Stays visible when active filters return zero results
+          (so user can clear them); only hides when truly empty (no
+          mentees, no active filters). */}
+      {(reviews.length > 0 || hasActiveFilters) && (
         <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between gap-3">
             <div className="relative flex-1 max-w-xs">
@@ -269,8 +309,8 @@ export function TeamReviewTab() {
               <input
                 type="text"
                 placeholder="Search mentees…"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
                 className="w-full rounded-lg border border-border bg-white pl-9 pr-3 py-1.5 text-[13px] text-text-main placeholder:text-text-muted outline-none focus:border-brand"
               />
             </div>
@@ -302,7 +342,17 @@ export function TeamReviewTab() {
               </label>
               <select
                 id="team-review-year-filter"
-                value={yearFilter}
+                // The dropdown stores FY tokens; round-trip the backend
+                // integer to the matching token, falling back to "all"
+                // when the integer doesn't correspond to any loaded
+                // cycle (unlikely except after URL-state hacking).
+                value={
+                  filters.fy_year === undefined
+                    ? "all"
+                    : (availableYears.find(
+                        (tok) => fyTokenToStartYear(tok) === filters.fy_year,
+                      ) ?? "all")
+                }
                 onChange={(e) => setYearFilter(e.target.value)}
                 className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand min-w-[120px] cursor-pointer"
               >
@@ -323,8 +373,13 @@ export function TeamReviewTab() {
               </label>
               <select
                 id="team-review-status-filter"
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
+                value={filters.status ?? "all"}
+                onChange={(e) =>
+                  setFilter(
+                    "status",
+                    e.target.value as MenteeReviewsFilters["status"] | "all",
+                  )
+                }
                 className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand min-w-[150px] cursor-pointer"
               >
                 <option value="all">All</option>
@@ -345,8 +400,8 @@ export function TeamReviewTab() {
                 </label>
                 <select
                   id="team-review-mentee-filter"
-                  value={menteeFilter}
-                  onChange={(e) => setMenteeFilter(e.target.value)}
+                  value={filters.mentee ?? "all"}
+                  onChange={(e) => setFilter("mentee", e.target.value)}
                   className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand min-w-[140px] cursor-pointer"
                 >
                   <option value="all">All</option>
@@ -359,17 +414,22 @@ export function TeamReviewTab() {
               </div>
             )}
             <span className="text-xs text-text-muted">
-              {filtered.length} of {reviews.length}
+              {/* Both halves now reflect the server-filtered universe;
+                  "Loaded X of Y" by the Load More button covers the
+                  paging-progress angle. */}
+              {totalReviews}{" "}
+              {totalReviews === 1 ? "match" : "matches"}
             </span>
           </div>
         </div>
       )}
 
-      {/* Content */}
+      {/* Content. Empty `reviews` could mean "mentor has no mentee
+          reviews" or "filter set returned nothing"; the EmptyState
+          branches accordingly. The `filtered.length === 0` legacy
+          path is gone (we don't client-filter anymore). */}
       {reviews.length === 0 ? (
-        <EmptyState hasFilter={false} />
-      ) : filtered.length === 0 ? (
-        <EmptyState hasFilter={true} />
+        <EmptyState hasFilter={hasActiveFilters} />
       ) : viewMode === "grid" ? (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {sorted.map((r) => (
