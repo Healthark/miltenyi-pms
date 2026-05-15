@@ -1,6 +1,6 @@
 # 29 — Two endpoints in one PR: `/calibration` + `/mentees` + introducing `useDebouncedValue`
 
-> **PR:** _pending_
+> **PR:** [#46](https://github.com/Healthark/miltenyi-pms/pull/46)
 > **Files changed:** `backend/app/api/routes/annual_review_routes.py`, `frontend/src/services/annual-review.service.ts`, `frontend/src/lib/queryKeys.ts`, `frontend/src/pages/ManagementReview.tsx`, `frontend/src/components/reviews/TeamReviewTab.tsx`, `frontend/src/hooks/useDebouncedValue.ts` (new).
 > **Headline result:** Fourth and fifth applications of the server-side filter template in a single PR — completes the filter rollout. The template is now uniform across every paginated HR/mentor list endpoint in the codebase. Three things this PR adds beyond mechanical "third + fourth application": (1) a shared `useDebouncedValue<T>` hook so typing in a search box doesn't fire a request per keystroke, (2) multi-column `ILIKE` search on the backend, (3) `EXISTS` / `NOT EXISTS` subquery for the calibration grid's "not_started" status filter (= "users without an active-cycle review row"). Bundle: ManagementReview **17.96 → 17.87 KB raw, 4.66 → 4.69 KB gzip** (+0.03 KB), AnnualReviews **42.30 → 42.50 KB raw, 8.48 → 8.57 KB gzip** (+0.09 KB).
 
