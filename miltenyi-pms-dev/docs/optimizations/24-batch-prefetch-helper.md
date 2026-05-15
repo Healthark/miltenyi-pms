@@ -1,6 +1,6 @@
 # 24 — Eliminate N+1 in `_build_review_response` with a batched prefetch helper
 
-> **PR:** _pending_
+> **PR:** [#41](https://github.com/Healthark/miltenyi-pms/pull/41)
 > **Files changed:** `backend/app/api/routes/project_review_routes.py`.
 > **Headline result:** First non-pagination PR in theme #4 — the deferred follow-up promised by doc 22 Part 2. The three batch callers of `_build_review_response` (`/all`, `/mentees`, `/secondary-queue`) used to issue ≥ 5N SQL queries to render N reviews. With the new `ReviewBatchDeps` + `_prefetch_review_dependencies` pattern, each request issues a small fixed number of queries regardless of N. At `limit=50`, that's roughly **250 round-trips → 52** (still N for the lazy-loaded `secondary_evaluations` relationship, ≤ 2 for everything else). The next iteration (joinedload on `secondary_evaluations`) gets that to a pure constant, but is deferred — that's its own one-liner PR.
 

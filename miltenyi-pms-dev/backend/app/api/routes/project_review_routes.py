@@ -996,6 +996,13 @@ def get_secondary_evaluation_queue(
 
     reviews = (
         db.query(ProjectReview)
+        # Eager-load secondary_evaluations on the page-fetch query so
+        # `_prefetch_review_dependencies` doesn't trigger N lazy loads
+        # when it iterates `r.secondary_evaluations` to collect
+        # evaluator ids. Without this, doc 24's helper still emitted
+        # N extra round-trips per request; the joinedload collapses
+        # them into the parent SELECT via a LEFT JOIN. See doc 25.
+        .options(joinedload(ProjectReview.secondary_evaluations))
         .filter(
             ProjectReview.org_id == current_user.org_id,
             ProjectReview.project_id.in_(project_ids),
@@ -1050,6 +1057,10 @@ def get_mentees_project_reviews(
 
     reviews = (
         db.query(ProjectReview)
+        # Eager-load secondary_evaluations — see /secondary-queue above
+        # for the rationale; the prefetch helper iterates this
+        # relationship and we don't want N lazy loads.
+        .options(joinedload(ProjectReview.secondary_evaluations))
         .filter(
             ProjectReview.org_id == current_user.org_id,
             ProjectReview.user_id.in_(mentee_ids),
@@ -1337,6 +1348,11 @@ def get_all_reviews(
 
     reviews = (
         base_q
+        # Eager-load secondary_evaluations ONLY on the windowed fetch —
+        # the `base_q` is also reused for the COUNT(*) above, where an
+        # eager-load would be wasted work. See doc 25 for why the
+        # joinedload belongs here and not on base_q.
+        .options(joinedload(ProjectReview.secondary_evaluations))
         .order_by(
             ProjectReview.cycle.desc(),
             ProjectReview.created_at.desc(),
