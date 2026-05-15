@@ -115,7 +115,13 @@ export const queryKeys = {
     all: ["goals"] as const,
     mine: (type: "annual" | "project" = "annual") =>
       [...queryKeys.goals.all, "mine", type] as const,
-    org: () => [...queryKeys.goals.all, "org"] as const,
+    /** HR_MyOrg's "All Goals" cache entry. Filters are baked into the
+     *  key (PR #44, doc 27) so each filter combination is its own
+     *  paginated cache entry. Same shape as `annualReviews.org` (doc
+     *  26). Broadcast invalidations on `queryKeys.goals.all` still
+     *  catch every filter-variant of this key. */
+    org: (filters: Record<string, string | number | undefined> = {}) =>
+      [...queryKeys.goals.all, "org", filters] as const,
     mentees: () => [...queryKeys.goals.all, "mentees"] as const,
   },
 

@@ -20,16 +20,19 @@ Security Layers Applied:
     Layer 5 — Gate Checks:      Annual goals respect the annual_goals_edit_enabled flag
 """
 
+from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Query, status
-from sqlalchemy.orm import joinedload
+from sqlalchemy import or_
+from sqlalchemy.orm import aliased, joinedload
 
 from app.api.dependencies import DbSession, CurrentUser
 from app.models.goal_models import Goal, ApprovalStatus, GoalType, POST_APPROVAL_STATES
 from app.models.goal_criteria_models import GoalCriterion
 from app.models.goal_self_review_models import GoalSelfReview, SelfReviewCycleHalf
 from app.models.goal_mentor_review_models import GoalMentorReview
+from app.models.reference_models import Function, Designation
 from app.models.system_settings_models import SystemSettings
 from app.models.user_models import User, Role
 from app.schemas.goal_schemas import (
@@ -380,6 +383,76 @@ def list_team_goals(
     return goals
 
 
+@dataclass
+class _AllGoalsFilters:
+    """Server-side filter set for GET /goals/all (PR #44, doc 27).
+
+    Split into two groups that get applied in different places:
+
+      Goal-level — narrow which goals match before grouping. Applied
+        BOTH to the EXISTS subquery (so a user only appears as a parent
+        when they have ≥1 matching goal) AND to the per-page goals
+        fetch (so the user's group only contains matching goals).
+        Dimensions: fy_year, mentor.
+
+      User-level — narrow which parents we paginate. Applied on the
+        users query directly. Dimensions: employee, function,
+        designation.
+
+    The split is what makes "filter, then group" work atomically: each
+    matching parent only carries their matching goals, and the
+    paginated count reflects unique parents with ≥1 match.
+    """
+    # Goal-level
+    fy_year: Optional[int] = None
+    mentor: Optional[str] = None
+    # User-level
+    employee: Optional[str] = None
+    function_name: Optional[str] = None
+    designation_name: Optional[str] = None
+
+
+def _apply_goal_level_filters(query, filters: _AllGoalsFilters):
+    """Add Goal-level WHERE clauses (fy_year, mentor) to a query that
+    already selects from Goal. Helper used by both the EXISTS subquery
+    (finding parents) and the page's goals fetch (returning matches).
+
+    `fy_year` filters on Goal.cycle_name via two LIKE patterns:
+      - 'FY{yy}%' — matches modern formats "FY26", "FY26-27", "FY2026"
+        (FY-prefix with the 2-digit year as the first numeric segment).
+      - '%{year}%' — matches legacy "H1 2026" / "H2 2026" rows where
+        the full year appears as a free-standing token.
+
+    Both branches are necessary because the schema's `fy_year` computed
+    property (`goal_schemas.py:fy_year`) accepts both forms. We mirror
+    its acceptance set here on the server to keep the wire param
+    consistent with what the frontend dropdown options were derived
+    from. Mild perf cost from the `%2026%` unanchored LIKE, but the
+    dataset is small enough that the planner falls back to a scan
+    either way.
+
+    `mentor` filters on the goal's assigned manager name. Requires an
+    aliased User join because Goal.user_id (owner) and Goal.manager_id
+    (mentor) both point at the User table — the legacy joinedload(
+    Goal.manager) doesn't help here because it's eager-loading the
+    attribute, not joining for WHERE-clause purposes.
+    """
+    if filters.fy_year is not None:
+        yy = filters.fy_year % 100
+        query = query.filter(
+            or_(
+                Goal.cycle_name.like(f"FY{yy:02d}%"),
+                Goal.cycle_name.like(f"%{filters.fy_year}%"),
+            )
+        )
+    if filters.mentor:
+        ManagerAlias = aliased(User)
+        query = query.join(
+            ManagerAlias, ManagerAlias.id == Goal.manager_id
+        ).filter(ManagerAlias.full_name == filters.mentor)
+    return query
+
+
 @router.get("/all", response_model=Paginated[TeamGoalResponse])
 def list_all_goals(
     db: DbSession,
@@ -399,6 +472,38 @@ def list_all_goals(
         ge=0,
         description="Employees to skip before this page. 0 for the first page.",
     ),
+    # ── Server-side filters (PR #44, doc 27) ─────────────────────────
+    # See `_AllGoalsFilters` dataclass for the goal-level vs user-level
+    # split and where each dimension is applied.
+    fy_year: Optional[int] = Query(
+        None,
+        description=(
+            "Fiscal-year integer (2026, 2025, …). Matches Goal.cycle_name "
+            "against both modern 'FY26' / 'FY26-27' / 'FY2026' formats "
+            "and legacy 'H1 2026' / 'H2 2026' formats."
+        ),
+    ),
+    mentor: Optional[str] = Query(
+        None,
+        description=(
+            "Exact match on the goal's assigned manager (mentor) "
+            "full_name. Goal.manager_id is a separate FK to users from "
+            "Goal.user_id (the owner)."
+        ),
+    ),
+    employee: Optional[str] = Query(
+        None,
+        description="Exact match on the goal owner's full_name.",
+    ),
+    function_: Optional[str] = Query(
+        None,
+        alias="function",
+        description="Exact match on the goal owner's Function name.",
+    ),
+    designation: Optional[str] = Query(
+        None,
+        description="Exact match on the goal owner's Designation name.",
+    ),
 ):
     """HR_MyOrg-only: paginated annual goals across the org, every cycle.
 
@@ -408,35 +513,39 @@ def list_all_goals(
     Reuses the TeamGoalResponse shape so the table can render owner +
     function + designation columns without extra lookups.
 
-    ── Pagination strategy: "list of parents" ──────────────────────────
+    ── Pagination strategy: "list of parents" + server filters ─────────
     The AnnualGoals "All Goals" tab GROUPS goals by employee — each
-    expandable row is one employee + N goals across cycles. Naively
+    expandable row is one employee + N matching goals. Naively
     paginating by goal row would split a single employee's group across
     pages, breaking the UI. Instead we paginate by EMPLOYEE (the
-    parent), then ship every non-DRAFT goal for that page's employees
+    parent), then ship every MATCHING goal for that page's employees
     in one batched fetch.
 
-    Concretely:
-      1. Subquery the distinct user IDs that have ≥ 1 non-DRAFT goal in
-         the org.
-      2. `total` = count of those user IDs (NOT the goal-row count). The
-         frontend uses this to render "Loaded N of T employees".
+    Filter / page sequence:
+      1. EXISTS subquery: distinct user IDs that have ≥ 1 non-DRAFT
+         goal matching the **goal-level filters** (fy_year, mentor).
+         User-level filters (employee, function, designation) are
+         additionally applied on `users_q` directly.
+      2. `total` = count of those user IDs (NOT the goal-row count).
+         Same semantics as PR #37 (doc 20) — but the universe is now
+         narrowed by the active filter set.
       3. Order users by full_name (stable, alphabetical), OFFSET/LIMIT
          that list.
-      4. Fetch ALL goals for the page's user IDs in one query, with the
-         existing eager-load options. The frontend's grouping function
-         then produces N complete groups, one per employee on this page.
+      4. Fetch all goals MATCHING THE GOAL-LEVEL FILTERS for the
+         page's user IDs, with the existing eager-load options. So a
+         user filtered to fy_year=2026 only shows their 2026 goals
+         in the group, not their 2025 ones — matches what the
+         frontend's legacy client-side filter did.
+
+    The filter set is captured in `_AllGoalsFilters` and the goal-level
+    portion is applied via `_apply_goal_level_filters(query, filters)`
+    in both step 1 and step 4. User-level filters apply only in step 1.
 
     Why offset/limit and not cursor: same rationale as PR #36 — slow
-    churn (HR adds employees rarely, goal updates don't change the user
-    set), and the simpler API meshes with `useInfiniteQuery`'s default
-    `getNextPageParam` pattern.
+    churn, simple `useInfiniteQuery` recipe.
 
     Returns `Paginated[TeamGoalResponse]` where `items` carries goal
-    rows (not user rows) and `total` is the employee count. The
-    asymmetry is unusual but it's the only shape that lets the
-    frontend keep "groups never split across pages" + "one Load More
-    button advances the parent cursor" simultaneously.
+    rows (not user rows) and `total` is the FILTERED employee count.
     """
     if current_user.role != Role.HR_MYORG.value:
         raise HTTPException(
@@ -444,45 +553,66 @@ def list_all_goals(
             detail="Only the Healthark HR can view all goals.",
         )
 
-    # ── Step 1: distinct user IDs with ≥ 1 non-DRAFT goal in the org.
-    # Build this as an ordered query against the User table so we can
-    # OFFSET/LIMIT it deterministically. The EXISTS subquery keeps us
-    # from joining Goal here (the join would multiply rows by goal count
-    # before DISTINCT, which Postgres handles but is wasted work at HR
-    # scale).
-    has_goal_subq = (
+    filters = _AllGoalsFilters(
+        fy_year=fy_year,
+        mentor=mentor,
+        employee=employee,
+        function_name=function_,
+        designation_name=designation,
+    )
+
+    # ── Step 1: distinct user IDs with ≥ 1 non-DRAFT goal matching the
+    # goal-level filter set. The EXISTS subquery keeps us from joining
+    # Goal at the outer level (the join would multiply user rows by
+    # goal count before DISTINCT). Apply goal-level filters INSIDE the
+    # subquery so the existence check is filter-aware.
+    has_goal_subq_q = (
         db.query(Goal.user_id)
         .filter(
             Goal.org_id == current_user.org_id,
             Goal.approval_status != ApprovalStatus.DRAFT.value,
             Goal.user_id == User.id,
         )
-        .exists()
     )
+    has_goal_subq_q = _apply_goal_level_filters(has_goal_subq_q, filters)
+    has_goal_subq = has_goal_subq_q.exists()
 
     users_q = (
         db.query(User)
         .filter(User.org_id == current_user.org_id)
         .filter(has_goal_subq)
-        .order_by(User.full_name.asc(), User.id.asc())
     )
+
+    # User-level filters narrow which PARENTS we paginate. Join lazily
+    # so unfiltered requests stay single-table on the User side.
+    if filters.employee:
+        users_q = users_q.filter(User.full_name == filters.employee)
+    if filters.function_name:
+        users_q = users_q.join(
+            Function, Function.id == User.function_id
+        ).filter(Function.name == filters.function_name)
+    if filters.designation_name:
+        users_q = users_q.join(
+            Designation, Designation.id == User.designation_id
+        ).filter(Designation.name == filters.designation_name)
+
+    users_q = users_q.order_by(User.full_name.asc(), User.id.asc())
 
     # ── Step 2: count for the response's `total`. Single COUNT(*) over
     # the same filter; pairs with `has_more` arithmetic below. The unit
-    # is EMPLOYEES, not goal rows — see docstring.
+    # is FILTERED EMPLOYEES, not goal rows — see docstring.
     total_users = users_q.with_entities(User.id).count()
 
     # ── Step 3: page through the user list.
     page_users = users_q.offset(offset).limit(limit).all()
     page_user_ids = [u.id for u in page_users]
 
-    # ── Step 4: fetch every non-DRAFT goal for those users in one
-    # batched query. The number of goal rows per HR page is bounded by
-    # `limit * (max goals per employee across all cycles)` — at our
-    # cadence (1–4 annual goals/cycle × few cycles) that's well under a
-    # few thousand even at limit=200, so a single fetch is fine.
+    # ── Step 4: fetch every NON-DRAFT, FILTER-MATCHING goal for those
+    # users in one batched query. The goal-level filters are re-applied
+    # here so the page only contains matching goals (a user filtered to
+    # fy_year=2026 must NOT also get their 2025 goals back).
     if page_user_ids:
-        goals = (
+        goals_q = (
             db.query(Goal)
             .options(
                 joinedload(Goal.owner).joinedload(User.function),
@@ -495,9 +625,9 @@ def list_all_goals(
                 Goal.approval_status != ApprovalStatus.DRAFT.value,
                 Goal.user_id.in_(page_user_ids),
             )
-            .order_by(Goal.created_at.desc())
-            .all()
         )
+        goals_q = _apply_goal_level_filters(goals_q, filters)
+        goals = goals_q.order_by(Goal.created_at.desc()).all()
     else:
         goals = []
 

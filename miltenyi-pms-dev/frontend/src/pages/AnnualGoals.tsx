@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import {
   goalService,
+  type AllGoalsFilters,
   type Goal,
   type TeamGoal,
   type GoalCreatePayload,
@@ -279,27 +280,35 @@ export function AnnualGoals() {
   // Paginated as of PR #37 (doc 20). Same useInfiniteQuery shape as the
   // AnnualReviews "All Reviews" tab (doc 19), but the server here
   // paginates by EMPLOYEE not by goal row — see goalService.getAllGoals
-  // for the rationale. Practical consequences:
+  // for the rationale. `flatMap(p => p.items)` still yields a goal array
+  // that `buildAllGoalsGroups` consumes unchanged, producing complete
+  // per-employee groups (no employee straddles two pages).
   //
-  //   • `flatMap(p => p.items)` still yields a goal array; the existing
-  //     `buildAllGoalsGroups` consumes it unchanged, producing complete
-  //     per-employee groups (no employee straddles two pages).
-  //   • `total` returned by the server is the EMPLOYEE count, not the
-  //     goal-row count. The UI counter renders "Loaded N of T
-  //     employees · M goals" — both units, because both matter to HR.
-  //   • The cache key (queryKeys.goals.org()) is the SAME as the legacy
-  //     single-query version, so the broadcast invalidation on
-  //     queryKeys.goals.all (see mutations below) refetches whatever
-  //     pages are currently loaded.
+  // ── Server-side filters (PR #44, doc 27) ─────────────────────────
+  // Filter state lives at the page level so it can be baked into the
+  // queryKey (each filter combination is its own paginated cache
+  // entry). The cache key still starts with ['goals', 'org', ...] so
+  // broadcast invalidations on queryKeys.goals.all keep working for
+  // every filter variant when goal mutations fire.
   //
   // - initialPageParam: 0  → first request: GET /goals/all?offset=0&limit=50
   // - getNextPageParam: derives the next offset from the previous page's
   //   has_more flag (server-computed). Return undefined to stop paging.
   const ALL_GOALS_PAGE_SIZE = 50;
+  const [allGoalsFilters, setAllGoalsFilters] = useState<AllGoalsFilters>({});
+  // Strip empty / undefined values so cache keys and request payloads
+  // collapse to a clean shape — see doc 26 Part 2's "empty-filters trap".
+  const allGoalsFilterParams: Record<string, string | number> =
+    Object.fromEntries(
+      Object.entries(allGoalsFilters).filter(
+        ([, v]) => v !== undefined && v !== "",
+      ),
+    ) as Record<string, string | number>;
   const allGoalsQuery = useInfiniteQuery({
-    queryKey: queryKeys.goals.org(),
+    queryKey: queryKeys.goals.org(allGoalsFilterParams),
     queryFn: ({ pageParam }) =>
       goalService.getAllGoals({
+        ...allGoalsFilterParams,
         limit: ALL_GOALS_PAGE_SIZE,
         offset: pageParam,
       }),
@@ -977,6 +986,8 @@ export function AnnualGoals() {
               onLoadMore={() => {
                 void allGoalsQuery.fetchNextPage();
               }}
+              filters={allGoalsFilters}
+              onFiltersChange={setAllGoalsFilters}
             />
           )}
         </div>
@@ -1053,16 +1064,18 @@ function AllGoalsTab({
   hasNextPage,
   isFetchingNextPage,
   onLoadMore,
+  filters,
+  onFiltersChange,
 }: {
   readonly goals: TeamGoal[];
   readonly isLoading: boolean;
-  /** Total employees-with-goals matching the underlying query across all
+  /** Total employees-with-goals matching the SERVER FILTER across all
    *  pages. The pagination unit is employees, not goal rows — see
-   *  goalService.getAllGoals. Used by the UI counter alongside the
-   *  loaded-goals count. */
+   *  goalService.getAllGoals. Equal to the full org count when no
+   *  filters are active; smaller as filters narrow. */
   readonly totalEmployees: number;
   /** True while at least one more PAGE of employees exists on the
-   *  server (server-derived from has_more on the latest page). */
+   *  server FOR THE CURRENT FILTER SET (server-derived from has_more). */
   readonly hasNextPage: boolean;
   /** True while a fetchNextPage() call is in flight — drives the Load
    *  More button's spinner state without flashing the initial-load
@@ -1070,25 +1083,29 @@ function AllGoalsTab({
   readonly isFetchingNextPage: boolean;
   /** Trigger for fetchNextPage. Wired by the parent page. */
   readonly onLoadMore: () => void;
+  /** Current filter set. Controlled by the page so the values flow
+   *  into the useInfiniteQuery's queryKey (PR #44, doc 27). */
+  readonly filters: AllGoalsFilters;
+  /** Setter — receives a full replacement filter object. Helpers
+   *  below produce new objects via `{ ...filters, X: value }`. */
+  readonly onFiltersChange: (next: AllGoalsFilters) => void;
 }) {
-  const [yearFilter, setYearFilter] = useState<string>("all");
-  const [functionFilter, setFunctionFilter] = useState<string>("all");
-  const [designationFilter, setDesignationFilter] = useState<string>("all");
-  const [mentorFilter, setMentorFilter] = useState<string>("all");
-  // Employee filter — typeable combobox styled like the PM picker.
-  // Empty string means "no employee filter applied".
-  const [employeeFilter, setEmployeeFilter] = useState<string>("");
+  // Local-only state: sort, expansion, and the view-goal modal target.
+  // The filter dimensions moved to the page (lifted state pattern, see
+  // doc 26 Part 1).
   const [sort, setSort] = useState<SortState<AllGoalsSortKey> | null>(null);
   const [expandedUserId, setExpandedUserId] = useState<number | null>(null);
   // The goal whose self/mentor reviews are currently being read in the
   // details modal. null = modal closed.
   const [viewGoal, setViewGoal] = useState<TeamGoal | null>(null);
 
+  // Faceted-style dropdown options — derived from the LOADED (= server-
+  // filtered) goals. When a filter narrows the universe, other
+  // dropdowns shrink to match. Doc 26 Part 4 has the trade-off
+  // discussion + the "facets endpoint" follow-up sketch.
   const years = Array.from(
     new Set(goals.map((g) => g.fy_year).filter((y): y is number => y !== null)),
   ).sort((a, b) => b - a);
-
-  // Derived from the loaded goals so the suggestions are always real.
   const employees = Array.from(
     new Set(goals.map((g) => g.owner_name).filter((n): n is string => !!n)),
   ).sort();
@@ -1108,20 +1125,12 @@ function AllGoalsTab({
     new Set(goals.map((g) => g.manager_name).filter((m): m is string => !!m)),
   ).sort();
 
-  const filtered = goals
-    .filter((g) => yearFilter === "all" || g.fy_year === Number(yearFilter))
-    .filter(
-      (g) => functionFilter === "all" || g.owner_function_name === functionFilter,
-    )
-    .filter(
-      (g) =>
-        designationFilter === "all" ||
-        g.owner_designation_name === designationFilter,
-    )
-    .filter((g) => mentorFilter === "all" || g.manager_name === mentorFilter)
-    .filter((g) => !employeeFilter || g.owner_name === employeeFilter);
-
-  const groups = buildAllGoalsGroups(filtered);
+  // No client-side `filtered` loop anymore — `goals` IS the filtered
+  // universe (server-side filter applied in step 4 of /goals/all's
+  // pipeline). Grouping runs directly over the server-filtered set;
+  // each user's group contains only their MATCHING goals (a user
+  // filtered to fy_year=2026 doesn't show their 2025 goals).
+  const groups = buildAllGoalsGroups(goals);
 
   const sortedGroups = sort
     ? groups.slice().sort((a, b) => {
@@ -1135,6 +1144,26 @@ function AllGoalsTab({
             sensitivity: "base",
           }),
         );
+
+  // Helpers that adapt the dropdown/combobox UI sentinels ("all" / "")
+  // to the AllGoalsFilters shape (undefined = no narrowing on this dim).
+  // `fy_year` is special because the dropdown stores values as numeric
+  // strings; we coerce to number for the wire param.
+  const setFilter = <K extends keyof AllGoalsFilters>(
+    key: K,
+    value: AllGoalsFilters[K] | "" | "all",
+  ) => {
+    onFiltersChange({
+      ...filters,
+      [key]: value === "" || value === "all" ? undefined : value,
+    });
+  };
+  const setYearFilter = (value: string) => {
+    onFiltersChange({
+      ...filters,
+      fy_year: value === "" || value === "all" ? undefined : Number(value),
+    });
+  };
 
   // Variable-height virtualizer for the per-user groups. Each "row" in
   // the virtualizer is a user GROUP; when expanded, the group's outer
@@ -1158,15 +1187,25 @@ function AllGoalsTab({
       </div>
     );
   }
+  // Empty-state branching (post-PR-#44): empty `goals` can now mean
+  // either "org has no goals" or "filter set returned nothing". Distinct
+  // remediation copy for each case.
+  const hasActiveFilters = Object.values(filters).some(
+    (v) => v !== undefined && v !== "",
+  );
   if (goals.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border py-16 text-center bg-background/50">
         <Target className="h-10 w-10 text-text-muted mb-3" aria-hidden="true" />
         <p className="font-display text-base font-medium text-text-main">
-          No annual goals recorded
+          {hasActiveFilters
+            ? "No goals match these filters"
+            : "No annual goals recorded"}
         </p>
         <p className="mt-1 text-sm text-text-muted">
-          Goals will appear here once Staff submit them and mentors approve.
+          {hasActiveFilters
+            ? "Try clearing one or more filters above to broaden the result."
+            : "Goals will appear here once Staff submit them and mentors approve."}
         </p>
       </div>
     );
@@ -1186,8 +1225,8 @@ function AllGoalsTab({
           <StringCombobox
             id="all-goals-employee"
             options={employees}
-            value={employeeFilter}
-            onChange={setEmployeeFilter}
+            value={filters.employee ?? ""}
+            onChange={(v) => setFilter("employee", v)}
             placeholder="Type a name…"
           />
         </div>
@@ -1200,8 +1239,8 @@ function AllGoalsTab({
           </label>
           <select
             id="all-goals-function"
-            value={functionFilter}
-            onChange={(e) => setFunctionFilter(e.target.value)}
+            value={filters.function ?? "all"}
+            onChange={(e) => setFilter("function", e.target.value)}
             className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand cursor-pointer min-w-[140px]"
           >
             <option value="all">All Functions</option>
@@ -1221,8 +1260,8 @@ function AllGoalsTab({
           </label>
           <select
             id="all-goals-designation"
-            value={designationFilter}
-            onChange={(e) => setDesignationFilter(e.target.value)}
+            value={filters.designation ?? "all"}
+            onChange={(e) => setFilter("designation", e.target.value)}
             className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand cursor-pointer min-w-[140px]"
           >
             <option value="all">All Designations</option>
@@ -1242,7 +1281,7 @@ function AllGoalsTab({
           </label>
           <select
             id="all-goals-year"
-            value={yearFilter}
+            value={filters.fy_year === undefined ? "all" : String(filters.fy_year)}
             onChange={(e) => setYearFilter(e.target.value)}
             className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand cursor-pointer min-w-[120px]"
           >
@@ -1263,8 +1302,8 @@ function AllGoalsTab({
           </label>
           <select
             id="all-goals-mentor"
-            value={mentorFilter}
-            onChange={(e) => setMentorFilter(e.target.value)}
+            value={filters.mentor ?? "all"}
+            onChange={(e) => setFilter("mentor", e.target.value)}
             className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand cursor-pointer min-w-[140px]"
           >
             <option value="all">All Mentors</option>
@@ -1276,12 +1315,15 @@ function AllGoalsTab({
           </select>
         </div>
         <span className="text-xs text-text-muted">
-          {/* Counter for FILTERED view. The "loaded N of T employees on
-              server" denominator (the pagination unit) lives next to
-              the Load More button below — keeping the two distinct so
-              filter-vs-server slices don't fight for the same line. */}
-          {sortedGroups.length} {sortedGroups.length === 1 ? "employee" : "employees"} ·{" "}
-          {filtered.length} of {goals.length} goals
+          {/* Both halves now reflect the SERVER-FILTERED universe.
+              `totalEmployees` is the server's count of qualifying
+              parents (the pagination unit); `goals.length` is the
+              flattened goal-row count of what's been loaded so far.
+              The "Loaded N of T employees" detail beside Load More
+              below tracks paging progress. */}
+          {totalEmployees}{" "}
+          {totalEmployees === 1 ? "employee" : "employees"} · {goals.length}{" "}
+          {goals.length === 1 ? "goal" : "goals"}
         </span>
        </div>
        <div className="shrink-0">
