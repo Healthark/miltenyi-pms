@@ -19,7 +19,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState, Fragment } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   Briefcase,
@@ -161,9 +161,31 @@ export function ProjectReviews() {
     queryFn: projectReviewService.getMenteeReviews,
     enabled: isMentor,
   });
-  const allReviewsQuery = useQuery({
+  // Paginated as of PR #39 (doc 22). Same useInfiniteQuery template as
+  // PR #36's /annual-reviews/all and PR #38's /annual-reviews/calibration:
+  // each row corresponds to one ProjectReview, so `total` and
+  // `items.length` are the same unit (no parent/child asymmetry).
+  //
+  // The cache key (queryKeys.projectReviews.org()) is unchanged from the
+  // legacy useQuery — any existing broadcast invalidation
+  // (queryKeys.projectReviews.all) refetches the loaded pages without
+  // touching mutation code.
+  //
+  // - initialPageParam: 0  → first request: ?offset=0&limit=50
+  // - getNextPageParam: derives from has_more on the latest page.
+  // - enabled: isHR  → Mentor and Staff don't pre-fetch this; HR's
+  //                     mentees query has its own key + observer.
+  const ALL_REVIEWS_PAGE_SIZE = 50;
+  const allReviewsQuery = useInfiniteQuery({
     queryKey: queryKeys.projectReviews.org(),
-    queryFn: projectReviewService.getAllReviews,
+    queryFn: ({ pageParam }) =>
+      projectReviewService.getAllReviews({
+        limit: ALL_REVIEWS_PAGE_SIZE,
+        offset: pageParam,
+      }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) =>
+      lastPage.has_more ? lastPage.offset + lastPage.limit : undefined,
     enabled: isHR,
   });
 
@@ -186,7 +208,15 @@ export function ProjectReviews() {
   const cards = cardsQuery.data ?? [];
   const expectations = expectationsQuery.data ?? [];
   const menteeReviews = menteeReviewsQuery.data ?? [];
-  const allReviews = allReviewsQuery.data ?? [];
+  // Flatten loaded pages → review array (PR #39). Downstream filter /
+  // sort / virtualizer code reads one combined list.
+  const allReviews =
+    allReviewsQuery.data?.pages.flatMap((p) => p.items) ?? [];
+  // Total review count across all pages — read off the latest page
+  // (server returns the same value on every paginated response).
+  // Drives the "Loaded N of T" counter alongside the Load More button.
+  const allReviewsTotal =
+    allReviewsQuery.data?.pages[allReviewsQuery.data.pages.length - 1]?.total ?? 0;
 
   // `isLoading` follows the role-appropriate query's pending flag. PM
   // doesn't have a page-level query (their tab loads its own data), so
@@ -417,17 +447,45 @@ export function ProjectReviews() {
           )}
 
           {isHR && activeTab === "all-reviews" && (
-            <ReadOnlyReviewsList
-              isLoading={isLoading}
-              reviews={allReviews}
-              // HR can see project ratings any time — the system-wide
-              // project_ratings_visible toggle is a Staff-facing gate
-              // and shouldn't blind HR's own org-wide review.
-              projectRatingsVisible={true}
-              employeeColumnLabel="Employee"
-              emptyTitle="No project reviews recorded"
-              emptySubtitle="Reviews will appear here once PMs start evaluating their teams."
-            />
+            <>
+              <ReadOnlyReviewsList
+                isLoading={isLoading}
+                reviews={allReviews}
+                // HR can see project ratings any time — the system-wide
+                // project_ratings_visible toggle is a Staff-facing gate
+                // and shouldn't blind HR's own org-wide review.
+                projectRatingsVisible={true}
+                employeeColumnLabel="Employee"
+                emptyTitle="No project reviews recorded"
+                emptySubtitle="Reviews will appear here once PMs start evaluating their teams."
+              />
+
+              {/* Load More — outside ReadOnlyReviewsList because that
+                  component stays pure (presentational only) and is
+                  also used by Mentor's mentee-reviews view, which
+                  isn't paginated. Hidden when the server reports no
+                  more pages. `rows.length` and `allReviewsTotal` are
+                  the same unit (review rows) so the counter is terse
+                  — unlike doc 20 where the unit shift required
+                  explicit "employees" labelling. */}
+              {allReviewsQuery.hasNextPage && (
+                <div className="mt-4 flex items-center gap-3 justify-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void allReviewsQuery.fetchNextPage();
+                    }}
+                    disabled={allReviewsQuery.isFetchingNextPage}
+                    className="inline-flex items-center gap-2 rounded-lg border border-border bg-white px-4 py-2 text-[13px] font-medium text-text-main hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {allReviewsQuery.isFetchingNextPage ? "Loading…" : "Load more"}
+                  </button>
+                  <span className="text-xs text-text-muted">
+                    Loaded {allReviews.length} of {allReviewsTotal}
+                  </span>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

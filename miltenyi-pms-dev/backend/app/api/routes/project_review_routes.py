@@ -23,7 +23,7 @@ Endpoints:
 """
 
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy.orm import joinedload
 
 from app.api.dependencies import DbSession, CurrentUser
@@ -52,6 +52,7 @@ from app.schemas.project_review_schemas import (
     RoleExpectationResponse,
     AdminMemberReviewRow, AdminProjectSummary,
 )
+from app.schemas.pagination import Paginated
 
 router = APIRouter()
 
@@ -1133,17 +1134,41 @@ def update_secondary_evaluation(
 # ADMIN OVERVIEW
 # =====================================================================
 
-@router.get("/all", response_model=List[ProjectReviewResponse])
+@router.get("/all", response_model=Paginated[ProjectReviewResponse])
 def get_all_reviews(
     db: DbSession,
     current_user: CurrentUser,
+    limit: int = Query(
+        50,
+        ge=1,
+        le=200,
+        description=(
+            "Maximum reviews to return on this page. Server-clamped to "
+            "1..200 to bound payload + DB work."
+        ),
+    ),
+    offset: int = Query(
+        0,
+        ge=0,
+        description="Reviews to skip before this page. 0 for the first page.",
+    ),
 ):
-    """HR-only: list all project reviews across the org, every cycle.
+    """HR-only: paginated project reviews across the org, every cycle.
 
     Both HR_MyOrg and HR_Miltenyi may read this — Miltenyi HR explicitly
     has visibility into project reviews per the role spec. Returns every
     cycle so the frontend can render a full read-only history with a
-    cycle filter; previously this was scoped to the active cycle.
+    cycle filter; pagination caps how many rows are streamed per request.
+
+    Pagination convention: standard offset/limit with `Paginated[T]` wire
+    shape (doc 19). Pair with `useInfiniteQuery` on the frontend; each
+    row corresponds to exactly one ProjectReview (no parent/child split
+    like /goals/all, doc 20). `total` and `items.length` are the same
+    unit — review-row count.
+
+    Existing ORDER BY (cycle DESC, created_at DESC) already provides a
+    stable order for OFFSET/LIMIT. We add `id.desc()` as a tiebreaker
+    so two rows created in the same second don't reorder across pages.
     """
     if current_user.role not in ADMIN_ROLES:
         raise HTTPException(
@@ -1151,21 +1176,54 @@ def get_all_reviews(
             detail="Only HR users can view all reviews.",
         )
 
+    # Filtered base query — shared by COUNT and the windowed fetch so the
+    # `total` field always matches the page's universe.
+    base_q = db.query(ProjectReview).filter(
+        ProjectReview.org_id == current_user.org_id,
+        ProjectReview.is_deleted == False,  # noqa: E712
+    )
+
+    # Total of matching reviews — single COUNT(*) over an indexed filter.
+    # The savings vs the legacy "fetch all + len()" pattern dominate at
+    # HR scale (1000+ reviews shrinking to 50 per page).
+    total = base_q.with_entities(ProjectReview.id).count()
+
     reviews = (
-        db.query(ProjectReview)
-        .filter(
-            ProjectReview.org_id == current_user.org_id,
-            ProjectReview.is_deleted == False,  # noqa: E712
-        )
+        base_q
         .order_by(
             ProjectReview.cycle.desc(),
             ProjectReview.created_at.desc(),
+            # Stable-pagination tiebreaker. Without it, two reviews
+            # created in the same second can swap positions across page
+            # boundaries — the canonical OFFSET/LIMIT footgun (see doc
+            # 21 Part 2 for the discussion).
+            ProjectReview.id.desc(),
         )
+        .offset(offset)
+        .limit(limit)
         .all()
     )
 
+    # Settings is read once per request and threaded into every
+    # _build_review_response call to avoid the per-row settings fetch.
+    # Note: _build_review_response still does per-row lookups for
+    # employee / reviewer / project / pm_user (and per-secondary-eval
+    # evaluator). At limit=50 the round-trip cost is bounded but
+    # non-zero — see doc 22 "What this PR does NOT solve" for the
+    # follow-up that batches them.
     settings_row = _get_settings_row(db, current_user.org_id)
-    return [_build_review_response(r, db, viewer=current_user, settings=settings_row) for r in reviews]
+    items = [
+        _build_review_response(r, db, viewer=current_user, settings=settings_row)
+        for r in reviews
+    ]
+
+    return Paginated[ProjectReviewResponse](
+        items=items,
+        total=total,
+        limit=limit,
+        offset=offset,
+        has_more=(offset + len(items)) < total,
+    )
 
 
 # =====================================================================

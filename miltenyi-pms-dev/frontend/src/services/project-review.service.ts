@@ -11,6 +11,7 @@
  */
 
 import apiClient from "@/services/api.client";
+import type { Paginated } from "@/lib/pagination";
 
 // ── Enums ───────────────────────────────────────────────────────────
 
@@ -286,9 +287,19 @@ export const projectReviewService = {
   },
 
   // ── Admin ──────────────────────────────────────────────────────
-  /** Admin-only: all reviews for the active cycle. */
-  getAllReviews: async (): Promise<ProjectReviewResponse[]> => {
-    const res = await apiClient.get<ProjectReviewResponse[]>("/project-reviews/all");
+  /** HR-only: paginated project reviews across the org, every cycle.
+   *  Paginated as of PR #39 (doc 22). Standard offset/limit; each row
+   *  corresponds to exactly one ProjectReview, so `total` and
+   *  `items.length` are the same unit — the review-row count (no
+   *  parent/child split like /goals/all, doc 20).
+   *  Server defaults: limit=50, max=200. Pair with `useInfiniteQuery`. */
+  getAllReviews: async (
+    params: { limit?: number; offset?: number } = {},
+  ): Promise<PaginatedProjectReviews> => {
+    const res = await apiClient.get<PaginatedProjectReviews>(
+      "/project-reviews/all",
+      { params },
+    );
     return res.data;
   },
 
@@ -299,3 +310,8 @@ export const projectReviewService = {
     return res.data;
   },
 };
+
+/** Paginated response from GET /project-reviews/all (PR #39).
+ *  Per-row identity is the ProjectReview; `total` and `items.length`
+ *  are the same unit (one review per row). */
+export type PaginatedProjectReviews = Paginated<ProjectReviewResponse>;
