@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { queryKeys } from "@/lib/queryKeys";
+import { patchRowsAcross } from "@/lib/optimistic";
 import {
   ArrowLeft,
   Briefcase,
@@ -154,14 +155,72 @@ export function MenteeDetail() {
     void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
   }, [queryClient]);
 
+  // Optimistic update (PR #50, doc 32). Mentor clicks Submit Eval →
+  // the review's status advances from pending_mentor →
+  // pending_management instantly, plus the submitted text/rating
+  // replace the existing draft fields. Drafts get cleared on submit
+  // per the service contract — mirror that in the patch so the UI
+  // doesn't show stale draft content.
   const submitMentorEvalMutation = useMutation({
     mutationFn: (vars: { reviewId: number; payload: MentorEvalPayload }) =>
       annualReviewService.submitMentorEval(vars.reviewId, vars.payload),
+    onMutate: async (vars) => {
+      await queryClient.cancelQueries({
+        queryKey: queryKeys.annualReviews.all,
+      });
+      await queryClient.cancelQueries({
+        queryKey: queryKeys.mentees.all,
+      });
+      const reviewsSnapshot = patchRowsAcross<{
+        id: number;
+        status: string;
+        mentor_overall_review: string | null;
+        mentor_performance_rating: number | null;
+        mentor_overall_review_draft: string | null;
+        mentor_performance_rating_draft: number | null;
+      }>(
+        queryClient,
+        queryKeys.annualReviews.all,
+        (r) => r.id === vars.reviewId,
+        {
+          status: "pending_management",
+          mentor_overall_review: vars.payload.mentor_overall_review,
+          mentor_performance_rating: vars.payload.mentor_performance_rating,
+          mentor_overall_review_draft: null,
+          mentor_performance_rating_draft: null,
+        },
+      );
+      // The /mentees/{id} cache entry contains a `reviews_list` of
+      // AnnualReview rows; same patch applies there too via the
+      // helper's predicate-walk.
+      const menteesSnapshot = patchRowsAcross<{
+        id: number;
+        status: string;
+        mentor_overall_review: string | null;
+        mentor_performance_rating: number | null;
+      }>(
+        queryClient,
+        queryKeys.mentees.all,
+        (r) => r.id === vars.reviewId,
+        {
+          status: "pending_management",
+          mentor_overall_review: vars.payload.mentor_overall_review,
+          mentor_performance_rating: vars.payload.mentor_performance_rating,
+        },
+      );
+      return { reviewsSnapshot, menteesSnapshot };
+    },
     onSuccess: () => {
-      invalidateMentorEvalScope();
       setEvalFy(null);
     },
-    onError: (err) => setEvalError(getErrorMessage(err)),
+    onError: (err, _vars, context) => {
+      context?.reviewsSnapshot.restore();
+      context?.menteesSnapshot.restore();
+      setEvalError(getErrorMessage(err));
+    },
+    onSettled: () => {
+      invalidateMentorEvalScope();
+    },
   });
 
   const saveMentorDraftMutation = useMutation({

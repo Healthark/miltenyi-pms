@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, Fragment } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/queryKeys";
+import { patchRowsAcross } from "@/lib/optimistic";
 import { createPortal } from "react-dom";
 import {
   Users,
@@ -281,34 +282,78 @@ export function TeamGoalsTab() {
   // so the success toast can be personalized without us having to
   // look it up after the mutation resolves (the goals list might
   // already have been refetched).
+  // Optimistic update (PR #50, doc 32). Mentor clicks Approve → the
+  // goal's approval_status flips to "approved" instantly in the
+  // pending list; the toast confirms after the server response.
+  // Same broadcast scope as the invalidation (covers ['goals'] +
+  // ['dashboard']) but applied as an optimistic patch first.
   const approveGoalMutation = useMutation({
     mutationFn: (vars: { goalId: number; ownerName: string }) =>
       goalService.updateApproval(vars.goalId, {
         approval_status: "approved",
       }),
+    onMutate: async (vars) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.goals.all });
+      const snapshot = patchRowsAcross<{
+        id: number;
+        approval_status: string;
+      }>(
+        queryClient,
+        queryKeys.goals.all,
+        (g) => g.id === vars.goalId,
+        { approval_status: "approved" },
+      );
+      return { snapshot };
+    },
     onSuccess: (_data, vars) => {
-      invalidateGoalsScope();
       toast.success(`${vars.ownerName}'s goal approved.`);
     },
-    onError: (err) => snackbar.error(getErrorMessage(err)),
+    onError: (err, _vars, context) => {
+      context?.snapshot.restore();
+      snackbar.error(getErrorMessage(err));
+    },
+    onSettled: () => {
+      invalidateGoalsScope();
+    },
   });
 
   // Request-changes flow — same endpoint as approve, different status
   // + a feedback message. Errors go to `modalError` (the feedback
   // modal stays open on failure); approve errors go to snackbar
-  // (no modal context).
+  // (no modal context). Optimistic patch also writes back the
+  // feedback string so the goal card shows the mentor's note
+  // immediately.
   const requestChangesMutation = useMutation({
     mutationFn: (vars: { goalId: number; feedback: string }) =>
       goalService.updateApproval(vars.goalId, {
         approval_status: "changes_requested",
         feedback: vars.feedback,
       }),
+    onMutate: async (vars) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.goals.all });
+      const snapshot = patchRowsAcross<{
+        id: number;
+        approval_status: string;
+        manager_feedback: string | null;
+      }>(
+        queryClient,
+        queryKeys.goals.all,
+        (g) => g.id === vars.goalId,
+        { approval_status: "changes_requested", manager_feedback: vars.feedback },
+      );
+      return { snapshot };
+    },
     onSuccess: () => {
-      invalidateGoalsScope();
       setFeedbackTarget(null);
       toast.success("Feedback sent.");
     },
-    onError: (err) => setModalError(getErrorMessage(err)),
+    onError: (err, _vars, context) => {
+      context?.snapshot.restore();
+      setModalError(getErrorMessage(err));
+    },
+    onSettled: () => {
+      invalidateGoalsScope();
+    },
   });
 
   // Bulk approve — partial-success-aware. The response carries
