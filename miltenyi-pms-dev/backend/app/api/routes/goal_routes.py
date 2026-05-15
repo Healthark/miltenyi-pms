@@ -22,7 +22,7 @@ Security Layers Applied:
 
 from datetime import date, datetime, timezone
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy.orm import joinedload
 
 from app.api.dependencies import DbSession, CurrentUser
@@ -46,6 +46,7 @@ from app.schemas.goal_schemas import (
     GoalMentorReviewDraft,
     TeamGoalResponse,
 )
+from app.schemas.pagination import Paginated
 from app.core.cycle_utils import (
     cycles_before,
     get_goal_cycle_name,
@@ -379,18 +380,63 @@ def list_team_goals(
     return goals
 
 
-@router.get("/all", response_model=List[TeamGoalResponse])
+@router.get("/all", response_model=Paginated[TeamGoalResponse])
 def list_all_goals(
     db: DbSession,
     current_user: CurrentUser,
+    limit: int = Query(
+        50,
+        ge=1,
+        le=200,
+        description=(
+            "Maximum EMPLOYEES to return on this page. Server-clamped to "
+            "1..200. Note: the unit is employees, not goal rows — see "
+            "the pagination strategy in the docstring."
+        ),
+    ),
+    offset: int = Query(
+        0,
+        ge=0,
+        description="Employees to skip before this page. 0 for the first page.",
+    ),
 ):
-    """HR_MyOrg-only: every annual goal across the org, every cycle.
+    """HR_MyOrg-only: paginated annual goals across the org, every cycle.
 
     Powers the view-only "All Goals" tab on the AnnualGoals page. Excludes
     DRAFT goals — those are the employee's private work-in-progress and
     not yet visible to anyone else (matching the /team endpoint's rule).
     Reuses the TeamGoalResponse shape so the table can render owner +
     function + designation columns without extra lookups.
+
+    ── Pagination strategy: "list of parents" ──────────────────────────
+    The AnnualGoals "All Goals" tab GROUPS goals by employee — each
+    expandable row is one employee + N goals across cycles. Naively
+    paginating by goal row would split a single employee's group across
+    pages, breaking the UI. Instead we paginate by EMPLOYEE (the
+    parent), then ship every non-DRAFT goal for that page's employees
+    in one batched fetch.
+
+    Concretely:
+      1. Subquery the distinct user IDs that have ≥ 1 non-DRAFT goal in
+         the org.
+      2. `total` = count of those user IDs (NOT the goal-row count). The
+         frontend uses this to render "Loaded N of T employees".
+      3. Order users by full_name (stable, alphabetical), OFFSET/LIMIT
+         that list.
+      4. Fetch ALL goals for the page's user IDs in one query, with the
+         existing eager-load options. The frontend's grouping function
+         then produces N complete groups, one per employee on this page.
+
+    Why offset/limit and not cursor: same rationale as PR #36 — slow
+    churn (HR adds employees rarely, goal updates don't change the user
+    set), and the simpler API meshes with `useInfiniteQuery`'s default
+    `getNextPageParam` pattern.
+
+    Returns `Paginated[TeamGoalResponse]` where `items` carries goal
+    rows (not user rows) and `total` is the employee count. The
+    asymmetry is unusual but it's the only shape that lets the
+    frontend keep "groups never split across pages" + "one Load More
+    button advances the parent cursor" simultaneously.
     """
     if current_user.role != Role.HR_MYORG.value:
         raise HTTPException(
@@ -398,21 +444,62 @@ def list_all_goals(
             detail="Only the Healthark HR can view all goals.",
         )
 
-    goals = (
-        db.query(Goal)
-        .options(
-            joinedload(Goal.owner).joinedload(User.function),
-            joinedload(Goal.owner).joinedload(User.designation),
-            joinedload(Goal.manager),
-            joinedload(Goal.criteria),
-        )
+    # ── Step 1: distinct user IDs with ≥ 1 non-DRAFT goal in the org.
+    # Build this as an ordered query against the User table so we can
+    # OFFSET/LIMIT it deterministically. The EXISTS subquery keeps us
+    # from joining Goal here (the join would multiply rows by goal count
+    # before DISTINCT, which Postgres handles but is wasted work at HR
+    # scale).
+    has_goal_subq = (
+        db.query(Goal.user_id)
         .filter(
             Goal.org_id == current_user.org_id,
             Goal.approval_status != ApprovalStatus.DRAFT.value,
+            Goal.user_id == User.id,
         )
-        .order_by(Goal.created_at.desc())
-        .all()
+        .exists()
     )
+
+    users_q = (
+        db.query(User)
+        .filter(User.org_id == current_user.org_id)
+        .filter(has_goal_subq)
+        .order_by(User.full_name.asc(), User.id.asc())
+    )
+
+    # ── Step 2: count for the response's `total`. Single COUNT(*) over
+    # the same filter; pairs with `has_more` arithmetic below. The unit
+    # is EMPLOYEES, not goal rows — see docstring.
+    total_users = users_q.with_entities(User.id).count()
+
+    # ── Step 3: page through the user list.
+    page_users = users_q.offset(offset).limit(limit).all()
+    page_user_ids = [u.id for u in page_users]
+
+    # ── Step 4: fetch every non-DRAFT goal for those users in one
+    # batched query. The number of goal rows per HR page is bounded by
+    # `limit * (max goals per employee across all cycles)` — at our
+    # cadence (1–4 annual goals/cycle × few cycles) that's well under a
+    # few thousand even at limit=200, so a single fetch is fine.
+    if page_user_ids:
+        goals = (
+            db.query(Goal)
+            .options(
+                joinedload(Goal.owner).joinedload(User.function),
+                joinedload(Goal.owner).joinedload(User.designation),
+                joinedload(Goal.manager),
+                joinedload(Goal.criteria),
+            )
+            .filter(
+                Goal.org_id == current_user.org_id,
+                Goal.approval_status != ApprovalStatus.DRAFT.value,
+                Goal.user_id.in_(page_user_ids),
+            )
+            .order_by(Goal.created_at.desc())
+            .all()
+        )
+    else:
+        goals = []
 
     for g in goals:
         g.owner_name = g.owner.full_name if g.owner else "Unknown"
@@ -423,7 +510,17 @@ def list_all_goals(
             g.owner.designation.name if g.owner and g.owner.designation else None
         )
 
-    return goals
+    # `has_more` is computed in the EMPLOYEE unit — the next page exists
+    # iff we haven't yet streamed every goal-owning employee in the org.
+    # Mirrors the "stop when the parent cursor exhausts" pattern in the
+    # frontend's `getNextPageParam`.
+    return Paginated[TeamGoalResponse](
+        items=goals,
+        total=total_users,
+        limit=limit,
+        offset=offset,
+        has_more=(offset + len(page_users)) < total_users,
+    )
 
 
 @router.get("/{goal_id}", response_model=GoalResponse)

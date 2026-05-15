@@ -1,6 +1,6 @@
 # 19 — Pagination foundation: backend `?limit/offset` + frontend `useInfiniteQuery`
 
-> **PR:** _pending_
+> **PR:** [#36](https://github.com/Healthark/miltenyi-pms/pull/36)
 > **Files changed:** `backend/app/schemas/pagination.py` (new), `backend/app/api/routes/annual_review_routes.py`, `frontend/src/services/annual-review.service.ts`, `frontend/src/pages/AnnualReviews.tsx`.
 > **Headline result:** First backend change in the optimization series. `GET /annual-reviews/all` now accepts `?limit/offset` and returns `Paginated[AnnualReviewResponse]`. Frontend swaps `useQuery` → `useInfiniteQuery` with a "Load more" button. At HR scale (1000+ reviews) the payload goes from "all rows on every page-mount" to "50 per fetch, on demand."
 
