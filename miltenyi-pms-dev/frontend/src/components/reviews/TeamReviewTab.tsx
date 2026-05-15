@@ -25,13 +25,14 @@ import {
   annualReviewService,
   type MenteeAnnualReview,
   type MenteeReviewsFilters,
+  type MenteeReviewsSortBy,
 } from "@/services/annual-review.service";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { ReviewStatusBadge } from "@/components/reviews/ReviewStatusBadge";
 import { PerformanceRatingBadge } from "@/components/reviews/PerformanceRatingBadge";
 import { AnnualReviewDetailModal } from "@/components/reviews/AnnualReviewDetailModal";
 import { SortableHeader } from "@/components/SortableHeader";
-import { compareValues, type SortKind, type SortState, type SortValue } from "@/utils/sort";
+import { type SortState } from "@/utils/sort";
 import { extractFyToken, formatFyLabel, fyTokenToStartYear } from "@/utils/fy";
 
 type ViewMode = "grid" | "table";
@@ -43,17 +44,10 @@ type SortKey =
   | "mentor_performance_rating"
   | "management_performance_rating";
 
-const SORT_CONFIG: Record<
-  SortKey,
-  { kind: SortKind; get: (r: MenteeAnnualReview) => SortValue }
-> = {
-  employee_name:                 { kind: "alpha",   get: (r) => r.employee_name },
-  cycle_name:                    { kind: "cycle",   get: (r) => r.cycle_name },
-  status:                        { kind: "alpha",   get: (r) => r.status },
-  self_performance_rating:       { kind: "numeric", get: (r) => r.self_performance_rating },
-  mentor_performance_rating:     { kind: "numeric", get: (r) => r.mentor_performance_rating },
-  management_performance_rating: { kind: "numeric", get: (r) => r.management_performance_rating },
-};
+// SORT_CONFIG used to drive client-side sort. Server-side sort
+// (PR #48, doc 31) makes the accessor map unnecessary; the SortKey
+// literal-union above is still the authoritative column list
+// (mirrors backend _MENTEE_REVIEWS_SORT_COLUMNS).
 
 // ── Card ────────────────────────────────────────────────────────────
 
@@ -206,28 +200,32 @@ export function TeamReviewTab() {
   const [sort, setSort] = useState<SortState<SortKey> | null>(null);
   const [viewTarget, setViewTarget] = useState<MenteeAnnualReview | null>(null);
 
+  // Merge filter + sort into the request params (PR #48, doc 31).
+  const requestParams: Record<string, string | number> = {
+    ...filterParams,
+    ...(sort
+      ? { sort_by: sort.key, sort_dir: sort.direction }
+      : {}),
+  };
+
   // The mentor's view of every mentee's annual review. Cache-keyed
   // under ['annual-reviews', 'mentees']. EvalDrawer / useReviewDetails
   // mutations invalidate this key so the table refreshes after a
   // submit. refetchOnWindowFocus (default true) also handles the
   // "I just reviewed a mentee in another tab" case.
   //
-  // Paginated as of PR #40 (doc 23). At mentor scale the typical
-  // response fits in one page (50 reviews covers most mentors), but
-  // the template is applied for **consistency** — every HR/mentor
-  // list endpoint behaves identically.
-  //
-  // Server-side filters added in PR #46 (doc 29). `filterParams` is
-  // baked into the queryKey so each filter combination is its own
-  // paginated cache entry. Broadcast invalidation on
+  // Server-side filters + sort: each (filter, sort) tuple lives in
+  // its own paginated cache entry. Broadcast invalidation on
   // `annualReviews.all` (fired by EvalDrawer's mutations) catches
   // every variant.
   const MENTEE_REVIEWS_PAGE_SIZE = 50;
   const reviewsQuery = useInfiniteQuery({
-    queryKey: queryKeys.annualReviews.mentees(filterParams),
+    queryKey: queryKeys.annualReviews.mentees(requestParams),
     queryFn: ({ pageParam }) =>
       annualReviewService.getMenteeReviews({
-        ...filterParams,
+        ...(requestParams as Record<string, string | number> & {
+          sort_by?: MenteeReviewsSortBy;
+        }),
         limit: MENTEE_REVIEWS_PAGE_SIZE,
         offset: pageParam,
       }),
@@ -265,16 +263,10 @@ export function TeamReviewTab() {
     { value: "completed",          label: "Completed" },
   ];
 
-  // `reviews` IS the server-filtered universe (the queryKey reflects
-  // every active filter dim). No client-side narrowing needed. Sort
-  // stays client-side; applied directly to `reviews`. Doc 29 Part 5
-  // explains the server-side-sort follow-up.
-  const sorted = sort
-    ? reviews.slice().sort((a, b) => {
-        const { kind, get } = SORT_CONFIG[sort.key];
-        return compareValues(get(a), get(b), kind, sort.direction);
-      })
-    : reviews;
+  // `reviews` is the server-filtered AND server-sorted universe
+  // (PR #46 for filter, PR #48 for sort). No client-side narrowing
+  // or re-sorting needed.
+  const sorted = reviews;
 
   // Boolean used by counter + empty-state branching.
   const hasActiveFilters =

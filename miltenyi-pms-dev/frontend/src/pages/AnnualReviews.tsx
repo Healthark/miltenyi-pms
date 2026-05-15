@@ -19,10 +19,11 @@ import { PerformanceRatingBadge } from "@/components/reviews/PerformanceRatingBa
 import { StringCombobox } from "@/components/common/StringCombobox";
 import { ExportExcelButton } from "@/components/admin/ExportExcelButton";
 import { SortableHeader } from "@/components/SortableHeader";
-import { compareValues, type SortKind, type SortState, type SortValue } from "@/utils/sort";
+import { type SortState } from "@/utils/sort";
 import {
   annualReviewService,
   type AllReviewsFilters,
+  type AllReviewsSortBy,
   type AnnualReview,
   type SelfReviewPayload,
   type SelfReviewDraftPayload,
@@ -40,19 +41,12 @@ type AllReviewsSortKey =
   | "mentor_performance_rating"
   | "final_performance_rating";
 
-const ALL_REVIEWS_SORT_CONFIG: Record<
-  AllReviewsSortKey,
-  { kind: SortKind; get: (r: AnnualReview) => SortValue }
-> = {
-  employee_name:             { kind: "alpha",   get: (r) => r.employee_name ?? `User #${r.user_id}` },
-  function:                  { kind: "alpha",   get: (r) => r.function },
-  designation:               { kind: "alpha",   get: (r) => r.designation },
-  cycle_name:                { kind: "cycle",   get: (r) => r.cycle_name },
-  status:                    { kind: "alpha",   get: (r) => r.status },
-  self_performance_rating:   { kind: "numeric", get: (r) => r.self_performance_rating },
-  mentor_performance_rating: { kind: "numeric", get: (r) => r.mentor_performance_rating },
-  final_performance_rating:  { kind: "numeric", get: (r) => r.final_performance_rating },
-};
+// ALL_REVIEWS_SORT_CONFIG used to live here as a Record<sortKey,
+// {kind, get}> mapping driving the client-side sort. Server-side sort
+// (PR #47, doc 30) made the per-column accessors + compareValues
+// unnecessary — backend SQL ORDER BY handles every column's semantics.
+// The `AllReviewsSortKey` union above is still the authoritative list
+// of sortable columns (mirrors backend `_ALL_REVIEWS_SORT_COLUMNS`).
 
 // Static lifecycle list keeps the Status dropdown stable even when only
 // some statuses are present in the loaded rows.
@@ -115,27 +109,31 @@ export function AnnualReviews() {
   // Paginated as of PR #19 (foundation for the pagination theme).
   // useInfiniteQuery stores pages as { pages: PaginatedAnnualReviews[], pageParams: number[] }.
   // We flatten data.pages.flatMap(p => p.items) for the rest of the
-  // component, which keeps every consumer that does .sort() working
-  // unchanged.
+  // component.
   //
-  // ── Server-side filters (PR #43, doc 26) ─────────────────────────
-  // Filter state lives at this page-level so it can be baked into the
-  // queryKey. Each distinct filter set is its own cache entry; changing
-  // a filter triggers a fresh paginated fetch from offset=0 (TanStack
-  // Query handles the reset automatically — different key, different
-  // pages array). AllReviewsTab consumes filters + setter as props.
+  // ── Server-side filters (PR #43, doc 26) + sort (PR #47, doc 30) ───
+  // Filter AND sort state live at this page-level so both flow into
+  // the queryKey. Each distinct (filter, sort) tuple is its own cache
+  // entry. AllReviewsTab consumes filters + sort + their setters as
+  // props (controlled component).
   //
   // - initialPageParam: 0  → first request: GET /all?offset=0&limit=50
   // - getNextPageParam: derives the next offset from the previous page's
   //   has_more flag (server-computed). Return undefined to stop paging.
-  // - queryKey: queryKeys.annualReviews.org(filterParams) bakes the
-  //   non-empty filter values into the cache key. Existing broadcast
-  //   invalidations on `queryKeys.annualReviews.all` still catch every
-  //   filter-variant entry under it.
+  // - queryKey: queryKeys.annualReviews.org(requestParams) bakes the
+  //   non-empty filter + sort values into the cache key. Existing
+  //   broadcast invalidations on `queryKeys.annualReviews.all` still
+  //   catch every variant.
   const PAGE_SIZE = 50;
   const [allReviewsFilters, setAllReviewsFilters] = useState<AllReviewsFilters>(
     {},
   );
+  // Sort state. `null` means "default ordering" (cycle_name DESC,
+  // created_at DESC) — the backend takes over when sort is unset.
+  // Translated to `sort_by` + `sort_dir` strings for the wire format.
+  const [allReviewsSort, setAllReviewsSort] = useState<
+    SortState<AllReviewsSortKey> | null
+  >(null);
   // Drop undefined/empty values so cache keys for "no filter X" and
   // "filter X = '' " collapse to the same entry. Without this the
   // queryKey would carry noise and never match a previously-cached
@@ -145,11 +143,23 @@ export function AnnualReviews() {
       ([, v]) => v !== undefined && v !== "",
     ),
   ) as Record<string, string>;
+  // Merge sort into the requestParams that flow into both queryKey
+  // and queryFn. Sort enters the same `params` object as filters so
+  // the cache key naturally distinguishes filter-X-sort-A from
+  // filter-X-sort-B.
+  const requestParams: Record<string, string> = {
+    ...filterParams,
+    ...(allReviewsSort
+      ? { sort_by: allReviewsSort.key, sort_dir: allReviewsSort.direction }
+      : {}),
+  };
   const allReviewsQuery = useInfiniteQuery({
-    queryKey: queryKeys.annualReviews.org(filterParams),
+    queryKey: queryKeys.annualReviews.org(requestParams),
     queryFn: ({ pageParam }) =>
       annualReviewService.getAllReviews({
-        ...filterParams,
+        ...(requestParams as Record<string, string> & {
+          sort_by?: AllReviewsSortBy;
+        }),
         limit: PAGE_SIZE,
         offset: pageParam,
       }),
@@ -412,6 +422,8 @@ export function AnnualReviews() {
               }}
               filters={allReviewsFilters}
               onFiltersChange={setAllReviewsFilters}
+              sort={allReviewsSort}
+              onSortChange={setAllReviewsSort}
             />
           )}
         </div>
@@ -469,6 +481,8 @@ function AllReviewsTab({
   onLoadMore,
   filters,
   onFiltersChange,
+  sort,
+  onSortChange,
 }: {
   readonly reviews: AnnualReview[];
   readonly isLoading: boolean;
@@ -494,13 +508,16 @@ function AllReviewsTab({
   /** Setter for the filter set. Each call replaces the entire object;
    *  helpers below produce new objects via `{ ...filters, X: value }`. */
   readonly onFiltersChange: (next: AllReviewsFilters) => void;
+  /** Current sort state. Controlled by the page so it can flow into
+   *  the queryKey (PR #47, doc 30). `null` means default ordering. */
+  readonly sort: SortState<AllReviewsSortKey> | null;
+  /** Setter consumed by `<SortableHeader>` — toggling a column header
+   *  produces the next sort state. */
+  readonly onSortChange: (
+    next: SortState<AllReviewsSortKey> | null,
+  ) => void;
 }) {
-  // Local-only state remains local: sort + expansion. Filters were
-  // moved up to the page so they can flow into the queryKey.
-  const [sort, setSort] = useState<SortState<AllReviewsSortKey> | null>(null);
-  // Inline expansion: clicking a row reveals the self + mentor narrative
-  // side-by-side. Only one row at a time; clicking the same row again
-  // collapses it.
+  // Only inline expansion remains local — filters AND sort moved up.
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
   // Faceted-style dropdown options — derived from the LOADED reviews,
@@ -525,17 +542,12 @@ function AllReviewsTab({
     new Set(reviews.map((r) => r.designation).filter((n): n is string => !!n)),
   ).sort();
 
-  // No client-side filter loop anymore — `reviews` IS the filtered
-  // universe (the server applied the filters and returned matching
-  // rows). Sort stays client-side because it operates on the loaded
-  // pages; server-side sort is a future PR (would need ?sort_by= +
-  // ?sort_dir= params and a stable secondary tiebreaker).
-  const sorted = sort
-    ? reviews.slice().sort((a, b) => {
-        const { kind, get } = ALL_REVIEWS_SORT_CONFIG[sort.key];
-        return compareValues(get(a), get(b), kind, sort.direction);
-      })
-    : reviews;
+  // `reviews` is the server-filtered + server-sorted universe (PR #43
+  // for filters, PR #47 for sort). No client-side narrowing OR
+  // re-sorting — both happen in SQL. `sorted` is now an alias to
+  // `reviews` retained only so the variable name reads naturally at
+  // the call sites below.
+  const sorted = reviews;
 
   // Helpers that adapt the "all"/"" sentinel values used by the
   // dropdown/combobox UI to the AllReviewsFilters shape (undefined =
@@ -749,28 +761,28 @@ function AllReviewsTab({
               style={{ gridTemplateColumns: ALL_REVIEWS_GRID_TEMPLATE_COLUMNS }}
             >
               <div role="columnheader" className="text-left px-5 py-2.5">
-                <SortableHeader label="Employee" columnKey="employee_name" sort={sort} onSort={setSort} />
+                <SortableHeader label="Employee" columnKey="employee_name" sort={sort} onSort={onSortChange} />
               </div>
               <div role="columnheader" className="text-left px-4 py-2.5">
-                <SortableHeader label="Function" columnKey="function" sort={sort} onSort={setSort} />
+                <SortableHeader label="Function" columnKey="function" sort={sort} onSort={onSortChange} />
               </div>
               <div role="columnheader" className="text-left px-4 py-2.5">
-                <SortableHeader label="Designation" columnKey="designation" sort={sort} onSort={setSort} />
+                <SortableHeader label="Designation" columnKey="designation" sort={sort} onSort={onSortChange} />
               </div>
               <div role="columnheader" className="text-left px-4 py-2.5">
-                <SortableHeader label="Cycle" columnKey="cycle_name" sort={sort} onSort={setSort} />
+                <SortableHeader label="Cycle" columnKey="cycle_name" sort={sort} onSort={onSortChange} />
               </div>
               <div role="columnheader" className="text-left px-4 py-2.5">
-                <SortableHeader label="Status" columnKey="status" sort={sort} onSort={setSort} />
+                <SortableHeader label="Status" columnKey="status" sort={sort} onSort={onSortChange} />
               </div>
               <div role="columnheader" className="text-left px-4 py-2.5">
-                <SortableHeader label="Self" columnKey="self_performance_rating" sort={sort} onSort={setSort} />
+                <SortableHeader label="Self" columnKey="self_performance_rating" sort={sort} onSort={onSortChange} />
               </div>
               <div role="columnheader" className="text-left px-4 py-2.5">
-                <SortableHeader label="Mentor" columnKey="mentor_performance_rating" sort={sort} onSort={setSort} />
+                <SortableHeader label="Mentor" columnKey="mentor_performance_rating" sort={sort} onSort={onSortChange} />
               </div>
               <div role="columnheader" className="text-left px-4 py-2.5">
-                <SortableHeader label="Final" columnKey="final_performance_rating" sort={sort} onSort={setSort} />
+                <SortableHeader label="Final" columnKey="final_performance_rating" sort={sort} onSort={onSortChange} />
               </div>
             </div>
           </div>

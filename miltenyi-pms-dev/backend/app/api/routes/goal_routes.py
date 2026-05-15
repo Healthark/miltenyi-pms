@@ -22,7 +22,7 @@ Security Layers Applied:
 
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
-from typing import List, Optional
+from typing import List, Literal, Optional
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import or_
 from sqlalchemy.orm import aliased, joinedload
@@ -412,6 +412,18 @@ class _AllGoalsFilters:
     designation_name: Optional[str] = None
 
 
+# ── Sort column map for GET /goals/all (PR #48, doc 31) ─────────────
+# Mirrors the frontend's AllGoalsSortBy literal-union. Direct
+# user-attribute columns only; derived columns (latest_fy_year,
+# latest_manager_name) are deferred — see doc 31 Part 2 for the
+# correlated-MAX-subquery sketch.
+_ALL_GOALS_SORT_COLUMNS = {
+    "owner_name": User.full_name,
+    "function_name": Function.name,
+    "designation_name": Designation.name,
+}
+
+
 def _apply_goal_level_filters(query, filters: _AllGoalsFilters):
     """Add Goal-level WHERE clauses (fy_year, mentor) to a query that
     already selects from Goal. Helper used by both the EXISTS subquery
@@ -504,6 +516,25 @@ def list_all_goals(
         None,
         description="Exact match on the goal owner's Designation name.",
     ),
+    # ── Server-side sort (PR #48, doc 31) ─────────────────────────────
+    # Sort the USER list (the parent pagination axis). Derived columns
+    # like "latest_fy_year" / "latest_manager_name" would require
+    # correlated MAX-style subqueries — deferred to a future PR, see
+    # doc 31 Part 2 for the sketch.
+    sort_by: Optional[
+        Literal["owner_name", "function_name", "designation_name"]
+    ] = Query(
+        None,
+        description=(
+            "Primary sort over the paginated USER list. Direct user-"
+            "attribute columns only; derived-from-goals columns "
+            "(latest_fy_year, latest_manager_name) are deferred."
+        ),
+    ),
+    sort_dir: Literal["asc", "desc"] = Query(
+        "asc",
+        description="Sort direction. Default 'asc'.",
+    ),
 ):
     """HR_MyOrg-only: paginated annual goals across the org, every cycle.
 
@@ -583,20 +614,36 @@ def list_all_goals(
         .filter(has_goal_subq)
     )
 
-    # User-level filters narrow which PARENTS we paginate. Join lazily
-    # so unfiltered requests stay single-table on the User side.
+    # User-level filters narrow which PARENTS we paginate. Sort dims
+    # can also need the Function/Designation joins even if no filter
+    # references them — same compose-with-sort logic from doc 30 Part 3.
+    needs_function_join = bool(filters.function_name) or sort_by == "function_name"
+    needs_designation_join = (
+        bool(filters.designation_name) or sort_by == "designation_name"
+    )
+
     if filters.employee:
         users_q = users_q.filter(User.full_name == filters.employee)
-    if filters.function_name:
-        users_q = users_q.join(
-            Function, Function.id == User.function_id
-        ).filter(Function.name == filters.function_name)
-    if filters.designation_name:
+    if needs_function_join:
+        users_q = users_q.join(Function, Function.id == User.function_id)
+        if filters.function_name:
+            users_q = users_q.filter(Function.name == filters.function_name)
+    if needs_designation_join:
         users_q = users_q.join(
             Designation, Designation.id == User.designation_id
-        ).filter(Designation.name == filters.designation_name)
+        )
+        if filters.designation_name:
+            users_q = users_q.filter(Designation.name == filters.designation_name)
 
-    users_q = users_q.order_by(User.full_name.asc(), User.id.asc())
+    # ORDER BY. Default sort: full_name asc (alphabetical). User-picked
+    # primary replaces it; `User.id.asc()` tiebreaker survives the
+    # swap, same pattern as doc 30 Part 2.
+    if sort_by is None:
+        users_q = users_q.order_by(User.full_name.asc(), User.id.asc())
+    else:
+        sort_column = _ALL_GOALS_SORT_COLUMNS[sort_by]
+        primary = sort_column.asc() if sort_dir == "asc" else sort_column.desc()
+        users_q = users_q.order_by(primary, User.id.asc())
 
     # ── Step 2: count for the response's `total`. Single COUNT(*) over
     # the same filter; pairs with `has_more` arithmetic below. The unit
@@ -628,6 +675,17 @@ def list_all_goals(
         )
         goals_q = _apply_goal_level_filters(goals_q, filters)
         goals = goals_q.order_by(Goal.created_at.desc()).all()
+        # Re-order to match Step 3's user pagination (PR #48, doc 31).
+        # SQL ordered goals by created_at desc; Python's stable sort
+        # by user-index preserves that within-group ordering while
+        # making groups appear in the same order step 3 paginated
+        # users. Without this, the frontend's `buildAllGoalsGroups`
+        # would assemble groups in "most-recent-goal-first" order
+        # regardless of the user pagination's sort_by — a regression
+        # vs the legacy client-side sort the previous PR's
+        # introduced.
+        user_order = {u.id: i for i, u in enumerate(page_users)}
+        goals.sort(key=lambda g: user_order.get(g.user_id, len(page_users)))
     else:
         goals = []
 

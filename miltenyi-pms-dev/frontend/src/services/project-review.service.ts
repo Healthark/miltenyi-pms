@@ -337,8 +337,24 @@ export interface AllProjectReviewsFilters {
   project?: string;
 }
 
-/** Full request shape: pagination knobs + filter dimensions. */
-export type AllProjectReviewsRequestParams = AllProjectReviewsFilters & {
-  limit?: number;
-  offset?: number;
-};
+/** Sort columns accepted by GET /project-reviews/all (PR #48, doc 31).
+ *  Mirrors backend `_PROJECT_REVIEWS_SORT_COLUMNS`. */
+export type AllProjectReviewsSortBy =
+  | "project_name"
+  | "employee_name"
+  | "pm_name"
+  | "cycle"
+  | "status"
+  | "performance_group";
+
+export interface AllProjectReviewsSort {
+  sort_by?: AllProjectReviewsSortBy;
+  sort_dir?: "asc" | "desc";
+}
+
+/** Full request shape: pagination + filters + sort. */
+export type AllProjectReviewsRequestParams = AllProjectReviewsFilters &
+  AllProjectReviewsSort & {
+    limit?: number;
+    offset?: number;
+  };

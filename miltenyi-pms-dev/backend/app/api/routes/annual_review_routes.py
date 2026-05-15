@@ -31,9 +31,9 @@ Security Layers:
                                    are True.
 """
 
-from typing import List, Optional
+from typing import List, Literal, Optional
 from fastapi import APIRouter, HTTPException, Query, status
-from sqlalchemy import or_
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import aliased, joinedload
 
 from app.api.dependencies import DbSession, CurrentUser
@@ -58,6 +58,63 @@ from app.schemas.annual_review_schemas import (
 )
 from app.schemas.pagination import Paginated
 router = APIRouter()
+
+
+# ── Module-level mentor User alias (PR #48, doc 31) ──────────────────
+# Stable alias so /calibration's sort-column map below can reference
+# the mentor join without re-aliasing per request. /calibration's
+# base query is User; mentor is `User.mentor_id` → a second join into
+# `users`. Doc 27 introduced the aliased() pattern for the same shape.
+_CalibrationMentor = aliased(User, name="cal_mentor_user")
+
+
+# ── Sort column map for GET /annual-reviews/all (PR #47, doc 30) ─────
+# Mirrors the frontend's `AllReviewsSortKey` literal-union exactly.
+# Module-level so we don't reconstruct it per request. Function /
+# Designation entries are stable references to the reference-table
+# columns; the route's conditional-join logic guarantees the relevant
+# join is present before ORDER BY tries to read them.
+_ALL_REVIEWS_SORT_COLUMNS = {
+    "employee_name": User.full_name,
+    "function": Function.name,
+    "designation": Designation.name,
+    "cycle_name": AnnualReview.cycle_name,
+    "status": AnnualReview.status,
+    "self_performance_rating": AnnualReview.self_performance_rating,
+    "mentor_performance_rating": AnnualReview.mentor_performance_rating,
+    "final_performance_rating": AnnualReview.final_performance_rating,
+}
+
+
+# ── Sort column map for GET /annual-reviews/calibration (PR #48, doc 31)
+# Mirrors the frontend's `SortKey` literal-union in ManagementReview.tsx.
+# Status sorts lexically here — the frontend's lifecycle-weight ordering
+# (Not Started → Completed) was a CLIENT-side concern and doesn't carry
+# over. Most users sorting by status want the same group together
+# anyway, which lexical ordering achieves. Documented in doc 31 Part 3.
+_CALIBRATION_SORT_COLUMNS = {
+    "employee_name": User.full_name,
+    "employee_email": User.email,
+    "mentor_name": _CalibrationMentor.full_name,
+    "function": Function.name,
+    "designation": Designation.name,
+    "status": AnnualReview.status,
+    "self_performance_rating": AnnualReview.self_performance_rating,
+    "mentor_performance_rating": AnnualReview.mentor_performance_rating,
+    "management_performance_rating": AnnualReview.management_performance_rating,
+}
+
+
+# ── Sort column map for GET /annual-reviews/mentees (PR #48, doc 31) ─
+# Mirrors the frontend's `SortKey` literal-union in TeamReviewTab.tsx.
+_MENTEE_REVIEWS_SORT_COLUMNS = {
+    "employee_name": User.full_name,
+    "cycle_name": AnnualReview.cycle_name,
+    "status": AnnualReview.status,
+    "self_performance_rating": AnnualReview.self_performance_rating,
+    "mentor_performance_rating": AnnualReview.mentor_performance_rating,
+    "management_performance_rating": AnnualReview.management_performance_rating,
+}
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
@@ -465,6 +522,37 @@ def get_all_annual_reviews(
             "correct here. Substring search would be a future PR."
         ),
     ),
+    # ── Server-side sort (PR #47, doc 30) ─────────────────────────────
+    # Frontend SORT_CONFIG keys map 1:1 to these literal values. When
+    # `sort_by` is None, fall back to the default ordering (cycle_name
+    # DESC, created_at DESC). The id.desc() tiebreaker ALWAYS stays as
+    # the final ORDER BY clause — see doc 30 Part 2 for why it survives
+    # under any primary sort.
+    sort_by: Optional[
+        Literal[
+            "employee_name",
+            "function",
+            "designation",
+            "cycle_name",
+            "status",
+            "self_performance_rating",
+            "mentor_performance_rating",
+            "final_performance_rating",
+        ]
+    ] = Query(
+        None,
+        description=(
+            "Primary sort column. Mirrors the frontend's "
+            "AllReviewsSortKey enum. `function` / `designation` / "
+            "`employee_name` require joining the User row + the "
+            "respective reference table; those joins are added "
+            "conditionally on either filter or sort referencing them."
+        ),
+    ),
+    sort_dir: Literal["asc", "desc"] = Query(
+        "asc",
+        description="Sort direction. Default 'asc'.",
+    ),
 ):
     """HR_MyOrg-only: paginated annual reviews across the org, every cycle.
 
@@ -508,17 +596,26 @@ def get_all_annual_reviews(
         AnnualReview.org_id == current_user.org_id
     )
 
-    # ── Apply filters ─────────────────────────────────────────────
-    # Each filter narrows base_q with an AND-WHERE. Direct columns
-    # (cycle_name, status) hit AnnualReview without a join. User-
-    # attribute filters require joining the User row first; we add the
-    # join lazily so unfiltered requests stay single-table.
+    # ── Apply filters + figure out which joins sort also needs ────────
+    # Direct columns (cycle_name, status) hit AnnualReview without a
+    # join. User-attribute filters require a User join; the reference-
+    # table joins (Function / Designation) layer on top. Sort can ALSO
+    # need any of these joins independent of whether the user filtered
+    # on them — e.g. "no filters, sort by function" still needs the
+    # Function join. Compute needs-joins from filter ∪ sort.
     if cycle:
         base_q = base_q.filter(AnnualReview.cycle_name == cycle)
     if status_:
         base_q = base_q.filter(AnnualReview.status == status_)
 
-    needs_user_join = bool(function_ or designation or employee)
+    needs_user_join = bool(function_ or designation or employee) or sort_by in (
+        "function",
+        "designation",
+        "employee_name",
+    )
+    needs_function_join = bool(function_) or sort_by == "function"
+    needs_designation_join = bool(designation) or sort_by == "designation"
+
     if needs_user_join:
         # INNER JOIN is correct here: every AnnualReview has a non-null
         # user_id (FK constraint), so the join never drops legitimate
@@ -526,37 +623,51 @@ def get_all_annual_reviews(
         base_q = base_q.join(User, User.id == AnnualReview.user_id)
         if employee:
             base_q = base_q.filter(User.full_name == employee)
-        if function_:
+        if needs_function_join:
             # Joining via the FK to the Function reference table. We
             # could use User.function.has(...) which emits an EXISTS
             # subquery; an explicit join is more readable and has the
-            # same plan in Postgres.
-            base_q = base_q.join(Function, Function.id == User.function_id).filter(
-                Function.name == function_
-            )
-        if designation:
+            # same plan in Postgres. Join unconditionally if either a
+            # filter or sort references function.
+            base_q = base_q.join(Function, Function.id == User.function_id)
+            if function_:
+                base_q = base_q.filter(Function.name == function_)
+        if needs_designation_join:
             base_q = base_q.join(
                 Designation, Designation.id == User.designation_id
-            ).filter(Designation.name == designation)
+            )
+            if designation:
+                base_q = base_q.filter(Designation.name == designation)
 
     # Total count of matching rows. Used both for the response's
-    # `total` field and for the `has_more` flag. A single COUNT(*)
-    # adds one DB round-trip vs the legacy "fetch all then len()" but
-    # the savings on the windowed page fetch (DB does the LIMIT)
-    # massively dominate at scale — a 10000-row org used to ship
-    # 10000 rows on every call; now ships 50.
+    # `total` field and for the `has_more` flag.
     total = base_q.count()
 
-    reviews = (
-        base_q.order_by(
+    # ── ORDER BY ─────────────────────────────────────────────────────
+    # When `sort_by` is supplied, it becomes the primary sort and the
+    # default (cycle_name DESC, created_at DESC) is dropped. The
+    # id.desc() tiebreaker ALWAYS stays as the last clause — see doc
+    # 30 Part 2 for the OFFSET/LIMIT stability rationale.
+    if sort_by is None:
+        order_clauses = [
             AnnualReview.cycle_name.desc(),
             AnnualReview.created_at.desc(),
-            # Tiebreaker (doc 22 lesson). Required even more now that
-            # filters can change the effective ordering — two rows with
-            # the same (cycle_name, created_at) must keep a deterministic
-            # position across pages of the FILTERED universe.
             AnnualReview.id.desc(),
-        )
+        ]
+    else:
+        sort_column = _ALL_REVIEWS_SORT_COLUMNS[sort_by]
+        primary = sort_column.asc() if sort_dir == "asc" else sort_column.desc()
+        order_clauses = [
+            primary,
+            # Tiebreaker survives the primary-sort swap. Required to
+            # keep OFFSET/LIMIT stable across pages when two rows share
+            # the same `sort_by` value — see doc 22's discussion of the
+            # tiebreaker footgun.
+            AnnualReview.id.desc(),
+        ]
+
+    reviews = (
+        base_q.order_by(*order_clauses)
         .offset(offset)
         .limit(limit)
         .all()
@@ -666,6 +777,24 @@ def get_mentee_reviews(
             "Part 4)."
         ),
     ),
+    # ── Server-side sort (PR #48, doc 31) ─────────────────────────────
+    sort_by: Optional[
+        Literal[
+            "employee_name",
+            "cycle_name",
+            "status",
+            "self_performance_rating",
+            "mentor_performance_rating",
+            "management_performance_rating",
+        ]
+    ] = Query(
+        None,
+        description="Primary sort column. Mirrors the frontend SortKey enum.",
+    ),
+    sort_dir: Literal["asc", "desc"] = Query(
+        "asc",
+        description="Sort direction. Default 'asc'.",
+    ),
 ):
     """
     Paginated reviews for the current user's direct mentees across every
@@ -731,7 +860,8 @@ def get_mentee_reviews(
         )
     if status_:
         base_q = base_q.filter(AnnualReview.status == status_)
-    if mentee or search:
+    # User join needed if mentee filter, search, or sort_by employee_name.
+    if mentee or search or sort_by == "employee_name":
         base_q = base_q.join(User, User.id == AnnualReview.user_id)
         if mentee:
             base_q = base_q.filter(User.full_name == mentee)
@@ -740,15 +870,22 @@ def get_mentee_reviews(
 
     total = base_q.with_entities(AnnualReview.id).count()
 
+    # ORDER BY. Default: created_at desc (newest first). User sort
+    # replaces the default; `AnnualReview.id.desc()` tiebreaker
+    # survives (doc 30 Part 2).
+    if sort_by is None:
+        order_clauses = [
+            AnnualReview.created_at.desc(),
+            AnnualReview.id.desc(),
+        ]
+    else:
+        sort_column = _MENTEE_REVIEWS_SORT_COLUMNS[sort_by]
+        primary = sort_column.asc() if sort_dir == "asc" else sort_column.desc()
+        order_clauses = [primary, AnnualReview.id.desc()]
+
     reviews = (
         base_q
-        .order_by(
-            AnnualReview.created_at.desc(),
-            # Tiebreaker — two reviews submitted in the same second
-            # (test seeds, batch imports) must keep a deterministic
-            # order across pages.
-            AnnualReview.id.desc(),
-        )
+        .order_by(*order_clauses)
         .offset(offset)
         .limit(limit)
         .all()
@@ -944,6 +1081,33 @@ def get_calibration_grid(
             "the queryKey to avoid a request per keystroke (doc 29 Part 4)."
         ),
     ),
+    # ── Server-side sort (PR #48, doc 31) ─────────────────────────────
+    sort_by: Optional[
+        Literal[
+            "employee_name",
+            "employee_email",
+            "mentor_name",
+            "function",
+            "designation",
+            "status",
+            "self_performance_rating",
+            "mentor_performance_rating",
+            "management_performance_rating",
+        ]
+    ] = Query(
+        None,
+        description=(
+            "Primary sort column. Review-derived dimensions (status, "
+            "ratings) require an OUTER JOIN to AnnualReview which is "
+            "added lazily — users with no active-cycle review row sort "
+            "as NULL (DB default: NULLS LAST asc / NULLS FIRST desc on "
+            "Postgres)."
+        ),
+    ),
+    sort_dir: Literal["asc", "desc"] = Query(
+        "asc",
+        description="Sort direction. Default 'asc'.",
+    ),
 ):
     """
     Paginated calibration grid for the active cycle. Management-only.
@@ -987,25 +1151,50 @@ def get_calibration_grid(
         User.is_deleted == False,  # noqa: E712
     )
 
-    # ── Apply filters ─────────────────────────────────────────────
-    # User-attribute filters (function, designation) join the reference
-    # tables conditionally. Mentor uses an aliased User join (same
-    # pattern as doc 27 — User.mentor_id is the second FK to users).
-    # Status uses EXISTS / NOT EXISTS against the active-cycle review.
-    # Search uses ILIKE on name + email.
-    if function_:
-        base_q = base_q.join(Function, Function.id == User.function_id).filter(
-            Function.name == function_
-        )
-    if designation:
+    # ── Apply filters + figure out which joins sort also needs ──────
+    # User-attribute joins compose filter ∪ sort needs (doc 30 Part 3).
+    # Sorting by mentor_name, status, or any rating column requires
+    # joins that no current filter alone would have triggered.
+    review_sort_keys = (
+        "status",
+        "self_performance_rating",
+        "mentor_performance_rating",
+        "management_performance_rating",
+    )
+    needs_function_join = bool(function_) or sort_by == "function"
+    needs_designation_join = bool(designation) or sort_by == "designation"
+    needs_mentor_join = bool(mentor) or sort_by == "mentor_name"
+    # OUTER join to AnnualReview for sort that reads review columns —
+    # users without an active-cycle review get NULL (sorts last on ASC,
+    # first on DESC; that's Postgres default and matches what a user
+    # expects when sorting by "rating" in a grid where some rows are
+    # blank).
+    needs_review_join = sort_by in review_sort_keys
+
+    if needs_function_join:
+        base_q = base_q.join(Function, Function.id == User.function_id)
+        if function_:
+            base_q = base_q.filter(Function.name == function_)
+    if needs_designation_join:
+        base_q = base_q.join(Designation, Designation.id == User.designation_id)
+        if designation:
+            base_q = base_q.filter(Designation.name == designation)
+    if needs_mentor_join:
         base_q = base_q.join(
-            Designation, Designation.id == User.designation_id
-        ).filter(Designation.name == designation)
-    if mentor:
-        MentorAlias = aliased(User)
-        base_q = base_q.join(MentorAlias, MentorAlias.id == User.mentor_id).filter(
-            MentorAlias.full_name == mentor
+            _CalibrationMentor, _CalibrationMentor.id == User.mentor_id
         )
+        if mentor:
+            base_q = base_q.filter(_CalibrationMentor.full_name == mentor)
+    if needs_review_join:
+        base_q = base_q.outerjoin(
+            AnnualReview,
+            and_(
+                AnnualReview.user_id == User.id,
+                AnnualReview.org_id == current_user.org_id,
+                AnnualReview.cycle_name == cycle_name,
+            ),
+        )
+
     if status_:
         review_exists = (
             db.query(AnnualReview.id)
@@ -1034,22 +1223,25 @@ def get_calibration_grid(
             )
         )
 
-    # Total of matching users — pairs with `has_more` below. Pre-page
-    # the page-relevant count is essentially free here (no joins,
-    # single COUNT over an indexed filter).
+    # Total of matching users — pairs with `has_more` below.
     total_users = base_q.with_entities(User.id).count()
 
-    # Page through the user list. The secondary `User.id.asc()` tiebreaker
-    # keeps pagination stable when two users share a full_name (the
-    # alternative — duplicates appearing on consecutive pages or being
-    # silently dropped — is the canonical pagination footgun).
+    # ORDER BY. Default: full_name asc. User-picked primary replaces
+    # default and the `User.id.asc()` tiebreaker survives (doc 30 Part 2).
+    if sort_by is None:
+        order_clauses = [User.full_name.asc(), User.id.asc()]
+    else:
+        sort_column = _CALIBRATION_SORT_COLUMNS[sort_by]
+        primary = sort_column.asc() if sort_dir == "asc" else sort_column.desc()
+        order_clauses = [primary, User.id.asc()]
+
     page_users = (
         base_q
         .options(
             joinedload(User.function),
             joinedload(User.designation),
         )
-        .order_by(User.full_name.asc(), User.id.asc())
+        .order_by(*order_clauses)
         .offset(offset)
         .limit(limit)
         .all()
