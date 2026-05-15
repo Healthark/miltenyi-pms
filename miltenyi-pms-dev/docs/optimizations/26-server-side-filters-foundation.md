@@ -1,6 +1,6 @@
 # 26 — Server-side filter foundation: filters become part of the queryKey
 
-> **PR:** _pending_
+> **PR:** [#43](https://github.com/Healthark/miltenyi-pms/pull/43)
 > **Files changed:** `backend/app/api/routes/annual_review_routes.py`, `frontend/src/services/annual-review.service.ts`, `frontend/src/lib/queryKeys.ts`, `frontend/src/pages/AnnualReviews.tsx`.
 > **Headline result:** Opens theme #5 — once pagination ships, the *next* place users feel slow is filtering, because today every filter runs **client-side on the loaded array**. After pagination this got subtly wrong: filter by Status="Pending Mentor" on Page 1 and you see only the matches from the 50 already-loaded rows, not the full universe. This PR moves filters to the server, **bakes them into the TanStack Query cache key**, and lets Load More page through the filtered universe instead of the entire one. Bundle: AnnualReviews **42.08 → 42.30 KB raw, 8.36 → 8.48 KB gzip** (+0.12 KB gzip).
 

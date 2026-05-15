@@ -330,13 +330,21 @@ export const goalService = {
    *  page's employees in `items`. This keeps the AllGoalsTab's
    *  per-user expandable groups whole — no employee straddles two
    *  pages. Consequently `total` is the EMPLOYEE count, not the goal
-   *  count; the UI counter says "Loaded N of T employees · M goals".
+   *  count.
    *
-   *  Server defaults: limit=50, max=200. Pair with
-   *  `useInfiniteQuery`; `flatMap(p => p.items)` produces a goal array
-   *  that `buildAllGoalsGroups` consumes unchanged. */
+   *  Server-side filters added in PR #44 (doc 27). Each filter narrows
+   *  the universe BEFORE pagination, so `total` is the filtered
+   *  employee count and Load More pages through what matches. Filters
+   *  split into:
+   *    - Goal-level (fy_year, mentor): applied INSIDE the EXISTS
+   *      subquery that finds qualifying parents, AND on the goals
+   *      fetch — so users with mixed-year history filtered to one
+   *      year only show their matching goals.
+   *    - User-level (employee, function, designation): applied on the
+   *      parent pagination directly.
+   *  All filters AND together. Server defaults: limit=50, max=200. */
   getAllGoals: async (
-    params: { limit?: number; offset?: number } = {},
+    params: AllGoalsRequestParams = {},
   ): Promise<PaginatedAllGoals> => {
     const res = await apiClient.get<PaginatedAllGoals>("/goals/all", {
       params,
@@ -346,6 +354,30 @@ export const goalService = {
 };
 
 /** Paginated response from GET /goals/all. `items` is the goal rows on
- *  this page; `total` is the EMPLOYEE count (the pagination unit) — see
- *  the service docstring above for why. */
+ *  this page; `total` is the FILTERED EMPLOYEE count (the pagination
+ *  unit) — see the service docstring above for why. */
 export type PaginatedAllGoals = Paginated<TeamGoal>;
+
+/** Filter set accepted by GET /goals/all (PR #44, doc 27). All fields
+ *  optional; omitted fields don't narrow. Exact-match equality except
+ *  `fy_year` which matches `Goal.cycle_name` against modern + legacy
+ *  formats server-side (see backend `_apply_goal_level_filters`). */
+export interface AllGoalsFilters {
+  /** Fiscal-year integer (e.g. 2026). Matches both "FY26"-style and
+   *  legacy "H1 2026"-style cycle_name values on the server. */
+  fy_year?: number;
+  /** Exact match on the goal's assigned manager (mentor) full_name. */
+  mentor?: string;
+  /** Exact match on the goal owner's full_name. */
+  employee?: string;
+  /** Exact match on the goal owner's Function name. */
+  function?: string;
+  /** Exact match on the goal owner's Designation name. */
+  designation?: string;
+}
+
+/** Full request shape: pagination knobs + the filter dimensions. */
+export type AllGoalsRequestParams = AllGoalsFilters & {
+  limit?: number;
+  offset?: number;
+};
