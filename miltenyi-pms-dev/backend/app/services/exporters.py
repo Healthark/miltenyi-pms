@@ -136,7 +136,6 @@ def build_users_sheet(ws: Worksheet, db: Session, org_id: int) -> int:
             "Full Name",
             "Email",
             "Employee Code",
-            "Role",
             "Function",
             "Designation",
             "Mentor",
@@ -164,17 +163,16 @@ def build_users_sheet(ws: Worksheet, db: Session, org_id: int) -> int:
         ws.cell(row=row, column=2, value=u.full_name)
         ws.cell(row=row, column=3, value=u.email)
         ws.cell(row=row, column=4, value=u.employee_code)
-        ws.cell(row=row, column=5, value=u.role)
-        ws.cell(row=row, column=6, value=u.function.name if u.function else "")
+        ws.cell(row=row, column=5, value=u.function.name if u.function else "")
         ws.cell(
-            row=row, column=7, value=u.designation.name if u.designation else ""
+            row=row, column=6, value=u.designation.name if u.designation else ""
         )
-        ws.cell(row=row, column=8, value=u.mentor.full_name if u.mentor else "")
-        ws.cell(row=row, column=9, value=u.phone or "")
-        ws.cell(row=row, column=10, value="No" if u.is_deleted else "Yes")
+        ws.cell(row=row, column=7, value=u.mentor.full_name if u.mentor else "")
+        ws.cell(row=row, column=8, value=u.phone or "")
+        ws.cell(row=row, column=9, value="No" if u.is_deleted else "Yes")
         ws.cell(
             row=row,
-            column=11,
+            column=10,
             value=u.created_at.replace(tzinfo=None) if u.created_at else None,
         )
         row += 1
