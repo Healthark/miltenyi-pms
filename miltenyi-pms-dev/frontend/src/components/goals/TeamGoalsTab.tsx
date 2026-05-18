@@ -232,9 +232,9 @@ export function TeamGoalsTab() {
 
   // The mentor's goal-approval queue. Cached under
   // queryKeys.goals.mentees() so any goal-mutation broadcast catches
-  // it. Cross-page cache sharing: when the mentor goes Staff dashboard
-  // (PR #19) -> dashboard mentor_goals_pending_approval shows the same
-  // count this query drives.
+  // it. Cross-page cache sharing kept it consistent with the (now-
+  // retired) dashboard pending-mentor-work card; same broadcast still
+  // refreshes the goal_approval_funnel on the HR dashboard.
   const teamGoalsQuery = useQuery({
     queryKey: queryKeys.goals.mentees(),
     queryFn: () => goalService.getTeamGoals("annual"),
@@ -268,8 +268,8 @@ export function TeamGoalsTab() {
   // ── Mutations ──────────────────────────────────────────────────────
   // All five goal-side mutations broadcast-invalidate the same two
   // namespaces: ['goals'] (catches mentor's queue + Staff's mine + HR's
-  // org) and ['dashboard'] (catches mentor_goals_pending_approval +
-  // goal_approval_funnel + the various completion counts).
+  // org) and ['dashboard'] (catches goal_approval_funnel + the various
+  // completion counts).
   //
   // Single helper because all five mutations share this scope —
   // following the same DRY pattern from PR #22 (AnnualGoals).

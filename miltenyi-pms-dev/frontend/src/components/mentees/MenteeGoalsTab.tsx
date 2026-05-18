@@ -219,7 +219,7 @@ export function MenteeGoalsTab({ goals, menteeName, menteeId }: MenteeGoalsTabPr
   //   - queryKeys.goals.all                 — TeamGoalsTab's queue,
   //     Staff's mine, HR's org. Broadcast catches all of them.
   //   - queryKeys.dashboard.all             — dashboard counts
-  //     (mentor_goals_pending_approval, goal_approval_funnel).
+  //     (goal_approval_funnel + completion percentages).
   //
   // This is one of the few places we mix a SPECIFIC key (the per-mentee
   // detail) with broadcast keys for sibling namespaces. The specific

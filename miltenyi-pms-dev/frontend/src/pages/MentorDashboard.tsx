@@ -12,12 +12,11 @@
  *   Row 2: Mentee Goal Funnel | Mentee Annual Review   — HR-style donut
  *          cards aggregated across every mentee. Surface where work
  *          sits in the approval / evaluation pipeline.
- *   Row 3: Pending Mentor Work (col-span-2) | My Mentees  — focused
- *          action list + the mentee count tile.
+ *   Row 3: My Mentees                                  — mentee count tile.
  *
  * Owns two fetches at the page level:
  *   /dashboard/summary  → DashboardSummary  (drives the cycle cards and
- *                          the mentor-only fields on PendingMentorWork)
+ *                          the mentee count tile)
  *   /mentees/summary    → MenteeSummary[]   (drives both funnel cards)
  *
  * Each card receives either its loaded slice or null and renders its
@@ -33,7 +32,6 @@ import { dashboardService } from "@/services/dashboard.service";
 import { menteeService } from "@/services/mentee.service";
 import { getErrorMessage } from "@/utils/errors";
 import { ActiveCycleWidget } from "@/components/dashboard/ActiveCycleWidget";
-import { PendingMentorWorkWidget } from "@/components/dashboard/PendingMentorWorkWidget";
 import { MenteesWidget } from "@/components/dashboard/MenteesWidget";
 import { MenteeGoalFunnelCard } from "@/components/dashboard/MenteeGoalFunnelCard";
 import { MenteeReviewFunnelCard } from "@/components/dashboard/MenteeReviewFunnelCard";
@@ -87,7 +85,7 @@ export function MentorDashboard() {
           Welcome back, {firstName}
         </h1>
         <p className="mt-0.5 text-sm text-text-muted">
-          Where your mentees stand on goals, reviews, and what's owed to you.
+          Where your mentees stand on goals and reviews.
         </p>
       </div>
 
@@ -122,15 +120,8 @@ export function MentorDashboard() {
         <MenteeReviewFunnelCard mentees={mentees ?? null} />
       </div>
 
-      {/* Row 3: Pending Mentor Work (col-span-2) | My Mentees count */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <div className="xl:col-span-2">
-          {summary ? (
-            <PendingMentorWorkWidget summary={summary} />
-          ) : (
-            <CardSkeleton />
-          )}
-        </div>
+      {/* Row 3: My Mentees count */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         {summary ? <MenteesWidget summary={summary} /> : <CardSkeleton />}
       </div>
     </div>

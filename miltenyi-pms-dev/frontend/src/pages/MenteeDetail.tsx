@@ -145,8 +145,9 @@ export function MenteeDetail() {
   //                          summaries (badge counts, pending actions)
   //   - annualReviews.all  → TeamReviewTab, HR's All Reviews, the
   //                          mentee's own history
-  //   - dashboard.all      → mentor's mentor_annual_reviews_pending
-  //                          count in the dashboard widget
+  //   - dashboard.all      → mentor's dashboard summary (kept fresh
+  //                          even though the per-bucket pending counts
+  //                          have been retired)
   const invalidateMentorEvalScope = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: queryKeys.mentees.all });
     void queryClient.invalidateQueries({

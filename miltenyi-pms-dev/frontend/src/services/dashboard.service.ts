@@ -39,9 +39,6 @@ export interface DashboardSummary {
 
   // ── Mentor: only meaningful when caller has direct mentees ─────────
   mentee_count: number;
-  mentor_goals_pending_approval: number;
-  mentor_goal_reviews_pending: number;
-  mentor_annual_reviews_pending: number;
 }
 
 // ── HR org-wide dashboard ─────────────────────────────────────────────

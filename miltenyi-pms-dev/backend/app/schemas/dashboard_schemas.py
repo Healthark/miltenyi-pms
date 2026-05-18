@@ -52,13 +52,6 @@ class DashboardSummary(BaseModel):
 
     # ── Mentor: only meaningful when caller has direct mentees ───────
     mentee_count: int = 0
-    # Mentee goals submitted for approval.
-    mentor_goals_pending_approval: int = 0
-    # Mentee goals at H1_SELF_REVIEWED or H2_SELF_REVIEWED — the half-cycle
-    # mentor review hasn't been written yet.
-    mentor_goal_reviews_pending: int = 0
-    # Mentee AnnualReview rows in PENDING_MENTOR for the active FY.
-    mentor_annual_reviews_pending: int = 0
 
 
 # ── HR org-wide dashboard ─────────────────────────────────────────────

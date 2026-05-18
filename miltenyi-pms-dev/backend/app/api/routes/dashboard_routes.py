@@ -16,10 +16,7 @@ Personal layer:
     - Caller's pending project reviews as primary or secondary evaluator
 
 Mentor layer (filled iff direct mentees exist):
-    - Mentee count
-    - Mentee goals awaiting caller's approval
-    - Mentee goals at H1/H2 self-reviewed (caller owes the half-cycle mentor review)
-    - Mentee annual reviews in PENDING_MENTOR for the active FY
+    - Mentee count (drives the My Mentees tile)
 
 Security Layers Applied:
     Layer 1 — Authentication:   CurrentUser dependency (JWT validation)
@@ -31,7 +28,7 @@ Security Layers Applied:
 from datetime import datetime, timezone
 from typing import Annotated, Optional
 
-from sqlalchemy import func, Integer, cast, or_
+from sqlalchemy import func, Integer, cast
 from sqlalchemy.orm import joinedload
 from fastapi import APIRouter, Query
 
@@ -78,21 +75,6 @@ _TOP_MENTORS_LIMIT = 5
 _STALL_THRESHOLD_DAYS = 7
 
 router = APIRouter()
-
-
-# Goal states that signal "mentor review of the cycle is owed."
-# A goal sits at *_SELF_REVIEWED until the mentor finishes that cycle — the
-# trigger for "mentor reviews pending." Covers both half-yearly (H1/H2)
-# and quarterly (Q1..Q4) cadences in one set so a single org with mixed
-# legacy data still rolls up correctly.
-_MENTOR_REVIEW_PENDING_STATES = (
-    ApprovalStatus.H1_SELF_REVIEWED.value,
-    ApprovalStatus.H2_SELF_REVIEWED.value,
-    ApprovalStatus.Q1_SELF_REVIEWED.value,
-    ApprovalStatus.Q2_SELF_REVIEWED.value,
-    ApprovalStatus.Q3_SELF_REVIEWED.value,
-    ApprovalStatus.Q4_SELF_REVIEWED.value,
-)
 
 
 @router.get("/summary", response_model=DashboardSummary)
@@ -214,69 +196,16 @@ def get_dashboard_summary(
         .scalar()
     ) or 0
 
-    # ── Mentor Pending Work (only meaningful with direct mentees) ────
-    # Resolve mentee_ids exactly once; reuse for the three mentor counts.
-    mentee_ids: list[int] = [
-        row[0] for row in (
-            db.query(User.id)
-            .filter(
-                User.mentor_id == current_user.id,
-                User.org_id == current_user.org_id,
-                User.is_deleted == False,  # noqa: E712
-            )
-            .all()
+    # ── Mentor: mentee count (drives the My Mentees tile) ────────────
+    mentee_count = (
+        db.query(func.count(User.id))
+        .filter(
+            User.mentor_id == current_user.id,
+            User.org_id == current_user.org_id,
+            User.is_deleted == False,  # noqa: E712
         )
-    ]
-    mentee_count = len(mentee_ids)
-
-    mentor_goals_pending_approval = 0
-    mentor_goal_reviews_pending = 0
-    mentor_annual_reviews_pending = 0
-
-    if mentee_ids:
-        # Mentee goals submitted, awaiting caller's approve/changes-requested.
-        mentor_goals_pending_approval = (
-            db.query(func.count(Goal.id))
-            .filter(
-                Goal.org_id == current_user.org_id,
-                Goal.user_id.in_(mentee_ids),
-                Goal.goal_type == GoalType.ANNUAL.value,
-                Goal.approval_status == ApprovalStatus.PENDING_APPROVAL.value,
-            )
-            .scalar()
-        ) or 0
-
-        # Mentee goals where the half-cycle self-review has landed but the
-        # mentor review hasn't — H1_SELF_REVIEWED or H2_SELF_REVIEWED.
-        mentor_goal_reviews_pending = (
-            db.query(func.count(Goal.id))
-            .filter(
-                Goal.org_id == current_user.org_id,
-                Goal.user_id.in_(mentee_ids),
-                Goal.goal_type == GoalType.ANNUAL.value,
-                Goal.approval_status.in_(_MENTOR_REVIEW_PENDING_STATES),
-            )
-            .scalar()
-        ) or 0
-
-        # Mentee annual reviews in PENDING_MENTOR for the active FY. We trust
-        # mentor_id on the row when it's set (the canonical link), and fall
-        # back to user_id IN mentee_ids to catch reviews created before the
-        # mentor was wired up.
-        if active_fy is not None:
-            mentor_annual_reviews_pending = (
-                db.query(func.count(AnnualReview.id))
-                .filter(
-                    AnnualReview.org_id == current_user.org_id,
-                    AnnualReview.cycle_name == active_fy,
-                    AnnualReview.status == ReviewStatus.PENDING_MENTOR.value,
-                    or_(
-                        AnnualReview.mentor_id == current_user.id,
-                        AnnualReview.user_id.in_(mentee_ids),
-                    ),
-                )
-                .scalar()
-            ) or 0
+        .scalar()
+    ) or 0
 
     return DashboardSummary(
         total_goals=total_goals,
@@ -292,9 +221,6 @@ def get_dashboard_summary(
         project_reviews_pending_primary=project_reviews_pending_primary,
         project_reviews_pending_secondary=project_reviews_pending_secondary,
         mentee_count=mentee_count,
-        mentor_goals_pending_approval=mentor_goals_pending_approval,
-        mentor_goal_reviews_pending=mentor_goal_reviews_pending,
-        mentor_annual_reviews_pending=mentor_annual_reviews_pending,
     )
 
 
