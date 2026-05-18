@@ -81,14 +81,35 @@ export const exportService = {
   /** Download the Miltenyi HR workbook — three sheets (Users, Projects,
    *  Project Reviews). Annual goals / annual reviews are intentionally
    *  excluded since Miltenyi HR's scope doesn't include those flows.
-   *  Backend gates the endpoint on role == HR_Miltenyi. */
-  async downloadMiltenyiWorkbook(): Promise<void> {
+   *  `fyYears` narrows Project Reviews; Users and Projects sheets are
+   *  always full org-wide. Backend gates on role == HR_Miltenyi. */
+  async downloadMiltenyiWorkbook(fyYears: number[] = []): Promise<void> {
+    const params: Record<string, string> = {};
+    if (fyYears.length > 0) {
+      params.fy = fyYears.join(",");
+    }
     const res = await apiClient.get(`/export/miltenyi.xlsx`, {
       responseType: "blob",
+      params,
     });
     const filename = filenameFromResponse(
       res,
       `pms-miltenyi-workbook.xlsx`,
+    );
+    triggerDownload(res.data as Blob, filename);
+  },
+
+  /** Download a Miltenyi-scoped per-employee workbook — three sheets
+   *  (Profile, Project Assignments, Project Reviews). Annual goals /
+   *  annual reviews are intentionally excluded. HR_Miltenyi only. */
+  async downloadMiltenyiEmployee(userId: number): Promise<void> {
+    const res = await apiClient.get(
+      `/export/miltenyi-employee/${userId}.xlsx`,
+      { responseType: "blob" },
+    );
+    const filename = filenameFromResponse(
+      res,
+      `pms-miltenyi-employee-${userId}.xlsx`,
     );
     triggerDownload(res.data as Blob, filename);
   },

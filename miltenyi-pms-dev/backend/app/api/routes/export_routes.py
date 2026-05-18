@@ -283,7 +283,11 @@ def export_all(
 # ── Miltenyi HR combined workbook ─────────────────────────────────────
 
 @router.get("/miltenyi.xlsx")
-def export_miltenyi(db: DbSession, current_user: CurrentUser):
+def export_miltenyi(
+    db: DbSession,
+    current_user: CurrentUser,
+    fy: Annotated[Optional[str], Query()] = None,
+):
     """Three-sheet workbook (Users / Projects / Project Reviews) scoped
     for Miltenyi HR.
 
@@ -292,8 +296,13 @@ def export_miltenyi(db: DbSession, current_user: CurrentUser):
     annual_review_routes.py: "Miltenyi HR has no business in annual
     reviews"), so leaving them out of the export keeps the workbook to
     only the data Miltenyi HR actually uses.
+
+    `fy` is a comma-separated list of 4-digit start years (e.g.
+    `?fy=2025,2026`). Users and Projects sheets are never narrowed (they
+    are point-in-time snapshots); only Project Reviews honours the filter.
     """
     _require_hr_miltenyi(current_user)
+    fy_filter = _parse_fy_filter(fy)
 
     wb = Workbook()
     users_ws = wb.active
@@ -306,15 +315,72 @@ def export_miltenyi(db: DbSession, current_user: CurrentUser):
 
     project_reviews_ws = wb.create_sheet("Project Reviews")
     project_reviews_rows = build_project_reviews_sheet(
-        project_reviews_ws, db, current_user.org_id
+        project_reviews_ws, db, current_user.org_id, fy_filter
     )
 
     total = users_rows + projects_rows + project_reviews_rows
-    _log_export(db, current_user.id, "miltenyi_combined", total, None)
+    _log_export(db, current_user.id, "miltenyi_combined", total, fy_filter)
 
     return _workbook_to_response(
-        wb, _filename_for("miltenyi-workbook", None)
+        wb, _filename_for("miltenyi-workbook", fy_filter)
     )
+
+
+@router.get("/miltenyi-employee/{user_id}.xlsx")
+def export_miltenyi_employee(
+    user_id: int,
+    db: DbSession,
+    current_user: CurrentUser,
+):
+    """Miltenyi-scoped per-employee workbook (three sheets):
+
+        - Profile               (key/value identity card)
+        - Project Assignments   (full history — active + ended stints)
+        - Project Reviews       (every PM/secondary evaluation received)
+
+    Annual goals and annual reviews are intentionally omitted (out of
+    Miltenyi HR's scope). 404 when the user lives in a different org or
+    no longer exists. Soft-deleted users remain exportable so Miltenyi
+    HR can pull ex-employee records.
+    """
+    _require_hr_miltenyi(current_user)
+
+    target = (
+        db.query(User)
+        .filter(User.id == user_id, User.org_id == current_user.org_id)
+        .first()
+    )
+    if target is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found.",
+        )
+
+    wb = Workbook()
+    profile_ws = wb.active
+    profile_rows = build_profile_sheet(profile_ws, db, target)
+
+    assignments_ws = wb.create_sheet("Project Assignments")
+    assignment_rows = build_project_assignments_sheet(
+        assignments_ws, db, current_user.org_id, user_id
+    )
+
+    project_reviews_ws = wb.create_sheet("Project Reviews")
+    project_reviews_rows = build_project_reviews_sheet(
+        project_reviews_ws,
+        db,
+        current_user.org_id,
+        user_id_filter=user_id,
+    )
+
+    total = profile_rows + assignment_rows + project_reviews_rows
+    _log_export_with_scope(
+        db, current_user.id, "miltenyi_employee", total, f"user:{user_id}"
+    )
+
+    slug = _slugify(target.full_name or f"user-{user_id}")
+    filename = f"pms-miltenyi-employee-{slug}-{_date_suffix()}.xlsx"
+    return _workbook_to_response(wb, filename)
 
 
 # ── Per-employee bundle ───────────────────────────────────────────────
