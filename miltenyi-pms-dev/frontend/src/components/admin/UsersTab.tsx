@@ -168,9 +168,9 @@ export function UsersTab({
   }, [users, searchQuery, roleFilter, statusFilter, functionFilter, designationFilter, mentorFilter, sort]);
 
   return (
-    <div>
+    <div className="p-5 flex flex-col gap-4">
       {/* Toolbar — search + filters */}
-      <div className="border-b border-border px-5 py-4 flex items-center gap-4 flex-wrap">
+      <div className="flex items-center gap-4 flex-wrap">
         <div className="relative max-w-sm flex-1 min-w-[200px]">
           <Search
             className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted"
@@ -272,11 +272,11 @@ export function UsersTab({
 
       {/* Table */}
       {isLoading ? (
-        <div className="flex items-center justify-center py-20 text-sm text-text-muted">
+        <div className="flex items-center justify-center py-16 text-sm text-text-muted">
           Loading users…
         </div>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto rounded-lg border border-border">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-slate-50 text-left">

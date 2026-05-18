@@ -95,7 +95,14 @@ const COLUMN_DEFS: Array<{ label: string; key: SortKey | null }> = [
 // stay perfectly aligned without us having to thread column widths
 // through a Context.
 const GRID_TEMPLATE_COLUMNS =
-  "minmax(160px, 1.6fr) minmax(200px, 2fr) minmax(150px, 1.4fr) minmax(130px, 1.2fr) minmax(150px, 1.4fr) minmax(150px, 1.4fr) minmax(110px, 1fr) minmax(110px, 1fr) minmax(130px, 1.2fr) minmax(120px, 1fr)";
+  "minmax(140px, 1.5fr) minmax(170px, 1.8fr) minmax(110px, 1.2fr) minmax(90px, 1fr) minmax(110px, 1.1fr) minmax(140px, 1.3fr) minmax(70px, 0.7fr) minmax(70px, 0.7fr) minmax(90px, 1fr) minmax(135px, 1.2fr)";
+
+// Sum of the GRID_TEMPLATE_COLUMNS minimums. Drives the table's
+// min-width so the outer horizontal-scroll wrapper keeps the header
+// and body grids aligned on narrow viewports — without it, the body's
+// implicit overflow-x (per the y-auto spec interaction) would scroll
+// independently of the header.
+const TABLE_MIN_WIDTH_PX = 1125;
 
 // Fixed row height (in px) the virtualizer uses to size the scrollbar
 // thumb and decide which rows are in-window. py-3.5 (28px total) +
@@ -475,19 +482,18 @@ export function ManagementReview() {
 
       {/* Card */}
       <div className="rounded-xl border border-border bg-surface shadow-sm overflow-hidden">
+        <div className="p-5">
         {isLoading ? (
-          <div className="flex items-center justify-center py-20 text-sm text-text-muted animate-pulse gap-2">
+          <div className="flex items-center justify-center py-16 text-sm text-text-muted animate-pulse gap-2">
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
             Loading reviews…
           </div>
         ) : loadError ? (
-          <div className="p-5">
-            <p className="text-sm text-rose-600">{loadError}</p>
-          </div>
+          <p className="text-sm text-rose-600">{loadError}</p>
         ) : (
-          <>
+          <div className="flex flex-col gap-4">
             {/* Toolbar */}
-            <div className="border-b border-border px-5 py-4 flex flex-col gap-3">
+            <div className="flex flex-col gap-3">
               <div className="relative max-w-sm">
                 <Search
                   className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted"
@@ -604,7 +610,7 @@ export function ManagementReview() {
                 so `useVirtualizer` can window the data rows. ARIA roles
                 preserve screen-reader semantics. */}
             {visibleRows.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 text-center">
+              <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border py-16 text-center bg-background/50">
                 <ShieldCheck
                   className="h-10 w-10 text-text-muted mb-3"
                   aria-hidden="true"
@@ -621,12 +627,14 @@ export function ManagementReview() {
                 </p>
               </div>
             ) : (
-              <div
-                role="table"
-                aria-label="Management calibration grid"
-                aria-rowcount={visibleRows.length}
-                className="text-sm"
-              >
+              <div className="overflow-x-auto rounded-lg border border-border">
+                <div
+                  role="table"
+                  aria-label="Management calibration grid"
+                  aria-rowcount={visibleRows.length}
+                  className="text-sm"
+                  style={{ minWidth: TABLE_MIN_WIDTH_PX }}
+                >
                 {/* Header row — NOT virtualized. Lives outside the
                     scroll container so it stays visible while the body
                     scrolls. Same grid template as data rows so the
@@ -640,7 +648,7 @@ export function ManagementReview() {
                     className="grid items-center"
                     style={{ gridTemplateColumns: GRID_TEMPLATE_COLUMNS }}
                   >
-                    {COLUMN_DEFS.map((col) => {
+                    {COLUMN_DEFS.map((col, idx) => {
                       // Capture key once so TS narrows it inside the
                       // closure — `col.key` widens back to
                       // `SortKey | null` in the arrow body.
@@ -651,6 +659,7 @@ export function ManagementReview() {
                       // this column's key (`columnSortKey`).
                       const isActiveSort =
                         columnSortKey !== null && sortKey === columnSortKey;
+                      const padX = idx === 0 ? "px-5" : "px-4";
                       return columnSortKey ? (
                         <div
                           role="columnheader"
@@ -663,7 +672,7 @@ export function ManagementReview() {
                           }
                           key={col.label}
                           onClick={() => handleSort(columnSortKey)}
-                          className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-text-muted cursor-pointer select-none hover:text-text-main"
+                          className={`${padX} py-2.5 text-xs font-semibold uppercase tracking-wide text-text-muted cursor-pointer select-none hover:text-text-main`}
                         >
                           <span className="inline-flex items-center gap-1">
                             {col.label}
@@ -674,7 +683,7 @@ export function ManagementReview() {
                         <div
                           role="columnheader"
                           key={col.label}
-                          className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-text-muted"
+                          className={`${padX} py-2.5 text-xs font-semibold uppercase tracking-wide text-text-muted`}
                         >
                           {col.label}
                         </div>
@@ -698,7 +707,7 @@ export function ManagementReview() {
                   ref={scrollContainerRef}
                   role="rowgroup"
                   style={{ height: SCROLL_CONTAINER_HEIGHT_PX }}
-                  className="overflow-y-auto overflow-x-hidden"
+                  className="overflow-y-auto"
                 >
                   <div
                     style={{
@@ -748,31 +757,31 @@ export function ManagementReview() {
                           <div role="cell" className="px-5 font-medium text-text-main truncate">
                             {r.employee_name}
                           </div>
-                          <div role="cell" className="px-5 text-text-muted truncate">
+                          <div role="cell" className="px-4 text-text-muted truncate">
                             {r.employee_email ?? "—"}
                           </div>
-                          <div role="cell" className="px-5 text-text-muted truncate">
+                          <div role="cell" className="px-4 text-text-muted truncate">
                             {r.mentor_name ?? "—"}
                           </div>
-                          <div role="cell" className="px-5 text-text-muted truncate">
+                          <div role="cell" className="px-4 text-text-muted truncate">
                             {r.function ?? "—"}
                           </div>
-                          <div role="cell" className="px-5 text-text-muted truncate">
+                          <div role="cell" className="px-4 text-text-muted truncate">
                             {r.designation ?? "—"}
                           </div>
-                          <div role="cell" className="px-5">
+                          <div role="cell" className="px-4">
                             <ReviewStatusBadge status={r.status} />
                           </div>
-                          <div role="cell" className="px-5">
+                          <div role="cell" className="px-4">
                             <PerformanceRatingBadge value={r.self_performance_rating} />
                           </div>
-                          <div role="cell" className="px-5">
+                          <div role="cell" className="px-4">
                             <PerformanceRatingBadge value={r.mentor_performance_rating} />
                           </div>
-                          <div role="cell" className="px-5">
+                          <div role="cell" className="px-4">
                             <PerformanceRatingBadge value={r.management_performance_rating} />
                           </div>
-                          <div role="cell" className="px-5">
+                          <div role="cell" className="px-4">
                             {/* flex-nowrap (no `flex-wrap`) here so a
                                 row's height stays a constant 52px —
                                 variable heights would require
@@ -824,10 +833,12 @@ export function ManagementReview() {
                     })}
                   </div>
                 </div>
+                </div>
               </div>
             )}
-          </>
+          </div>
         )}
+        </div>
       </div>
 
       {/* Load More — sits BELOW the calibration card so HR can see the

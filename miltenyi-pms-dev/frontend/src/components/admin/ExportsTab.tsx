@@ -148,7 +148,7 @@ export function ExportsTab() {
           .join(", ");
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-5 space-y-6">
       <div>
         <h2 className="font-display text-lg font-semibold text-text-main">
           Export Workbook

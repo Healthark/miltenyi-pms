@@ -146,7 +146,7 @@ export function SystemSettingsTab({
   );
 
   return (
-    <div className="p-6 max-w-mx-auto space-y-6">
+    <div className="p-5 max-w-mx-auto space-y-6">
 
       {/* ── Annual Review Settings ───────────────────────────────────── */}
       <div>

@@ -264,9 +264,9 @@ export function ProjectsTab({ ref }: ProjectsTabProps = {}) {
   }, [projects, searchQuery, yearFilter, pmFilter, statusFilter, sort]);
 
   return (
-    <div>
+    <div className="p-5 flex flex-col gap-4">
       {/* Toolbar — search + filters */}
-      <div className="border-b border-border px-5 py-4 flex items-center gap-4 flex-wrap">
+      <div className="flex items-center gap-4 flex-wrap">
         <div className="relative max-w-sm flex-1 min-w-[200px]">
           <Search
             className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted"
@@ -338,11 +338,11 @@ export function ProjectsTab({ ref }: ProjectsTabProps = {}) {
       </div>
 
       {isLoading ? (
-        <div className="flex items-center justify-center py-20 text-sm text-text-muted">
+        <div className="flex items-center justify-center py-16 text-sm text-text-muted">
           Loading projects…
         </div>
       ) : visibleProjects.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
+        <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border py-16 text-center bg-background/50">
           <FolderOpen className="h-10 w-10 text-text-muted mb-3" aria-hidden="true" />
           <p className="font-display text-base font-medium text-text-main">
             {projects.length === 0
@@ -356,7 +356,7 @@ export function ProjectsTab({ ref }: ProjectsTabProps = {}) {
           </p>
         </div>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto rounded-lg border border-border">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-slate-50 text-left">
