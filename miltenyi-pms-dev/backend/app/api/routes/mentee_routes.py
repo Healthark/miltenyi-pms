@@ -445,7 +445,7 @@ def get_mentee_detail(
         # One row per existing ProjectReview (across cycles).
         for review in reviews_by_project.get(a.project_id, []):
             review_detail = (
-                _build_review_response(review, db)
+                _build_review_response(review, db, viewer=current_user)
                 if review.status == ProjectReviewStatus.REVIEWED.value
                 else None
             )
