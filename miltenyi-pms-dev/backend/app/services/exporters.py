@@ -47,6 +47,10 @@ _HEADER_FONT = Font(bold=True, color="FFFFFF")
 _HEADER_FILL = PatternFill("solid", fgColor="4472C4")  # mid blue
 _HEADER_ALIGN = Alignment(vertical="center", horizontal="left")
 
+# Internal row IDs are not surfaced to HR — every sheet leads with a
+# dense 1-based "Sr. No." column instead.
+_SR_NO_HEADER = "Sr. No."
+
 
 def _write_header(ws: Worksheet, headers: list[str]) -> None:
     """Write a styled header row and freeze it so HR can scroll the body."""
@@ -128,7 +132,7 @@ def build_users_sheet(ws: Worksheet, db: Session, org_id: int) -> int:
     _write_header(
         ws,
         [
-            "ID",
+            _SR_NO_HEADER,
             "Full Name",
             "Email",
             "Employee Code",
@@ -156,7 +160,7 @@ def build_users_sheet(ws: Worksheet, db: Session, org_id: int) -> int:
 
     row = 2
     for u in users:
-        ws.cell(row=row, column=1, value=u.id)
+        ws.cell(row=row, column=1, value=row - 1)
         ws.cell(row=row, column=2, value=u.full_name)
         ws.cell(row=row, column=3, value=u.email)
         ws.cell(row=row, column=4, value=u.employee_code)
@@ -196,7 +200,7 @@ def build_goals_sheet(
     _write_header(
         ws,
         [
-            "Goal ID",
+            _SR_NO_HEADER,
             "Employee",
             "Email",
             "Function",
@@ -207,9 +211,6 @@ def build_goals_sheet(
             "Title",
             "Description",
             "Approval Status",
-            "Manager Feedback",
-            "Criteria Done",
-            "Criteria Total",
             "H1 Self Review",
             "H1 Mentor Review",
             "H2 Self Review",
@@ -225,7 +226,6 @@ def build_goals_sheet(
             joinedload(Goal.owner).joinedload(User.function),
             joinedload(Goal.owner).joinedload(User.designation),
             joinedload(Goal.manager),
-            joinedload(Goal.criteria),
             joinedload(Goal.self_reviews),
             joinedload(Goal.mentor_reviews),
         )
@@ -254,10 +254,7 @@ def build_goals_sheet(
         h1_mentor = _find_review(g.mentor_reviews, "H1")
         h2_mentor = _find_review(g.mentor_reviews, "H2")
 
-        criteria_total = len(g.criteria)
-        criteria_done = sum(1 for c in g.criteria if c.is_completed)
-
-        ws.cell(row=row, column=1, value=g.id)
+        ws.cell(row=row, column=1, value=row - 1)
         ws.cell(row=row, column=2, value=full_name)
         ws.cell(row=row, column=3, value=email)
         ws.cell(row=row, column=4, value=func_name)
@@ -268,33 +265,30 @@ def build_goals_sheet(
         ws.cell(row=row, column=9, value=g.title or "")
         ws.cell(row=row, column=10, value=g.description or "")
         ws.cell(row=row, column=11, value=g.approval_status)
-        ws.cell(row=row, column=12, value=g.manager_feedback or "")
-        ws.cell(row=row, column=13, value=criteria_done)
-        ws.cell(row=row, column=14, value=criteria_total)
         ws.cell(
-            row=row, column=15, value=h1_self.self_overall_review if h1_self else ""
+            row=row, column=12, value=h1_self.self_overall_review if h1_self else ""
         )
         ws.cell(
             row=row,
-            column=16,
+            column=13,
             value=h1_mentor.mentor_overall_review if h1_mentor else "",
         )
         ws.cell(
-            row=row, column=17, value=h2_self.self_overall_review if h2_self else ""
+            row=row, column=14, value=h2_self.self_overall_review if h2_self else ""
         )
         ws.cell(
             row=row,
-            column=18,
+            column=15,
             value=h2_mentor.mentor_overall_review if h2_mentor else "",
         )
         ws.cell(
             row=row,
-            column=19,
+            column=16,
             value=g.created_at.replace(tzinfo=None) if g.created_at else None,
         )
         ws.cell(
             row=row,
-            column=20,
+            column=17,
             value=g.updated_at.replace(tzinfo=None) if g.updated_at else None,
         )
         row += 1
@@ -319,7 +313,7 @@ def build_annual_reviews_sheet(
     _write_header(
         ws,
         [
-            "User ID",
+            _SR_NO_HEADER,
             "Full Name",
             "Email",
             "Function",
@@ -334,7 +328,6 @@ def build_annual_reviews_sheet(
             "Mentor Overall Review",
             "Management Rating",
             "Final Rating",
-            "Management Comments",
             "Created At",
             "Updated At",
         ],
@@ -364,7 +357,7 @@ def build_annual_reviews_sheet(
         full_name, email, func_name, desig_name = _user_meta(r.employee)
         mentor_name = r.mentor.full_name if r.mentor else ""
 
-        ws.cell(row=row, column=1, value=r.user_id)
+        ws.cell(row=row, column=1, value=row - 1)
         ws.cell(row=row, column=2, value=full_name)
         ws.cell(row=row, column=3, value=email)
         ws.cell(row=row, column=4, value=func_name)
@@ -390,15 +383,14 @@ def build_annual_reviews_sheet(
                 else r.mentor_performance_rating
             )
         ws.cell(row=row, column=15, value=final_rating)
-        ws.cell(row=row, column=16, value=r.management_comments or "")
         ws.cell(
             row=row,
-            column=17,
+            column=16,
             value=r.created_at.replace(tzinfo=None) if r.created_at else None,
         )
         ws.cell(
             row=row,
-            column=18,
+            column=17,
             value=r.updated_at.replace(tzinfo=None) if r.updated_at else None,
         )
         row += 1
@@ -434,7 +426,7 @@ def build_project_reviews_sheet(
             "Cycle",
             "FY",
             "Status",
-            "Performance Group",
+            "Rating",
             "Task Execution",
             "Ownership",
             "Project Management",
@@ -545,7 +537,7 @@ def build_projects_sheet(ws: Worksheet, db: Session, org_id: int) -> int:
     _write_header(
         ws,
         [
-            "Project ID",
+            _SR_NO_HEADER,
             "Code",
             "Name",
             "Description",
@@ -588,7 +580,7 @@ def build_projects_sheet(ws: Worksheet, db: Session, org_id: int) -> int:
         ]
         active_members.sort(key=lambda n: n.lower())
 
-        ws.cell(row=row, column=1, value=p.id)
+        ws.cell(row=row, column=1, value=row - 1)
         ws.cell(row=row, column=2, value=p.project_code)
         ws.cell(row=row, column=3, value=p.name)
         ws.cell(row=row, column=4, value=p.description or "")
@@ -642,7 +634,6 @@ def build_profile_sheet(ws: Worksheet, db: Session, user: User) -> int:
     mentor_name = user.mentor.full_name if user.mentor else ""
 
     fields: list[tuple[str, object]] = [
-        ("ID", user.id),
         ("Full Name", user.full_name),
         ("Email", user.email),
         ("Employee Code", user.employee_code),
@@ -687,7 +678,7 @@ def build_project_assignments_sheet(
     _write_header(
         ws,
         [
-            "Assignment ID",
+            _SR_NO_HEADER,
             "Project Name",
             "Project Code",
             "Project Status",
@@ -720,7 +711,7 @@ def build_project_assignments_sheet(
     row = 2
     for a in assignments:
         project = a.project
-        ws.cell(row=row, column=1, value=a.id)
+        ws.cell(row=row, column=1, value=row - 1)
         ws.cell(row=row, column=2, value=project.name if project else "")
         ws.cell(row=row, column=3, value=project.project_code if project else "")
         ws.cell(row=row, column=4, value=project.status if project else "")
