@@ -32,6 +32,8 @@ import { formatFyLabel } from "@/utils/fy";
 const TEXTAREA_CLS =
   "w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-brand resize-none";
 
+const MENTOR_REVIEW_MAX = 10000;
+
 export interface EvalFormProps {
   readonly review: MenteeAnnualReview;
   readonly onSubmit: (
@@ -194,52 +196,64 @@ export function EvalForm({
       </div>
 
       {/* ── Body ── */}
-      <div className="flex-1 overflow-y-auto overflow-x-hidden px-6 py-5 space-y-6">
+      <div className="flex flex-1 flex-col gap-6 overflow-hidden overflow-x-hidden px-6 py-5 min-h-0">
         {error && (
-          <p className="rounded-lg bg-red-50 px-4 py-2.5 text-sm text-red-600">
+          <p className="shrink-0 rounded-lg bg-red-50 px-4 py-2.5 text-sm text-red-600">
             {error}
           </p>
         )}
 
-        <PerformanceRatingSelect
-          id="mentor-rating"
-          label="Overall Rating"
-          value={rating}
-          onChange={setRating}
-        />
+        <div className="shrink-0">
+          <PerformanceRatingSelect
+            id="mentor-rating"
+            label="Overall Rating"
+            value={rating}
+            onChange={setRating}
+          />
+        </div>
 
-        <div className="rounded-lg border border-border overflow-hidden">
+        <div className="shrink-0 rounded-lg border border-border overflow-hidden">
           <div className="bg-slate-50 px-4 py-2 border-b border-border">
             <p className="text-xs font-semibold text-text-main uppercase tracking-wide">
               Employee's Self Review
             </p>
           </div>
-          <div className="p-4">
+          <div className="p-4 max-h-64 overflow-y-auto">
             <p className="text-sm text-text-main whitespace-pre-wrap">
               {review.self_overall_review || "—"}
             </p>
           </div>
         </div>
 
-        <div>
+        <div className="flex flex-1 flex-col min-h-0">
           <label
             htmlFor="mentor-overall-review"
-            className="block text-xs font-semibold text-text-main mb-1"
+            className="block text-xs font-semibold text-text-main mb-1 shrink-0"
           >
             Your Overall Review *
           </label>
-          <p className="text-xs text-text-muted mb-2">
+          <p className="text-xs text-text-muted mb-2 shrink-0">
             Summarise the year for this mentee — strengths, areas for growth,
             and your overall assessment.
           </p>
           <textarea
             id="mentor-overall-review"
-            rows={10}
-            className={TEXTAREA_CLS}
+            maxLength={MENTOR_REVIEW_MAX}
+            className={`${TEXTAREA_CLS} flex-1 min-h-0`}
             value={mentorReview}
             onChange={(e) => setMentorReview(e.target.value)}
             placeholder={`Your evaluation of ${review.employee_name}'s year…`}
           />
+          <div
+            className={`mt-1 shrink-0 text-right text-xs ${
+              mentorReview.length >= MENTOR_REVIEW_MAX
+                ? "text-red-600"
+                : "text-text-muted"
+            }`}
+          >
+            {mentorReview.length.toLocaleString()} /{" "}
+            {MENTOR_REVIEW_MAX.toLocaleString()}
+          </div>
         </div>
       </div>
 

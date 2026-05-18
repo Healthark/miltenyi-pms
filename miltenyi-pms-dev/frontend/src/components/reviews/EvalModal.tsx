@@ -19,7 +19,7 @@ export function EvalModal(props: EvalFormProps) {
       role="dialog"
       aria-modal="true"
     >
-      <div className="w-full max-w-2xl rounded-xl bg-surface shadow-xl max-h-[90vh] flex flex-col">
+      <div className="w-full max-w-2xl rounded-xl bg-surface shadow-xl h-[90vh] flex flex-col">
         <EvalForm {...props} />
       </div>
     </div>,

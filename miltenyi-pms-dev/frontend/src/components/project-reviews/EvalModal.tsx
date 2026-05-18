@@ -48,6 +48,9 @@ const EMPTY_COMMENTS: Record<CompKey, string> = {
 const TEXTAREA_CLS =
   "w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-brand resize-none disabled:bg-slate-50 disabled:text-text-muted disabled:cursor-not-allowed";
 
+const COMPETENCY_COMMENT_MAX = 3000;
+const IMPACT_STATEMENT_MAX = 5000;
+
 interface EvalModalProps {
   readonly card: EvalModalCard;
   readonly expectation: RoleExpectation | null;
@@ -248,12 +251,25 @@ export function EvalModal({
                 <textarea
                   id={`eval-${comp.key}`}
                   rows={4}
+                  maxLength={COMPETENCY_COMMENT_MAX}
                   className={TEXTAREA_CLS}
                   value={comments[comp.key]}
                   onChange={(e) => setComment(comp.key, e.target.value)}
                   placeholder={`Evaluate ${card.employee_name}'s ${comp.label.toLowerCase()}…`}
                   disabled={readOnly}
                 />
+                {!readOnly && (
+                  <div
+                    className={`mt-1 text-right text-xs ${
+                      comments[comp.key].length >= COMPETENCY_COMMENT_MAX
+                        ? "text-red-600"
+                        : "text-text-muted"
+                    }`}
+                  >
+                    {comments[comp.key].length.toLocaleString()} /{" "}
+                    {COMPETENCY_COMMENT_MAX.toLocaleString()}
+                  </div>
+                )}
               </div>
             ))}
             <div>
@@ -266,12 +282,25 @@ export function EvalModal({
               <textarea
                 id="impact"
                 rows={4}
+                maxLength={IMPACT_STATEMENT_MAX}
                 className={TEXTAREA_CLS}
                 value={impactStatement}
                 onChange={(e) => setImpactStatement(e.target.value)}
                 placeholder="Describe overall impact, key achievements, and areas for growth…"
                 disabled={readOnly}
               />
+              {!readOnly && (
+                <div
+                  className={`mt-1 text-right text-xs ${
+                    impactStatement.length >= IMPACT_STATEMENT_MAX
+                      ? "text-red-600"
+                      : "text-text-muted"
+                  }`}
+                >
+                  {impactStatement.length.toLocaleString()} /{" "}
+                  {IMPACT_STATEMENT_MAX.toLocaleString()}
+                </div>
+              )}
             </div>
           </div>
         )}

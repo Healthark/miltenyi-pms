@@ -20,6 +20,8 @@ import { halfDisplayLabel } from "@/utils/goalStatus";
 const INPUT_CLS =
   "w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-brand resize-none";
 
+const SELF_REVIEW_MAX = 5000;
+
 function cycleLabel(
   goal: Goal,
   cycleHalf: SelfReviewCycleHalf,
@@ -115,9 +117,9 @@ export function GoalSelfReviewModal({
       aria-modal="true"
       aria-labelledby="self-review-modal-title"
     >
-      <div className="w-full max-w-2xl rounded-xl bg-surface shadow-xl flex flex-col max-h-[90vh]">
+      <div className="w-full max-w-2xl rounded-xl bg-surface shadow-xl flex flex-col h-[90vh]">
         {/* Header */}
-        <div className="flex items-start justify-between gap-4 border-b border-border px-6 py-4">
+        <div className="flex items-start justify-between gap-4 border-b border-border px-6 py-4 shrink-0">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-light">
               <ClipboardCheck
@@ -146,15 +148,15 @@ export function GoalSelfReviewModal({
         </div>
 
         {/* Body */}
-        <div className="overflow-y-auto px-6 py-5 space-y-4">
+        <div className="flex flex-1 flex-col gap-4 overflow-hidden px-6 py-5 min-h-0">
           {error && (
-            <p className="rounded-lg bg-red-50 px-4 py-2.5 text-sm text-red-600">
+            <p className="shrink-0 rounded-lg bg-red-50 px-4 py-2.5 text-sm text-red-600">
               {error}
             </p>
           )}
 
           {!isLocked && (
-            <p className="text-xs text-text-muted">
+            <p className="shrink-0 text-xs text-text-muted">
               Reflect on your delivery against this goal for{" "}
               <strong>{cycleLabel(goal, cycleHalf)}</strong> in a single
               paragraph. Once submitted, your mentor will review this entry.
@@ -162,41 +164,53 @@ export function GoalSelfReviewModal({
           )}
 
           {readOnly && !existing && (
-            <p className="rounded-lg bg-slate-50 border border-border px-4 py-3 text-sm text-text-muted">
+            <p className="shrink-0 rounded-lg bg-slate-50 border border-border px-4 py-3 text-sm text-text-muted">
               The mentee has not yet submitted their self-review for this half.
             </p>
           )}
 
           {/* Single freeform paragraph */}
           {(isLocked ? existing !== null : true) && (
-            <div>
+            <div className="flex flex-1 flex-col min-h-0">
               <label
                 htmlFor="goal-self-overall"
-                className="block text-xs font-semibold text-text-main mb-1"
+                className="block text-xs font-semibold text-text-main mb-1 shrink-0"
               >
                 Self Review
                 {!isLocked && " *"}
               </label>
               {isLocked ? (
-                <div className="rounded-lg border border-border bg-slate-50 px-3 py-2 text-sm text-text-main whitespace-pre-wrap leading-relaxed">
+                <div className="flex-1 overflow-y-auto rounded-lg border border-border bg-slate-50 px-3 py-2 text-sm text-text-main whitespace-pre-wrap leading-relaxed">
                   {overall || "—"}
                 </div>
               ) : (
-                <textarea
-                  id="goal-self-overall"
-                  rows={10}
-                  className={INPUT_CLS}
-                  value={overall}
-                  onChange={(e) => setOverall(e.target.value)}
-                  placeholder="Reflect on your delivery this half — what you accomplished, the impact, where you grew, and where you'd like further input."
-                />
+                <>
+                  <textarea
+                    id="goal-self-overall"
+                    maxLength={SELF_REVIEW_MAX}
+                    className={`${INPUT_CLS} flex-1 min-h-0`}
+                    value={overall}
+                    onChange={(e) => setOverall(e.target.value)}
+                    placeholder="Reflect on your delivery this half — what you accomplished, the impact, where you grew, and where you'd like further input."
+                  />
+                  <div
+                    className={`mt-1 shrink-0 text-right text-xs ${
+                      overall.length >= SELF_REVIEW_MAX
+                        ? "text-red-600"
+                        : "text-text-muted"
+                    }`}
+                  >
+                    {overall.length.toLocaleString()} /{" "}
+                    {SELF_REVIEW_MAX.toLocaleString()}
+                  </div>
+                </>
               )}
             </div>
           )}
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between gap-3 border-t border-border px-6 py-4">
+        <div className="flex items-center justify-between gap-3 border-t border-border px-6 py-4 shrink-0">
           <p className="text-xs text-text-muted">
             {isLocked
               ? "Self-review is locked once submitted."

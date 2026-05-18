@@ -40,6 +40,8 @@ import { getOwnerRole } from "@/utils/goalOwner";
 const TEXTAREA_CLS =
   "w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-brand resize-none";
 
+const MENTOR_REVIEW_MAX = 5000;
+
 /** Eight competencies shown in the left rail. Order matches the
  *  RoleExpectationsModal on My Goals so a reader who sees both surfaces
  *  builds the same mental map. */
@@ -191,7 +193,7 @@ export function GoalMentorReviewModal({
       aria-modal="true"
       aria-labelledby="mentor-review-modal-title"
     >
-      <div className="w-full max-w-7xl rounded-xl bg-surface shadow-xl flex flex-col max-h-[90vh]">
+      <div className="w-full max-w-7xl rounded-xl bg-surface shadow-xl flex flex-col h-[90vh]">
         {/* ── Header ── */}
         <div className="flex items-start justify-between gap-4 border-b border-border px-6 py-4 shrink-0">
           <div className="flex items-center gap-3">
@@ -282,13 +284,13 @@ export function GoalMentorReviewModal({
                 Mentee Self Review
               </span>
             </div>
-            <div className="overflow-y-auto px-5 py-4">
+            <div className="flex flex-1 flex-col overflow-hidden px-5 py-4 min-h-0">
               {selfReview === null ? (
-                <div className="rounded-lg border border-border bg-slate-50 px-4 py-6 text-center text-sm text-text-muted">
+                <div className="shrink-0 rounded-lg border border-border bg-slate-50 px-4 py-6 text-center text-sm text-text-muted">
                   The mentee has not submitted their self-review for this half yet.
                 </div>
               ) : (
-                <div className="rounded-lg border border-border bg-white px-3 py-2 text-sm text-text-main whitespace-pre-wrap leading-relaxed">
+                <div className="flex-1 overflow-y-auto rounded-lg border border-border bg-white px-3 py-2 text-sm text-text-main whitespace-pre-wrap leading-relaxed">
                   {selfReview.self_overall_review || "—"}
                 </div>
               )}
@@ -308,42 +310,54 @@ export function GoalMentorReviewModal({
                 </span>
               )}
             </div>
-            <div className="overflow-y-auto px-5 py-4 space-y-3">
+            <div className="flex flex-1 flex-col gap-3 overflow-hidden px-5 py-4 min-h-0">
               {error && (
-                <p className="rounded-lg bg-red-50 px-4 py-2.5 text-sm text-red-600">
+                <p className="shrink-0 rounded-lg bg-red-50 px-4 py-2.5 text-sm text-red-600">
                   {error}
                 </p>
               )}
 
               {selfReview === null && !isReadOnly && (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+                <div className="shrink-0 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
                   You can only submit a mentor review once the mentee has
                   submitted their self-review.
                 </div>
               )}
 
               {(selfReview !== null || isReadOnly) && (
-                <div>
+                <div className="flex flex-1 flex-col min-h-0">
                   <label
                     htmlFor="mentor-overall"
-                    className="block text-xs font-semibold text-text-main mb-1"
+                    className="block text-xs font-semibold text-text-main mb-1 shrink-0"
                   >
                     Your Review
                     {!isReadOnly && " *"}
                   </label>
                   {isReadOnly ? (
-                    <div className="rounded-lg border border-border bg-slate-50 px-3 py-2 text-sm text-text-main whitespace-pre-wrap leading-relaxed">
+                    <div className="flex-1 overflow-y-auto rounded-lg border border-border bg-slate-50 px-3 py-2 text-sm text-text-main whitespace-pre-wrap leading-relaxed">
                       {overall || "—"}
                     </div>
                   ) : (
-                    <textarea
-                      id="mentor-overall"
-                      rows={12}
-                      className={TEXTAREA_CLS}
-                      value={overall}
-                      onChange={(e) => setOverall(e.target.value)}
-                      placeholder="Your assessment of the mentee's delivery this half — what was strong, where to grow, and how it ties into the role expectations on the left."
-                    />
+                    <>
+                      <textarea
+                        id="mentor-overall"
+                        maxLength={MENTOR_REVIEW_MAX}
+                        className={`${TEXTAREA_CLS} flex-1 min-h-0`}
+                        value={overall}
+                        onChange={(e) => setOverall(e.target.value)}
+                        placeholder="Your assessment of the mentee's delivery this half — what was strong, where to grow, and how it ties into the role expectations on the left."
+                      />
+                      <div
+                        className={`mt-1 shrink-0 text-right text-xs ${
+                          overall.length >= MENTOR_REVIEW_MAX
+                            ? "text-red-600"
+                            : "text-text-muted"
+                        }`}
+                      >
+                        {overall.length.toLocaleString()} /{" "}
+                        {MENTOR_REVIEW_MAX.toLocaleString()}
+                      </div>
+                    </>
                   )}
                 </div>
               )}
