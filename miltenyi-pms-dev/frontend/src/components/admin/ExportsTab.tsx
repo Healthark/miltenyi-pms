@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { exportService } from "@/services/export.service";
 import { adminService, type UserResponse } from "@/services/admin.service";
+import { useAuth } from "@/hooks/useAuth";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
 import { useToast } from "@/hooks/useToast";
 import { useSnackbar } from "@/hooks/useSnackbar";
@@ -32,7 +33,22 @@ import { StringCombobox } from "@/components/common/StringCombobox";
  *  without overwhelming the picker. */
 const PRIOR_FY_OFFSETS = [0, 1, 2, 3];
 
+// Thin role-gated dispatcher. Branching here (rather than inside the
+// implementation component) keeps each variant's hooks unconditional —
+// hooks must run in the same order on every render, so an early return
+// in the same component above hook calls is a rules-of-hooks violation.
+//
+// Role — not Function/Department — is the gate because Miltenyi org has
+// no "HR" function row to key off.
 export function ExportsTab() {
+  const { user } = useAuth();
+  if (user?.role === "HR_Miltenyi") {
+    return <MiltenyiExportsView />;
+  }
+  return <MyOrgExportsView />;
+}
+
+function MyOrgExportsView() {
   const { settings } = useSystemSettings();
   const toast = useToast();
   const snackbar = useSnackbar();
@@ -358,5 +374,77 @@ function QuickButton({
       )}
       {isExporting ? "Exporting…" : label}
     </button>
+  );
+}
+
+// ── Miltenyi HR variant ──────────────────────────────────────────────
+//
+// Three-sheet workbook (Users / Projects / Project Reviews). Annual
+// goals and annual reviews are intentionally absent — they're out of
+// Miltenyi HR's scope (mirrors the HrDashboard widgets that hide for
+// HR_Miltenyi for the same reason). Backend gate on `/export/miltenyi.xlsx`
+// keys off role == HR_Miltenyi rather than a function/department lookup
+// because Miltenyi org has no "HR" function row.
+
+function MiltenyiExportsView() {
+  const toast = useToast();
+  const snackbar = useSnackbar();
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      await exportService.downloadMiltenyiWorkbook();
+      toast.success("Workbook downloaded.");
+    } catch (err) {
+      snackbar.error(getErrorMessage(err));
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  return (
+    <div className="p-5 space-y-6">
+      <div>
+        <h2 className="font-display text-lg font-semibold text-text-main">
+          Export Workbook
+        </h2>
+        <p className="mt-1 text-sm text-text-muted">
+          Download a single Excel file with three sheets — Users,
+          Projects, and Project Reviews — covering every row you can
+          view. Each download is logged for compliance.
+        </p>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border bg-slate-50/40 px-4 py-3">
+        <div className="flex items-start gap-2 text-sm text-text-muted">
+          <Info className="h-4 w-4 mt-0.5 shrink-0" aria-hidden="true" />
+          <div>
+            <p>
+              Scope:{" "}
+              <span className="font-medium text-text-main">All time</span>
+            </p>
+            <p className="mt-0.5 text-[12px]">
+              Users sheet is the full directory (active + deactivated).
+              Projects and Project Reviews include every record across
+              all fiscal years.
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={handleExport}
+          disabled={isExporting}
+          className="flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50 transition-opacity shrink-0"
+        >
+          {isExporting ? (
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+          ) : (
+            <Download className="h-4 w-4" aria-hidden="true" />
+          )}
+          {isExporting ? "Exporting…" : "Export Workbook (.xlsx)"}
+        </button>
+      </div>
+    </div>
   );
 }

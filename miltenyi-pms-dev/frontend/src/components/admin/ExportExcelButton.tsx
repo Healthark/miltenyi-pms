@@ -1,10 +1,16 @@
 /**
  * ExportExcelButton — small toolbar button that downloads one of the
- * four single-sheet HR exports.
+ * single-sheet HR exports.
  *
- * The button auto-hides for non-HR_MyOrg users so callers don't have
- * to repeat the role gate in every toolbar. Toast + snackbar feedback
- * mirrors the rest of the admin surfaces.
+ * The button auto-hides based on the caller's role so callers don't have
+ * to repeat the gate in every toolbar:
+ *   HR_MyOrg     — visible for every kind
+ *   HR_Miltenyi  — visible for `users`, `projects`, and `project-reviews`
+ *                  (the surfaces in their scope); annual goals and annual
+ *                  reviews remain HR_MyOrg-only
+ *   anyone else  — hidden
+ *
+ * Toast + snackbar feedback mirrors the rest of the admin surfaces.
  */
 
 import { useState } from "react";
@@ -30,9 +36,22 @@ export function ExportExcelButton({
   const snackbar = useSnackbar();
   const [isExporting, setIsExporting] = useState(false);
 
-  // Backend already 403s for non-HR_MyOrg; hide the button so the UI
-  // doesn't dangle a feature the user can't actually use.
-  if (user?.role !== "HR_MyOrg") return null;
+  // HR_MyOrg sees the button on every kind. HR_Miltenyi sees it on the
+  // kinds within their scope: users + projects (Admin tabs) and
+  // project-reviews (Project Reviews page). Annual goals and annual
+  // reviews stay HR_MyOrg-only since those flows are out of Miltenyi
+  // HR's scope. Role — not Function/Department — is the gate because
+  // Miltenyi org has no "HR" function row to key off.
+  const role = user?.role;
+  const miltenyiAllowedKinds: ReadonlySet<ExportKind> = new Set([
+    "users",
+    "projects",
+    "project-reviews",
+  ]);
+  const canExport =
+    role === "HR_MyOrg" ||
+    (role === "HR_Miltenyi" && miltenyiAllowedKinds.has(kind));
+  if (!canExport) return null;
 
   const handleClick = async () => {
     setIsExporting(true);

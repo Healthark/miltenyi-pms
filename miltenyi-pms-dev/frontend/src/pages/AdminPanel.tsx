@@ -42,8 +42,16 @@ export default function AdminPanel() {
   const projectsTabRef = useRef<ProjectsTabHandle>(null);
 
   const { user } = useAuth();
-  // Exports tab is HR_MyOrg-only (same backend gate as /export/*.xlsx).
-  const canSeeExports = user?.role === "HR_MyOrg";
+  // Exports tab is open to both HR roles. The tab body branches on role
+  // internally: HR_MyOrg gets the full Exports surface (combined workbook
+  // + per-employee + per-sheet quick downloads); HR_Miltenyi gets a
+  // stripped-down view with just the Miltenyi-scoped workbook (users +
+  // projects + project reviews — annual goals/reviews are out of scope).
+  //
+  // Role — not Function/Department — is the access check because Miltenyi
+  // org has no "HR" function row to key off.
+  const canSeeExports =
+    user?.role === "HR_MyOrg" || user?.role === "HR_Miltenyi";
 
   // ── Server state ──────────────────────────────────────────────────────────
   // Four independent queries that fire in parallel on mount. Each owns

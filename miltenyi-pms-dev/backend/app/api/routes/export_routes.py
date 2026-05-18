@@ -34,10 +34,10 @@ from openpyxl import Workbook
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import CurrentUser
-from app.api.routes.admin_routes import _require_hr_myorg
+from app.api.routes.admin_routes import _require_hr_any, _require_hr_myorg
 from app.core.database import get_db
 from app.models.export_audit_log_models import ExportAuditLog
-from app.models.user_models import User
+from app.models.user_models import Role, User
 from app.services.exporters import (
     build_annual_reviews_sheet,
     build_goals_sheet,
@@ -59,6 +59,21 @@ _XLSX_MIME = (
 
 
 # ── Helpers ───────────────────────────────────────────────────────────
+
+def _require_hr_miltenyi(current_user: User) -> None:
+    """Raise 403 unless the caller is HR_Miltenyi.
+
+    Miltenyi org has no "HR" Function/Department row, so authorization
+    here keys off the user's role rather than a function lookup. Kept
+    separate from `_require_hr_myorg` because the two HR roles have
+    different export scopes (Miltenyi sees only users/projects/project
+    reviews; the in-house HR gets the fuller annual-review workbook)."""
+    if current_user.role != Role.HR_MILTENYI.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the Miltenyi HR can access this resource.",
+        )
+
 
 def _parse_fy_filter(fy: Optional[str]) -> Optional[set[int]]:
     """Parse the `?fy=2025,2026` query param into a set of 4-digit years.
@@ -149,8 +164,13 @@ def _log_export(
 
 @router.get("/users.xlsx")
 def export_users(db: DbSession, current_user: CurrentUser):
-    """Full user directory snapshot (active + deactivated)."""
-    _require_hr_myorg(current_user)
+    """Full user directory snapshot (active + deactivated).
+
+    Open to both HR roles — HR_Miltenyi uses this from the per-tab button
+    in Admin → Users. The query is already org-scoped on
+    `current_user.org_id`, so HR_Miltenyi can never see another org's
+    directory."""
+    _require_hr_any(current_user)
     wb = Workbook()
     rows = build_users_sheet(wb.active, db, current_user.org_id)
     _log_export(db, current_user.id, "users", rows, None)
@@ -179,8 +199,13 @@ def export_annual_reviews(db: DbSession, current_user: CurrentUser):
 
 @router.get("/project-reviews.xlsx")
 def export_project_reviews(db: DbSession, current_user: CurrentUser):
-    """Every project review (PM + secondary evaluators) per assignment × cycle."""
-    _require_hr_myorg(current_user)
+    """Every project review (PM + secondary evaluators) per assignment × cycle.
+
+    Open to both HR roles — project reviews are in Miltenyi HR's scope
+    (the dashboard surfaces the ProjectReviewCompletionCard for them).
+    Org-scoped on `current_user.org_id`, so HR_Miltenyi only ever sees
+    their own org's reviews."""
+    _require_hr_any(current_user)
     wb = Workbook()
     rows = build_project_reviews_sheet(wb.active, db, current_user.org_id)
     _log_export(db, current_user.id, "project_reviews", rows, None)
@@ -190,8 +215,12 @@ def export_project_reviews(db: DbSession, current_user: CurrentUser):
 @router.get("/projects.xlsx")
 def export_projects(db: DbSession, current_user: CurrentUser):
     """Every project (active + completed; excluding hard-deleted) with PM,
-    secondary evaluator, lifecycle dates, and active team roster."""
-    _require_hr_myorg(current_user)
+    secondary evaluator, lifecycle dates, and active team roster.
+
+    Open to both HR roles — HR_Miltenyi uses this from the per-tab button
+    in Admin → Projects. Org-scoped on `current_user.org_id`, so
+    HR_Miltenyi only ever sees their own org's projects."""
+    _require_hr_any(current_user)
     wb = Workbook()
     rows = build_projects_sheet(wb.active, db, current_user.org_id)
     _log_export(db, current_user.id, "projects", rows, None)
@@ -249,6 +278,43 @@ def export_all(
     _log_export(db, current_user.id, "combined", total, fy_filter)
 
     return _workbook_to_response(wb, _filename_for("workbook", fy_filter))
+
+
+# ── Miltenyi HR combined workbook ─────────────────────────────────────
+
+@router.get("/miltenyi.xlsx")
+def export_miltenyi(db: DbSession, current_user: CurrentUser):
+    """Three-sheet workbook (Users / Projects / Project Reviews) scoped
+    for Miltenyi HR.
+
+    Annual goals and annual reviews are intentionally omitted — Miltenyi
+    HR's scope excludes those flows (see HrDashboard.tsx and
+    annual_review_routes.py: "Miltenyi HR has no business in annual
+    reviews"), so leaving them out of the export keeps the workbook to
+    only the data Miltenyi HR actually uses.
+    """
+    _require_hr_miltenyi(current_user)
+
+    wb = Workbook()
+    users_ws = wb.active
+    users_rows = build_users_sheet(users_ws, db, current_user.org_id)
+
+    projects_ws = wb.create_sheet("Projects")
+    projects_rows = build_projects_sheet(
+        projects_ws, db, current_user.org_id
+    )
+
+    project_reviews_ws = wb.create_sheet("Project Reviews")
+    project_reviews_rows = build_project_reviews_sheet(
+        project_reviews_ws, db, current_user.org_id
+    )
+
+    total = users_rows + projects_rows + project_reviews_rows
+    _log_export(db, current_user.id, "miltenyi_combined", total, None)
+
+    return _workbook_to_response(
+        wb, _filename_for("miltenyi-workbook", None)
+    )
 
 
 # ── Per-employee bundle ───────────────────────────────────────────────

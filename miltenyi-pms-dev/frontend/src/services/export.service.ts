@@ -78,6 +78,21 @@ export const exportService = {
     triggerDownload(res.data as Blob, filename);
   },
 
+  /** Download the Miltenyi HR workbook — three sheets (Users, Projects,
+   *  Project Reviews). Annual goals / annual reviews are intentionally
+   *  excluded since Miltenyi HR's scope doesn't include those flows.
+   *  Backend gates the endpoint on role == HR_Miltenyi. */
+  async downloadMiltenyiWorkbook(): Promise<void> {
+    const res = await apiClient.get(`/export/miltenyi.xlsx`, {
+      responseType: "blob",
+    });
+    const filename = filenameFromResponse(
+      res,
+      `pms-miltenyi-workbook.xlsx`,
+    );
+    triggerDownload(res.data as Blob, filename);
+  },
+
   /** Download a single employee's complete record — five sheets covering
    *  profile, goals, annual reviews, project assignments, project reviews. */
   async downloadEmployee(userId: number): Promise<void> {
