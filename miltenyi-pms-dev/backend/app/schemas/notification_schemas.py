@@ -25,10 +25,20 @@ class NotificationItem(BaseModel):
 
 
 class UserNotificationItem(BaseModel):
-    """A direct mentor-to-mentee notification created via the Notify button."""
+    """A direct user-to-user notification row (polymorphic across modules).
+
+    `goal_id` is retained as an optional back-compat field for clients
+    that haven't shipped the generalized shape yet. New module rows
+    populate `module` / `entity_type` / `entity_id` / `entity_url`
+    instead; `goal_id` stays NULL for them.
+    """
     id: int
     message: str
-    goal_id: int
+    goal_id: Optional[int] = None
+    module: Optional[str] = None
+    entity_type: Optional[str] = None
+    entity_id: Optional[int] = None
+    entity_url: Optional[str] = None
     created_at: datetime
     is_read: bool
 

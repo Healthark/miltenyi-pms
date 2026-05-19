@@ -1,6 +1,17 @@
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { AlertTriangle, Info, CheckCircle, BellDot } from "lucide-react";
+import {
+  AlertTriangle,
+  Info,
+  CheckCircle,
+  BellDot,
+  Target,
+  ClipboardCheck,
+  Briefcase,
+  FolderKanban,
+  UserCog,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import type { NotificationItem, UserNotificationItem } from "@/services/notification.service";
 
 interface NotificationDropdownProps {
@@ -27,6 +38,17 @@ const SEVERITY_STYLES: Record<
     iconClass: "text-red-500",
     bgClass: "bg-red-50",
   },
+};
+
+// Per-module icon. Keyed on the `module` value the backend writes
+// (notification_service._MODULE_URL). Unknown / missing modules fall
+// back to the generic bell icon.
+const MODULE_ICONS: Record<string, LucideIcon> = {
+  goal: Target,
+  annual_review: ClipboardCheck,
+  project_review: Briefcase,
+  project: FolderKanban,
+  admin: UserCog,
 };
 
 export function NotificationDropdown({
@@ -111,19 +133,33 @@ export function NotificationDropdown({
               </li>
             );
           })}
-          {/* Direct user notifications from mentor Notify button */}
-          {userNotifications.map((n) => (
-            <li
-              key={n.id}
-              className={`flex items-start gap-3 px-4 py-3 ${n.is_read ? "bg-white" : "bg-blue-50"}`}
-            >
-              <BellDot
-                className={`h-4 w-4 mt-0.5 shrink-0 ${n.is_read ? "text-text-muted" : "text-blue-500"}`}
-                aria-hidden="true"
-              />
-              <p className="text-sm text-text-main">{n.message}</p>
-            </li>
-          ))}
+          {/* Direct user notifications — polymorphic across modules */}
+          {userNotifications.map((n) => {
+            const Icon = (n.module && MODULE_ICONS[n.module]) || BellDot;
+            const row = (
+              <li
+                className={`flex items-start gap-3 px-4 py-3 ${n.is_read ? "bg-white" : "bg-blue-50"}`}
+              >
+                <Icon
+                  className={`h-4 w-4 mt-0.5 shrink-0 ${n.is_read ? "text-text-muted" : "text-blue-500"}`}
+                  aria-hidden="true"
+                />
+                <p className="text-sm text-text-main">{n.message}</p>
+              </li>
+            );
+            return n.entity_url ? (
+              <a
+                key={n.id}
+                href={n.entity_url}
+                onClick={onClose}
+                className="block hover:bg-slate-50"
+              >
+                {row}
+              </a>
+            ) : (
+              <div key={n.id}>{row}</div>
+            );
+          })}
         </ul>
       )}
     </div>,

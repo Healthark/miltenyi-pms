@@ -23,12 +23,13 @@ Security Layers Applied:
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from typing import List, Literal, Optional
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
 from sqlalchemy import or_
 from sqlalchemy.orm import aliased, joinedload
 
 from app.api.dependencies import DbSession, CurrentUser
 from app.models.goal_models import Goal, ApprovalStatus, GoalType, POST_APPROVAL_STATES
+from app.services.notification_service import notify
 from app.models.goal_criteria_models import GoalCriterion
 from app.models.goal_self_review_models import GoalSelfReview, SelfReviewCycleHalf
 from app.models.goal_mentor_review_models import GoalMentorReview
@@ -868,6 +869,7 @@ def submit_goal(
     goal_id: int,
     db: DbSession,
     current_user: CurrentUser,
+    background_tasks: BackgroundTasks,
 ):
     """
     Move a goal from DRAFT → SUBMITTED.
@@ -906,6 +908,23 @@ def submit_goal(
 
     goal.approval_status = ApprovalStatus.PENDING_APPROVAL.value
     db.commit()
+
+    notify(
+        db,
+        org_id=current_user.org_id,
+        recipient_id=goal_owner.mentor_id,
+        sender_id=current_user.id,
+        module="goal",
+        entity_type="goal",
+        entity_id=goal.id,
+        message=f"{goal_owner.full_name} submitted a goal for your approval.",
+        entity_url=f"/annual-goals?goal_id={goal.id}",
+        background_tasks=background_tasks,
+        send_email=True,
+        email_subject="A goal is awaiting your approval",
+    )
+    db.commit()
+
     return _get_goal_with_relations(db, goal.id, current_user.org_id)
 
 
@@ -915,6 +934,7 @@ def approve_goal(
     approval_in: GoalApprovalUpdate,
     db: DbSession,
     current_user: CurrentUser,
+    background_tasks: BackgroundTasks,
 ):
     """
     Mentor/Admin approves or rejects a submitted goal.
@@ -961,6 +981,49 @@ def approve_goal(
         goal.approved_at = datetime.now(timezone.utc)
 
     db.commit()
+
+    if approval_in.approval_status == ApprovalStatus.APPROVED:
+        notify(
+            db,
+            org_id=current_user.org_id,
+            recipient_id=goal.user_id,
+            sender_id=current_user.id,
+            module="goal",
+            entity_type="goal",
+            entity_id=goal.id,
+            message="Your goal was approved.",
+            entity_url=f"/annual-goals?goal_id={goal.id}",
+            background_tasks=background_tasks,
+            send_email=True,
+            email_subject="Your goal was approved",
+        )
+    else:
+        # CHANGES_REQUESTED — include a feedback snippet so the recipient
+        # knows what to act on without opening the goal first.
+        feedback_snippet = (approval_in.feedback or "").strip()
+        if len(feedback_snippet) > 200:
+            feedback_snippet = feedback_snippet[:200] + "…"
+        message = (
+            f"Changes requested on your goal: {feedback_snippet}"
+            if feedback_snippet
+            else "Your mentor requested changes on your goal."
+        )
+        notify(
+            db,
+            org_id=current_user.org_id,
+            recipient_id=goal.user_id,
+            sender_id=current_user.id,
+            module="goal",
+            entity_type="goal",
+            entity_id=goal.id,
+            message=message,
+            entity_url=f"/annual-goals?goal_id={goal.id}",
+            background_tasks=background_tasks,
+            send_email=True,
+            email_subject="Changes requested on your goal",
+        )
+    db.commit()
+
     return _get_goal_with_relations(db, goal.id, current_user.org_id)
 
 
@@ -969,6 +1032,7 @@ def bulk_approve_goals(
     payload: GoalBulkApproveRequest,
     db: DbSession,
     current_user: CurrentUser,
+    background_tasks: BackgroundTasks,
 ):
     """
     Mentor-side bulk approval. Loads the requested goals (org-scoped),
@@ -1030,6 +1094,30 @@ def bulk_approve_goals(
         approved_ids.append(goal_id)
 
     db.commit()
+
+    # One notification per approved goal (recipient = goal owner). We don't
+    # coalesce per-recipient at the model layer; if a mentee gets 5 goals
+    # approved at once they see 5 rows, which mirrors the lifecycle truth.
+    # The frontend can group on render later if it gets noisy.
+    for goal_id in approved_ids:
+        goal = by_id[goal_id]
+        notify(
+            db,
+            org_id=current_user.org_id,
+            recipient_id=goal.user_id,
+            sender_id=current_user.id,
+            module="goal",
+            entity_type="goal",
+            entity_id=goal.id,
+            message="Your goal was approved.",
+            entity_url=f"/annual-goals?goal_id={goal.id}",
+            background_tasks=background_tasks,
+            send_email=True,
+            email_subject="Your goal was approved",
+        )
+    if approved_ids:
+        db.commit()
+
     return GoalBulkApproveResult(approved_ids=approved_ids, failures=failures)
 
 
@@ -1134,6 +1222,25 @@ def submit_goal_self_review(
     # Advance the goal's lifecycle state.
     goal.approval_status = _self_reviewed_state(half)
     db.commit()
+
+    # Owner is the sender; mentor is the recipient. In-app only — email
+    # for every half-cycle self-review across a mentor's whole team would
+    # be too noisy.
+    owner = db.query(User).filter(User.id == goal.user_id).first()
+    if owner and owner.mentor_id:
+        notify(
+            db,
+            org_id=current_user.org_id,
+            recipient_id=owner.mentor_id,
+            sender_id=current_user.id,
+            module="goal",
+            entity_type="goal",
+            entity_id=goal.id,
+            message=f"{owner.full_name} submitted a {half} self-review.",
+            entity_url=f"/annual-goals?goal_id={goal.id}",
+        )
+        db.commit()
+
     return _get_goal_with_relations(db, goal.id, current_user.org_id)
 
 
@@ -1330,6 +1437,23 @@ def submit_goal_mentor_review(
     # Advance the goal's lifecycle state.
     goal.approval_status = _mentor_reviewed_state(half)
     db.commit()
+
+    # Mentor is the sender; mentee is the recipient. In-app only —
+    # mentor reviews land alongside the existing in-product review
+    # surface; an email per goal per half would be too chatty.
+    notify(
+        db,
+        org_id=current_user.org_id,
+        recipient_id=goal.user_id,
+        sender_id=current_user.id,
+        module="goal",
+        entity_type="goal",
+        entity_id=goal.id,
+        message=f"Your mentor submitted their {half} review.",
+        entity_url=f"/annual-goals?goal_id={goal.id}",
+    )
+    db.commit()
+
     return _get_goal_with_relations(db, goal.id, current_user.org_id)
 
 

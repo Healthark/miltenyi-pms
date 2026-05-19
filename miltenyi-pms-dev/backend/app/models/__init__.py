@@ -8,7 +8,7 @@ from app.models.system_settings_year_override_models import SystemSettingsYearOv
 from app.models.goal_criteria_models import GoalCriterion
 from app.models.goal_self_review_models import GoalSelfReview, SelfReviewCycleHalf
 from app.models.goal_mentor_review_models import GoalMentorReview
-from app.models.goal_notification_models import GoalNotification
+from app.models.notification_models import Notification
 from app.models.annual_review_models import AnnualReview
 from app.models.project_models import Project, ProjectAssignment
 from app.models.project_review_models import ProjectReview, ProjectReviewEvaluator
