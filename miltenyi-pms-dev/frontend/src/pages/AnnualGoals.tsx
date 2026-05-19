@@ -635,7 +635,7 @@ export function AnnualGoals() {
     ? "View-only access to every annual goal across the org."
     : isMentor
       ? "Review and evaluate your team's annual goals."
-      : "Define and track your annual objectives for mentor approval.";
+      : "Define your annual objectives for this year.";
 
   return (
     <div className="space-y-6">

@@ -140,6 +140,11 @@ export function UsersTab({
   const visibleUsers = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     const filtered = users.filter((u) => {
+      // Viewer-role scope: HR_Miltenyi never sees Healthark's Mentor or
+      // HR_MyOrg rows in the table. The full `users` array stays intact
+      // so the Mentor column's name lookup (and the sort comparator)
+      // still resolves names of those hidden mentors.
+      if (isViewerMiltenyiHR && PROTECTED_ROLES.has(u.role)) return false;
       if (q) {
         const matchesSearch =
           u.full_name.toLowerCase().includes(q) ||
@@ -165,7 +170,17 @@ export function UsersTab({
     return filtered.slice().sort((a, b) =>
       compareValues(get(a, users), get(b, users), kind, sort.direction),
     );
-  }, [users, searchQuery, roleFilter, statusFilter, functionFilter, designationFilter, mentorFilter, sort]);
+  }, [users, searchQuery, roleFilter, statusFilter, functionFilter, designationFilter, mentorFilter, sort, isViewerMiltenyiHR]);
+
+  // Role-filter dropdown: HR_Miltenyi never sees Mentor or HR_MyOrg
+  // options (those buckets would always read zero for them).
+  const visibleRoleOptions = useMemo(
+    () =>
+      isViewerMiltenyiHR
+        ? ROLE_OPTIONS.filter((o) => !PROTECTED_ROLES.has(o.value))
+        : ROLE_OPTIONS,
+    [isViewerMiltenyiHR],
+  );
 
   return (
     <div className="p-5 flex flex-col gap-4">
@@ -193,7 +208,7 @@ export function UsersTab({
             onChange={(e) => setRoleFilter(e.target.value as RoleFilter)}
             className={`${FILTER_SELECT_CLS} min-w-[140px]`}
           >
-            {ROLE_OPTIONS.map((o) => (
+            {visibleRoleOptions.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
@@ -289,17 +304,17 @@ export function UsersTab({
                 <th className="px-5 py-3">
                   <SortableHeader label="Role" columnKey="role" sort={sort} onSort={setSort} />
                 </th>
-                <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-text-muted">
-                  Phone
-                </th>
-                <th className="px-5 py-3">
-                  <SortableHeader label="Mentor" columnKey="mentor_name" sort={sort} onSort={setSort} />
-                </th>
                 <th className="px-5 py-3">
                   <SortableHeader label="Function" columnKey="function_name" sort={sort} onSort={setSort} />
                 </th>
                 <th className="px-5 py-3">
                   <SortableHeader label="Designation" columnKey="designation_name" sort={sort} onSort={setSort} />
+                </th>
+                <th className="px-5 py-3">
+                  <SortableHeader label="Mentor" columnKey="mentor_name" sort={sort} onSort={setSort} />
+                </th>
+                <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-text-muted">
+                  Phone
                 </th>
                 <th className="px-5 py-3">
                   <SortableHeader label="Status" columnKey="status" sort={sort} onSort={setSort} />
@@ -342,16 +357,16 @@ export function UsersTab({
                         <RoleBadge role={user.role} />
                       </td>
                       <td className="px-5 py-3.5 text-text-muted">
-                        {user.phone ?? "—"}
+                        {user.function?.name ?? "—"}
+                      </td>
+                      <td className="px-5 py-3.5 text-text-muted">
+                        {user.designation?.name ?? "—"}
                       </td>
                       <td className="px-5 py-3.5 text-text-muted">
                         {users.find((u) => u.id === user.mentor_id)?.full_name ?? "—"}
                       </td>
                       <td className="px-5 py-3.5 text-text-muted">
-                        {user.function?.name ?? "—"}
-                      </td>
-                      <td className="px-5 py-3.5 text-text-muted">
-                        {user.designation?.name ?? "—"}
+                        {user.phone ?? "—"}
                       </td>
                       <td className="px-5 py-3.5">
                         <StatusBadge isDeleted={user.is_deleted} />

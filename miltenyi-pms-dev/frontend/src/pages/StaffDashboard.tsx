@@ -27,12 +27,14 @@ import { queryKeys } from "@/lib/queryKeys";
 import { useAuth } from "@/hooks/useAuth";
 import { useSnackbar } from "@/hooks/useSnackbar";
 import { dashboardService } from "@/services/dashboard.service";
+import { profileService } from "@/services/profile.service";
 import { getErrorMessage } from "@/utils/errors";
 import { ActionItemsWidget } from "@/components/dashboard/ActionItemsWidget";
-import { ActiveCycleWidget } from "@/components/dashboard/ActiveCycleWidget";
+import { ActiveCyclesCard } from "@/components/dashboard/ActiveCyclesCard";
 import { DashboardAlerts } from "@/components/dashboard/DashboardAlerts";
 import { GoalsWidget } from "@/components/dashboard/GoalsWidget";
 import { MyAnnualReviewWidget } from "@/components/dashboard/MyAnnualReviewWidget";
+import { MyMentorWidget } from "@/components/dashboard/MyMentorWidget";
 
 export function StaffDashboard() {
   const { user } = useAuth();
@@ -53,12 +55,26 @@ export function StaffDashboard() {
     queryFn: dashboardService.getSummary,
   });
 
+  // Mentor info — fetched only when the caller has a mentor. CEO /
+  // founders return `has_mentor: false` in the session claims so we
+  // skip the request entirely for them (saves a round-trip plus avoids
+  // a "No mentor assigned" card flickering before data lands).
+  const { data: profile, error: profileError } = useQuery({
+    queryKey: queryKeys.profile.me(),
+    queryFn: profileService.getProfile,
+    enabled: user?.has_mentor === true,
+  });
+
   // Surface fetch errors through the existing snackbar pattern. Kept as
   // a separate effect rather than inlined into the queryFn so the
   // snackbar stays out of the cache layer's concerns.
   useEffect(() => {
     if (error) snackbar.error(getErrorMessage(error));
   }, [error, snackbar]);
+
+  useEffect(() => {
+    if (profileError) snackbar.error(getErrorMessage(profileError));
+  }, [profileError, snackbar]);
 
   const firstName = user?.full_name?.split(" ")[0] ?? "there";
 
@@ -78,27 +94,27 @@ export function StaffDashboard() {
         </p>
       </div>
 
-      {/* Row 1: Active Project Cycle | Active Goal Cycle — anchors at top */}
+      {/* Row 1: My Mentor (left) | Active Cycles (right). Both
+          half-width on md+, stacked on mobile. My Mentor only
+          renders for users with a mentor on file (CEO / founders
+          skip it). When no mentor, Active Cycles spans the full row
+          so it doesn't sit half-empty. */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        {summary ? (
-          <ActiveCycleWidget
-            activeCycle={summary.active_cycle}
-            variant="project"
-          />
-        ) : (
-          <CardSkeleton />
+        {user?.has_mentor === true && (
+          <MyMentorWidget profile={profile ?? null} />
         )}
         {summary ? (
-          <ActiveCycleWidget
-            activeCycle={summary.active_cycle}
-            variant="goal"
-          />
+          <div
+            className={user?.has_mentor === true ? "" : "md:col-span-2"}
+          >
+            <ActiveCyclesCard activeCycle={summary.active_cycle} />
+          </div>
         ) : (
           <CardSkeleton />
         )}
       </div>
 
-      {/* Row 2: Annual Goals (funnel + completion) | Annual Review */}
+      {/* Row 3: Annual Goals (funnel + completion) | Annual Review */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         {summary ? <GoalsWidget summary={summary} /> : <CardSkeleton />}
         {summary ? (
@@ -108,7 +124,7 @@ export function StaffDashboard() {
         )}
       </div>
 
-      {/* Row 3: full-width Action Items — the personal queue */}
+      {/* Row 4: full-width Action Items — the personal queue */}
       {summary ? <ActionItemsWidget summary={summary} /> : <CardSkeleton />}
     </div>
   );

@@ -351,7 +351,7 @@ export function ProjectReviews() {
           ? "View your mentees' project reviews across cycles."
           : activeTab === "all-reviews"
             ? "View-only access to every project review across the org."
-            : "Track your project review status across cycles.";
+            : "Track your project reviews across cycles.";
 
   return (
     <div className="flex flex-col gap-6 pb-10 animate-in fade-in duration-500">
@@ -1098,7 +1098,7 @@ function renderMyReviewsBody(args: {
           No projects assigned
         </p>
         <p className="mt-1 text-sm text-text-muted">
-          You'll see your project evaluations here once HR assigns them.
+          You'll see your projects here once they are assigned.
         </p>
       </div>
     );

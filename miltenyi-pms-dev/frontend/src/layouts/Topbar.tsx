@@ -146,9 +146,25 @@ export function Topbar() {
 // ── Cycle Badge ─────────────────────────────────────────────────────
 
 /**
- * Project cycle badge — single source of truth is
+ * Cycle badges — single source of truth is
  * `SystemSettings.active_cycle_name` (set by HR).
+ *
+ * Two pills:
+ *   1. Project review cycle ("Project · Q2 FY26-27") — the raw cycle.
+ *   2. Financial year ("FY26-27") — derived by scraping the FYxx-yy
+ *      substring out of the cycle name. We keep the parsing local
+ *      because every active cycle string carries the FY in this format
+ *      ("Q2 FY26-27", "H1 FY26-27", or just "FY26-27" for annual-only
+ *      orgs), so no extra fetch or context wiring is needed.
  */
+const FY_LABEL_PATTERN = /FY\d{2}-\d{2}/;
+
+function extractFyLabel(cycleName: string | null): string | null {
+  if (!cycleName) return null;
+  const match = cycleName.match(FY_LABEL_PATTERN);
+  return match ? match[0] : null;
+}
+
 function CycleBadges({
   settingsLoading,
   activeCycleName,
@@ -166,8 +182,19 @@ function CycleBadges({
     );
   }
 
+  const fyLabel = extractFyLabel(activeCycleName);
+
   return (
     <div className="flex items-center gap-2">
+      {fyLabel && (
+        <span
+          className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-border bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-800"
+          title="Current financial year"
+        >
+          <CalendarDays className="h-3 w-3 text-amber-700" aria-hidden="true" />
+          {fyLabel}
+        </span>
+      )}
       {activeCycleName && (
         <span
           className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-border bg-brand-light px-2.5 py-0.5 text-xs font-medium text-brand-accent"

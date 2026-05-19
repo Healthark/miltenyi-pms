@@ -156,32 +156,49 @@ export function UserModal({
             </p>
           )}
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label htmlFor="emp-code" className={LABEL_CLS}>
-                Employee Code *
-              </label>
-              <input
-                id="emp-code"
-                className={INPUT_CLS}
-                value={form.employee_code}
-                onChange={(e) => set("employee_code", e.target.value)}
-                placeholder="EMP-003"
-              />
-            </div>
-            <div>
-              <label htmlFor="full-name" className={LABEL_CLS}>
-                Full Name *
-              </label>
-              <input
-                id="full-name"
-                className={INPUT_CLS}
-                value={form.full_name}
-                onChange={(e) => set("full_name", e.target.value)}
-                placeholder="Jane Smith"
-              />
-            </div>
-          </div>
+          {/* Identity fields (employee_code + full_name) are locked
+              when HR_Miltenyi is editing an existing Staff row. Healthark
+              HR owns those columns for Staff users; mirrors the backend's
+              403 guard in admin_routes.update_user. The lock checks the
+              ORIGINAL role (editingUser.role) so it stays consistent
+              even if the user changes the role dropdown mid-edit. */}
+          {(() => {
+            const isStaffIdentityLocked =
+              isViewerMiltenyiHR &&
+              isEditing &&
+              editingUser?.role === "Staff";
+            const lockedInputCls = `${INPUT_CLS} ${isStaffIdentityLocked ? "cursor-not-allowed opacity-50" : ""}`;
+            return (
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="emp-code" className={LABEL_CLS}>
+                    Employee Code *
+                  </label>
+                  <input
+                    id="emp-code"
+                    className={lockedInputCls}
+                    value={form.employee_code}
+                    onChange={(e) => set("employee_code", e.target.value)}
+                    placeholder="EMP-003"
+                    readOnly={isStaffIdentityLocked}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="full-name" className={LABEL_CLS}>
+                    Full Name *
+                  </label>
+                  <input
+                    id="full-name"
+                    className={lockedInputCls}
+                    value={form.full_name}
+                    onChange={(e) => set("full_name", e.target.value)}
+                    placeholder="Jane Smith"
+                    readOnly={isStaffIdentityLocked}
+                  />
+                </div>
+              </div>
+            );
+          })()}
 
           <div>
             <label htmlFor="email" className={LABEL_CLS}>
@@ -284,19 +301,25 @@ export function UserModal({
             </div>
           </div>
 
-          <UserCombobox
-            users={managers}
-            value={form.mentor_id ? Number(form.mentor_id) : null}
-            onChange={(id) => set("mentor_id", id !== null ? String(id) : "")}
-            label="Assigned Mentor / Line Manager"
-            placeholder={
-              form.role === "Staff"
-                ? "Search by name, email, or role…"
-                : "Only Staff can be assigned a mentor"
-            }
-            disabled={form.role !== "Staff"}
-            excludeIds={editingUser ? [editingUser.id] : undefined}
-          />
+          {/* Mentor assignment is hidden from HR_Miltenyi viewers — that
+              workflow belongs to HR_MyOrg (Healthark). For HR_Miltenyi
+              the form just leaves `mentor_id` untouched, so the existing
+              mentor_id on edited rows is preserved through the save. */}
+          {!isViewerMiltenyiHR && (
+            <UserCombobox
+              users={managers}
+              value={form.mentor_id ? Number(form.mentor_id) : null}
+              onChange={(id) => set("mentor_id", id !== null ? String(id) : "")}
+              label="Assigned Mentor"
+              placeholder={
+                form.role === "Staff"
+                  ? "Search by name, email, or role…"
+                  : "Only Staff can be assigned a mentor"
+              }
+              disabled={form.role !== "Staff"}
+              excludeIds={editingUser ? [editingUser.id] : undefined}
+            />
+          )}
 
           {!isEditing && (
             <div>

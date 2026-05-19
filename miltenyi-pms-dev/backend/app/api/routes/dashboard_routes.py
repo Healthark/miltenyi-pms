@@ -294,15 +294,24 @@ def get_hr_dashboard_summary(
     # Single GROUP BY scoped to the caller's org, skipping soft-deleted
     # rows. Roles outside the 5-value taxonomy (shouldn't exist but cheap
     # to guard) fall through silently.
-    role_rows = (
+    #
+    # HR_Miltenyi viewers see the Miltenyi-only slice: Healthark's
+    # Mentor and HR_MyOrg users are excluded from the counts entirely,
+    # so `total_active` and `by_role.hr` reflect only the Miltenyi
+    # population. The Mentor bucket falls to zero and is dropped from
+    # the donut/legend on the frontend.
+    role_query = (
         db.query(User.role, func.count(User.id))
         .filter(
             User.org_id == current_user.org_id,
             User.is_deleted == False,  # noqa: E712
         )
-        .group_by(User.role)
-        .all()
     )
+    if current_user.role == Role.HR_MILTENYI.value:
+        role_query = role_query.filter(
+            User.role.notin_([Role.MENTOR.value, Role.HR_MYORG.value])
+        )
+    role_rows = role_query.group_by(User.role).all()
     role_counts: dict[str, int] = dict(role_rows)
 
     headcount = HeadcountSummary(
@@ -311,8 +320,10 @@ def get_hr_dashboard_summary(
             staff=role_counts.get(Role.STAFF.value, 0),
             mentor=role_counts.get(Role.MENTOR.value, 0),
             pm=role_counts.get(Role.PM.value, 0),
-            # HR chip is HR_MyOrg + HR_Miltenyi combined — the dashboard
-            # doesn't differentiate between the two HR roles on the UI.
+            # HR chip is HR_MyOrg + HR_Miltenyi combined for HR_MyOrg
+            # viewers. For HR_Miltenyi viewers the HR_MyOrg row was
+            # filtered out above, so this sum collapses to just the
+            # HR_Miltenyi count (themselves and their HR peers).
             hr=(
                 role_counts.get(Role.HR_MYORG.value, 0)
                 + role_counts.get(Role.HR_MILTENYI.value, 0)
