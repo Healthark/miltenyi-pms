@@ -37,10 +37,14 @@ from app.models.user_models import User, Role, ADMIN_ROLES, PROTECTED_USER_ROLES
 from app.models.reference_models import Function, Designation
 from app.models.system_settings_models import SystemSettings, CycleType
 from app.core.cycle_utils import (
-    apply_rollover_resets,
+    YEAR_OVERRIDE_FLAGS,
+    ensure_year_override_row,
     extract_fy_label,
     get_current_cycle_info,
     resolve_today,
+)
+from app.models.system_settings_year_override_models import (
+    SystemSettingsYearOverride,
 )
 from app.models.annual_review_models import AnnualReview, ReviewStatus
 from app.models.goal_models import Goal, GoalType
@@ -58,6 +62,12 @@ from app.schemas.admin_schemas import (
     UserUpdate,
     AdminSettingsResponse,
     AdminSettingsUpdate,
+    YearOption,
+    YearOptionsResponse,
+    YearSettingsResponse,
+    YearSettingsUpdate,
+    YearPreflightEntry,
+    YearPreflightResponse,
 )
 
 
@@ -467,12 +477,19 @@ def get_admin_settings(
             CycleType(row.cycle_type),
             row.fiscal_start_month,
         )
-        # On cycle rollover, reset the org-wide submission /
-        # visibility flags so HR opens the new cycle deliberately.
-        # `annual_goals_edit_enabled` is preserved.
-        if apply_rollover_resets(row, live_active_cycle):
+        live_fy = extract_fy_label(live_active_cycle)
+        # Keep the cached cycle label in sync. The four access toggles
+        # are no longer reset on rollover — they live on the per-FY
+        # override table and HR configures each year independently.
+        if row.active_cycle_name != live_active_cycle:
+            row.active_cycle_name = live_active_cycle
             db.commit()
             invalidate_settings(current_user.org_id)
+        # Lazy-create the current-FY override row, then read flags off
+        # it so legacy consumers continue to see consistent values.
+        override = ensure_year_override_row(
+            db, current_user.org_id, live_fy, seed_from_settings=row,
+        )
         return AdminSettingsResponse(
             id=row.id,
             org_id=row.org_id,
@@ -480,10 +497,10 @@ def get_admin_settings(
             cycle_type=row.cycle_type,
             fiscal_start_month=row.fiscal_start_month,
             goals_edit_enabled=row.goals_edit_enabled,
-            annual_goals_edit_enabled=row.annual_goals_edit_enabled,
-            project_ratings_visible=row.project_ratings_visible,
-            annual_reviews_enabled=row.annual_reviews_enabled,
-            annual_review_final_rating_visible=row.annual_review_final_rating_visible,
+            annual_goals_edit_enabled=override.annual_goals_edit_enabled,
+            project_ratings_visible=override.project_ratings_visible,
+            annual_reviews_enabled=override.annual_reviews_enabled,
+            annual_review_final_rating_visible=override.annual_review_final_rating_visible,
             simulated_today=row.simulated_today,
             simulation_allowed=settings.ALLOW_DATE_SIMULATION,
             updated_at=row.updated_at,
@@ -538,10 +555,9 @@ def update_admin_settings(
             ),
         )
 
-    # Apply cadence / fiscal / simulated_today changes FIRST so the
-    # rollover detection below sees the new cycle text. Other field
-    # updates (the flag overrides) come AFTER the rollover reset, so
-    # HR's intentional toggle changes in this same save aren't clobbered.
+    # Apply cadence / fiscal / simulated_today changes — these stay
+    # org-wide. The four access-control toggles below now route to the
+    # per-FY override table.
     if settings_in.cycle_type is not None:
         settings_row.cycle_type = settings_in.cycle_type
     if settings_in.fiscal_start_month is not None:
@@ -551,40 +567,49 @@ def update_admin_settings(
     elif settings_in.simulated_today is not None:
         settings_row.simulated_today = settings_in.simulated_today
 
-    # Cycle rollover — reset the time-bound flags before HR's explicit
-    # toggle values are applied below. Also pins
-    # `settings_row.active_cycle_name` to the fresh value.
+    # Recompute the active cycle. We just update the cached label —
+    # no auto-reset of flags (per-FY overrides are configured explicitly).
     fresh_cycle = get_current_cycle_info(
         resolve_today(settings_row),
         CycleType(settings_row.cycle_type),
         settings_row.fiscal_start_month,
     )
-    rollover_fired = apply_rollover_resets(settings_row, fresh_cycle)
+    settings_row.active_cycle_name = fresh_cycle
+    fresh_fy = extract_fy_label(fresh_cycle)
 
-    # `annual_goals_edit_enabled` and `goals_edit_enabled` are never part
-    # of the rollover reset, so HR's overrides for them always apply.
     if settings_in.goals_edit_enabled is not None:
         settings_row.goals_edit_enabled = settings_in.goals_edit_enabled
-    if settings_in.annual_goals_edit_enabled is not None:
-        settings_row.annual_goals_edit_enabled = settings_in.annual_goals_edit_enabled
-
-    # The three time-bound flags: only apply HR's override when NO
-    # rollover happened this save. When a rollover fires, the UI's
-    # toggle values reflect the pre-rollover view and would otherwise
-    # silently re-enable what we just cleared. HR re-opens these
-    # deliberately in a subsequent save.
-    if not rollover_fired:
-        if settings_in.project_ratings_visible is not None:
-            settings_row.project_ratings_visible = settings_in.project_ratings_visible
-        if settings_in.annual_reviews_enabled is not None:
-            settings_row.annual_reviews_enabled = settings_in.annual_reviews_enabled
-        if settings_in.annual_review_final_rating_visible is not None:
-            settings_row.annual_review_final_rating_visible = settings_in.annual_review_final_rating_visible
 
     settings_row.updated_by_id = current_user.id
 
+    # Route the four access toggles to the current-FY override row when
+    # the legacy PATCH carries them. This keeps the existing Admin
+    # Panel flow working until the UI fully migrates to the year-scoped
+    # endpoints.
+    override = ensure_year_override_row(
+        db,
+        current_user.org_id,
+        fresh_fy,
+        seed_from_settings=settings_row,
+        updated_by_id=current_user.id,
+    )
+    legacy_year_writes = {
+        "annual_goals_edit_enabled": settings_in.annual_goals_edit_enabled,
+        "project_ratings_visible": settings_in.project_ratings_visible,
+        "annual_reviews_enabled": settings_in.annual_reviews_enabled,
+        "annual_review_final_rating_visible": settings_in.annual_review_final_rating_visible,
+    }
+    touched_year_row = False
+    for flag, value in legacy_year_writes.items():
+        if value is not None:
+            setattr(override, flag, bool(value))
+            touched_year_row = True
+    if touched_year_row:
+        override.updated_by_id = current_user.id
+
     db.commit()
     db.refresh(settings_row)
+    db.refresh(override)
     invalidate_settings(current_user.org_id)
 
     return AdminSettingsResponse(
@@ -594,10 +619,10 @@ def update_admin_settings(
         cycle_type=settings_row.cycle_type,
         fiscal_start_month=settings_row.fiscal_start_month,
         goals_edit_enabled=settings_row.goals_edit_enabled,
-        annual_goals_edit_enabled=settings_row.annual_goals_edit_enabled,
-        project_ratings_visible=settings_row.project_ratings_visible,
-        annual_reviews_enabled=settings_row.annual_reviews_enabled,
-        annual_review_final_rating_visible=settings_row.annual_review_final_rating_visible,
+        annual_goals_edit_enabled=override.annual_goals_edit_enabled,
+        project_ratings_visible=override.project_ratings_visible,
+        annual_reviews_enabled=override.annual_reviews_enabled,
+        annual_review_final_rating_visible=override.annual_review_final_rating_visible,
         simulated_today=settings_row.simulated_today,
         simulation_allowed=simulation_allowed,
         updated_at=settings_row.updated_at,
@@ -740,6 +765,332 @@ def settings_preflight(
         "project_ratings_visible":            {"in_flight_count": 0, "warning": None},
         "annual_review_final_rating_visible": {"in_flight_count": 0, "warning": None},
     }
+
+
+# =====================================================================
+# PER-FISCAL-YEAR ACCESS CONFIGURATION
+# =====================================================================
+#
+# These endpoints back the Year dropdown in the Admin Panel's System
+# Settings tab. The four toggles (annual_reviews_enabled,
+# annual_review_final_rating_visible, annual_goals_edit_enabled,
+# project_ratings_visible) are configured per FY rather than as
+# org-wide singletons — so HR can re-open FY26-27 review submissions
+# while FY27-28 is the system-computed active cycle.
+
+def _current_fy_label(settings_row: SystemSettings) -> str:
+    """Compute the active FY label from a settings row (honours
+    simulated_today)."""
+    active_cycle = get_current_cycle_info(
+        resolve_today(settings_row),
+        CycleType(settings_row.cycle_type),
+        settings_row.fiscal_start_month,
+    )
+    return extract_fy_label(active_cycle)
+
+
+def _build_year_settings_response(
+    row: SystemSettingsYearOverride,
+    current_fy: str,
+) -> YearSettingsResponse:
+    return YearSettingsResponse(
+        fy_label=row.fy_label,
+        annual_reviews_enabled=row.annual_reviews_enabled,
+        annual_review_final_rating_visible=row.annual_review_final_rating_visible,
+        annual_goals_edit_enabled=row.annual_goals_edit_enabled,
+        project_ratings_visible=row.project_ratings_visible,
+        is_current=(row.fy_label == current_fy),
+        updated_at=row.updated_at,
+    )
+
+
+@router.get("/settings/years", response_model=YearOptionsResponse)
+def list_settings_years(
+    db: DbSession,
+    current_user: CurrentUser,
+):
+    """
+    Return selectable years for the System Settings dropdown.
+
+    Sources, unioned and de-duplicated:
+        - the current FY plus the two prior and two upcoming FYs
+        - every FY that appears on this org's annual reviews
+        - every FY that appears on this org's annual goals
+        - every FY that already has an override row
+
+    `has_override` lets the UI distinguish "configured" vs "untouched"
+    years; the toggles will reflect default-deny values on years that
+    haven't been saved yet.
+    """
+    _require_hr_any(current_user)
+
+    settings_row = db.query(SystemSettings).filter(
+        SystemSettings.org_id == current_user.org_id,
+    ).first()
+    if not settings_row:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="System settings have not been configured.",
+        )
+
+    current_fy = _current_fy_label(settings_row)
+
+    # Current FY ± 2 — gives HR a small forward / backward window without
+    # cluttering the dropdown with decades. The UNION with FY labels
+    # found on real data covers any straggler years outside that window.
+    base_year = int(current_fy[2:4]) + 2000 if current_fy[2:4].isdigit() else None
+    range_labels: set[str] = set()
+    if base_year is not None:
+        for delta in range(-2, 3):
+            yr = base_year + delta
+            range_labels.add(f"FY{yr % 100:02d}-{(yr + 1) % 100:02d}")
+
+    review_labels = {
+        row[0] for row in db.query(AnnualReview.cycle_name)
+        .filter(AnnualReview.org_id == current_user.org_id)
+        .distinct()
+        .all()
+        if row[0]
+    }
+    goal_labels = {
+        row[0] for row in db.query(Goal.cycle_name)
+        .filter(
+            Goal.org_id == current_user.org_id,
+            Goal.goal_type == GoalType.ANNUAL.value,
+        )
+        .distinct()
+        .all()
+        if row[0]
+    }
+    override_labels = {
+        row[0] for row in db.query(SystemSettingsYearOverride.fy_label)
+        .filter(SystemSettingsYearOverride.org_id == current_user.org_id)
+        .all()
+    }
+    overrides_by_label = override_labels
+
+    # AnnualReview.cycle_name and Goal.cycle_name are stored as bare FY
+    # tokens (e.g. "FY26-27"), so we accept them verbatim. Defensive
+    # extract_fy_label keeps any legacy "H1 FY26-27" rows in the same
+    # canonical shape.
+    all_labels: set[str] = set()
+    all_labels.update(range_labels)
+    for label in (*review_labels, *goal_labels):
+        canonical = extract_fy_label(label)
+        if canonical.upper().startswith("FY"):
+            all_labels.add(canonical)
+    all_labels.update(override_labels)
+
+    # Sort descending so the most recent FY (typically the current one)
+    # is at the top of the dropdown.
+    def _sort_key(fy: str) -> int:
+        # "FY26-27" → 2026; fallback 0 for malformed entries.
+        head = fy[2:4]
+        return 2000 + int(head) if head.isdigit() else 0
+
+    years = sorted(all_labels, key=_sort_key, reverse=True)
+    options = [
+        YearOption(
+            fy_label=fy,
+            is_current=(fy == current_fy),
+            has_override=(fy in overrides_by_label),
+        )
+        for fy in years
+    ]
+    return YearOptionsResponse(years=options)
+
+
+@router.get("/settings/year/{fy_label}", response_model=YearSettingsResponse)
+def get_year_settings(
+    fy_label: str,
+    db: DbSession,
+    current_user: CurrentUser,
+):
+    """Return the per-FY override row, lazy-creating from the latest
+    existing override (or legacy SystemSettings flags) if missing."""
+    _require_hr_any(current_user)
+
+    settings_row = db.query(SystemSettings).filter(
+        SystemSettings.org_id == current_user.org_id,
+    ).first()
+    if not settings_row:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="System settings have not been configured.",
+        )
+
+    canonical = extract_fy_label(fy_label)
+    if not canonical.upper().startswith("FY"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"'{fy_label}' is not a valid fiscal-year label.",
+        )
+
+    row = ensure_year_override_row(
+        db,
+        current_user.org_id,
+        canonical,
+        seed_from_settings=settings_row,
+    )
+    return _build_year_settings_response(row, _current_fy_label(settings_row))
+
+
+@router.patch("/settings/year/{fy_label}", response_model=YearSettingsResponse)
+def update_year_settings(
+    fy_label: str,
+    payload: YearSettingsUpdate,
+    db: DbSession,
+    current_user: CurrentUser,
+):
+    """Update the four access toggles for a specific FY."""
+    _require_hr_any(current_user)
+
+    settings_row = db.query(SystemSettings).filter(
+        SystemSettings.org_id == current_user.org_id,
+    ).first()
+    if not settings_row:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="System settings have not been configured.",
+        )
+
+    canonical = extract_fy_label(fy_label)
+    if not canonical.upper().startswith("FY"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"'{fy_label}' is not a valid fiscal-year label.",
+        )
+
+    row = ensure_year_override_row(
+        db,
+        current_user.org_id,
+        canonical,
+        seed_from_settings=settings_row,
+        updated_by_id=current_user.id,
+    )
+    for flag in YEAR_OVERRIDE_FLAGS:
+        setattr(row, flag, bool(getattr(payload, flag)))
+    row.updated_by_id = current_user.id
+    db.commit()
+    db.refresh(row)
+    invalidate_settings(current_user.org_id)
+
+    return _build_year_settings_response(row, _current_fy_label(settings_row))
+
+
+@router.get(
+    "/settings/year/{fy_label}/preflight",
+    response_model=YearPreflightResponse,
+)
+def year_settings_preflight(
+    fy_label: str,
+    db: DbSession,
+    current_user: CurrentUser,
+):
+    """
+    Year-scoped variant of `/settings/preflight`. Counts users who would
+    be stranded if the toggle flipped off, filtered to the requested FY.
+
+    Visibility-only flags (project_ratings_visible,
+    annual_review_final_rating_visible) always return 0 — flipping them
+    off doesn't lock anyone out, it just hides numbers.
+    """
+    _require_hr_any(current_user)
+
+    canonical = extract_fy_label(fy_label)
+    if not canonical.upper().startswith("FY"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"'{fy_label}' is not a valid fiscal-year label.",
+        )
+
+    staff_ids_subq = (
+        db.query(User.id)
+        .filter(
+            User.org_id == current_user.org_id,
+            User.role == Role.STAFF.value,
+            User.is_deleted == False,  # noqa: E712
+        )
+        .subquery()
+    )
+
+    # ── annual_goals_edit_enabled ───────────────────────────────────
+    goal_user_ids_subq = (
+        db.query(Goal.user_id)
+        .filter(
+            Goal.org_id == current_user.org_id,
+            Goal.goal_type == GoalType.ANNUAL.value,
+            Goal.cycle_name == canonical,
+        )
+        .distinct()
+        .subquery()
+    )
+    staff_without_goals = (
+        db.query(sql_func.count(staff_ids_subq.c.id))
+        .filter(staff_ids_subq.c.id.notin_(db.query(goal_user_ids_subq.c.user_id)))
+        .scalar()
+        or 0
+    )
+
+    # ── annual_reviews_enabled ──────────────────────────────────────
+    in_flight_reviews = (
+        db.query(sql_func.count(AnnualReview.id))
+        .filter(
+            AnnualReview.org_id == current_user.org_id,
+            AnnualReview.cycle_name == canonical,
+            AnnualReview.status.in_([
+                ReviewStatus.DRAFT.value,
+                ReviewStatus.PENDING_MENTOR.value,
+            ]),
+        )
+        .scalar()
+        or 0
+    )
+    review_user_ids_subq = (
+        db.query(AnnualReview.user_id)
+        .filter(
+            AnnualReview.org_id == current_user.org_id,
+            AnnualReview.cycle_name == canonical,
+        )
+        .distinct()
+        .subquery()
+    )
+    staff_without_reviews = (
+        db.query(sql_func.count(staff_ids_subq.c.id))
+        .filter(staff_ids_subq.c.id.notin_(db.query(review_user_ids_subq.c.user_id)))
+        .scalar()
+        or 0
+    )
+    review_in_flight = in_flight_reviews + staff_without_reviews
+
+    def _msg(count: int, kind: str) -> str | None:
+        if count <= 0:
+            return None
+        noun = "employee" if count == 1 else "employees"
+        verb = "hasn't" if count == 1 else "haven't"
+        if kind == "goals":
+            return (
+                f"{count} {noun} {verb} created annual goals for {canonical} yet. "
+                f"Disabling will block them from doing so until you re-enable."
+            )
+        return (
+            f"{count} {noun} {verb} completed self-review/mentor evaluation for {canonical}. "
+            f"Disabling will block new submissions until you re-enable."
+        )
+
+    return YearPreflightResponse(
+        fy_label=canonical,
+        annual_goals_edit_enabled=YearPreflightEntry(
+            in_flight_count=staff_without_goals,
+            warning=_msg(staff_without_goals, "goals"),
+        ),
+        annual_reviews_enabled=YearPreflightEntry(
+            in_flight_count=review_in_flight,
+            warning=_msg(review_in_flight, "reviews"),
+        ),
+        project_ratings_visible=YearPreflightEntry(in_flight_count=0, warning=None),
+        annual_review_final_rating_visible=YearPreflightEntry(in_flight_count=0, warning=None),
+    )
 
 
 # =====================================================================

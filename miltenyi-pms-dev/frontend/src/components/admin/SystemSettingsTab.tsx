@@ -1,41 +1,32 @@
-import { useCallback } from "react";
-import { Save, Info, FlaskConical } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { createPortal } from "react-dom";
+import { Save, Info, FlaskConical, AlertTriangle } from "lucide-react";
 import type { CycleType } from "@/services/system-settings.service";
-import { adminService } from "@/services/admin.service";
-import { useConfirm } from "@/hooks/useConfirm";
-
-/** Keys we can wire a preflight warning to. Visibility flags are
- *  listed but always come back with count 0 from the backend, so the
- *  confirm dialog never fires for them — listing them keeps the type
- *  exhaustive against `SettingsPreflight` in case we ever want to add
- *  warnings to one. */
-type GuardedKey =
-  | "annual_goals_edit_enabled"
-  | "annual_reviews_enabled"
-  | "project_ratings_visible"
-  | "annual_review_final_rating_visible";
+import {
+  adminService,
+  type YearPreflight,
+  type YearSettingsUpdatePayload,
+} from "@/services/admin.service";
+import { queryKeys } from "@/lib/queryKeys";
+import { useToast } from "@/hooks/useToast";
+import { useSnackbar } from "@/hooks/useSnackbar";
+import { getErrorMessage } from "@/utils/errors";
+import { useSystemSettings } from "@/hooks/useSystemSettings";
 
 interface SystemSettingsTabProps {
   readonly activeCycleName: string;
   readonly cycleType: CycleType;
   readonly fiscalStartMonth: number;
-  // Annual review controls
-  readonly annualReviewsEnabled: boolean;
-  readonly onAnnualReviewsEnabledChange: (val: boolean) => void;
-  readonly annualReviewFinalRatingVisible: boolean;
-  readonly onAnnualReviewFinalRatingVisibleChange: (val: boolean) => void;
-  // Goal access controls
-  readonly annualGoalsEditEnabled: boolean;
-  readonly onAnnualGoalsEditEnabledChange: (val: boolean) => void;
-  readonly projectRatingsVisible: boolean;
-  readonly onProjectRatingsVisibleChange: (val: boolean) => void;
   // Dev / QA date simulation
   readonly simulatedToday: string | null;
   readonly simulationAllowed: boolean;
   readonly onSimulatedTodayChange: (date: string) => void;
   readonly onClearSimulatedToday: () => void;
-  readonly onSave: () => void;
-  readonly isSaving: boolean;
+  /** Called when HR saves the org-wide cadence/simulation section. The
+   *  four year-scoped toggles save through their own mutation below. */
+  readonly onSaveOrgWide: () => void;
+  readonly isSavingOrgWide: boolean;
 }
 
 const MONTHS = [
@@ -58,9 +49,10 @@ interface ToggleRowProps {
   readonly description: string;
   readonly checked: boolean;
   readonly onChange: (val: boolean) => void;
+  readonly disabled?: boolean;
 }
 
-function ToggleRow({ label, description, checked, onChange }: ToggleRowProps) {
+function ToggleRow({ label, description, checked, onChange, disabled }: ToggleRowProps) {
   return (
     <div className="flex items-center justify-between gap-4 py-3">
       <div className="flex-1 min-w-0">
@@ -71,8 +63,9 @@ function ToggleRow({ label, description, checked, onChange }: ToggleRowProps) {
         type="button"
         role="switch"
         aria-checked={checked}
+        disabled={disabled}
         onClick={() => onChange(!checked)}
-        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-brand focus:ring-offset-1 ${
+        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-brand focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-60 ${
           checked ? "bg-brand" : "bg-slate-300 dark:bg-slate-400"
         }`}
       >
@@ -86,111 +79,361 @@ function ToggleRow({ label, description, checked, onChange }: ToggleRowProps) {
   );
 }
 
+/** Labels shown in the diff confirmation card. Mirrors the toggle labels
+ *  but is short enough to fit a one-line "Label: ON → OFF" row. */
+const TOGGLE_LABELS: Record<keyof YearSettingsUpdatePayload, string> = {
+  annual_reviews_enabled: "Annual Reviews",
+  annual_review_final_rating_visible: "Annual Review Rating Visibility",
+  annual_goals_edit_enabled: "Annual Goal Edit Access",
+  project_ratings_visible: "Project Rating Visibility",
+};
+
+interface SaveConfirmationModalProps {
+  readonly fyLabel: string;
+  readonly diff: ReadonlyArray<{
+    key: keyof YearSettingsUpdatePayload;
+    from: boolean;
+    to: boolean;
+  }>;
+  readonly preflight: YearPreflight | null;
+  readonly preflightLoading: boolean;
+  readonly isSaving: boolean;
+  readonly onConfirm: () => void;
+  readonly onCancel: () => void;
+}
+
+/** Card that pops up on Save Configuration. Lists each toggle that
+ *  changed for the selected FY plus the in-flight impact from the
+ *  preflight endpoint, so HR sees who they're affecting before
+ *  committing. Built as a local component (not the generic
+ *  ConfirmDialog) because the body is structured, not a single string. */
+function SaveConfirmationModal({
+  fyLabel,
+  diff,
+  preflight,
+  preflightLoading,
+  isSaving,
+  onConfirm,
+  onCancel,
+}: SaveConfirmationModalProps) {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !isSaving) onCancel();
+    };
+    globalThis.addEventListener("keydown", handler);
+    return () => globalThis.removeEventListener("keydown", handler);
+  }, [onCancel, isSaving]);
+
+  const flips: Array<{ key: keyof YearSettingsUpdatePayload; warning: string | null }> = [];
+  for (const d of diff) {
+    if (d.to === false && preflight) {
+      flips.push({ key: d.key, warning: preflight[d.key]?.warning ?? null });
+    }
+  }
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-70 flex items-center justify-center bg-black/40 px-4"
+      role="dialog"
+      aria-modal="true"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !isSaving) onCancel();
+      }}
+    >
+      <div className="w-full max-w-lg rounded-xl bg-surface p-6 shadow-xl">
+        <div className="flex items-start gap-3">
+          <div className="rounded-lg bg-brand/10 p-2 text-brand">
+            <Save className="h-5 w-5" aria-hidden="true" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h2 className="font-display text-base font-semibold text-text-main">
+              Apply changes to {fyLabel}?
+            </h2>
+            <p className="mt-1 text-sm text-text-muted">
+              The following access settings will be saved for the {fyLabel}{" "}
+              fiscal year. Other years remain untouched.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-lg border border-border bg-background/40 p-3">
+          {diff.length === 0 ? (
+            <p className="text-sm text-text-muted">No changes to save.</p>
+          ) : (
+            <ul className="divide-y divide-border/60">
+              {diff.map((d) => (
+                <li
+                  key={d.key}
+                  className="flex items-center justify-between gap-3 py-2 text-sm"
+                >
+                  <span className="text-text-main">{TOGGLE_LABELS[d.key]}</span>
+                  <span className="font-mono text-xs">
+                    <span
+                      className={d.from ? "text-green-700" : "text-text-muted"}
+                    >
+                      {d.from ? "ON" : "OFF"}
+                    </span>
+                    <span className="mx-2 text-text-muted">→</span>
+                    <span
+                      className={d.to ? "text-green-700" : "text-text-muted"}
+                    >
+                      {d.to ? "ON" : "OFF"}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {flips.length > 0 && (
+          <div className="mt-3 space-y-2">
+            {preflightLoading && (
+              <p className="text-xs text-text-muted">
+                Checking who would be affected…
+              </p>
+            )}
+            {!preflightLoading &&
+              flips.map((f) =>
+                f.warning ? (
+                  <div
+                    key={f.key}
+                    className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-500/10 dark:text-amber-200"
+                  >
+                    <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                    <span>{f.warning}</span>
+                  </div>
+                ) : null,
+              )}
+          </div>
+        )}
+
+        <div className="mt-5 flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={isSaving}
+            className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-text-muted hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={isSaving || diff.length === 0}
+            className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {isSaving ? "Saving…" : "Apply Configuration"}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 export function SystemSettingsTab({
   activeCycleName,
   cycleType,
   fiscalStartMonth,
-  annualReviewsEnabled,
-  onAnnualReviewsEnabledChange,
-  annualReviewFinalRatingVisible,
-  onAnnualReviewFinalRatingVisibleChange,
-  annualGoalsEditEnabled,
-  onAnnualGoalsEditEnabledChange,
-  projectRatingsVisible,
-  onProjectRatingsVisibleChange,
   simulatedToday,
   simulationAllowed,
   onSimulatedTodayChange,
   onClearSimulatedToday,
-  onSave,
-  isSaving,
+  onSaveOrgWide,
+  isSavingOrgWide,
 }: SystemSettingsTabProps) {
-  const confirm = useConfirm();
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const snackbar = useSnackbar();
+  const { refreshSettings } = useSystemSettings();
 
-  /** Wraps a setter so that an off-flip first asks the backend whether
-   *  any in-flight users would get stranded. If the count is > 0, we
-   *  open a confirm modal with the count + warning copy. Cancel keeps
-   *  the toggle as-is; confirm flips it. Going on->off only — flipping
-   *  on never strands anyone. */
-  const guardedToggle = useCallback(
-    async (
-      key: GuardedKey,
-      label: string,
-      nextValue: boolean,
-      apply: (val: boolean) => void,
-    ) => {
-      if (nextValue === true) {
-        apply(true);
-        return;
-      }
-      try {
-        const preflight = await adminService.getSettingsPreflight();
-        const entry = preflight[key];
-        if (entry && entry.in_flight_count > 0 && entry.warning) {
-          const ok = await confirm({
-            title: `Disable ${label}?`,
-            message: entry.warning,
-            variant: "warning",
-            confirmText: "Disable Anyway",
-          });
-          if (!ok) return;
-        }
-      } catch {
-        // Preflight is advisory — if it fails (e.g. backend hiccup),
-        // don't block the toggle. Worst case HR proceeds without the
-        // warning and re-enables once they realise.
-      }
-      apply(false);
-    },
-    [confirm],
+  // ── Year dropdown options ────────────────────────────────────────
+  const yearsQuery = useQuery({
+    queryKey: queryKeys.admin.settingsYears(),
+    queryFn: adminService.listSettingsYears,
+  });
+
+  const yearOptions = yearsQuery.data?.years ?? [];
+  const defaultYear = useMemo(
+    () => yearOptions.find((y) => y.is_current)?.fy_label ?? yearOptions[0]?.fy_label ?? null,
+    [yearOptions],
   );
+
+  const [selectedYear, setSelectedYear] = useState<string | null>(null);
+  // Snap to the default once the dropdown options arrive. After that,
+  // HR's selection sticks across refetches.
+  useEffect(() => {
+    if (selectedYear === null && defaultYear !== null) {
+      setSelectedYear(defaultYear);
+    }
+  }, [defaultYear, selectedYear]);
+
+  // ── Selected year's saved values ─────────────────────────────────
+  const yearSettingsQuery = useQuery({
+    queryKey: selectedYear
+      ? queryKeys.admin.settingsYear(selectedYear)
+      : ["admin", "settings", "year", "__unset__"],
+    queryFn: () => adminService.getYearSettings(selectedYear as string),
+    enabled: !!selectedYear,
+  });
+  const savedYear = yearSettingsQuery.data ?? null;
+
+  // ── Local form state for the four toggles ────────────────────────
+  // Reset whenever the selected year changes (or its saved row first
+  // resolves) so the toggles reflect that FY's persisted values.
+  const [form, setForm] = useState<YearSettingsUpdatePayload>({
+    annual_reviews_enabled: false,
+    annual_review_final_rating_visible: false,
+    annual_goals_edit_enabled: false,
+    project_ratings_visible: false,
+  });
+  const [formKey, setFormKey] = useState<string | null>(null);
+  useEffect(() => {
+    if (savedYear && formKey !== savedYear.fy_label) {
+      setForm({
+        annual_reviews_enabled: savedYear.annual_reviews_enabled,
+        annual_review_final_rating_visible: savedYear.annual_review_final_rating_visible,
+        annual_goals_edit_enabled: savedYear.annual_goals_edit_enabled,
+        project_ratings_visible: savedYear.project_ratings_visible,
+      });
+      setFormKey(savedYear.fy_label);
+    }
+  }, [savedYear, formKey]);
+
+  // Diff between local form state and last-saved values — drives the
+  // confirmation card's row list. Empty when HR hasn't touched anything.
+  const diff = useMemo(() => {
+    if (!savedYear) return [];
+    const keys: Array<keyof YearSettingsUpdatePayload> = [
+      "annual_reviews_enabled",
+      "annual_review_final_rating_visible",
+      "annual_goals_edit_enabled",
+      "project_ratings_visible",
+    ];
+    return keys
+      .filter((k) => form[k] !== savedYear[k])
+      .map((k) => ({ key: k, from: savedYear[k], to: form[k] }));
+  }, [form, savedYear]);
+
+  // ── Save flow ────────────────────────────────────────────────────
+  const [showConfirm, setShowConfirm] = useState(false);
+  const preflightQuery = useQuery({
+    queryKey: selectedYear
+      ? queryKeys.admin.settingsYearPreflight(selectedYear)
+      : ["admin", "settings", "year", "__unset__", "preflight"],
+    queryFn: () => adminService.getYearPreflight(selectedYear as string),
+    enabled: showConfirm && !!selectedYear,
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: () =>
+      adminService.updateYearSettings(selectedYear as string, form),
+    onSuccess: (fresh) => {
+      queryClient.setQueryData(
+        queryKeys.admin.settingsYear(fresh.fy_label),
+        fresh,
+      );
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.admin.settingsYears(),
+      });
+      // Banners on AnnualReviews etc. read /settings/, so refresh that too.
+      void refreshSettings();
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.admin.settings(),
+      });
+      setShowConfirm(false);
+      toast.success(`Configuration saved for ${fresh.fy_label}.`);
+    },
+    onError: (err) => snackbar.error(getErrorMessage(err)),
+  });
+
+  const handleOpenConfirm = () => {
+    if (!selectedYear || diff.length === 0) return;
+    setShowConfirm(true);
+  };
+
+  const selectedOption = yearOptions.find((y) => y.fy_label === selectedYear);
+  const yearLoading = yearSettingsQuery.isPending || !savedYear;
 
   return (
     <div className="p-5 max-w-mx-auto space-y-6">
+      {/* ── Year-scoped configuration header ────────────────────────── */}
+      <div className="flex flex-wrap items-end justify-between gap-3 rounded-xl border border-border bg-surface p-4 shadow-sm">
+        <div className="flex-1 min-w-[240px]">
+          <label
+            htmlFor="settings-year"
+            className="block text-sm font-medium text-text-main mb-1"
+          >
+            Configure Access for Fiscal Year
+          </label>
+          <select
+            id="settings-year"
+            value={selectedYear ?? ""}
+            onChange={(e) => setSelectedYear(e.target.value || null)}
+            disabled={yearsQuery.isPending}
+            className="w-full sm:w-72 rounded-lg border border-border bg-background px-3 py-2 text-sm text-text-main focus:outline-none focus:border-brand"
+          >
+            {yearsQuery.isPending && <option value="">Loading…</option>}
+            {!yearsQuery.isPending && yearOptions.length === 0 && (
+              <option value="">No years available</option>
+            )}
+            {yearOptions.map((y) => (
+              <option key={y.fy_label} value={y.fy_label}>
+                {y.fy_label}
+                {y.is_current ? " (Current)" : ""}
+                {!y.has_override ? " — unconfigured" : ""}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1.5 text-xs text-text-muted">
+            Toggles below apply only to the selected fiscal year. The current
+            cycle stays editable for past years even after the system advances.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={handleOpenConfirm}
+          disabled={!selectedYear || diff.length === 0 || saveMutation.isPending}
+          className="flex items-center gap-2 rounded-lg bg-brand px-5 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-70 disabled:cursor-not-allowed transition-all shadow-sm"
+        >
+          <Save className="h-4 w-4" aria-hidden="true" />
+          {saveMutation.isPending ? "Saving…" : "Save Configuration"}
+        </button>
+      </div>
 
       {/* ── Annual Review Settings ───────────────────────────────────── */}
       <div>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-display text-lg font-semibold text-text-main">
-            Annual Review Settings
-          </h3>
-          <button
-            type="button"
-            onClick={onSave}
-            disabled={isSaving}
-            className="flex items-center gap-2 rounded-lg bg-brand px-5 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-70 disabled:cursor-not-allowed transition-all shadow-sm"
-          >
-            <Save className="h-4 w-4" aria-hidden="true" />
-            {isSaving ? "Saving…" : "Save Configuration"}
-          </button>
-        </div>
+        <h3 className="font-display text-lg font-semibold text-text-main mb-4">
+          Annual Review Settings
+          {selectedOption && (
+            <span className="ml-2 text-xs font-medium text-text-muted">
+              · {selectedOption.fy_label}
+            </span>
+          )}
+        </h3>
         <div className="bg-surface rounded-xl border border-border shadow-sm divide-y divide-border">
           <div className="px-5 py-4">
             <div className="divide-y divide-border/60">
               <ToggleRow
                 label="Enable Annual Reviews"
-                description="When on, employees can submit self-reviews. Disabling pauses new submissions; existing reviews stay readable."
-                checked={annualReviewsEnabled}
+                description="When on, employees can submit self-reviews for this fiscal year. Disabling pauses new submissions; existing reviews stay readable."
+                checked={form.annual_reviews_enabled}
+                disabled={yearLoading}
                 onChange={(next) =>
-                  guardedToggle(
-                    "annual_reviews_enabled",
-                    "Annual Reviews",
-                    next,
-                    onAnnualReviewsEnabledChange,
-                  )
+                  setForm((prev) => ({ ...prev, annual_reviews_enabled: next }))
                 }
               />
               <ToggleRow
                 label="Show Ratings on Annual Reviews"
-                description="When on, the Ratings column is visible on Mentee/Team Review tabs and final ratings are revealed to employees once published."
-                checked={annualReviewFinalRatingVisible}
+                description="When on, the Ratings column is visible on Mentee/Team Review tabs and final ratings are revealed to employees once published — for this fiscal year."
+                checked={form.annual_review_final_rating_visible}
+                disabled={yearLoading}
                 onChange={(next) =>
-                  guardedToggle(
-                    "annual_review_final_rating_visible",
-                    "Final Rating Visibility",
-                    next,
-                    onAnnualReviewFinalRatingVisibleChange,
-                  )
+                  setForm((prev) => ({
+                    ...prev,
+                    annual_review_final_rating_visible: next,
+                  }))
                 }
               />
             </div>
@@ -202,6 +445,11 @@ export function SystemSettingsTab({
       <div>
         <h3 className="font-display text-lg font-semibold text-text-main mb-4">
           Goal & Review Access Controls
+          {selectedOption && (
+            <span className="ml-2 text-xs font-medium text-text-muted">
+              · {selectedOption.fy_label}
+            </span>
+          )}
         </h3>
         <div className="bg-surface rounded-xl border border-border shadow-sm divide-y divide-border">
 
@@ -213,15 +461,11 @@ export function SystemSettingsTab({
             <div className="divide-y divide-border/60">
               <ToggleRow
                 label="Edit Access for Annual Goals"
-                description="When off, no one in the org can create or edit annual goals."
-                checked={annualGoalsEditEnabled}
+                description="When off, no one in the org can create or edit annual goals for this fiscal year."
+                checked={form.annual_goals_edit_enabled}
+                disabled={yearLoading}
                 onChange={(next) =>
-                  guardedToggle(
-                    "annual_goals_edit_enabled",
-                    "Annual Goal Edit Access",
-                    next,
-                    onAnnualGoalsEditEnabledChange,
-                  )
+                  setForm((prev) => ({ ...prev, annual_goals_edit_enabled: next }))
                 }
               />
             </div>
@@ -235,15 +479,11 @@ export function SystemSettingsTab({
             <div className="divide-y divide-border/60">
               <ToggleRow
                 label="View Project Ratings"
-                description="When on, employees can see their project performance ratings."
-                checked={projectRatingsVisible}
+                description="When on, employees can see their project performance ratings for this fiscal year."
+                checked={form.project_ratings_visible}
+                disabled={yearLoading}
                 onChange={(next) =>
-                  guardedToggle(
-                    "project_ratings_visible",
-                    "Project Rating Visibility",
-                    next,
-                    onProjectRatingsVisibleChange,
-                  )
+                  setForm((prev) => ({ ...prev, project_ratings_visible: next }))
                 }
               />
             </div>
@@ -251,11 +491,24 @@ export function SystemSettingsTab({
 
         </div>
       </div>
-      {/* ── Performance Cycle Configuration ────────────────────────── */}
+      {/* ── Performance Cycle Configuration (org-wide, read-only) ─── */}
       <div>
-        <h3 className="font-display text-lg font-semibold text-text-main mb-4">
-          Performance Cycle Configuration
-        </h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-display text-lg font-semibold text-text-main">
+            Performance Cycle Configuration
+          </h3>
+          {(simulationAllowed) && (
+            <button
+              type="button"
+              onClick={onSaveOrgWide}
+              disabled={isSavingOrgWide}
+              className="flex items-center gap-2 rounded-lg border border-border bg-surface px-4 py-2 text-sm font-medium text-text-main hover:bg-slate-50 disabled:opacity-70 disabled:cursor-not-allowed"
+            >
+              <Save className="h-4 w-4" aria-hidden="true" />
+              {isSavingOrgWide ? "Saving…" : "Save Simulation"}
+            </button>
+          )}
+        </div>
         <div className="space-y-6 bg-surface p-5 rounded-xl border border-border shadow-sm">
 
           {/* Current Active Cycle (Read-Only) */}
@@ -374,6 +627,17 @@ export function SystemSettingsTab({
         </div>
       )}
 
+      {showConfirm && selectedYear && (
+        <SaveConfirmationModal
+          fyLabel={selectedYear}
+          diff={diff}
+          preflight={preflightQuery.data ?? null}
+          preflightLoading={preflightQuery.isPending}
+          isSaving={saveMutation.isPending}
+          onConfirm={() => saveMutation.mutate()}
+          onCancel={() => setShowConfirm(false)}
+        />
+      )}
     </div>
   );
 }

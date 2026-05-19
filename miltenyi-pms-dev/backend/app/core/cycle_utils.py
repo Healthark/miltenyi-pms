@@ -21,6 +21,13 @@ if TYPE_CHECKING:
     # cycle_utils is consumed by route modules that themselves import
     # SystemSettings, and the model module imports CycleType from here.
     from app.models.system_settings_models import SystemSettings
+    from app.models.system_settings_year_override_models import (
+        SystemSettingsYearOverride,
+    )
+    from app.models.annual_review_models import AnnualReview
+    from app.models.goal_models import Goal
+    from app.models.project_review_models import ProjectReview
+    from sqlalchemy.orm import Session as SqlSession
 
 
 def resolve_today(settings: "Optional[SystemSettings]" = None) -> date:
@@ -363,3 +370,153 @@ def _format_fy_span(fiscal_year: int) -> str:
     a = fiscal_year % 100
     b = (fiscal_year + 1) % 100
     return f"FY{a:02d}-{b:02d}"
+
+
+# ── Per-year override row helpers ────────────────────────────────────
+#
+# The four access-control toggles now live on `system_settings_year_overrides`
+# keyed on `(org_id, fy_label)`. These helpers centralise the lookup so
+# gating helpers in route modules don't each re-parse cycle strings or
+# duplicate the lazy-create logic.
+
+#: Flag names whose values move from `SystemSettings` to per-FY override
+#: rows. Listed once so seed paths can copy them as a unit.
+YEAR_OVERRIDE_FLAGS: tuple[str, ...] = (
+    "annual_reviews_enabled",
+    "annual_review_final_rating_visible",
+    "annual_goals_edit_enabled",
+    "project_ratings_visible",
+)
+
+
+def _fy_label_of_cycle_string(cycle_text: str | None) -> str | None:
+    """Strip any cycle prefix off `cycle_text` and return the bare FY token.
+
+    Wraps `extract_fy_label` but returns None instead of echoing the
+    input back when no FY token is present, so callers can distinguish
+    "unknown FY — default-deny" from a successful lookup.
+    """
+    if not cycle_text:
+        return None
+    extracted = extract_fy_label(cycle_text)
+    return extracted if extracted.upper().startswith("FY") else None
+
+
+def _fy_label_of_review(review: "AnnualReview") -> str | None:
+    """FY label for an annual review row.
+
+    `AnnualReview.cycle_name` is already stored as the bare FY token
+    ("FY26-27") at creation time (see `_active_fy_label` in
+    annual_review_routes), so this is a thin wrapper that guards against
+    legacy "H1 FY26-27" stamping that may exist on older rows.
+    """
+    return _fy_label_of_cycle_string(getattr(review, "cycle_name", None))
+
+
+def _fy_label_of_goal(goal: "Goal") -> str | None:
+    """FY label for a goal row.
+
+    Annual goals stamp `cycle_name` to the bare FY at creation
+    (`get_goal_cycle_name`). Regular goals have a NULL `cycle_name`;
+    those return None and the caller decides what to do (regular goals
+    don't go through the annual-goal gate).
+    """
+    return _fy_label_of_cycle_string(getattr(goal, "cycle_name", None))
+
+
+def _fy_label_of_project_review(review: "ProjectReview") -> str | None:
+    """FY label for a project review row.
+
+    `ProjectReview.cycle` carries the full cycle name ("Q1 FY26-27"),
+    not the bare FY — we strip the period prefix here.
+    """
+    return _fy_label_of_cycle_string(getattr(review, "cycle", None))
+
+
+def get_year_override(
+    db: "SqlSession",
+    org_id: int,
+    fy_label: str | None,
+) -> "SystemSettingsYearOverride | None":
+    """Look up the override row for (org_id, fy_label). Does NOT create.
+
+    Returns None when the FY label is missing or no row exists. Gating
+    helpers use this when the default-deny / past-FY-passthrough policy
+    requires distinguishing "row missing" from "row present but flag
+    False" — `ensure_year_override_row` is for the admin write path.
+    """
+    if not fy_label:
+        return None
+    # Local import dodges the model-layer circular: cycle_utils is
+    # imported by route modules that import the model, and the model
+    # itself reaches back into cycle_utils via TYPE_CHECKING.
+    from app.models.system_settings_year_override_models import (
+        SystemSettingsYearOverride,
+    )
+    return (
+        db.query(SystemSettingsYearOverride)
+        .filter(
+            SystemSettingsYearOverride.org_id == org_id,
+            SystemSettingsYearOverride.fy_label == fy_label,
+        )
+        .first()
+    )
+
+
+def ensure_year_override_row(
+    db: "SqlSession",
+    org_id: int,
+    fy_label: str,
+    *,
+    seed_from_settings: "Optional[SystemSettings]" = None,
+    updated_by_id: Optional[int] = None,
+) -> "SystemSettingsYearOverride":
+    """Lazily create the override row for (org_id, fy_label) and return it.
+
+    Seeding precedence on creation:
+      1. The most recent existing override row for the same org (so a
+         new FY inherits the previous FY's configuration — HR almost
+         always wants this).
+      2. The legacy flag values on `SystemSettings` when `seed_from_settings`
+         is supplied (used by the admin and read paths that already have
+         the row in hand).
+      3. All-False defaults.
+
+    The created row is committed before return so concurrent readers
+    don't see a phantom session-local row. Caller does NOT need to
+    commit again unless they're mutating the row in the same request.
+    """
+    existing = get_year_override(db, org_id, fy_label)
+    if existing is not None:
+        return existing
+
+    from app.models.system_settings_year_override_models import (
+        SystemSettingsYearOverride,
+    )
+
+    seed_values = {flag: False for flag in YEAR_OVERRIDE_FLAGS}
+
+    # Prefer the latest existing override for this org as the seed source.
+    latest_prior = (
+        db.query(SystemSettingsYearOverride)
+        .filter(SystemSettingsYearOverride.org_id == org_id)
+        .order_by(SystemSettingsYearOverride.created_at.desc())
+        .first()
+    )
+    if latest_prior is not None:
+        for flag in YEAR_OVERRIDE_FLAGS:
+            seed_values[flag] = bool(getattr(latest_prior, flag))
+    elif seed_from_settings is not None:
+        for flag in YEAR_OVERRIDE_FLAGS:
+            seed_values[flag] = bool(getattr(seed_from_settings, flag, False))
+
+    row = SystemSettingsYearOverride(
+        org_id=org_id,
+        fy_label=fy_label,
+        updated_by_id=updated_by_id,
+        **seed_values,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row

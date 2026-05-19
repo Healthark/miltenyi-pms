@@ -51,8 +51,10 @@ from app.schemas.goal_schemas import (
 )
 from app.schemas.pagination import Paginated
 from app.core.cycle_utils import (
+    _fy_label_of_goal,
     cycles_before,
     get_goal_cycle_name,
+    get_year_override,
     is_review_window_open,
     resolve_today,
 )
@@ -135,14 +137,29 @@ def _self_review_allowed_states(cycle_code: str) -> set[str]:
     return allowed
 
 
-def _assert_annual_gate_open(settings: SystemSettings) -> None:
-    """Raise 403 when the annual-goal edit window is closed."""
-    if not settings.annual_goals_edit_enabled:
+def _assert_annual_gate_open(
+    db: DbSession,
+    org_id: int,
+    fy_label: str | None,
+) -> None:
+    """Raise 403 when the annual-goal edit window is closed for `fy_label`.
+
+    Per-FY semantics: the override row for the goal's FY decides
+    whether annual-goal create/edit is permitted. Missing row =
+    default-deny so HR has to open the year explicitly.
+    """
+    if not fy_label:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Could not determine the fiscal year for this annual goal.",
+        )
+    override = get_year_override(db, org_id, fy_label)
+    if override is None or not override.annual_goals_edit_enabled:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=(
-                "Annual goal submissions are currently closed. "
-                "Please wait for the Admin to open the next submission window."
+                f"Annual goal submissions for {fy_label} are currently closed. "
+                f"Please wait for the Admin to open the submission window."
             ),
         )
 
@@ -278,12 +295,11 @@ def create_goal(
     # ── Gate check + cycle stamping for annual goals ───────────────────
     cycle_name: Optional[str] = None
     if goal_in.goal_type == GoalType.ANNUAL:
-        settings = _get_settings(db, current_user.org_id)
-        _assert_annual_gate_open(settings)
-        # Stamp the half-yearly cycle at creation time ("H1 2026", "H2 2025").
-        # Derived from the wall-clock UTC time so it's always accurate regardless
-        # of which active_cycle_name the admin has set.
+        # Stamp the FY cycle at creation time ("FY26-27") from wall-clock
+        # UTC. Derived first so the gate check uses the goal's own FY —
+        # not a stale active_cycle_name.
         cycle_name = get_goal_cycle_name(datetime.now(timezone.utc))
+        _assert_annual_gate_open(db, current_user.org_id, cycle_name)
 
     # ── Build the Goal record ──────────────────────────────────────────
     new_goal = Goal(
@@ -780,8 +796,9 @@ def update_goal(
     # Gate check: employees cannot edit annual goals when the window is closed.
     # Managers bypass this — they need access to leave feedback at any time.
     if goal.goal_type == GoalType.ANNUAL.value and not is_manager:
-        settings = _get_settings(db, current_user.org_id)
-        _assert_annual_gate_open(settings)
+        _assert_annual_gate_open(
+            db, current_user.org_id, _fy_label_of_goal(goal)
+        )
 
     update_data = goal_in.model_dump(exclude_unset=True)
     for field, value in update_data.items():
@@ -833,8 +850,9 @@ def delete_goal(
             )
         # Gate check for annual goal deletion (same window logic as create/edit).
         if goal.goal_type == GoalType.ANNUAL.value:
-            settings = _get_settings(db, current_user.org_id)
-            _assert_annual_gate_open(settings)
+            _assert_annual_gate_open(
+                db, current_user.org_id, _fy_label_of_goal(goal)
+            )
 
     db.delete(goal)
     db.commit()

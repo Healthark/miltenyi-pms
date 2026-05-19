@@ -97,17 +97,14 @@ export default function AdminPanel() {
   const [editingUser, setEditingUser] = useState<UserResponse | null>(null);
   const [modalError, setModalError] = useState("");
 
-  // Settings form state — local because HR is mid-edit between the
-  // initial fetch and the save click. Initialized once when the
-  // settings query first resolves (see effect below); subsequent
-  // refetches do NOT clobber the form. Post-save sync happens in the
-  // mutation's onSuccess so the response's server-computed fields land.
+  // Settings form state — only the org-wide knobs live here now
+  // (cadence, fiscal month, simulated_today). The four per-FY access
+  // toggles are owned by SystemSettingsTab via the year-scoped
+  // /admin/settings/year endpoints. Cadence + fiscal month are
+  // currently read-only in the UI but their values still flow to the
+  // tab so it can render the read-only display.
   const [cycleType, setCycleType] = useState<CycleType>("half_yearly");
   const [fiscalStartMonth, setFiscalStartMonth] = useState(4);
-  const [annualReviewsEnabled, setAnnualReviewsEnabled] = useState(false);
-  const [annualGoalsEditEnabled, setAnnualGoalsEditEnabled] = useState(false);
-  const [projectRatingsVisible, setProjectRatingsVisible] = useState(false);
-  const [annualReviewFinalRatingVisible, setAnnualReviewFinalRatingVisible] = useState(false);
   // Dev/QA date simulation. simulatedToday is an ISO date string (or
   // empty when unset). simulationAllowed mirrors the backend's env
   // flag so the field hides itself outside dev/staging.
@@ -129,10 +126,6 @@ export default function AdminPanel() {
     if (settings && !hasInitializedForm) {
       setCycleType((settings.cycle_type as CycleType) ?? "half_yearly");
       setFiscalStartMonth(settings.fiscal_start_month ?? 4);
-      setAnnualReviewsEnabled(settings.annual_reviews_enabled ?? false);
-      setAnnualGoalsEditEnabled(settings.annual_goals_edit_enabled ?? false);
-      setProjectRatingsVisible(settings.project_ratings_visible ?? false);
-      setAnnualReviewFinalRatingVisible(settings.annual_review_final_rating_visible ?? false);
       setSimulatedToday(settings.simulated_today ?? "");
       setSimulationAllowed(settings.simulation_allowed ?? false);
       setClearSimulatedTodayPending(false);
@@ -313,10 +306,6 @@ export default function AdminPanel() {
       queryClient.setQueryData(queryKeys.admin.settings(), fresh);
       setCycleType((fresh.cycle_type as CycleType) ?? "half_yearly");
       setFiscalStartMonth(fresh.fiscal_start_month ?? 4);
-      setAnnualReviewsEnabled(fresh.annual_reviews_enabled ?? false);
-      setAnnualGoalsEditEnabled(fresh.annual_goals_edit_enabled ?? false);
-      setProjectRatingsVisible(fresh.project_ratings_visible ?? false);
-      setAnnualReviewFinalRatingVisible(fresh.annual_review_final_rating_visible ?? false);
       setSimulatedToday(fresh.simulated_today ?? "");
       setSimulationAllowed(fresh.simulation_allowed ?? false);
       setClearSimulatedTodayPending(false);
@@ -326,18 +315,14 @@ export default function AdminPanel() {
     onError: (err) => snackbar.error(getErrorMessage(err)),
   });
 
-  const handleSaveSettings = () => {
+  const handleSaveOrgWide = () => {
+    // Org-wide PATCH: only the cadence/fiscal/simulation fields. The
+    // four access toggles save through their own per-FY mutation in
+    // SystemSettingsTab.
     const payload: AdminSettingsUpdatePayload = {
       cycle_type: cycleType,
       fiscal_start_month: fiscalStartMonth,
-      annual_reviews_enabled: annualReviewsEnabled,
-      annual_goals_edit_enabled: annualGoalsEditEnabled,
-      project_ratings_visible: projectRatingsVisible,
-      annual_review_final_rating_visible: annualReviewFinalRatingVisible,
     };
-    // Simulated-today payload: only include when we have something to
-    // say. Empty string + no clear-pending means "leave unchanged"
-    // (PATCH semantics). A pending clear sends the explicit signal.
     if (clearSimulatedTodayPending) {
       payload.clear_simulated_today = true;
     } else if (simulatedToday) {
@@ -449,14 +434,6 @@ export default function AdminPanel() {
             activeCycleName={settings?.active_cycle ?? ""}
             cycleType={cycleType}
             fiscalStartMonth={fiscalStartMonth}
-            annualReviewsEnabled={annualReviewsEnabled}
-            onAnnualReviewsEnabledChange={setAnnualReviewsEnabled}
-            annualGoalsEditEnabled={annualGoalsEditEnabled}
-            onAnnualGoalsEditEnabledChange={setAnnualGoalsEditEnabled}
-            projectRatingsVisible={projectRatingsVisible}
-            onProjectRatingsVisibleChange={setProjectRatingsVisible}
-            annualReviewFinalRatingVisible={annualReviewFinalRatingVisible}
-            onAnnualReviewFinalRatingVisibleChange={setAnnualReviewFinalRatingVisible}
             simulatedToday={simulatedToday || null}
             simulationAllowed={simulationAllowed}
             onSimulatedTodayChange={(date) => {
@@ -467,8 +444,8 @@ export default function AdminPanel() {
               setSimulatedToday("");
               setClearSimulatedTodayPending(true);
             }}
-            onSave={handleSaveSettings}
-            isSaving={updateSettingsMutation.isPending}
+            onSaveOrgWide={handleSaveOrgWide}
+            isSavingOrgWide={updateSettingsMutation.isPending}
           />
         )}
       </div>

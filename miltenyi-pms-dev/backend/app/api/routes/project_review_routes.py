@@ -29,9 +29,11 @@ from sqlalchemy.orm import aliased, joinedload
 
 from app.api.dependencies import DbSession, CurrentUser
 from app.core.cycle_utils import (
+    _fy_label_of_project_review,
     cycle_date_range,
-    parse_cycle_name,
     get_current_cycle_info,
+    get_year_override,
+    parse_cycle_name,
     resolve_today,
 )
 from app.models.project_models import (
@@ -168,14 +170,16 @@ def _redacted_rating(
     viewer: User,
     settings: Optional[SystemSettings],
     active_cycle_name: Optional[str] = None,
+    db: Optional["DbSession"] = None,
 ) -> Optional[int]:
     """Decide whether `viewer` is allowed to see `review.performance_group`.
 
     Returns the rating when any of these holds:
       - The review is from a **past cycle**. Once a cycle has rolled
-        over the org-wide hide-toggle no longer applies — historical
+        over the per-FY hide-toggle no longer applies — historical
         ratings must stay visible regardless of the flag.
-      - The org-wide `project_ratings_visible` flag is True, OR
+      - The per-FY `project_ratings_visible` override is True for the
+        review's fiscal year, OR
       - The viewer is HR (HR_MyOrg / HR_Miltenyi — HR sees ratings any
         time, that's the point of the override), OR
       - The viewer authored the rating themselves (a PM looking at their
@@ -188,6 +192,9 @@ def _redacted_rating(
     `active_cycle_name` should be the canonical "right now" cycle string
     (e.g. `"Q1 FY26-27"`). Callers can compute it once per request via
     `_compute_active_cycle_name(settings)` and pass it to every review.
+    `db` is required to look up the per-FY override row; without it the
+    function safely returns None for current-cycle non-HR/non-author
+    viewers (the most restrictive default).
     """
     is_current_cycle = (
         active_cycle_name is not None and review.cycle == active_cycle_name
@@ -196,11 +203,19 @@ def _redacted_rating(
         # Past (or future-via-override) cycle — toggle never applies.
         return review.performance_group
 
-    flag_on = bool(settings and settings.project_ratings_visible)
     is_admin = viewer.role in ADMIN_ROLES
     is_reviewer = review.reviewer_id == viewer.id
-    if flag_on or is_admin or is_reviewer:
+    if is_admin or is_reviewer:
         return review.performance_group
+
+    if db is not None and settings is not None:
+        override = get_year_override(
+            db,
+            settings.org_id,
+            _fy_label_of_project_review(review),
+        )
+        if override is not None and override.project_ratings_visible:
+            return review.performance_group
     return None
 
 
@@ -446,7 +461,7 @@ def _build_review_response(
         comment_communication=review.comment_communication,
         comment_mentoring=review.comment_mentoring,
         comment_competency_skills=review.comment_competency_skills,
-        performance_group=_redacted_rating(review, viewer, settings, active_cycle),
+        performance_group=_redacted_rating(review, viewer, settings, active_cycle, db),
         impact_statement=review.impact_statement,
         secondary_evaluations=secondary_responses,
         created_at=review.created_at,
@@ -532,7 +547,7 @@ def get_my_projects(
                 function_name=func_obj.name if func_obj else None,
                 review_status=review.status,
                 performance_group=_redacted_rating(
-                    review, current_user, settings_row, current_cycle,
+                    review, current_user, settings_row, current_cycle, db,
                 ),
                 pm_name=pm_user.full_name if pm_user else None,
                 cycle=review.cycle,
@@ -671,7 +686,7 @@ def get_pm_evaluation_queue(
                     assigned_date=ta.assigned_date,
                     review_status=review.status,
                     performance_group=_redacted_rating(
-                        review, current_user, settings_row, active_cycle,
+                        review, current_user, settings_row, active_cycle, db,
                     ),
                     cycle=review.cycle,
                     has_draft_content=_pm_review_has_draft_content(review),
@@ -1602,7 +1617,7 @@ def get_management_overview(
                 function_name=a.function.name if a.function else None,
                 review_status=review_status,
                 performance_group=_redacted_rating(
-                    review, current_user, settings_row, active_cycle,
+                    review, current_user, settings_row, active_cycle, db,
                 ) if review else None,
             ))
 

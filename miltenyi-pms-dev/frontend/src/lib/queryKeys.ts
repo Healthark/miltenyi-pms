@@ -49,6 +49,19 @@ export const queryKeys = {
     functions: () => [...queryKeys.admin.all, "functions"] as const,
     designations: () => [...queryKeys.admin.all, "designations"] as const,
     settings: () => [...queryKeys.admin.all, "settings"] as const,
+    /** Year dropdown options for the System Settings tab. Cached once
+     *  per session; invalidated after the per-FY save mutation since a
+     *  newly-configured year flips `has_override` to true. */
+    settingsYears: () =>
+      [...queryKeys.admin.all, "settings", "years"] as const,
+    /** Per-FY settings row. Dynamic key so each FY has its own cache
+     *  entry — switching years in the dropdown is instant on revisit. */
+    settingsYear: (fyLabel: string) =>
+      [...queryKeys.admin.all, "settings", "year", fyLabel] as const,
+    /** Per-FY preflight counts. Fetched lazily inside the Save
+     *  Configuration diff modal. */
+    settingsYearPreflight: (fyLabel: string) =>
+      [...queryKeys.admin.all, "settings", "year", fyLabel, "preflight"] as const,
   },
 
   // ── Dashboard summaries ────────────────────────────────────────────

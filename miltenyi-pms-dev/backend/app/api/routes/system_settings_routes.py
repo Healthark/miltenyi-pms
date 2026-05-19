@@ -19,7 +19,9 @@ from fastapi import APIRouter, HTTPException, status
 from app.api.dependencies import DbSession, CurrentUser
 from app.core.cache import invalidate_settings
 from app.core.cycle_utils import (
-    apply_rollover_resets,
+    YEAR_OVERRIDE_FLAGS,
+    ensure_year_override_row,
+    extract_fy_label,
     get_current_cycle_info,
     resolve_today,
 )
@@ -67,15 +69,30 @@ def get_system_settings(
         CycleType(row.cycle_type),
         row.fiscal_start_month,
     )
-    # Auto-reset visibility / submission flags on cycle rollover so HR
-    # opens each cycle deliberately. The first read after a rollover
-    # commits the reset; subsequent reads see no change.
-    if apply_rollover_resets(row, fresh_cycle):
+    # Keep settings.active_cycle_name in sync with the freshly-computed
+    # value so legacy consumers that read it directly don't go stale.
+    # We no longer auto-reset the four toggles here — they now live on
+    # `system_settings_year_overrides`, configured per-FY by HR.
+    fresh_fy = extract_fy_label(fresh_cycle)
+    if row.active_cycle_name != fresh_cycle:
+        row.active_cycle_name = fresh_cycle
         db.commit()
         invalidate_settings(current_user.org_id)
 
+    # Lazily ensure an override row exists for the active FY so the
+    # next admin-panel read finds it ready (seeded from the most recent
+    # prior override for this org, or all-False if none exists yet).
+    override = ensure_year_override_row(
+        db, current_user.org_id, fresh_fy, seed_from_settings=row,
+    )
+
     response = SystemSettingsResponse.model_validate(row, from_attributes=True)
     response.active_cycle_name = fresh_cycle
+    # Surface the current-FY override values on the legacy flag fields
+    # so existing consumers (banners, gates that key off the settings
+    # response without knowing the review's FY) keep working.
+    for flag in YEAR_OVERRIDE_FLAGS:
+        setattr(response, flag, bool(getattr(override, flag)))
     return response
 
 
