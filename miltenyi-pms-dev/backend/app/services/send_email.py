@@ -597,3 +597,148 @@ def send_password_reset_email(
         ),
         from_name=sender_display_name,
     )
+
+
+def _notification_html(
+    full_name: str,
+    lead: str,
+    cta_label: str,
+    cta_url: str,
+    theme: EmailTheme,
+) -> str:
+    """Inline-styled HTML for a generic notification email. Same
+    table-based / inline-CSS contract as the password-reset and welcome
+    templates so all three renders look consistent in restrictive
+    clients (Gmail, Outlook, Apple Mail). All interpolations escaped
+    via _esc()."""
+    full_name_e   = _esc(full_name)
+    lead_e        = _esc(lead)
+    cta_label_e   = _esc(cta_label)
+    cta_url_e     = _esc(cta_url)
+    brand_name_e  = _esc(theme.brand_name)
+    brand_e       = _esc(theme.brand)
+    brand_light_e = _esc(theme.brand_light)
+
+    return f"""\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{brand_name_e} notification</title>
+</head>
+<body style="margin:0;padding:0;background-color:#F8FAFC;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;color:#0F172A;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#F8FAFC;padding:32px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;background-color:#FFFFFF;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(15,23,42,0.06);">
+          <!-- Header band (brand) -->
+          <tr>
+            <td style="background-color:{brand_e};padding:24px 32px;">
+              <p style="margin:0;color:#FFFFFF;font-size:18px;font-weight:600;letter-spacing:0.2px;">
+                {brand_name_e}
+              </p>
+              <p style="margin:4px 0 0 0;color:{brand_light_e};font-size:13px;">
+                Notification
+              </p>
+            </td>
+          </tr>
+
+          <!-- Body -->
+          <tr>
+            <td style="padding:32px 32px 8px 32px;">
+              <p style="margin:0 0 16px 0;font-size:14px;line-height:1.6;color:#0F172A;">
+                Hi {full_name_e},
+              </p>
+              <p style="margin:0 0 20px 0;font-size:14px;line-height:1.6;color:#0F172A;">
+                {lead_e}
+              </p>
+
+              <!-- CTA button (brand) -->
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px 0;">
+                <tr>
+                  <td align="center" style="background-color:{brand_e};border-radius:8px;">
+                    <a href="{cta_url_e}" target="_blank" rel="noopener" style="display:inline-block;padding:12px 28px;font-size:14px;font-weight:600;color:#FFFFFF;text-decoration:none;">
+                      {cta_label_e}
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Plain-link fallback -->
+              <p style="margin:0 0 8px 0;font-size:12px;color:#64748B;">
+                If the button doesn't work, copy and paste this URL into your
+                browser:
+              </p>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px 0;">
+                <tr>
+                  <td style="background-color:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:12px 16px;">
+                    <a href="{cta_url_e}" target="_blank" rel="noopener" style="font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;font-size:12px;color:{brand_e};word-break:break-all;text-decoration:none;">
+                      {cta_url_e}
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="padding:20px 32px 28px 32px;border-top:1px solid #E2E8F0;">
+              <p style="margin:0;font-size:12px;line-height:1.5;color:#64748B;">
+                This is an automated message from {brand_name_e}.
+                Please do not reply to this email.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+"""
+
+
+def _notification_text(
+    full_name: str,
+    lead: str,
+    cta_url: str,
+    from_name: str,
+) -> str:
+    """Plain-text fallback for the notification email."""
+    return (
+        f"Hi {full_name},\n\n"
+        f"{lead}\n\n"
+        f"Open: {cta_url}\n\n"
+        f"— {from_name}\n"
+    )
+
+
+def send_notification_email(
+    to_email: str,
+    full_name: str,
+    subject: str,
+    lead: str,
+    cta_label: str,
+    cta_url: str,
+    org_id: int | None = None,
+) -> bool:
+    """Email a lifecycle-event notification to a user.
+
+    Called via FastAPI BackgroundTasks from notification_service.notify
+    when `send_email=True` and SMTP is configured. Returns True if the
+    message was handed off to the SMTP server, False otherwise.
+
+    Caller must NOT make the lifecycle action depend on the return —
+    notifications are best-effort. The in-app row written alongside is
+    the authoritative surface; email is a convenience signal."""
+    theme = _resolve_theme(org_id)
+    sender_display_name = _resolve_from_name(theme)
+    return _send(
+        to_email=to_email,
+        subject=subject,
+        html_body=_notification_html(full_name, lead, cta_label, cta_url, theme),
+        text_body=_notification_text(full_name, lead, cta_url, theme.brand_name),
+        from_name=sender_display_name,
+    )

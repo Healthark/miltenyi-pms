@@ -27,7 +27,7 @@ from app.api.dependencies import DbSession, CurrentUser
 from app.models.system_settings_models import SystemSettings
 from app.models.goal_models import Goal, ApprovalStatus
 from app.models.user_models import User
-from app.models.goal_notification_models import GoalNotification
+from app.models.notification_models import Notification
 from app.schemas.notification_schemas import NotificationItem, UserNotificationItem, TopbarSummary
 from app.core.cycle_utils import get_current_cycle_info, resolve_today
 
@@ -127,14 +127,14 @@ def get_topbar_summary(
                 severity="warning",
             ))
 
-    # ── Direct User Notifications (mentor → mentee via Notify button) ──
+    # ── Direct User Notifications (polymorphic across modules) ──────
     raw_user_notifs = (
-        db.query(GoalNotification)
+        db.query(Notification)
         .filter(
-            GoalNotification.recipient_id == current_user.id,
-            GoalNotification.org_id == current_user.org_id,
+            Notification.recipient_id == current_user.id,
+            Notification.org_id == current_user.org_id,
         )
-        .order_by(GoalNotification.created_at.desc())
+        .order_by(Notification.created_at.desc())
         .limit(20)
         .all()
     )
@@ -144,6 +144,10 @@ def get_topbar_summary(
             id=n.id,
             message=n.message,
             goal_id=n.goal_id,
+            module=n.module,
+            entity_type=n.entity_type,
+            entity_id=n.entity_id,
+            entity_url=n.entity_url,
             created_at=n.created_at,
             is_read=n.is_read,
         )
@@ -163,10 +167,10 @@ def mark_all_notifications_read(
     current_user: CurrentUser,
 ):
     """Mark all of the current user's direct notifications as read."""
-    db.query(GoalNotification).filter(
-        GoalNotification.recipient_id == current_user.id,
-        GoalNotification.org_id == current_user.org_id,
-        GoalNotification.is_read == False,  # noqa: E712
+    db.query(Notification).filter(
+        Notification.recipient_id == current_user.id,
+        Notification.org_id == current_user.org_id,
+        Notification.is_read == False,  # noqa: E712
     ).update({"is_read": True})
     db.commit()
     return None

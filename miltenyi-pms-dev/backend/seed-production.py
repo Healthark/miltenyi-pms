@@ -38,7 +38,7 @@ from app.models.user_models import User
 from app.models.system_settings_models import SystemSettings, CycleType
 
 from app.models.password_reset_token_models import PasswordResetToken
-from app.models.goal_notification_models import GoalNotification
+from app.models.notification_models import Notification
 from app.models.goal_mentor_review_models import GoalMentorReview
 from app.models.goal_self_review_models import GoalSelfReview
 from app.models.goal_criteria_models import GoalCriterion
@@ -71,7 +71,7 @@ def _wipe_all(db):
     # Tables that reference users/goals/projects/etc.
     wipe_order = [
         PasswordResetToken,
-        GoalNotification,
+        Notification,
         GoalMentorReview,
         GoalSelfReview,
         GoalCriterion,

@@ -10,7 +10,13 @@ export interface NotificationItem {
 export interface UserNotificationItem {
   id: number;
   message: string;
-  goal_id: number;
+  /** Back-compat field — populated only for goal-module rows. New code
+   *  should read `entity_id` + `module` instead. */
+  goal_id?: number | null;
+  module?: string | null;
+  entity_type?: string | null;
+  entity_id?: number | null;
+  entity_url?: string | null;
   created_at: string;
   is_read: boolean;
 }
