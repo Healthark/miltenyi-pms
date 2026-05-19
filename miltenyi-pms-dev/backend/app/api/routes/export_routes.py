@@ -37,6 +37,7 @@ from app.api.dependencies import CurrentUser
 from app.api.routes.admin_routes import _require_hr_any, _require_hr_myorg
 from app.core.database import get_db
 from app.models.export_audit_log_models import ExportAuditLog
+from app.models.system_settings_models import SystemSettings
 from app.models.user_models import Role, User
 from app.services.exporters import (
     build_annual_reviews_sheet,
@@ -73,6 +74,21 @@ def _hidden_roles_for(current_user: User) -> Optional[frozenset[str]]:
     if current_user.role == Role.HR_MILTENYI.value:
         return _HEALTHARK_EXPORT_HIDDEN_ROLES
     return None
+
+
+def _fiscal_start_month(db: Session, org_id: int) -> int:
+    """Return the org's `fiscal_start_month` from SystemSettings,
+    defaulting to 4 (April) when the row hasn't been created yet.
+    Centralised so every FY-aware export builder uses the same anchor.
+    """
+    settings = (
+        db.query(SystemSettings)
+        .filter(SystemSettings.org_id == org_id)
+        .first()
+    )
+    if settings and settings.fiscal_start_month:
+        return int(settings.fiscal_start_month)
+    return 4
 
 
 # ── Helpers ───────────────────────────────────────────────────────────
@@ -261,16 +277,24 @@ def export_all(
 ):
     """Combined 5-sheet workbook (Users / Annual Goals / Annual Reviews /
     Projects / Project Reviews). `fy` is a comma-separated list of
-    4-digit start years (e.g. `?fy=2025,2026`) — the Users and Projects
-    sheets are never narrowed (they are point-in-time snapshots), the
-    other three sheets honour the filter."""
+    4-digit start years (e.g. `?fy=2025,2026`); when set, every sheet is
+    narrowed to rows whose lifecycle / cycle overlaps any selected FY.
+    When the filter is empty, every sheet returns all-time data
+    (preserves the original behavior)."""
     _require_hr_myorg(current_user)
     fy_filter = _parse_fy_filter(fy)
+    fiscal_start_month = _fiscal_start_month(db, current_user.org_id)
 
     wb = Workbook()
     # Workbook() creates a default "Sheet" we'll repurpose as Users.
     users_ws = wb.active
-    users_rows = build_users_sheet(users_ws, db, current_user.org_id)
+    users_rows = build_users_sheet(
+        users_ws,
+        db,
+        current_user.org_id,
+        fy_filter=fy_filter,
+        fiscal_start_month=fiscal_start_month,
+    )
 
     goals_ws = wb.create_sheet("Annual Goals")
     goals_rows = build_goals_sheet(
@@ -284,7 +308,11 @@ def export_all(
 
     projects_ws = wb.create_sheet("Projects")
     projects_rows = build_projects_sheet(
-        projects_ws, db, current_user.org_id
+        projects_ws,
+        db,
+        current_user.org_id,
+        fy_filter=fy_filter,
+        fiscal_start_month=fiscal_start_month,
     )
 
     project_reviews_ws = wb.create_sheet("Project Reviews")
@@ -322,11 +350,13 @@ def export_miltenyi(
     only the data Miltenyi HR actually uses.
 
     `fy` is a comma-separated list of 4-digit start years (e.g.
-    `?fy=2025,2026`). Users and Projects sheets are never narrowed (they
-    are point-in-time snapshots); only Project Reviews honours the filter.
+    `?fy=2025,2026`); when set, every sheet narrows to rows whose
+    lifecycle / cycle overlaps any selected FY. Empty filter returns
+    all-time data.
     """
     _require_hr_miltenyi(current_user)
     fy_filter = _parse_fy_filter(fy)
+    fiscal_start_month = _fiscal_start_month(db, current_user.org_id)
 
     wb = Workbook()
     users_ws = wb.active
@@ -337,11 +367,17 @@ def export_miltenyi(
         db,
         current_user.org_id,
         exclude_roles=_hidden_roles_for(current_user),
+        fy_filter=fy_filter,
+        fiscal_start_month=fiscal_start_month,
     )
 
     projects_ws = wb.create_sheet("Projects")
     projects_rows = build_projects_sheet(
-        projects_ws, db, current_user.org_id
+        projects_ws,
+        db,
+        current_user.org_id,
+        fy_filter=fy_filter,
+        fiscal_start_month=fiscal_start_month,
     )
 
     project_reviews_ws = wb.create_sheet("Project Reviews")
@@ -357,70 +393,9 @@ def export_miltenyi(
     )
 
 
-@router.get("/miltenyi-employee/{user_id}.xlsx")
-def export_miltenyi_employee(
-    user_id: int,
-    db: DbSession,
-    current_user: CurrentUser,
-):
-    """Miltenyi-scoped per-employee workbook (three sheets):
-
-        - Profile               (key/value identity card)
-        - Project Assignments   (full history — active + ended stints)
-        - Project Reviews       (every PM/secondary evaluation received)
-
-    Annual goals and annual reviews are intentionally omitted (out of
-    Miltenyi HR's scope). 404 when the user lives in a different org or
-    no longer exists. Soft-deleted users remain exportable so Miltenyi
-    HR can pull ex-employee records.
-    """
-    _require_hr_miltenyi(current_user)
-
-    target = (
-        db.query(User)
-        .filter(User.id == user_id, User.org_id == current_user.org_id)
-        .first()
-    )
-    if target is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found.",
-        )
-    # HR_Miltenyi can't direct-export a Healthark Mentor or HR_MyOrg
-    # profile, even by guessing the user_id. Return 404 (not 403) so the
-    # response shape matches the "no such user in your scope" case and
-    # doesn't reveal that the row exists.
-    if target.role in _HEALTHARK_EXPORT_HIDDEN_ROLES:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found.",
-        )
-
-    wb = Workbook()
-    profile_ws = wb.active
-    profile_rows = build_profile_sheet(profile_ws, db, target)
-
-    assignments_ws = wb.create_sheet("Project Assignments")
-    assignment_rows = build_project_assignments_sheet(
-        assignments_ws, db, current_user.org_id, user_id
-    )
-
-    project_reviews_ws = wb.create_sheet("Project Reviews")
-    project_reviews_rows = build_project_reviews_sheet(
-        project_reviews_ws,
-        db,
-        current_user.org_id,
-        user_id_filter=user_id,
-    )
-
-    total = profile_rows + assignment_rows + project_reviews_rows
-    _log_export_with_scope(
-        db, current_user.id, "miltenyi_employee", total, f"user:{user_id}"
-    )
-
-    slug = _slugify(target.full_name or f"user-{user_id}")
-    filename = f"pms-miltenyi-employee-{slug}-{_date_suffix()}.xlsx"
-    return _workbook_to_response(wb, filename)
+# Per-employee export is intentionally NOT exposed to HR_Miltenyi.
+# Deep per-employee bundles (profile + assignments + project reviews)
+# remain available to HR_MyOrg via /employee/{user_id}.xlsx below.
 
 
 # ── Per-employee bundle ───────────────────────────────────────────────
@@ -430,18 +405,24 @@ def export_employee(
     user_id: int,
     db: DbSession,
     current_user: CurrentUser,
+    fy: Annotated[Optional[str], Query()] = None,
 ):
     """Single-employee deep-dive workbook with five sheets:
 
         - Profile               (key/value identity card)
         - Annual Goals          (this user's goals, H1/H2 reviews inline)
         - Annual Reviews        (this user's annual reviews per FY)
-        - Project Assignments   (full history — active + ended stints)
+        - Project Assignments   (overlapping selected FYs when set)
         - Project Reviews       (every PM/secondary evaluation received)
 
     HR_MyOrg only. 404 when the user lives in a different org or no
     longer exists. Soft-deleted users are intentionally exportable so
     HR can still pull ex-employee records.
+
+    `fy` mirrors the same comma-separated 4-digit start years used by
+    /all.xlsx. When set, Annual Goals / Annual Reviews / Project
+    Assignments / Project Reviews are narrowed; the Profile sheet is an
+    FY-agnostic identity card and is always included.
     """
     _require_hr_myorg(current_user)
 
@@ -456,23 +437,31 @@ def export_employee(
             detail="User not found.",
         )
 
+    fy_filter = _parse_fy_filter(fy)
+    fiscal_start_month = _fiscal_start_month(db, current_user.org_id)
+
     wb = Workbook()
     profile_ws = wb.active
     profile_rows = build_profile_sheet(profile_ws, db, target)
 
     goals_ws = wb.create_sheet("Annual Goals")
     goals_rows = build_goals_sheet(
-        goals_ws, db, current_user.org_id, user_id_filter=user_id
+        goals_ws, db, current_user.org_id, fy_filter, user_id_filter=user_id
     )
 
     reviews_ws = wb.create_sheet("Annual Reviews")
     reviews_rows = build_annual_reviews_sheet(
-        reviews_ws, db, current_user.org_id, user_id_filter=user_id
+        reviews_ws, db, current_user.org_id, fy_filter, user_id_filter=user_id
     )
 
     assignments_ws = wb.create_sheet("Project Assignments")
     assignment_rows = build_project_assignments_sheet(
-        assignments_ws, db, current_user.org_id, user_id
+        assignments_ws,
+        db,
+        current_user.org_id,
+        user_id,
+        fy_filter=fy_filter,
+        fiscal_start_month=fiscal_start_month,
     )
 
     project_reviews_ws = wb.create_sheet("Project Reviews")
@@ -480,6 +469,7 @@ def export_employee(
         project_reviews_ws,
         db,
         current_user.org_id,
+        fy_filter,
         user_id_filter=user_id,
     )
 
