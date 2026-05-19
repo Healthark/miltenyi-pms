@@ -156,18 +156,21 @@ export function UserModal({
             </p>
           )}
 
-          {/* Identity fields (employee_code + full_name) are locked
-              when HR_Miltenyi is editing an existing Staff row. Healthark
-              HR owns those columns for Staff users; mirrors the backend's
-              403 guard in admin_routes.update_user. The lock checks the
-              ORIGINAL role (editingUser.role) so it stays consistent
-              even if the user changes the role dropdown mid-edit. */}
+          {/* For HR_Miltenyi editing an existing row, only Function and
+              Designation are editable; every other field is locked.
+              Healthark HR owns the identity columns (employee_code,
+              full_name), the system role, the phone number, and the
+              mentor assignment. The lock applies regardless of the
+              target's role since HR_Miltenyi has the same authority
+              over any row they're allowed to touch (Staff / PM /
+              HR_Miltenyi — Mentor and HR_MyOrg rows are blocked
+              entirely upstream). Mirrors the backend 403 guard in
+              admin_routes.update_user. Add-user flow stays
+              unrestricted: HR_Miltenyi can still provision new users
+              with full field access. */}
           {(() => {
-            const isStaffIdentityLocked =
-              isViewerMiltenyiHR &&
-              isEditing &&
-              editingUser?.role === "Staff";
-            const lockedInputCls = `${INPUT_CLS} ${isStaffIdentityLocked ? "cursor-not-allowed opacity-50" : ""}`;
+            const isMiltenyiLocked = isViewerMiltenyiHR && isEditing;
+            const lockedInputCls = `${INPUT_CLS} ${isMiltenyiLocked ? "cursor-not-allowed opacity-50" : ""}`;
             return (
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -180,7 +183,7 @@ export function UserModal({
                     value={form.employee_code}
                     onChange={(e) => set("employee_code", e.target.value)}
                     placeholder="EMP-003"
-                    readOnly={isStaffIdentityLocked}
+                    readOnly={isMiltenyiLocked}
                   />
                 </div>
                 <div>
@@ -193,7 +196,7 @@ export function UserModal({
                     value={form.full_name}
                     onChange={(e) => set("full_name", e.target.value)}
                     placeholder="Jane Smith"
-                    readOnly={isStaffIdentityLocked}
+                    readOnly={isMiltenyiLocked}
                   />
                 </div>
               </div>
@@ -220,47 +223,60 @@ export function UserModal({
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label htmlFor="phone" className={LABEL_CLS}>
-                Phone
-              </label>
-              <input
-                id="phone"
-                className={INPUT_CLS}
-                value={form.phone}
-                onChange={(e) => set("phone", e.target.value)}
-                placeholder="+91 98765 43210"
-              />
-            </div>
-            <div>
-              <label htmlFor="role" className={LABEL_CLS}>
-                System Role *
-              </label>
-              <select
-                id="role"
-                className={INPUT_CLS}
-                value={form.role}
-                onChange={(e) => {
-                  const nextRole = e.target.value;
-                  // Only Staff have a mentor — flipping to any other role
-                  // clears the previous selection so it can't be saved
-                  // against a role that shouldn't carry one.
-                  setForm((prev) => ({
-                    ...prev,
-                    role: nextRole,
-                    mentor_id: nextRole === "Staff" ? prev.mentor_id : "",
-                  }));
-                }}
-              >
-                {visibleRoleOptions.map((r) => (
-                  <option key={r.value} value={r.value}>
-                    {r.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
+          {/* Phone and System Role share the same HR_Miltenyi edit lock
+              as the identity fields above. `disabled` on the <select>
+              produces the right native styling and blocks both keyboard
+              and click input; we mirror the read-only opacity treatment
+              from the text inputs for visual consistency. */}
+          {(() => {
+            const isMiltenyiLocked = isViewerMiltenyiHR && isEditing;
+            const lockedInputCls = `${INPUT_CLS} ${isMiltenyiLocked ? "cursor-not-allowed opacity-50" : ""}`;
+            return (
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="phone" className={LABEL_CLS}>
+                    Phone
+                  </label>
+                  <input
+                    id="phone"
+                    className={lockedInputCls}
+                    value={form.phone}
+                    onChange={(e) => set("phone", e.target.value)}
+                    placeholder="+91 98765 43210"
+                    readOnly={isMiltenyiLocked}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="role" className={LABEL_CLS}>
+                    System Role *
+                  </label>
+                  <select
+                    id="role"
+                    className={lockedInputCls}
+                    value={form.role}
+                    onChange={(e) => {
+                      const nextRole = e.target.value;
+                      // Only Staff have a mentor — flipping to any other role
+                      // clears the previous selection so it can't be saved
+                      // against a role that shouldn't carry one.
+                      setForm((prev) => ({
+                        ...prev,
+                        role: nextRole,
+                        mentor_id: nextRole === "Staff" ? prev.mentor_id : "",
+                      }));
+                    }}
+                    disabled={isMiltenyiLocked}
+                  >
+                    {visibleRoleOptions.map((r) => (
+                      <option key={r.value} value={r.value}>
+                        {r.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            );
+          })()}
 
           <div className="grid grid-cols-2 gap-4">
             <div>

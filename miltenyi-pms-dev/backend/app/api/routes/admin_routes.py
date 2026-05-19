@@ -281,29 +281,26 @@ def update_user(
     if user_in.role and user_in.role != user.role:
         _authorize_user_mutation(current_user, user_in.role)
 
-    # Identity fields on a Staff row are locked for HR_Miltenyi. Healthark
-    # HR owns the Staff directory's identity columns (employee_code,
-    # full_name); Miltenyi HR manages everything else (function,
-    # designation, phone, role transitions within their permitted set).
-    # We compare the incoming value to the stored value so a no-op
-    # payload (same value resubmitted) still passes — only true changes
-    # are rejected.
+    # HR_Miltenyi can only edit Function and Designation on existing
+    # rows. Identity fields (employee_code, full_name), system role,
+    # phone, and mentor assignment all belong to Healthark HR. We
+    # compare incoming values to stored ones so a no-op payload (same
+    # value resubmitted) still passes — only real changes raise 403.
+    # The new-user creation path is untouched: HR_Miltenyi may still
+    # provision a Staff/PM/HR_Miltenyi row with full field control.
     update_data = user_in.model_dump(exclude_unset=True)
-    if (
-        current_user.role == Role.HR_MILTENYI.value
-        and user.role == Role.STAFF.value
-    ):
-        for locked_field in ("employee_code", "full_name"):
-            if (
-                locked_field in update_data
-                and update_data[locked_field] != getattr(user, locked_field)
-            ):
+    if current_user.role == Role.HR_MILTENYI.value:
+        HR_MILTENYI_EDITABLE_FIELDS = {"function_id", "designation_id"}
+        for field, incoming in update_data.items():
+            if field in HR_MILTENYI_EDITABLE_FIELDS:
+                continue
+            if incoming != getattr(user, field):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail=(
-                        "Miltenyi HR cannot change employee code or full "
-                        "name for Staff users. Ask Healthark HR to update "
-                        "this record."
+                        "Miltenyi HR can only change Function and "
+                        "Designation. Ask Healthark HR to update "
+                        "other fields."
                     ),
                 )
 
