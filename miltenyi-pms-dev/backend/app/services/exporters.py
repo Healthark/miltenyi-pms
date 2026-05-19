@@ -25,6 +25,7 @@ Design notes:
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Iterable, Optional
 
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -32,6 +33,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.cycle_utils import extract_fy_year as _extract_fy_year
+from app.core.cycle_utils import fy_filter_to_date_ranges
 from app.models.annual_review_models import AnnualReview
 from app.models.goal_models import Goal
 from app.models.goal_mentor_review_models import GoalMentorReview
@@ -95,6 +97,43 @@ def _passes_fy_filter(fy_year: Optional[int], fy_filter: Optional[set[int]]) -> 
     return fy_year is not None and fy_year in fy_filter
 
 
+def _overlaps_any_fy(
+    alive_from: Optional[date],
+    alive_to: Optional[date],
+    fy_ranges: Optional[list[tuple[date, date]]],
+) -> bool:
+    """Decide whether an entity that was alive during the date interval
+    [alive_from, alive_to] overlaps any of the selected FY ranges. Used
+    by the Users / Projects / Project Assignments sheets to enforce the
+    "include the row in FY X iff the entity existed at some point during
+    FY X" rule.
+
+    - `alive_to=None` means "still alive" (open-ended): the entity has
+      no end date yet (no `deleted_at`, no `completed_at`, no
+      assignment `end_date`).
+    - `alive_from=None` is treated as "always-was-here": typically only
+      hit by rows with a NULL created/lifecycle date. Defensively
+      includes them so HR sees them and can clean up.
+    - `fy_ranges=None` means no FY filter was set; everything passes.
+
+    Two intervals [a, b] and [c, d] overlap iff `a <= d AND c <= b`.
+    Open-ended ends (None) collapse to "always passes" on that side.
+    """
+    if fy_ranges is None:
+        return True
+    if alive_from is None:
+        return True
+    for fy_start, fy_end in fy_ranges:
+        # alive_from > fy_end → entity born after FY ended; skip.
+        if alive_from > fy_end:
+            continue
+        # alive_to < fy_start → entity died before FY started; skip.
+        if alive_to is not None and alive_to < fy_start:
+            continue
+        return True
+    return False
+
+
 # ── Helpers ───────────────────────────────────────────────────────────
 
 def _user_meta(user: Optional[User]) -> tuple[str, str, str, str]:
@@ -130,15 +169,24 @@ def build_users_sheet(
     db: Session,
     org_id: int,
     exclude_roles: Optional[Iterable[str]] = None,
+    fy_filter: Optional[set[int]] = None,
+    fiscal_start_month: int = 4,
 ) -> int:
     """One row per user, including soft-deleted ones (with Is Active = No).
-    FY filter doesn't apply — users sheet is a directory snapshot.
 
     `exclude_roles` is the role-scoping hook used by the HR_Miltenyi
     export: pass `{"Mentor", "HR_MyOrg"}` and those rows never make it
     into the workbook. Mentor names that appear as references on other
     sheets (e.g. a Staff member's mentor in the Mentor column) are not
-    affected — only the directory rows themselves are filtered out."""
+    affected — only the directory rows themselves are filtered out.
+
+    `fy_filter` narrows the directory to users who were active during at
+    least one selected FY. A user qualifies for FY X iff
+    `created_at <= end_of_fy_X AND (deleted_at IS NULL OR deleted_at >=
+    start_of_fy_X)`. Empty / None filter returns every row (preserves
+    the existing all-time behavior). `fiscal_start_month` converts the
+    FY year integer into calendar dates using the org's fiscal calendar.
+    """
     ws.title = "Users"
     _write_header(
         ws,
@@ -168,6 +216,20 @@ def build_users_sheet(
     if exclude_roles:
         query = query.filter(User.role.notin_(list(exclude_roles)))
     users = query.order_by(User.full_name.asc()).all()
+
+    # Resolve FY ranges once; None when no filter is set, in which case
+    # `_overlaps_any_fy` short-circuits to True for every row.
+    fy_ranges = fy_filter_to_date_ranges(fy_filter, fiscal_start_month)
+    if fy_ranges is not None:
+        users = [
+            u
+            for u in users
+            if _overlaps_any_fy(
+                u.created_at.date() if u.created_at else None,
+                u.deleted_at.date() if u.deleted_at else None,
+                fy_ranges,
+            )
+        ]
 
     row = 2
     for u in users:
@@ -537,12 +599,26 @@ def build_project_reviews_sheet(
 
 # ── Projects sheet ────────────────────────────────────────────────────
 
-def build_projects_sheet(ws: Worksheet, db: Session, org_id: int) -> int:
+def build_projects_sheet(
+    ws: Worksheet,
+    db: Session,
+    org_id: int,
+    fy_filter: Optional[set[int]] = None,
+    fiscal_start_month: int = 4,
+) -> int:
     """One row per project (including completed; excluding hard-deleted).
     The Active Team Members column is the comma-separated full names of
     every assignment with `end_date IS NULL` — at PMS scale (handful per
     project) the cell stays readable. Total Assignments Ever counts every
-    historical assignment (active + ended) for forensic context."""
+    historical assignment (active + ended) for forensic context.
+
+    `fy_filter` narrows the sheet to projects that were active during
+    any selected FY. A project qualifies for FY X iff its lifecycle
+    overlaps the FY range: `start_date <= end_of_fy_X` (or, when
+    `start_date` is NULL, `created_at <= end_of_fy_X`) AND
+    `(completed_at IS NULL OR completed_at >= start_of_fy_X)`. Empty
+    filter returns every row.
+    """
     ws.title = "Projects"
     _write_header(
         ws,
@@ -580,6 +656,24 @@ def build_projects_sheet(ws: Worksheet, db: Session, org_id: int) -> int:
         .order_by(Project.created_at.desc())
         .all()
     )
+
+    # Apply FY overlap. `start_date` is the PM-set lifecycle start;
+    # fall back to `created_at.date()` only when `start_date` is NULL
+    # (defensive — should never happen for a properly-onboarded
+    # project). `completed_at` carries the end side; NULL means "still
+    # active", which `_overlaps_any_fy` interprets as open-ended.
+    fy_ranges = fy_filter_to_date_ranges(fy_filter, fiscal_start_month)
+    if fy_ranges is not None:
+        projects = [
+            p
+            for p in projects
+            if _overlaps_any_fy(
+                p.start_date
+                or (p.created_at.date() if p.created_at else None),
+                p.completed_at.date() if p.completed_at else None,
+                fy_ranges,
+            )
+        ]
 
     row = 2
     for p in projects:
@@ -680,10 +774,17 @@ def build_project_assignments_sheet(
     db: Session,
     org_id: int,
     user_id: int,
+    fy_filter: Optional[set[int]] = None,
+    fiscal_start_month: int = 4,
 ) -> int:
     """One row per assignment (active + ended) for the given user. The
     point of this sheet is the "when assigned / when off / why" history
-    that the org-wide Project Reviews sheet doesn't carry."""
+    that the org-wide Project Reviews sheet doesn't carry.
+
+    `fy_filter` narrows to assignments that overlap any selected FY:
+    `assigned_date <= end_of_fy AND (end_date IS NULL OR end_date >=
+    start_of_fy)`. Empty filter returns every assignment.
+    """
     ws.title = "Project Assignments"
     _write_header(
         ws,
@@ -717,6 +818,14 @@ def build_project_assignments_sheet(
         .order_by(ProjectAssignment.assigned_date.desc().nullslast())
         .all()
     )
+
+    fy_ranges = fy_filter_to_date_ranges(fy_filter, fiscal_start_month)
+    if fy_ranges is not None:
+        assignments = [
+            a
+            for a in assignments
+            if _overlaps_any_fy(a.assigned_date, a.end_date, fy_ranges)
+        ]
 
     row = 2
     for a in assignments:

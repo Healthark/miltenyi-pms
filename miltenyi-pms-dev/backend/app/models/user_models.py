@@ -75,6 +75,12 @@ class User(Base):
     # dashboard visit.
     last_seen_cycle = Column(String, nullable=True)
     is_deleted = Column(Boolean, default=False)
+    # When the soft-delete was applied (NULL while the user is active).
+    # Set by the deactivate_user route, cleared by reactivate_user.
+    # Powers FY-scoped Users exports: a user appears in FY X's export
+    # iff `created_at <= end_of_fy AND (deleted_at IS NULL OR deleted_at
+    # >= start_of_fy)`.
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

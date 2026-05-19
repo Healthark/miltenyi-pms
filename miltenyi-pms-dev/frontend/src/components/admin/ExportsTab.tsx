@@ -109,7 +109,14 @@ function MyOrgExportsView() {
     if (!selectedEmployee) return;
     setIsEmployeeExporting(true);
     try {
-      await exportService.downloadEmployee(selectedEmployee.id);
+      // Pass the same FY checkbox selection through so the per-employee
+      // workbook respects whichever years HR ticked at the top of the
+      // page. Empty array means "all time" (backend treats it as no
+      // narrowing) and preserves the historical full-history behavior.
+      await exportService.downloadEmployee(
+        selectedEmployee.id,
+        Array.from(selectedFys),
+      );
       toast.success("Employee record downloaded.");
     } catch (err) {
       snackbar.error(getErrorMessage(err));
@@ -229,9 +236,10 @@ function MyOrgExportsView() {
               <span className="font-medium text-text-main">{scopeSummary}</span>
             </p>
             <p className="mt-0.5 text-[12px]">
-              Users sheet always includes the full directory (active +
-              deactivated). The FY filter only narrows Goals, Annual
-              Reviews, and Project Reviews.
+              Every sheet honors the FY filter: Users + Projects show
+              only entries active during the selected year(s); Goals,
+              Annual Reviews, and Project Reviews show only rows tagged
+              to those years. Leave all unchecked for an all-time dump.
             </p>
           </div>
         </div>
@@ -394,68 +402,10 @@ function MiltenyiExportsView() {
   const [selectedFys, setSelectedFys] = useState<Set<number>>(new Set());
   const [isExporting, setIsExporting] = useState(false);
 
-  // Per-employee export state
-  const [allUsers, setAllUsers] = useState<UserResponse[]>([]);
-  const [employeePickerValue, setEmployeePickerValue] = useState("");
-  const [isEmployeeExporting, setIsEmployeeExporting] = useState(false);
-
-  // Fetch the user roster once on mount. HR_Miltenyi can hit /admin/users
-  // (gated to ADMIN_ROLES), so they get the same directory the picker
-  // needs — including soft-deleted ex-employees for forensic exports.
-  useEffect(() => {
-    let cancelled = false;
-    adminService
-      .getUsers()
-      .then((users) => {
-        if (!cancelled) setAllUsers(users);
-      })
-      .catch(() => {
-        // Non-fatal — picker just stays empty.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Healthark's Mentor and HR_MyOrg rows are filtered out so HR_Miltenyi
-  // can't pick one for a per-employee export. Mirrors the backend's
-  // `_HEALTHARK_EXPORT_HIDDEN_ROLES` 404 guard on the export endpoint.
-  const employeeOptions = useMemo(() => {
-    return allUsers
-      .filter((u) => u.role !== "Mentor" && u.role !== "HR_MyOrg")
-      .map((u) => ({
-        id: u.id,
-        label: u.is_deleted ? `${u.full_name} (deactivated)` : u.full_name,
-      }))
-      .sort((a, b) =>
-        a.label.localeCompare(b.label, undefined, { sensitivity: "base" }),
-      );
-  }, [allUsers]);
-
-  const employeeLabels = useMemo(
-    () => employeeOptions.map((o) => o.label),
-    [employeeOptions],
-  );
-
-  const selectedEmployee = useMemo(() => {
-    if (!employeePickerValue) return null;
-    return (
-      employeeOptions.find((o) => o.label === employeePickerValue) ?? null
-    );
-  }, [employeeOptions, employeePickerValue]);
-
-  const handleEmployeeExport = async () => {
-    if (!selectedEmployee) return;
-    setIsEmployeeExporting(true);
-    try {
-      await exportService.downloadMiltenyiEmployee(selectedEmployee.id);
-      toast.success("Employee record downloaded.");
-    } catch (err) {
-      snackbar.error(getErrorMessage(err));
-    } finally {
-      setIsEmployeeExporting(false);
-    }
-  };
+  // No Per-Employee Export panel here — that surface is intentionally
+  // omitted for HR_Miltenyi. Healthark HR owns deep per-employee
+  // exports; Miltenyi HR's scope is the combined org workbook plus the
+  // per-sheet quick downloads below.
 
   const activeFyStart = useMemo(() => {
     if (!settings?.active_cycle_name) return null;
@@ -564,8 +514,10 @@ function MiltenyiExportsView() {
               <span className="font-medium text-text-main">{scopeSummary}</span>
             </p>
             <p className="mt-0.5 text-[12px]">
-              Users sheet always includes the full directory (active +
-              deactivated). The FY filter only narrows Project Reviews.
+              Every sheet honors the FY filter: Users + Projects show
+              only entries active during the selected year(s); Project
+              Reviews show only rows tagged to those years. Leave all
+              unchecked for an all-time dump.
             </p>
           </div>
         </div>
@@ -582,57 +534,6 @@ function MiltenyiExportsView() {
           )}
           {isExporting ? "Exporting…" : "Export Workbook (.xlsx)"}
         </button>
-      </div>
-
-      {/* Per-employee deep-dive export — three sheets covering one
-          employee's profile, project history, and project reviews.
-          Annual goals / annual reviews are intentionally absent. */}
-      <div className="rounded-lg border border-border bg-surface p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <UserCircle
-            className="h-4 w-4 text-text-muted"
-            aria-hidden="true"
-          />
-          <span className="text-[11px] font-bold uppercase tracking-wider text-text-muted">
-            Per-Employee Export
-          </span>
-        </div>
-        <p className="text-[12px] text-text-muted mb-3">
-          Search an employee and download a workbook with their profile,
-          every project assignment (active and ended), and every project
-          review received. Deactivated ex-employees stay in the picker
-          for forensic exports.
-        </p>
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2 min-w-[260px]">
-            <label
-              htmlFor="miltenyi-employee-export-picker"
-              className="text-[11px] font-bold uppercase tracking-wider text-text-muted"
-            >
-              Employee
-            </label>
-            <StringCombobox
-              id="miltenyi-employee-export-picker"
-              options={employeeLabels}
-              value={employeePickerValue}
-              onChange={setEmployeePickerValue}
-              placeholder="Type a name…"
-            />
-          </div>
-          <button
-            type="button"
-            onClick={handleEmployeeExport}
-            disabled={!selectedEmployee || isEmployeeExporting}
-            className="flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
-          >
-            {isEmployeeExporting ? (
-              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-            ) : (
-              <Download className="h-4 w-4" aria-hidden="true" />
-            )}
-            {isEmployeeExporting ? "Exporting…" : "Export Employee Record"}
-          </button>
-        </div>
       </div>
 
       {/* Per-sheet quick downloads — same single-sheet endpoints as the

@@ -99,26 +99,16 @@ export const exportService = {
     triggerDownload(res.data as Blob, filename);
   },
 
-  /** Download a Miltenyi-scoped per-employee workbook — three sheets
-   *  (Profile, Project Assignments, Project Reviews). Annual goals /
-   *  annual reviews are intentionally excluded. HR_Miltenyi only. */
-  async downloadMiltenyiEmployee(userId: number): Promise<void> {
-    const res = await apiClient.get(
-      `/export/miltenyi-employee/${userId}.xlsx`,
-      { responseType: "blob" },
-    );
-    const filename = filenameFromResponse(
-      res,
-      `pms-miltenyi-employee-${userId}.xlsx`,
-    );
-    triggerDownload(res.data as Blob, filename);
-  },
-
   /** Download a single employee's complete record — five sheets covering
-   *  profile, goals, annual reviews, project assignments, project reviews. */
-  async downloadEmployee(userId: number): Promise<void> {
+   *  profile, goals, annual reviews, project assignments, project
+   *  reviews. When `fyYears` is non-empty, every FY-aware sheet is
+   *  narrowed to rows overlapping the selected fiscal years (matches
+   *  the combined-workbook FY filter behavior). */
+  async downloadEmployee(userId: number, fyYears: number[] = []): Promise<void> {
+    const fy = fyYears.length > 0 ? fyYears.join(",") : undefined;
     const res = await apiClient.get(`/export/employee/${userId}.xlsx`, {
       responseType: "blob",
+      params: fy ? { fy } : undefined,
     });
     const filename = filenameFromResponse(
       res,

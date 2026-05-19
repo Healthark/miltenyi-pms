@@ -12,7 +12,7 @@ cycle code can recover the cadence without an extra arg — see
 `cycle_keys_for`.
 """
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Optional, TYPE_CHECKING
 from app.models.system_settings_models import CycleType
 
@@ -520,3 +520,42 @@ def ensure_year_override_row(
     db.commit()
     db.refresh(row)
     return row
+
+
+# ── FY → calendar date range ────────────────────────────────────────
+
+
+def fy_year_to_date_range(
+    fy_year: int, fiscal_start_month: int = 4
+) -> tuple[date, date]:
+    """Convert a 4-digit FY start year into the inclusive [start, end]
+    calendar dates of that fiscal year.
+
+    Examples (fiscal_start_month=4, the default):
+        2026 → (date(2026, 4, 1), date(2027, 3, 31))
+        2023 → (date(2023, 4, 1), date(2024, 3, 31))
+
+    fiscal_start_month=1 (calendar-year orgs) returns Jan 1 – Dec 31.
+    """
+    start = date(fy_year, fiscal_start_month, 1)
+    if fiscal_start_month == 1:
+        end = date(fy_year, 12, 31)
+    else:
+        end = date(fy_year + 1, fiscal_start_month, 1) - timedelta(days=1)
+    return start, end
+
+
+def fy_filter_to_date_ranges(
+    fy_filter: Optional[set[int]],
+    fiscal_start_month: int = 4,
+) -> Optional[list[tuple[date, date]]]:
+    """Convert a set of 4-digit FY start years into a list of
+    [(fy_start, fy_end)] date ranges, sorted by start. Returns None when
+    the filter is empty / None (caller treats that as "no narrowing")."""
+    if not fy_filter:
+        return None
+    ranges = [
+        fy_year_to_date_range(year, fiscal_start_month)
+        for year in sorted(fy_filter)
+    ]
+    return ranges

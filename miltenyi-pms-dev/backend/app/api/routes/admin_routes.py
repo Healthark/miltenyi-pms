@@ -365,6 +365,9 @@ def reactivate_user(
         )
 
     user.is_deleted = False
+    # Clear the deactivation timestamp so any future FY-scoped export
+    # treats this user as continuously active from `created_at` to now.
+    user.deleted_at = None
     db.commit()
 
     return _load_user_with_relations(db, user.id)
@@ -407,6 +410,10 @@ def deactivate_user(
         )
 
     user.is_deleted = True
+    # Stamp the deactivation time so FY-scoped exports can decide
+    # whether this user was around during the selected FY. The export
+    # rule includes them in any FY that ends on/after `deleted_at`.
+    user.deleted_at = datetime.now(timezone.utc)
     db.commit()
 
     return None  # 204 No Content — no body
