@@ -417,8 +417,12 @@ function MiltenyiExportsView() {
     };
   }, []);
 
+  // Healthark's Mentor and HR_MyOrg rows are filtered out so HR_Miltenyi
+  // can't pick one for a per-employee export. Mirrors the backend's
+  // `_HEALTHARK_EXPORT_HIDDEN_ROLES` 404 guard on the export endpoint.
   const employeeOptions = useMemo(() => {
     return allUsers
+      .filter((u) => u.role !== "Mentor" && u.role !== "HR_MyOrg")
       .map((u) => ({
         id: u.id,
         label: u.is_deleted ? `${u.full_name} (deactivated)` : u.full_name,

@@ -281,8 +281,31 @@ def update_user(
     if user_in.role and user_in.role != user.role:
         _authorize_user_mutation(current_user, user_in.role)
 
-    # If employee_code is changing, check for duplicates
+    # Identity fields on a Staff row are locked for HR_Miltenyi. Healthark
+    # HR owns the Staff directory's identity columns (employee_code,
+    # full_name); Miltenyi HR manages everything else (function,
+    # designation, phone, role transitions within their permitted set).
+    # We compare the incoming value to the stored value so a no-op
+    # payload (same value resubmitted) still passes — only true changes
+    # are rejected.
     update_data = user_in.model_dump(exclude_unset=True)
+    if (
+        current_user.role == Role.HR_MILTENYI.value
+        and user.role == Role.STAFF.value
+    ):
+        for locked_field in ("employee_code", "full_name"):
+            if (
+                locked_field in update_data
+                and update_data[locked_field] != getattr(user, locked_field)
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=(
+                        "Miltenyi HR cannot change employee code or full "
+                        "name for Staff users. Ask Healthark HR to update "
+                        "this record."
+                    ),
+                )
 
     if "employee_code" in update_data and update_data["employee_code"] != user.employee_code:
         existing_code = db.query(User).filter(

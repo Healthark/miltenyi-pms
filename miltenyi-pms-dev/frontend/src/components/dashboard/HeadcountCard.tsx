@@ -33,7 +33,7 @@ const ROLE_COLORS = {
 const ROLE_LABELS = {
   staff: "Staff",
   mentor: "Mentor",
-  pm: "PM",
+  pm: "Project Manager",
   hr: "HR",
 } as const;
 
@@ -85,7 +85,13 @@ function LoadedBody({ data }: { readonly data: HeadcountSummary }) {
   const total = data.total_active;
   const insight = buildInsight(data);
 
-  const segments = ROLE_ORDER.map((key) => ({
+  // Only show buckets that have at least one user. Empty buckets
+  // (e.g. `mentor: 0` for HR_Miltenyi viewers, where Healthark
+  // mentors are filtered out by the backend) would otherwise render
+  // as zero-width donut slices and "0 Mentor" legend rows.
+  const visibleRoles = ROLE_ORDER.filter((key) => data.by_role[key] > 0);
+
+  const segments = visibleRoles.map((key) => ({
     label: ROLE_LABELS[key],
     value: data.by_role[key],
     color: ROLE_COLORS[key],
@@ -96,7 +102,7 @@ function LoadedBody({ data }: { readonly data: HeadcountSummary }) {
       <div className="flex items-center gap-2">
         {/* Left: vertical legend matching the row's donut cards. */}
         <ul className="flex-1 space-y-2 text-[13px]">
-          {ROLE_ORDER.map((key) => (
+          {visibleRoles.map((key) => (
             <li key={key} className="flex items-center gap-2">
               <span
                 className="h-2 w-2 shrink-0 rounded-full"
@@ -117,9 +123,7 @@ function LoadedBody({ data }: { readonly data: HeadcountSummary }) {
           segments={segments}
           centerPrimary={String(total)}
           centerSecondary="total"
-          ariaLabel={`${total} active employees across ${
-            ROLE_ORDER.filter((k) => data.by_role[k] > 0).length
-          } roles`}
+          ariaLabel={`${total} active employees across ${visibleRoles.length} roles`}
         />
       </div>
       <InsightStripe {...insight} />

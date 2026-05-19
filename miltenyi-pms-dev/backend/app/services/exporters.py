@@ -125,9 +125,20 @@ def _find_review(
 
 # ── Users sheet ───────────────────────────────────────────────────────
 
-def build_users_sheet(ws: Worksheet, db: Session, org_id: int) -> int:
+def build_users_sheet(
+    ws: Worksheet,
+    db: Session,
+    org_id: int,
+    exclude_roles: Optional[Iterable[str]] = None,
+) -> int:
     """One row per user, including soft-deleted ones (with Is Active = No).
-    FY filter doesn't apply — users sheet is a directory snapshot."""
+    FY filter doesn't apply — users sheet is a directory snapshot.
+
+    `exclude_roles` is the role-scoping hook used by the HR_Miltenyi
+    export: pass `{"Mentor", "HR_MyOrg"}` and those rows never make it
+    into the workbook. Mentor names that appear as references on other
+    sheets (e.g. a Staff member's mentor in the Mentor column) are not
+    affected — only the directory rows themselves are filtered out."""
     ws.title = "Users"
     _write_header(
         ws,
@@ -145,7 +156,7 @@ def build_users_sheet(ws: Worksheet, db: Session, org_id: int) -> int:
         ],
     )
 
-    users = (
+    query = (
         db.query(User)
         .options(
             joinedload(User.function),
@@ -153,9 +164,10 @@ def build_users_sheet(ws: Worksheet, db: Session, org_id: int) -> int:
             joinedload(User.mentor),
         )
         .filter(User.org_id == org_id)
-        .order_by(User.full_name.asc())
-        .all()
     )
+    if exclude_roles:
+        query = query.filter(User.role.notin_(list(exclude_roles)))
+    users = query.order_by(User.full_name.asc()).all()
 
     row = 2
     for u in users:

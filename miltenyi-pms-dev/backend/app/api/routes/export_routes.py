@@ -57,6 +57,23 @@ _XLSX_MIME = (
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
 
+# Roles whose user records HR_Miltenyi must not see in exports: Healthark
+# Mentors and the Healthark HR super-admins. Mirrors the same set used
+# elsewhere (admin_routes._authorize_user_mutation, UsersTab's
+# PROTECTED_ROLES) so the boundary is consistent across surfaces.
+_HEALTHARK_EXPORT_HIDDEN_ROLES = frozenset(
+    [Role.MENTOR.value, Role.HR_MYORG.value]
+)
+
+
+def _hidden_roles_for(current_user: User) -> Optional[frozenset[str]]:
+    """Return the set of roles to filter out of user-listing exports for
+    the given caller, or None when no scoping is needed. HR_Miltenyi is
+    the only role that gets a non-None scope today."""
+    if current_user.role == Role.HR_MILTENYI.value:
+        return _HEALTHARK_EXPORT_HIDDEN_ROLES
+    return None
+
 
 # ── Helpers ───────────────────────────────────────────────────────────
 
@@ -168,11 +185,18 @@ def export_users(db: DbSession, current_user: CurrentUser):
 
     Open to both HR roles — HR_Miltenyi uses this from the per-tab button
     in Admin → Users. The query is already org-scoped on
-    `current_user.org_id`, so HR_Miltenyi can never see another org's
-    directory."""
+    `current_user.org_id`. HR_Miltenyi callers additionally have
+    Healthark's Mentor and HR_MyOrg rows filtered out via
+    `_hidden_roles_for` so the workbook matches what they see in the
+    in-app table."""
     _require_hr_any(current_user)
     wb = Workbook()
-    rows = build_users_sheet(wb.active, db, current_user.org_id)
+    rows = build_users_sheet(
+        wb.active,
+        db,
+        current_user.org_id,
+        exclude_roles=_hidden_roles_for(current_user),
+    )
     _log_export(db, current_user.id, "users", rows, None)
     return _workbook_to_response(wb, _filename_for("users", None))
 
@@ -306,7 +330,14 @@ def export_miltenyi(
 
     wb = Workbook()
     users_ws = wb.active
-    users_rows = build_users_sheet(users_ws, db, current_user.org_id)
+    # Filter Healthark's Mentor + HR_MyOrg rows out of the Users sheet
+    # so HR_Miltenyi's combined workbook never carries those records.
+    users_rows = build_users_sheet(
+        users_ws,
+        db,
+        current_user.org_id,
+        exclude_roles=_hidden_roles_for(current_user),
+    )
 
     projects_ws = wb.create_sheet("Projects")
     projects_rows = build_projects_sheet(
@@ -351,6 +382,15 @@ def export_miltenyi_employee(
         .first()
     )
     if target is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found.",
+        )
+    # HR_Miltenyi can't direct-export a Healthark Mentor or HR_MyOrg
+    # profile, even by guessing the user_id. Return 404 (not 403) so the
+    # response shape matches the "no such user in your scope" case and
+    # doesn't reveal that the row exists.
+    if target.role in _HEALTHARK_EXPORT_HIDDEN_ROLES:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found.",

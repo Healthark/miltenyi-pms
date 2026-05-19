@@ -1,7 +1,7 @@
 /**
  * AnnualReviewFunnelCard — annual review progress for the selected FY.
  *
- * Renders the four-stage funnel (Draft → Pending Mentor → Pending Mgmt
+ * Renders the four-stage funnel (Draft → Pending Mentor → Pending Management
  * → Completed) for the FY currently selected on the dashboard's FY
  * picker. The "X of Y complete" headline counts the rows that exist in
  * the system — employees with no AnnualReview row yet for this FY are
@@ -101,7 +101,7 @@ export function AnnualReviewFunnelCard({
               <LegendItem
                 dotColor={SEGMENT_COLORS.pending_management}
                 count={data.pending_management}
-                label="Pending Mgmt"
+                label="Pending Management"
               />
               <LegendItem
                 dotColor={SEGMENT_COLORS.completed}
@@ -119,7 +119,7 @@ export function AnnualReviewFunnelCard({
                   color: SEGMENT_COLORS.pending_mentor,
                 },
                 {
-                  label: "Pending Mgmt",
+                  label: "Pending Management",
                   value: data.pending_management,
                   color: SEGMENT_COLORS.pending_management,
                 },

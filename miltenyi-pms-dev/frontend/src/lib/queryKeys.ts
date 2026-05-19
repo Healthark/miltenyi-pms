@@ -148,6 +148,11 @@ export const queryKeys = {
   profile: {
     all: ["profile"] as const,
     expectations: () => [...queryKeys.profile.all, "expectations"] as const,
+    // /users/me — rich profile (email, function, designation, mentor name).
+    // Used by the Staff dashboard's My Mentor card. Profile.tsx still
+    // uses a direct fetch and can migrate to this key later; until it
+    // does the two sources stay in sync via the standard staleTime.
+    me: () => [...queryKeys.profile.all, "me"] as const,
   },
 
   // ── System settings (public read view) ─────────────────────────────

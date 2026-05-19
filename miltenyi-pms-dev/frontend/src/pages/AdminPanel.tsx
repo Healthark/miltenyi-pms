@@ -137,7 +137,20 @@ export default function AdminPanel() {
   // Any active user can mentor — Manager/Principal/Admin gating is a UX
   // choice that fights real-world team structures (a senior IC can mentor a
   // junior IC without being a "Manager"). Filter here is just the active set.
-  const mentorOptions = users.filter((u) => !u.is_deleted);
+  //
+  // HR_Miltenyi viewers don't get any Mentor or HR_MyOrg candidates in
+  // the picker. UserModal also hides the mentor field entirely for
+  // them (it derives the same flag from useAuth internally). This
+  // filter mirrors that scope so the option list stays clean even if
+  // the field were ever re-enabled for HR_Miltenyi.
+  const isViewerMiltenyiHR = user?.role === "HR_Miltenyi";
+  const mentorOptions = users.filter((u) => {
+    if (u.is_deleted) return false;
+    if (isViewerMiltenyiHR && (u.role === "Mentor" || u.role === "HR_MyOrg")) {
+      return false;
+    }
+    return true;
+  });
 
   // ── User handlers ─────────────────────────────────────────────────────────
   const openAddModal = () => {
