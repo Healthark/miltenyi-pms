@@ -1,115 +1,45 @@
-"""
-Outbound email service.
+"""Outbound email service — SMTP transport + public send_* entry points.
 
-Transport is plain SMTP-with-STARTTLS (works for Gmail, O365, Mailgun, SES). All
-credentials read from `settings`; if SMTP_USERNAME or SMTP_PASSWORD is missing we
-log a warning and skip sending — callers should treat send failures as
-non-fatal because the admin reveal-modal still shows the reset link in-app
-as a manual-relay fallback.
+Templates live in `app/services/email_templates/` (one module per
+template type plus a shared theming helper). This file owns the SMTP
+plumbing and the three public send functions; it does not own any
+HTML/text rendering.
 
-Templates live in this file as inline f-strings (no Jinja yet) since we
-currently have a single email type. When a second template is added, extract
-them into `backend/app/services/email_templates/` with one function per
-template.
-
-Design notes:
-    * All user-supplied fields (`full_name`, recipient address, etc.) are
-      escaped via `html.escape(quote=True)` at the template boundary so a
-      malicious or imported value like ``<img onerror=...>`` cannot inject
-      HTML/JS into the rendered email body.
-    * Per-org theming is resolved from a Python-side mirror of the frontend
-      THEME_MAP / BRAND_META (see `_ORG_THEMES`). Keep the two in sync when
-      adding a new tenant.
-    * The From: address is decoupled from SMTP_USERNAME via SMTP_FROM_EMAIL
-      so production can send from `noreply@<your-domain>` while still
-      authenticating against a transactional-provider mailbox. See the
-      DNS checklist in `app/core/config.py`.
+Transport is plain SMTP-with-STARTTLS (works for Gmail, O365, Mailgun,
+SES). All credentials read from `settings`; if SMTP_USERNAME or
+SMTP_PASSWORD is missing we log a warning and skip sending — callers
+should treat send failures as non-fatal because the admin reveal-modal
+still shows the reset link in-app as a manual-relay fallback.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import smtplib
 import socket
-from dataclasses import dataclass
 from email.message import EmailMessage
 from email.utils import formataddr
-from html import escape as _html_escape
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
 
 from app.core.config import settings
-
-logger = logging.getLogger(__name__)
-
-
-# ── Per-org theming (mirror of frontend THEME_MAP / BRAND_META) ─────
-
-
-@dataclass(frozen=True)
-class EmailTheme:
-    """Color + display-name palette for a single tenant's outbound mail.
-
-    Mirrors `--brand` / `--brand-light` in `frontend/src/index.css` and the
-    title in `BRAND_META` from `frontend/src/contexts/AuthProvider.tsx`.
-    Keep them in sync when adding a tenant — if they drift, the email a
-    Miltenyi user receives will look like a HealthArk email."""
-
-    brand_name: str
-    brand: str
-    brand_light: str
-
-
-_DEFAULT_THEME = EmailTheme(
-    brand_name="Healthark PMS",
-    brand="#315C84",
-    brand_light="#EBF1F6",
+from app.services.email_templates._shared import (
+    resolve_from_address,
+    resolve_from_name,
+    resolve_theme,
+)
+from app.services.email_templates.notification import (
+    notification_html,
+    notification_text,
+)
+from app.services.email_templates.password_reset import (
+    password_reset_html,
+    password_reset_text,
+)
+from app.services.email_templates.welcome_user import (
+    welcome_user_html,
+    welcome_user_text,
 )
 
-# org_id → theme. Org IDs match `data-theme` slugs:
-#   1 = healthark, 2 = miltenyi  (per CLAUDE.md / AuthProvider.tsx)
-_ORG_THEMES: dict[int, EmailTheme] = {
-    1: _DEFAULT_THEME,
-    2: EmailTheme(
-        brand_name="Miltenyi PMS",
-        brand="#3C1053",
-        brand_light="#F4EFF8",
-    ),
-}
-
-
-def _resolve_theme(org_id: int | None) -> EmailTheme:
-    """Look up the per-org theme. Unknown org_id → default (HealthArk).
-    Same fallback behavior as the frontend's THEME_MAP."""
-    if org_id is None:
-        return _DEFAULT_THEME
-    return _ORG_THEMES.get(org_id, _DEFAULT_THEME)
-
-
-def _resolve_from_name(theme: EmailTheme) -> str:
-    """Display name in the From: header. SMTP_FROM_NAME (env) wins as a
-    global override; otherwise we use the per-org brand name. This keeps
-    single-tenant deployments using their existing env config while letting
-    multi-tenant deployments brand per-org by leaving the env unset."""
-    return settings.SMTP_FROM_NAME or theme.brand_name
-
-
-def _resolve_from_address() -> str:
-    """The mailbox in From:. Falls back to SMTP_USERNAME for dev/Gmail
-    where the auth account and the visible sender must match."""
-    return settings.SMTP_FROM_EMAIL or settings.SMTP_USERNAME or ""
-
-
-# ── Escaping helper ─────────────────────────────────────────────────
-
-
-def _esc(value: object) -> str:
-    """HTML-escape a value for safe interpolation into both HTML attribute
-    and text contexts. `quote=True` flips `"` → `&quot;` and `&` → `&amp;`,
-    so a user with `full_name='Bobby <img onerror=x>'` lands in the email
-    body as harmless text rather than a rendered tag."""
-    return _html_escape(str(value), quote=True)
+logger = logging.getLogger(__name__)
 
 
 # ── Transport ───────────────────────────────────────────────────────
@@ -178,7 +108,7 @@ def _send(
         )
         return False
 
-    from_address = _resolve_from_address()
+    from_address = resolve_from_address()
     if not from_address:
         logger.error("SMTP_FROM_EMAIL / SMTP_USERNAME both unset; cannot build From:")
         return False
@@ -206,327 +136,7 @@ def _send(
     return True
 
 
-# ── Templates ───────────────────────────────────────────────────────
-
-
-def _password_reset_html(
-    full_name: str,
-    reset_link: str,
-    expires_in_minutes: int,
-    theme: EmailTheme,
-) -> str:
-    """Inline-styled HTML for the admin-initiated password reset email.
-
-    Uses table-based layout + inline CSS for broad email-client support
-    (Gmail web, Outlook, Apple Mail). No web fonts, no external CSS, no
-    background images.
-
-    The body header and footer brand name come from `theme.brand_name`
-    directly (per-org), independent of the SMTP_FROM_NAME env override —
-    that override only steers the visible From: address so multi-tenant
-    deployments don't misbrand the email body. User-supplied fields are
-    escaped via `_esc()` before interpolation."""
-
-    # Escape every interpolation that could plausibly carry user-controlled
-    # content. Defense-in-depth — even fields like `theme.brand_name`
-    # (config-driven) are escaped because configs can rotate and we'd
-    # rather be paranoid than ship an HTML-injection sink that's
-    # "currently fine".
-    full_name_e = _esc(full_name)
-    reset_link_e = _esc(reset_link)
-    expires_e = _esc(expires_in_minutes)
-    brand_name_e = _esc(theme.brand_name)
-    brand_e = _esc(theme.brand)
-    brand_light_e = _esc(theme.brand_light)
-
-    return f"""\
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Reset your password</title>
-</head>
-<body style="margin:0;padding:0;background-color:#F8FAFC;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;color:#0F172A;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#F8FAFC;padding:32px 16px;">
-    <tr>
-      <td align="center">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;background-color:#FFFFFF;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(15,23,42,0.06);">
-          <!-- Header band (brand) -->
-          <tr>
-            <td style="background-color:{brand_e};padding:24px 32px;">
-              <p style="margin:0;color:#FFFFFF;font-size:18px;font-weight:600;letter-spacing:0.2px;">
-                {brand_name_e}
-              </p>
-              <p style="margin:4px 0 0 0;color:{brand_light_e};font-size:13px;">
-                Account security notification
-              </p>
-            </td>
-          </tr>
-
-          <!-- Body -->
-          <tr>
-            <td style="padding:32px 32px 8px 32px;">
-              <h1 style="margin:0 0 12px 0;font-size:20px;font-weight:600;color:#0F172A;">
-                Reset your password
-              </h1>
-              <p style="margin:0 0 16px 0;font-size:14px;line-height:1.6;color:#0F172A;">
-                Hi {full_name_e},
-              </p>
-              <p style="margin:0 0 20px 0;font-size:14px;line-height:1.6;color:#0F172A;">
-                An administrator has initiated a password reset for your
-                account. Click the button below to choose a new password.
-                This link expires in <strong>{expires_e} minutes</strong>
-                and can only be used once.
-              </p>
-
-              <!-- CTA button (brand) -->
-              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px 0;">
-                <tr>
-                  <td align="center" style="background-color:{brand_e};border-radius:8px;">
-                    <a href="{reset_link_e}" target="_blank" rel="noopener" style="display:inline-block;padding:12px 28px;font-size:14px;font-weight:600;color:#FFFFFF;text-decoration:none;">
-                      Set new password
-                    </a>
-                  </td>
-                </tr>
-              </table>
-
-              <!-- Plain-link fallback -->
-              <p style="margin:0 0 8px 0;font-size:12px;color:#64748B;">
-                If the button doesn't work, copy and paste this URL into your
-                browser:
-              </p>
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px 0;">
-                <tr>
-                  <td style="background-color:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:12px 16px;">
-                    <a href="{reset_link_e}" target="_blank" rel="noopener" style="font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;font-size:12px;color:{brand_e};word-break:break-all;text-decoration:none;">
-                      {reset_link_e}
-                    </a>
-                  </td>
-                </tr>
-              </table>
-
-              <!-- Security warning -->
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 8px 0;">
-                <tr>
-                  <td style="background-color:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:14px 16px;">
-                    <p style="margin:0;font-size:13px;line-height:1.5;color:#92400E;">
-                      <strong>Security tip:</strong> this link is one-time-use
-                      and expires in {expires_e} minutes. Your previous
-                      password is no longer valid. If you did not expect a
-                      password reset, contact your HR administrator
-                      immediately and do not click the link.
-                    </p>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-
-          <!-- Footer -->
-          <tr>
-            <td style="padding:20px 32px 28px 32px;border-top:1px solid #E2E8F0;">
-              <p style="margin:0;font-size:12px;line-height:1.5;color:#64748B;">
-                This is an automated message from {brand_name_e}.
-                Please do not reply to this email.
-              </p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
-"""
-
-
-def _password_reset_text(
-    full_name: str,
-    reset_link: str,
-    expires_in_minutes: int,
-    from_name: str,
-) -> str:
-    """Plain-text fallback. No HTML, so no escape needed — user-controlled
-    text in plaintext can't break out of any markup."""
-    return (
-        f"Hi {full_name},\n\n"
-        "An administrator has initiated a password reset for your account. "
-        "Open the link below to choose a new password. This link expires in "
-        f"{expires_in_minutes} minutes and can only be used once.\n\n"
-        f"{reset_link}\n\n"
-        f"Security tip: this link is one-time-use and expires in "
-        f"{expires_in_minutes} minutes. Your previous password is no longer "
-        "valid. If you did not expect a password reset, contact your HR "
-        "administrator immediately and do not click the link.\n\n"
-        f"— {from_name}\n"
-    )
-
-
 # ── Public API ──────────────────────────────────────────────────────
-
-
-def _welcome_user_html(
-    full_name: str,
-    email: str,
-    password: str,
-    login_url: str,
-    theme: EmailTheme,
-) -> str:
-    """Inline-styled HTML for the new-user welcome email. Same table-based
-    layout / inline CSS contract as `_password_reset_html` so both renders
-    look consistent in restrictive clients (Gmail, Outlook, Apple Mail).
-
-    Every interpolation is escaped via `_esc()` because the credentials
-    box renders user-controlled values (full_name, email) directly into
-    the HTML body."""
-    full_name_e = _esc(full_name)
-    email_e = _esc(email)
-    password_e = _esc(password)
-    login_url_e = _esc(login_url)
-    brand_name_e = _esc(theme.brand_name)
-    brand_e = _esc(theme.brand)
-    brand_light_e = _esc(theme.brand_light)
-
-    return f"""\
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Welcome to {brand_name_e}</title>
-</head>
-<body style="margin:0;padding:0;background-color:#F8FAFC;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;color:#0F172A;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#F8FAFC;padding:32px 16px;">
-    <tr>
-      <td align="center">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;background-color:#FFFFFF;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(15,23,42,0.06);">
-          <!-- Header band (brand) -->
-          <tr>
-            <td style="background-color:{brand_e};padding:24px 32px;">
-              <p style="margin:0;color:#FFFFFF;font-size:18px;font-weight:600;letter-spacing:0.2px;">
-                {brand_name_e}
-              </p>
-              <p style="margin:4px 0 0 0;color:{brand_light_e};font-size:13px;">
-                Account created
-              </p>
-            </td>
-          </tr>
-
-          <!-- Body -->
-          <tr>
-            <td style="padding:32px 32px 8px 32px;">
-              <h1 style="margin:0 0 12px 0;font-size:20px;font-weight:600;color:#0F172A;">
-                Welcome to {brand_name_e}
-              </h1>
-              <p style="margin:0 0 16px 0;font-size:14px;line-height:1.6;color:#0F172A;">
-                Hi {full_name_e},
-              </p>
-              <p style="margin:0 0 20px 0;font-size:14px;line-height:1.6;color:#0F172A;">
-                Your {brand_name_e} account has been created by your
-                administrator. Use the credentials below to sign in.
-              </p>
-
-              <!-- Credentials box -->
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px 0;">
-                <tr>
-                  <td style="background-color:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:16px 20px;">
-                    <p style="margin:0 0 4px 0;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:#64748B;">
-                      Email
-                    </p>
-                    <p style="margin:0 0 14px 0;font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;font-size:13px;color:#0F172A;word-break:break-all;">
-                      {email_e}
-                    </p>
-                    <p style="margin:0 0 4px 0;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:#64748B;">
-                      Temporary password
-                    </p>
-                    <p style="margin:0;font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;font-size:13px;color:#0F172A;word-break:break-all;">
-                      {password_e}
-                    </p>
-                  </td>
-                </tr>
-              </table>
-
-              <!-- CTA button (brand) -->
-              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px 0;">
-                <tr>
-                  <td align="center" style="background-color:{brand_e};border-radius:8px;">
-                    <a href="{login_url_e}" target="_blank" rel="noopener" style="display:inline-block;padding:12px 28px;font-size:14px;font-weight:600;color:#FFFFFF;text-decoration:none;">
-                      Sign in
-                    </a>
-                  </td>
-                </tr>
-              </table>
-
-              <!-- Plain-link fallback -->
-              <p style="margin:0 0 8px 0;font-size:12px;color:#64748B;">
-                If the button doesn't work, copy and paste this URL into your
-                browser:
-              </p>
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px 0;">
-                <tr>
-                  <td style="background-color:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:12px 16px;">
-                    <a href="{login_url_e}" target="_blank" rel="noopener" style="font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;font-size:12px;color:{brand_e};word-break:break-all;text-decoration:none;">
-                      {login_url_e}
-                    </a>
-                  </td>
-                </tr>
-              </table>
-
-              <!-- Security note -->
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 8px 0;">
-                <tr>
-                  <td style="background-color:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:14px 16px;">
-                    <p style="margin:0;font-size:13px;line-height:1.5;color:#92400E;">
-                      <strong>Security tip:</strong> change your password after
-                      signing in for the first time. You can do this from the
-                      Profile page. If you did not expect this account, please
-                      contact your HR administrator.
-                    </p>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-
-          <!-- Footer -->
-          <tr>
-            <td style="padding:20px 32px 28px 32px;border-top:1px solid #E2E8F0;">
-              <p style="margin:0;font-size:12px;line-height:1.5;color:#64748B;">
-                This is an automated message from {brand_name_e}.
-                Please do not reply to this email.
-              </p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
-"""
-
-
-def _welcome_user_text(
-    full_name: str,
-    email: str,
-    password: str,
-    login_url: str,
-    from_name: str,
-) -> str:
-    """Plain-text fallback for the welcome email."""
-    return (
-        f"Hi {full_name},\n\n"
-        f"Your {from_name} account has been created by your administrator. "
-        "Use the credentials below to sign in.\n\n"
-        f"  Email:    {email}\n"
-        f"  Password: {password}\n\n"
-        f"Sign in: {login_url}\n\n"
-        "Security tip: change your password after signing in for the first "
-        "time. You can do this from the Profile page. If you did not expect "
-        "this account, please contact your HR administrator.\n\n"
-        f"— {from_name}\n"
-    )
 
 
 def send_welcome_user_email(
@@ -546,17 +156,13 @@ def send_welcome_user_email(
 
     `org_id` selects the per-org theme. Should be invoked via
     BackgroundTasks so the SMTP handshake doesn't block the API response."""
-    theme = _resolve_theme(org_id)
-    sender_display_name = _resolve_from_name(theme)
+    theme = resolve_theme(org_id)
+    sender_display_name = resolve_from_name(theme)
     return _send(
         to_email=to_email,
         subject=f"Welcome to {theme.brand_name} — your account is ready",
-        html_body=_welcome_user_html(
-            full_name, to_email, password, login_url, theme
-        ),
-        text_body=_welcome_user_text(
-            full_name, to_email, password, login_url, theme.brand_name
-        ),
+        html_body=welcome_user_html(full_name, to_email, password, login_url, theme),
+        text_body=welcome_user_text(full_name, to_email, password, login_url, theme.brand_name),
         from_name=sender_display_name,
     )
 
@@ -581,137 +187,14 @@ def send_password_reset_email(
 
     This function is intended to be called from `BackgroundTasks` so the
     blocking SMTP handshake doesn't sit on the API request thread."""
-    theme = _resolve_theme(org_id)
-    # The body always uses the org's brand name; the From: line uses the
-    # env override when set so the visible sender can stay consistent
-    # across orgs even when the body re-brands per recipient.
-    sender_display_name = _resolve_from_name(theme)
+    theme = resolve_theme(org_id)
+    sender_display_name = resolve_from_name(theme)
     return _send(
         to_email=to_email,
         subject=f"Reset your {theme.brand_name} password",
-        html_body=_password_reset_html(
-            full_name, reset_link, expires_in_minutes, theme
-        ),
-        text_body=_password_reset_text(
-            full_name, reset_link, expires_in_minutes, theme.brand_name
-        ),
+        html_body=password_reset_html(full_name, reset_link, expires_in_minutes, theme),
+        text_body=password_reset_text(full_name, reset_link, expires_in_minutes, theme.brand_name),
         from_name=sender_display_name,
-    )
-
-
-def _notification_html(
-    full_name: str,
-    lead: str,
-    cta_label: str,
-    cta_url: str,
-    theme: EmailTheme,
-) -> str:
-    """Inline-styled HTML for a generic notification email. Same
-    table-based / inline-CSS contract as the password-reset and welcome
-    templates so all three renders look consistent in restrictive
-    clients (Gmail, Outlook, Apple Mail). All interpolations escaped
-    via _esc()."""
-    full_name_e   = _esc(full_name)
-    lead_e        = _esc(lead)
-    cta_label_e   = _esc(cta_label)
-    cta_url_e     = _esc(cta_url)
-    brand_name_e  = _esc(theme.brand_name)
-    brand_e       = _esc(theme.brand)
-    brand_light_e = _esc(theme.brand_light)
-
-    return f"""\
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>{brand_name_e} notification</title>
-</head>
-<body style="margin:0;padding:0;background-color:#F8FAFC;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;color:#0F172A;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#F8FAFC;padding:32px 16px;">
-    <tr>
-      <td align="center">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;background-color:#FFFFFF;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(15,23,42,0.06);">
-          <!-- Header band (brand) -->
-          <tr>
-            <td style="background-color:{brand_e};padding:24px 32px;">
-              <p style="margin:0;color:#FFFFFF;font-size:18px;font-weight:600;letter-spacing:0.2px;">
-                {brand_name_e}
-              </p>
-              <p style="margin:4px 0 0 0;color:{brand_light_e};font-size:13px;">
-                Notification
-              </p>
-            </td>
-          </tr>
-
-          <!-- Body -->
-          <tr>
-            <td style="padding:32px 32px 8px 32px;">
-              <p style="margin:0 0 16px 0;font-size:14px;line-height:1.6;color:#0F172A;">
-                Hi {full_name_e},
-              </p>
-              <p style="margin:0 0 20px 0;font-size:14px;line-height:1.6;color:#0F172A;">
-                {lead_e}
-              </p>
-
-              <!-- CTA button (brand) -->
-              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px 0;">
-                <tr>
-                  <td align="center" style="background-color:{brand_e};border-radius:8px;">
-                    <a href="{cta_url_e}" target="_blank" rel="noopener" style="display:inline-block;padding:12px 28px;font-size:14px;font-weight:600;color:#FFFFFF;text-decoration:none;">
-                      {cta_label_e}
-                    </a>
-                  </td>
-                </tr>
-              </table>
-
-              <!-- Plain-link fallback -->
-              <p style="margin:0 0 8px 0;font-size:12px;color:#64748B;">
-                If the button doesn't work, copy and paste this URL into your
-                browser:
-              </p>
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px 0;">
-                <tr>
-                  <td style="background-color:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:12px 16px;">
-                    <a href="{cta_url_e}" target="_blank" rel="noopener" style="font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;font-size:12px;color:{brand_e};word-break:break-all;text-decoration:none;">
-                      {cta_url_e}
-                    </a>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-
-          <!-- Footer -->
-          <tr>
-            <td style="padding:20px 32px 28px 32px;border-top:1px solid #E2E8F0;">
-              <p style="margin:0;font-size:12px;line-height:1.5;color:#64748B;">
-                This is an automated message from {brand_name_e}.
-                Please do not reply to this email.
-              </p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
-"""
-
-
-def _notification_text(
-    full_name: str,
-    lead: str,
-    cta_url: str,
-    from_name: str,
-) -> str:
-    """Plain-text fallback for the notification email."""
-    return (
-        f"Hi {full_name},\n\n"
-        f"{lead}\n\n"
-        f"Open: {cta_url}\n\n"
-        f"— {from_name}\n"
     )
 
 
@@ -733,12 +216,12 @@ def send_notification_email(
     Caller must NOT make the lifecycle action depend on the return —
     notifications are best-effort. The in-app row written alongside is
     the authoritative surface; email is a convenience signal."""
-    theme = _resolve_theme(org_id)
-    sender_display_name = _resolve_from_name(theme)
+    theme = resolve_theme(org_id)
+    sender_display_name = resolve_from_name(theme)
     return _send(
         to_email=to_email,
         subject=subject,
-        html_body=_notification_html(full_name, lead, cta_label, cta_url, theme),
-        text_body=_notification_text(full_name, lead, cta_url, theme.brand_name),
+        html_body=notification_html(full_name, lead, cta_label, cta_url, theme),
+        text_body=notification_text(full_name, lead, cta_url, theme.brand_name),
         from_name=sender_display_name,
     )

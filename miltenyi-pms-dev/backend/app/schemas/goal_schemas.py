@@ -116,6 +116,14 @@ class GoalBulkApproveResult(BaseModel):
     failures: list[GoalBulkApproveFailure]
 
 
+class GoalNotifyRequest(BaseModel):
+    """Payload for the mentor's "Notify" button on the Team Goals tab —
+    sends a free-text message to the goal owner. The message is shown
+    verbatim in the topbar bell and, when SMTP is configured, mailed as
+    the email body."""
+    message: str = Field(..., min_length=1, max_length=1000)
+
+
 class GoalMentorReviewSubmit(BaseModel):
     """
     Payload the mentor submits when reviewing a mentee's self-review for one

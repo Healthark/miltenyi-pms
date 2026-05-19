@@ -10,6 +10,7 @@ import {
   CheckCheck,
   RotateCcw,
   Link as LinkIcon,
+  Bell,
 } from "lucide-react";
 import {
   goalService,
@@ -112,6 +113,97 @@ function FeedbackModal({
             className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50 transition-colors"
           >
             {isSaving ? "Sending…" : "Send Feedback"}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// NotifyModal — free-text mentor-to-mentee ping (Phase 2 — closes the
+// 2026-04-21 orphan that introduced the notifications table without a
+// frontend trigger).
+// ---------------------------------------------------------------------------
+
+interface NotifyModalProps {
+  readonly goal: TeamGoal;
+  readonly onSend: (message: string) => Promise<void>;
+  readonly onClose: () => void;
+  readonly isSaving: boolean;
+  readonly error: string;
+}
+
+function NotifyModal({
+  goal,
+  onSend,
+  onClose,
+  isSaving,
+  error,
+}: NotifyModalProps) {
+  const [message, setMessage] = useState("");
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="notify-modal-title"
+    >
+      <div className="w-full max-w-md rounded-xl bg-surface shadow-xl">
+        <div className="border-b border-border px-6 py-4">
+          <h2
+            id="notify-modal-title"
+            className="font-display text-base font-semibold text-text-main"
+          >
+            Notify {goal.owner_name}
+          </h2>
+          <p className="mt-0.5 text-sm text-text-muted">
+            Send a quick message about &ldquo;{goal.title}&rdquo;. They&apos;ll
+            see it in their notifications bell and, when email is configured,
+            in their inbox.
+          </p>
+        </div>
+
+        <div className="px-6 py-5 space-y-3">
+          {error && (
+            <p className="rounded-lg bg-red-50 px-4 py-2.5 text-sm text-red-600">
+              {error}
+            </p>
+          )}
+          <label
+            htmlFor="notify-text"
+            className="block text-xs font-medium text-text-muted mb-1"
+          >
+            Message *
+          </label>
+          <textarea
+            id="notify-text"
+            rows={4}
+            maxLength={1000}
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            placeholder="e.g. Let's discuss this goal in our 1:1 tomorrow."
+            className="w-full resize-none rounded-lg border border-border bg-white px-3 py-2 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-brand"
+          />
+        </div>
+
+        <div className="flex justify-end gap-3 border-t border-border px-6 py-4">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-text-muted hover:bg-slate-50 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => onSend(message)}
+            disabled={isSaving || !message.trim()}
+            className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-50 transition-colors"
+          >
+            {isSaving ? "Sending…" : "Send Notification"}
           </button>
         </div>
       </div>
@@ -264,6 +356,10 @@ export function TeamGoalsTab() {
   const [reviewGoal, setReviewGoal] = useState<TeamGoal | null>(null);
   const [reviewCycle, setReviewCycle] = useState<SelfReviewCycleHalf | null>(null);
   const [reviewError, setReviewError] = useState("");
+
+  // Notify modal state
+  const [notifyTarget, setNotifyTarget] = useState<TeamGoal | null>(null);
+  const [notifyError, setNotifyError] = useState("");
 
   // ── Mutations ──────────────────────────────────────────────────────
   // All five goal-side mutations broadcast-invalidate the same two
@@ -426,6 +522,19 @@ export function TeamGoalsTab() {
     onError: (err) => setReviewError(getErrorMessage(err)),
   });
 
+  // Notify mutation — no optimistic update; the topbar bell is refetched
+  // by the existing /summary polling, and we'd rather show the modal's
+  // spinner than fake the recipient's view from over here.
+  const notifyOwnerMutation = useMutation({
+    mutationFn: (vars: { goalId: number; message: string }) =>
+      goalService.notifyOwner(vars.goalId, vars.message),
+    onSuccess: () => {
+      setNotifyTarget(null);
+      toast.success("Notification sent.");
+    },
+    onError: (err) => setNotifyError(getErrorMessage(err)),
+  });
+
   // Combined acting flag for the approve / feedback row-level UI
   // (some row-level UI disables itself while a mutation is in flight).
   const isActing =
@@ -523,6 +632,19 @@ export function TeamGoalsTab() {
       await requestChangesMutation.mutateAsync({
         goalId: feedbackTarget.id,
         feedback,
+      });
+    } catch {
+      /* handled by onError */
+    }
+  };
+
+  const handleSendNotify = async (message: string) => {
+    if (!notifyTarget) return;
+    setNotifyError("");
+    try {
+      await notifyOwnerMutation.mutateAsync({
+        goalId: notifyTarget.id,
+        message,
       });
     } catch {
       /* handled by onError */
@@ -959,6 +1081,18 @@ export function TeamGoalsTab() {
                                             Awaiting revision
                                           </span>
                                         )}
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setNotifyError("");
+                                            setNotifyTarget(g);
+                                          }}
+                                          className="flex items-center gap-1 rounded-md border border-border bg-white px-2 py-1 text-[11px] font-medium text-text-muted hover:bg-slate-50 transition-colors"
+                                          title={`Send a message to ${g.owner_name}`}
+                                        >
+                                          <Bell className="h-3 w-3" />
+                                          Notify
+                                        </button>
                                       </div>
                                     </td>
                                   </tr>
@@ -1016,6 +1150,20 @@ export function TeamGoalsTab() {
           isSaving={submitMentorReviewMutation.isPending}
           isDraftSaving={saveMentorReviewDraftMutation.isPending}
           error={reviewError}
+        />
+      )}
+
+      {/* Free-text "Notify" modal — mentor pings the mentee about a goal. */}
+      {notifyTarget && (
+        <NotifyModal
+          goal={notifyTarget}
+          onSend={handleSendNotify}
+          onClose={() => {
+            setNotifyTarget(null);
+            setNotifyError("");
+          }}
+          isSaving={notifyOwnerMutation.isPending}
+          error={notifyError}
         />
       )}
     </div>

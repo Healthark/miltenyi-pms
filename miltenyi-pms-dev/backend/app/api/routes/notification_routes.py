@@ -143,7 +143,6 @@ def get_topbar_summary(
         UserNotificationItem(
             id=n.id,
             message=n.message,
-            goal_id=n.goal_id,
             module=n.module,
             entity_type=n.entity_type,
             entity_id=n.entity_id,

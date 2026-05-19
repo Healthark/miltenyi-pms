@@ -28,6 +28,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy.orm import aliased, joinedload
 
 from app.api.dependencies import DbSession, CurrentUser
+from app.services.notification_service import notify
 from app.core.cycle_utils import (
     _fy_label_of_project_review,
     cycle_date_range,
@@ -885,6 +886,19 @@ def submit_pm_evaluation(
     db.commit()
     db.refresh(review)
 
+    notify(
+        db,
+        org_id=current_user.org_id,
+        recipient_id=user_id,
+        sender_id=current_user.id,
+        module="project_review",
+        entity_type="project_review",
+        entity_id=review.id,
+        message=f"Your PM submitted a project review for {project.name}.",
+        entity_url=f"/project-reviews?review_id={review.id}",
+    )
+    db.commit()
+
     return _build_review_response(review, db, viewer=current_user)
 
 
@@ -1189,6 +1203,19 @@ def submit_secondary_evaluation(
     db.commit()
     db.refresh(evaluator)
 
+    notify(
+        db,
+        org_id=current_user.org_id,
+        recipient_id=review.user_id,
+        sender_id=current_user.id,
+        module="project_review",
+        entity_type="project_review",
+        entity_id=review.id,
+        message=f"A secondary evaluator added impact on your {project.name} review.",
+        entity_url=f"/project-reviews?review_id={review.id}",
+    )
+    db.commit()
+
     ev_user = db.query(User).filter(User.id == evaluator.evaluator_id).first()
     return SecondaryEvalResponse(
         id=evaluator.id,
@@ -1315,6 +1342,25 @@ def update_secondary_evaluation(
     existing.impact_statement = payload.impact_statement
     db.commit()
     db.refresh(existing)
+
+    # In-app only — edits to an already-submitted secondary eval are
+    # low-signal compared with the initial submit; no email.
+    project = db.query(Project).filter(Project.id == review.project_id).first()
+    notify(
+        db,
+        org_id=current_user.org_id,
+        recipient_id=review.user_id,
+        sender_id=current_user.id,
+        module="project_review",
+        entity_type="project_review",
+        entity_id=review.id,
+        message=(
+            f"Your secondary evaluation for {project.name} was updated."
+            if project else "Your secondary evaluation was updated."
+        ),
+        entity_url=f"/project-reviews?review_id={review.id}",
+    )
+    db.commit()
 
     ev_user = db.query(User).filter(User.id == existing.evaluator_id).first()
     return SecondaryEvalResponse(
@@ -1685,6 +1731,24 @@ def update_review(
 
     db.commit()
     db.refresh(review)
+
+    # In-app only — same low-signal rationale as update_secondary_evaluation.
+    project = db.query(Project).filter(Project.id == review.project_id).first()
+    notify(
+        db,
+        org_id=current_user.org_id,
+        recipient_id=review.user_id,
+        sender_id=current_user.id,
+        module="project_review",
+        entity_type="project_review",
+        entity_id=review.id,
+        message=(
+            f"Your project review for {project.name} was updated."
+            if project else "Your project review was updated."
+        ),
+        entity_url=f"/project-reviews?review_id={review.id}",
+    )
+    db.commit()
 
     return _build_review_response(review, db, viewer=current_user)
 

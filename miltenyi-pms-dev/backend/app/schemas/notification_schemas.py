@@ -26,15 +26,10 @@ class NotificationItem(BaseModel):
 
 class UserNotificationItem(BaseModel):
     """A direct user-to-user notification row (polymorphic across modules).
-
-    `goal_id` is retained as an optional back-compat field for clients
-    that haven't shipped the generalized shape yet. New module rows
-    populate `module` / `entity_type` / `entity_id` / `entity_url`
-    instead; `goal_id` stays NULL for them.
-    """
+    `module` + `entity_type` + `entity_id` identify the source event;
+    `entity_url` is the SPA deep-link the dropdown opens on click."""
     id: int
     message: str
-    goal_id: Optional[int] = None
     module: Optional[str] = None
     entity_type: Optional[str] = None
     entity_id: Optional[int] = None
