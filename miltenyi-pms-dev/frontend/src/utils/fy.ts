@@ -69,3 +69,49 @@ export function fyTokenToStartYear(token: string): number | null {
   const digits = single[1];
   return digits.length === 2 ? 2000 + Number(digits) : Number(digits);
 }
+
+/**
+ * Days remaining from `today` until the last calendar day of the FY
+ * identified by `cycleNameOrToken`. Honours the org's `fiscalStartMonth`
+ * (April-start orgs end FY on Mar 31; Jan-start orgs end Dec 31; etc.)
+ *
+ * Returns a positive integer while today is still inside the FY, zero
+ * on FY-end day itself, a negative integer if today is past FY end, and
+ * `null` when the cycle string can't be parsed into an FY.
+ *
+ * Used by the dashboard's annual-review nudge: only surface "Start
+ * annual self-review" when `daysUntilFyEnd <= 30`.
+ */
+export function daysUntilFyEnd(
+  cycleNameOrToken: string,
+  fiscalStartMonth: number,
+  today: Date = new Date(),
+): number | null {
+  const startYear = fyTokenToStartYear(cycleNameOrToken);
+  if (startYear == null) return null;
+
+  // FY ends one calendar day before fiscalStartMonth of (startYear + 1).
+  // `new Date(year, month, 0)` returns the last day of (month - 1) in
+  // 0-indexed JS months — so for fiscalStartMonth=4, startYear=2026:
+  // new Date(2027, 3, 0) === March 31, 2027.
+  // The Jan-start case is special-cased because (month - 1) wraps.
+  const fyEnd =
+    fiscalStartMonth === 1
+      ? new Date(startYear, 11, 31)
+      : new Date(startYear + 1, fiscalStartMonth - 1, 0);
+
+  // Normalise both dates to local midnight so daylight-saving / TZ
+  // shifts don't produce off-by-one results.
+  const todayMid = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate(),
+  );
+  const fyEndMid = new Date(
+    fyEnd.getFullYear(),
+    fyEnd.getMonth(),
+    fyEnd.getDate(),
+  );
+  const msPerDay = 1000 * 60 * 60 * 24;
+  return Math.round((fyEndMid.getTime() - todayMid.getTime()) / msPerDay);
+}
