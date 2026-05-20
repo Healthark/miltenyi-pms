@@ -54,6 +54,7 @@ from app.services.send_email import (
     is_smtp_configured,
     send_welcome_user_email,
 )
+from app.services.notification_service import notify
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from app.schemas.admin_schemas import (
@@ -283,6 +284,22 @@ def create_user(
             org_id=new_user.org_id,
         )
 
+    # Seed an in-app notification so the bell isn't empty on first login.
+    # Email is intentionally NOT sent here — the welcome email above
+    # already covers that channel and duplicate inbox pings are noise.
+    notify(
+        db,
+        org_id=new_user.org_id,
+        recipient_id=new_user.id,
+        sender_id=current_user.id,
+        module="admin",
+        entity_type="user",
+        entity_id=new_user.id,
+        message="Welcome to PMS — your account is ready.",
+        entity_url="/dashboard",
+    )
+    db.commit()
+
     # Eagerly load relationships for the response
     return _load_user_with_relations(db, new_user.id)
 
@@ -293,6 +310,7 @@ def update_user(
     user_in: UserUpdate,
     db: DbSession,
     current_user: CurrentUser,
+    background_tasks: BackgroundTasks,
 ):
     """
     Update a user's details (name, role, function, mentor, etc.).
@@ -356,10 +374,63 @@ def update_user(
                 detail=f"Employee code '{update_data['employee_code']}' is already in use.",
             )
 
+    # Snapshot the old mentor_id BEFORE applying the update so we can
+    # detect a true mentor reassignment after commit. A PATCH that
+    # resubmits the same mentor_id is a no-op and shouldn't notify.
+    old_mentor_id = user.mentor_id
+
     for field, value in update_data.items():
         setattr(user, field, value)
 
     db.commit()
+
+    # Mentor reassignment notifications. We notify on any of:
+    #   - mentor assigned for the first time   (None → X)
+    #   - mentor reassigned                    (X → Y)
+    #   - mentor unassigned                    (X → None)
+    # The new mentor is told they got a mentee; the mentee is told who
+    # their mentor is now (or that they have none).
+    new_mentor_id = user.mentor_id
+    if "mentor_id" in update_data and new_mentor_id != old_mentor_id:
+        if new_mentor_id is not None:
+            new_mentor = db.query(User).filter(User.id == new_mentor_id).first()
+            if new_mentor:
+                notify(
+                    db,
+                    org_id=current_user.org_id,
+                    recipient_id=new_mentor.id,
+                    sender_id=current_user.id,
+                    module="admin",
+                    entity_type="user",
+                    entity_id=user.id,
+                    message=f"{user.full_name} was assigned to you as a mentee.",
+                    entity_url="/mentees",
+                    background_tasks=background_tasks,
+                    send_email=True,
+                    email_subject="New mentee assigned to you",
+                )
+            mentee_msg = (
+                f"Your mentor was updated to {new_mentor.full_name}."
+                if new_mentor else "Your mentor was updated."
+            )
+        else:
+            mentee_msg = "Your mentor was unassigned. Contact HR if this is unexpected."
+
+        notify(
+            db,
+            org_id=current_user.org_id,
+            recipient_id=user.id,
+            sender_id=current_user.id,
+            module="admin",
+            entity_type="user",
+            entity_id=user.id,
+            message=mentee_msg,
+            entity_url="/profile",
+            background_tasks=background_tasks,
+            send_email=True,
+            email_subject="Your mentor was updated",
+        )
+        db.commit()
 
     # Return with eagerly loaded relationships
     return _load_user_with_relations(db, user.id)
@@ -370,6 +441,7 @@ def reactivate_user(
     user_id: int,
     db: DbSession,
     current_user: CurrentUser,
+    background_tasks: BackgroundTasks,
 ):
     """
     Reverse a soft-delete (set is_deleted = False).
@@ -404,6 +476,22 @@ def reactivate_user(
     # Clear the deactivation timestamp so any future FY-scoped export
     # treats this user as continuously active from `created_at` to now.
     user.deleted_at = None
+    db.commit()
+
+    notify(
+        db,
+        org_id=current_user.org_id,
+        recipient_id=user.id,
+        sender_id=current_user.id,
+        module="admin",
+        entity_type="user",
+        entity_id=user.id,
+        message="Your account has been reactivated. You can sign in again.",
+        entity_url="/dashboard",
+        background_tasks=background_tasks,
+        send_email=True,
+        email_subject="Your account has been reactivated",
+    )
     db.commit()
 
     return _load_user_with_relations(db, user.id)

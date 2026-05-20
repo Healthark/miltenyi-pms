@@ -21,10 +21,11 @@ Notes:
 
 from datetime import date, datetime, timezone
 from typing import List
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, status
 from sqlalchemy import func
 
 from app.api.dependencies import DbSession, CurrentUser
+from app.services.notification_service import notify, notify_many
 from app.core.cycle_utils import resolve_today
 from app.models.project_models import (
     Project, ProjectAssignment,
@@ -454,6 +455,7 @@ def add_assignment(
     assignment_in: AssignmentCreate,
     db: DbSession,
     current_user: CurrentUser,
+    background_tasks: BackgroundTasks,
 ):
     """Add a team member to a project. Auto-fills role and function from user profile."""
     _require_hr_any(current_user)
@@ -508,6 +510,22 @@ def add_assignment(
     db.commit()
     db.refresh(new_assignment)
 
+    notify(
+        db,
+        org_id=current_user.org_id,
+        recipient_id=new_assignment.user_id,
+        sender_id=current_user.id,
+        module="project",
+        entity_type="assignment",
+        entity_id=new_assignment.id,
+        message=f"You were assigned to {project.name} as {new_assignment.assignment_role}.",
+        entity_url=f"/project-reviews?project_id={project.id}",
+        background_tasks=background_tasks,
+        send_email=True,
+        email_subject=f"You've been assigned to {project.name}",
+    )
+    db.commit()
+
     return _build_assignment_response(new_assignment, db)
 
 
@@ -529,11 +547,32 @@ def update_assignment(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assignment not found.")
 
     update_data = assignment_in.model_dump(exclude_unset=True)
+    if not update_data:
+        # No-op PATCH — don't notify or commit a meaningless event.
+        return _build_assignment_response(assignment, db)
+
     for field, value in update_data.items():
         setattr(assignment, field, value)
 
     db.commit()
     db.refresh(assignment)
+
+    project = db.query(Project).filter(Project.id == assignment.project_id).first()
+    notify(
+        db,
+        org_id=current_user.org_id,
+        recipient_id=assignment.user_id,
+        sender_id=current_user.id,
+        module="project",
+        entity_type="assignment",
+        entity_id=assignment.id,
+        message=(
+            f"Your role on {project.name} was updated."
+            if project else "Your project assignment was updated."
+        ),
+        entity_url=f"/project-reviews?project_id={assignment.project_id}",
+    )
+    db.commit()
 
     return _build_assignment_response(assignment, db)
 
@@ -630,6 +669,20 @@ def restore_assignment(
     assignment.ended_by_id = None
     db.commit()
     db.refresh(assignment)
+
+    notify(
+        db,
+        org_id=current_user.org_id,
+        recipient_id=assignment.user_id,
+        sender_id=current_user.id,
+        module="project",
+        entity_type="assignment",
+        entity_id=assignment.id,
+        message=f"Your assignment to {project.name} was restored.",
+        entity_url=f"/project-reviews?project_id={project.id}",
+    )
+    db.commit()
+
     return _build_assignment_response(assignment, db)
 
 
@@ -642,6 +695,7 @@ def complete_project(
     project_id: int,
     db: DbSession,
     current_user: CurrentUser,
+    background_tasks: BackgroundTasks,
 ):
     """Mark a project as completed (HR-only).
 
@@ -688,12 +742,30 @@ def complete_project(
         ProjectAssignment.project_id == project.id,
         ProjectAssignment.end_date.is_(None),
     ).all()
+    notified_user_ids = [a.user_id for a in active_assignments]
     for a in active_assignments:
         a.end_date = today
         a.ended_by_id = current_user.id
 
     db.commit()
     db.refresh(project)
+
+    if notified_user_ids:
+        notify_many(
+            db,
+            org_id=current_user.org_id,
+            recipient_ids=notified_user_ids,
+            sender_id=current_user.id,
+            module="project",
+            entity_type="project",
+            entity_id=project.id,
+            message=f"{project.name} has been marked completed.",
+            entity_url=f"/project-reviews?project_id={project.id}",
+            background_tasks=background_tasks,
+            send_email=True,
+            email_subject=f"{project.name} marked completed",
+        )
+        db.commit()
 
     # All active assignments were just end-dated, so live count is 0.
     return _build_project_response(project, db, 0)

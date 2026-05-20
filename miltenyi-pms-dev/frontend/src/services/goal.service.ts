@@ -321,6 +321,12 @@ export const goalService = {
     return res.data;
   },
 
+  /** Mentor sends a free-text notification to the goal owner. Lands in
+   *  their topbar bell and, when SMTP is configured, an email. */
+  notifyOwner: async (goalId: number, message: string): Promise<void> => {
+    await apiClient.post(`/goals/${goalId}/notify`, { message });
+  },
+
   // ── HR_MyOrg view-only ─────────────────────────────────────────
   /** Every annual goal across the org, every cycle (DRAFT excluded).
    *  HR_MyOrg-only; backend 403s any other role. Powers the "All Goals" tab.

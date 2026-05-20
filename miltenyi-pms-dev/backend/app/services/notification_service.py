@@ -127,10 +127,6 @@ def notify(
         entity_url=url,
         message=message,
         is_read=False,
-        # Keep goal_id populated for goal-module rows so the existing
-        # frontend (with non-optional goal_id) continues to parse them
-        # during the back-compat window.
-        goal_id=entity_id if module == "goal" else None,
     )
     db.add(row)
     db.flush()

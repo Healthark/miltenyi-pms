@@ -10,9 +10,6 @@ export interface NotificationItem {
 export interface UserNotificationItem {
   id: number;
   message: string;
-  /** Back-compat field — populated only for goal-module rows. New code
-   *  should read `entity_id` + `module` instead. */
-  goal_id?: number | null;
   module?: string | null;
   entity_type?: string | null;
   entity_id?: number | null;

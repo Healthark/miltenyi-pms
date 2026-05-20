@@ -37,6 +37,7 @@ from sqlalchemy import and_, or_
 from sqlalchemy.orm import aliased, joinedload
 
 from app.api.dependencies import DbSession, CurrentUser
+from app.services.notification_service import notify
 from app.core.cycle_utils import (
     _fy_label_of_review,
     ensure_year_override_row,
@@ -327,6 +328,7 @@ def create_self_appraisal(
         existing.status = ReviewStatus.PENDING_MENTOR.value
         db.commit()
         db.refresh(existing)
+        _notify_self_appraisal_submitted(db, existing, current_user, cycle_name)
         return _attach_mentor_name(existing, db)
 
     mentor_id = current_user.mentor_id
@@ -342,7 +344,30 @@ def create_self_appraisal(
     db.add(review)
     db.commit()
     db.refresh(review)
+    _notify_self_appraisal_submitted(db, review, current_user, cycle_name)
     return _attach_mentor_name(review, db)
+
+
+def _notify_self_appraisal_submitted(
+    db, review: AnnualReview, current_user: User, cycle_name: str,
+) -> None:
+    """Notify the mentor that their mentee submitted a self-appraisal.
+    In-app only — review-cycle events are too frequent for email.
+    No-op if the review has no mentor (early-cycle data quirks)."""
+    if not review.mentor_id:
+        return
+    notify(
+        db,
+        org_id=current_user.org_id,
+        recipient_id=review.mentor_id,
+        sender_id=current_user.id,
+        module="annual_review",
+        entity_type="annual_review",
+        entity_id=review.id,
+        message=f"{current_user.full_name} submitted their {cycle_name} self-appraisal.",
+        entity_url=f"/annual-reviews?review_id={review.id}",
+    )
+    db.commit()
 
 
 @router.post("/self/draft", response_model=AnnualReviewResponse, status_code=status.HTTP_201_CREATED)
@@ -1017,6 +1042,20 @@ def submit_mentor_evaluation(
 
     db.commit()
     db.refresh(review)
+
+    notify(
+        db,
+        org_id=current_user.org_id,
+        recipient_id=review.user_id,
+        sender_id=current_user.id,
+        module="annual_review",
+        entity_type="annual_review",
+        entity_id=review.id,
+        message=f"Your mentor submitted their evaluation for {review.cycle_name}.",
+        entity_url=f"/annual-reviews?review_id={review.id}",
+    )
+    db.commit()
+
     return review
 
 
@@ -1431,6 +1470,12 @@ def set_management_rating(
         db, current_user.org_id, _fy_label_of_review(review)
     )
 
+    # Detect whether this is the first-time finalize (PENDING_MANAGEMENT →
+    # COMPLETED) versus a recalibration (COMPLETED → COMPLETED). Only the
+    # first-time transition pings the employee; subsequent rating tweaks
+    # don't re-notify so admins can recalibrate without spamming.
+    was_pending = review.status == ReviewStatus.PENDING_MANAGEMENT.value
+
     review.management_performance_rating = payload.management_performance_rating
     # Persist the synthesized final so HR_MyOrg's `/all` view, mentor mentee
     # cards, and the Excel export all read a populated value. Matches the
@@ -1443,6 +1488,21 @@ def set_management_rating(
 
     db.commit()
     db.refresh(review)
+
+    if was_pending:
+        notify(
+            db,
+            org_id=current_user.org_id,
+            recipient_id=review.user_id,
+            sender_id=current_user.id,
+            module="annual_review",
+            entity_type="annual_review",
+            entity_id=review.id,
+            message=f"Your final {review.cycle_name} rating is now available.",
+            entity_url=f"/annual-reviews?review_id={review.id}",
+        )
+        db.commit()
+
     return review
 
 

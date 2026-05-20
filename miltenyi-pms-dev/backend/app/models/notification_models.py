@@ -5,11 +5,6 @@ module (goals, annual reviews, project reviews, admin, projects). The
 `module` + `entity_type` + `entity_id` triple identifies the source
 event; `entity_url` is the SPA deep-link the dropdown navigates to on
 click.
-
-`goal_id` is retained as a nullable back-compat anchor so the existing
-`/notifications/summary` reader can keep returning it in the response
-shape for one release. New non-goal rows leave it NULL. A follow-up
-migration drops the column entirely.
 """
 
 from sqlalchemy import (
@@ -46,14 +41,6 @@ class Notification(Base):
     entity_type  = Column(String(32), nullable=False)
     entity_id    = Column(Integer, nullable=True)
     entity_url   = Column(String(512), nullable=True)
-
-    # Back-compat anchor — dropped in a follow-up migration once the
-    # frontend deploy with `goal_id?: number | null` is in place.
-    goal_id      = Column(
-        Integer,
-        ForeignKey("goals.id", ondelete="SET NULL"),
-        nullable=True,
-    )
 
     __table_args__ = (
         Index(

@@ -23,7 +23,7 @@ Security Layers Applied:
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from typing import List, Literal, Optional
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import or_
 from sqlalchemy.orm import aliased, joinedload
 
@@ -44,6 +44,7 @@ from app.schemas.goal_schemas import (
     GoalBulkApproveRequest,
     GoalBulkApproveResult,
     GoalBulkApproveFailure,
+    GoalNotifyRequest,
     GoalSelfReviewSubmit,
     GoalSelfReviewDraft,
     GoalMentorReviewSubmit,
@@ -876,7 +877,6 @@ def submit_goal(
     goal_id: int,
     db: DbSession,
     current_user: CurrentUser,
-    background_tasks: BackgroundTasks,
 ):
     """
     Move a goal from DRAFT → SUBMITTED.
@@ -926,9 +926,6 @@ def submit_goal(
         entity_id=goal.id,
         message=f"{goal_owner.full_name} submitted a goal for your approval.",
         entity_url=f"/annual-goals?goal_id={goal.id}",
-        background_tasks=background_tasks,
-        send_email=True,
-        email_subject="A goal is awaiting your approval",
     )
     db.commit()
 
@@ -941,7 +938,6 @@ def approve_goal(
     approval_in: GoalApprovalUpdate,
     db: DbSession,
     current_user: CurrentUser,
-    background_tasks: BackgroundTasks,
 ):
     """
     Mentor/Admin approves or rejects a submitted goal.
@@ -1000,9 +996,6 @@ def approve_goal(
             entity_id=goal.id,
             message="Your goal was approved.",
             entity_url=f"/annual-goals?goal_id={goal.id}",
-            background_tasks=background_tasks,
-            send_email=True,
-            email_subject="Your goal was approved",
         )
     else:
         # CHANGES_REQUESTED — include a feedback snippet so the recipient
@@ -1025,9 +1018,6 @@ def approve_goal(
             entity_id=goal.id,
             message=message,
             entity_url=f"/annual-goals?goal_id={goal.id}",
-            background_tasks=background_tasks,
-            send_email=True,
-            email_subject="Changes requested on your goal",
         )
     db.commit()
 
@@ -1039,7 +1029,6 @@ def bulk_approve_goals(
     payload: GoalBulkApproveRequest,
     db: DbSession,
     current_user: CurrentUser,
-    background_tasks: BackgroundTasks,
 ):
     """
     Mentor-side bulk approval. Loads the requested goals (org-scoped),
@@ -1118,14 +1107,50 @@ def bulk_approve_goals(
             entity_id=goal.id,
             message="Your goal was approved.",
             entity_url=f"/annual-goals?goal_id={goal.id}",
-            background_tasks=background_tasks,
-            send_email=True,
-            email_subject="Your goal was approved",
         )
     if approved_ids:
         db.commit()
 
     return GoalBulkApproveResult(approved_ids=approved_ids, failures=failures)
+
+
+@router.post("/{goal_id}/notify", status_code=status.HTTP_204_NO_CONTENT)
+def notify_goal_owner(
+    goal_id: int,
+    payload: GoalNotifyRequest,
+    db: DbSession,
+    current_user: CurrentUser,
+):
+    """
+    Mentor sends a free-text notification to the owner of a goal they
+    mentor. Surfaced from the Team Goals tab's "Notify" button on each
+    row. The message lands in the topbar bell as an in-app notification.
+
+    Auth: caller must be the goal owner's assigned mentor. Admin role
+    alone is not enough — mirrors the /approve relationship check.
+    """
+    goal = _get_goal_with_relations(db, goal_id, current_user.org_id)
+    goal_owner = db.query(User).filter(User.id == goal.user_id).first()
+
+    if not goal_owner or goal_owner.mentor_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the assigned mentor can notify this goal's owner.",
+        )
+
+    notify(
+        db,
+        org_id=current_user.org_id,
+        recipient_id=goal_owner.id,
+        sender_id=current_user.id,
+        module="goal",
+        entity_type="goal",
+        entity_id=goal.id,
+        message=payload.message,
+        entity_url=f"/annual-goals?goal_id={goal.id}",
+    )
+    db.commit()
+    return None
 
 
 @router.patch(
