@@ -42,7 +42,7 @@ class ReviewStatus(str, PyEnum):
     """Tracks which stage the review is currently in.
 
     NOT_STARTED is a synthetic value — never written to the database. It
-    exists only so the Management Calibration grid can surface Staff
+    exists only so the Management Calibration grid can surface Employee
     users who haven't created an AnnualReview row for the active cycle
     yet, alongside rows that do exist.
     """

@@ -138,7 +138,7 @@ export function HrDashboard() {
       </div>
 
       {/* Row 1: Active Project Cycle | Active Goal Cycle — cycle
-          anchors at the top, matching the Staff/Mentor dashboards. The
+          anchors at the top, matching the Employee/Mentor dashboards. The
           goal cycle is hidden for Miltenyi HR since their scope
           excludes annual goals (see header comment), so they get a
           single full-width project cycle card instead. */}

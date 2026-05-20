@@ -57,10 +57,17 @@ class UserResponse(BaseModel):
     function: Optional[FunctionBrief] = None
     designation: Optional[DesignationBrief] = None
 
+    # Project Manager names — derived from each Employee's active project
+    # assignments (end_date IS NULL). Empty list for non-Employee users
+    # or for Employees with no active assignments. Sorted alphabetically
+    # and deduplicated. Computed in one batched query by the list_users
+    # handler so the response isn't N+1.
+    project_manager_names: list[str] = []
+
     model_config = ConfigDict(from_attributes=True)
 
 
-_ROLE_PATTERN = r"^(HR_MyOrg|HR_Miltenyi|Mentor|PM|Staff)$"
+_ROLE_PATTERN = r"^(HR_MyOrg|HR_Miltenyi|Mentor|PM|Employee)$"
 
 
 class UserCreate(BaseModel):
@@ -101,6 +108,11 @@ class AdminSettingsResponse(BaseModel):
     active_cycle: Optional[str] = None
     cycle_type: str
     fiscal_start_month: int
+    # IANA timezone string driving every calendar-day decision on the
+    # backend (cycle rollover, FY-end gates, assignment end dates, etc.).
+    # Defaults to "UTC" so existing rows keep current behavior until HR
+    # picks an actual zone.
+    timezone: str = "UTC"
     goals_edit_enabled: bool
     annual_goals_edit_enabled: bool
     project_ratings_visible: bool
@@ -120,6 +132,11 @@ class AdminSettingsUpdate(BaseModel):
     """Payload from the SystemSettingsTab save button. All fields optional (PATCH semantics)."""
     cycle_type: Optional[str] = Field(default=None, pattern=r"^(annual|half_yearly|quarterly)$")
     fiscal_start_month: Optional[int] = Field(default=None, ge=1, le=12)
+    # IANA timezone (e.g. "Asia/Kolkata", "Europe/Berlin"). Validated
+    # at runtime by ZoneInfo — bad strings are tolerated at read time
+    # (cycle_utils falls back to UTC) so a typo can't brick the cycle
+    # path, but admins should still pick a valid zone here.
+    timezone: Optional[str] = Field(default=None, min_length=1, max_length=64)
     goals_edit_enabled: Optional[bool] = None
     annual_goals_edit_enabled: Optional[bool] = None
     project_ratings_visible: Optional[bool] = None

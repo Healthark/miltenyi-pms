@@ -58,6 +58,15 @@ class SystemSettings(Base):
     # Used by the utility to determine if current month belongs to Q1, Q2, etc.
     fiscal_start_month = Column(Integer, nullable=False, default=4)
 
+    # IANA timezone string (e.g. "UTC", "Asia/Kolkata", "Europe/Berlin").
+    # Controls the "what calendar day is it" reference used by every
+    # cycle / FY-end / submission-window check on the backend. Instants
+    # (created_at, completed_at, deleted_at, etc.) are still stored as
+    # UTC via timestamptz columns — this only shifts the day boundary
+    # for calendar-day decisions so users near midnight in non-UTC
+    # zones don't see off-by-one rollovers. Defaults to "UTC".
+    timezone = Column(String, nullable=False, default="UTC", server_default="UTC")
+
     # Optional date boundaries for reporting and deadline enforcement.
     cycle_start_date = Column(Date, nullable=True)
     cycle_end_date = Column(Date, nullable=True)

@@ -177,7 +177,7 @@ def build_users_sheet(
     `exclude_roles` is the role-scoping hook used by the HR_Miltenyi
     export: pass `{"Mentor", "HR_MyOrg"}` and those rows never make it
     into the workbook. Mentor names that appear as references on other
-    sheets (e.g. a Staff member's mentor in the Mentor column) are not
+    sheets (e.g. an Employee's mentor in the Mentor column) are not
     affected — only the directory rows themselves are filtered out.
 
     `fy_filter` narrows the directory to users who were active during at

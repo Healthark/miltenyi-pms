@@ -28,11 +28,12 @@ type UsersSortKey =
   | "email"
   | "role"
   | "mentor_name"
+  | "project_manager_names"
   | "function_name"
   | "designation_name"
   | "status";
 
-type RoleFilter = "all" | "HR_MyOrg" | "HR_Miltenyi" | "Mentor" | "PM" | "Staff";
+type RoleFilter = "all" | "HR_MyOrg" | "HR_Miltenyi" | "Mentor" | "PM" | "Employee";
 type StatusFilter = "all" | "active" | "inactive";
 
 const ROLE_OPTIONS: { value: RoleFilter; label: string }[] = [
@@ -41,7 +42,7 @@ const ROLE_OPTIONS: { value: RoleFilter; label: string }[] = [
   { value: "HR_Miltenyi", label: "HR · Miltenyi" },
   { value: "Mentor", label: "Mentor" },
   { value: "PM", label: "PM" },
-  { value: "Staff", label: "Staff" },
+  { value: "Employee", label: "Employee" },
 ];
 
 const STATUS_OPTIONS: { value: StatusFilter; label: string }[] = [
@@ -64,6 +65,13 @@ const USERS_SORT_CONFIG: Record<
     kind: "alpha",
     get: (u, all) =>
       u.mentor_id ? all.find((x) => x.id === u.mentor_id)?.full_name ?? null : null,
+  },
+  project_manager_names: {
+    kind: "alpha",
+    get: (u) =>
+      u.project_manager_names.length > 0
+        ? u.project_manager_names.join(", ")
+        : null,
   },
   function_name:    { kind: "alpha", get: (u) => u.function?.name ?? null },
   designation_name: { kind: "alpha", get: (u) => u.designation?.name ?? null },
@@ -90,6 +98,10 @@ export function UsersTab({
   const [functionFilter, setFunctionFilter] = useState<string>("all");
   const [designationFilter, setDesignationFilter] = useState<string>("all");
   const [mentorFilter, setMentorFilter] = useState<string>("all");
+  // Parallel filter for HR_Miltenyi viewers — the Mentor column is
+  // replaced with Project Manager for them, so the relation filter
+  // beside it tracks PM names instead.
+  const [pmFilter, setPmFilter] = useState<string>("all");
 
   // Dropdown options derived from the loaded users so we never show
   // a function/designation that has no row to match.
@@ -125,6 +137,17 @@ export function UsersTab({
           .map((u) => u.full_name),
       ),
     ).sort();
+  }, [users]);
+  // Available PMs = the union of every Employee's project_manager_names.
+  // Drives the Project Manager filter dropdown for HR_Miltenyi viewers.
+  const availableProjectManagers = useMemo(() => {
+    const names = new Set<string>();
+    for (const u of users) {
+      for (const name of u.project_manager_names) {
+        names.add(name);
+      }
+    }
+    return Array.from(names).sort();
   }, [users]);
 
   const { user: currentUser } = useAuth();
@@ -163,6 +186,10 @@ export function UsersTab({
           : null;
         if (mentorName !== mentorFilter) return false;
       }
+      if (pmFilter !== "all") {
+        // Row passes when its PM set contains the selected name.
+        if (!u.project_manager_names.includes(pmFilter)) return false;
+      }
       return true;
     });
     if (!sort) return filtered;
@@ -170,7 +197,7 @@ export function UsersTab({
     return filtered.slice().sort((a, b) =>
       compareValues(get(a, users), get(b, users), kind, sort.direction),
     );
-  }, [users, searchQuery, roleFilter, statusFilter, functionFilter, designationFilter, mentorFilter, sort, isViewerMiltenyiHR]);
+  }, [users, searchQuery, roleFilter, statusFilter, functionFilter, designationFilter, mentorFilter, pmFilter, sort, isViewerMiltenyiHR]);
 
   // Role-filter dropdown: HR_Miltenyi never sees Mentor or HR_MyOrg
   // options (those buckets would always read zero for them).
@@ -213,7 +240,11 @@ export function UsersTab({
             ))}
           </select>
         </div>
-        {availableMentors.length > 0 && (
+        {/* Relation filter: HR_MyOrg picks a Mentor; HR_Miltenyi picks
+            a Project Manager. Same dropdown slot, different relationship
+            and different name source. The other filter's state stays
+            on "all" (it's not rendered for the off-side role anyway). */}
+        {!isViewerMiltenyiHR && availableMentors.length > 0 && (
           <div className="flex items-center gap-2">
             <label htmlFor="user-mentor-filter" className={FILTER_LABEL_CLS}>
               Mentor
@@ -226,6 +257,24 @@ export function UsersTab({
             >
               <option value="all">All Mentors</option>
               {availableMentors.map((m) => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
+          </div>
+        )}
+        {isViewerMiltenyiHR && availableProjectManagers.length > 0 && (
+          <div className="flex items-center gap-2">
+            <label htmlFor="user-pm-filter" className={FILTER_LABEL_CLS}>
+              Project Manager
+            </label>
+            <select
+              id="user-pm-filter"
+              value={pmFilter}
+              onChange={(e) => setPmFilter(e.target.value)}
+              className={`${FILTER_SELECT_CLS} min-w-[150px]`}
+            >
+              <option value="all">All Project Managers</option>
+              {availableProjectManagers.map((m) => (
                 <option key={m} value={m}>{m}</option>
               ))}
             </select>
@@ -311,7 +360,21 @@ export function UsersTab({
                   <SortableHeader label="Designation" columnKey="designation_name" sort={sort} onSort={setSort} />
                 </th>
                 <th className="px-5 py-3">
-                  <SortableHeader label="Mentor" columnKey="mentor_name" sort={sort} onSort={setSort} />
+                  {isViewerMiltenyiHR ? (
+                    <SortableHeader
+                      label="Project Manager"
+                      columnKey="project_manager_names"
+                      sort={sort}
+                      onSort={setSort}
+                    />
+                  ) : (
+                    <SortableHeader
+                      label="Mentor"
+                      columnKey="mentor_name"
+                      sort={sort}
+                      onSort={setSort}
+                    />
+                  )}
                 </th>
                 <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-text-muted">
                   Phone
@@ -363,7 +426,12 @@ export function UsersTab({
                         {user.designation?.name ?? "—"}
                       </td>
                       <td className="px-5 py-3.5 text-text-muted">
-                        {users.find((u) => u.id === user.mentor_id)?.full_name ?? "—"}
+                        {isViewerMiltenyiHR
+                          ? user.project_manager_names.length > 0
+                            ? user.project_manager_names.join(", ")
+                            : "—"
+                          : users.find((u) => u.id === user.mentor_id)
+                              ?.full_name ?? "—"}
                       </td>
                       <td className="px-5 py-3.5 text-text-muted">
                         {user.phone ?? "—"}

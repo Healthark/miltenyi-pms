@@ -3,7 +3,7 @@
  *
  * The PM is a project-level field (combobox at the top), filtered to users
  * with role=PM. The Secondary Evaluator is also a project-level combobox
- * (filtered to non-PM, non-Mentor). Team Members are Staff users only —
+ * (filtered to non-PM, non-Mentor). Team Members are Employee users only —
  * the PM is NOT in the assignments list.
  *
  * Placement: src/components/admin/ProjectModal.tsx
@@ -106,7 +106,7 @@ export function ProjectModal({
   const secondaryCandidates = activeUsers.filter(
     (u) => u.role !== "PM" && u.role !== "Mentor",
   );
-  const memberCandidates = activeUsers.filter((u) => u.role === "Staff");
+  const memberCandidates = activeUsers.filter((u) => u.role === "Employee");
 
   // The combobox uses its `users` prop both for the suggestion list and
   // for resolving the currently-selected id back to a label. If the
@@ -136,6 +136,7 @@ export function ProjectModal({
     created_at: "",
     function: null,
     designation: null,
+    project_manager_names: [],
   });
   const augmentWithCurrent = (
     pool: UserResponse[],
@@ -160,7 +161,7 @@ export function ProjectModal({
     secondaryCandidates,
     secondaryEvaluatorId,
     secondaryDisplayName,
-    "Staff",
+    "Employee",
   );
 
   // ── Load reference data + existing project ──────────────────────
@@ -509,7 +510,7 @@ export function ProjectModal({
               <div className="border-t border-border pt-5 space-y-3">
                 <div className="flex items-center justify-between">
                   <p className="text-xs font-semibold text-text-main uppercase tracking-wide">
-                    Team Members (Staff)
+                    Team Members (Employees)
                   </p>
                   <button type="button" onClick={addDraftAssignment} className="flex items-center gap-1 text-xs font-medium text-brand hover:underline">
                     <UserPlus className="h-3.5 w-3.5" aria-hidden="true" />
@@ -576,7 +577,7 @@ export function ProjectModal({
                     <div className="grid grid-cols-12 gap-2 items-end">
                       {/* Employee — 5 cols */}
                       <div className="col-span-5">
-                        <label className={LABEL_CLS}>Employee (Staff)</label>
+                        <label className={LABEL_CLS}>Employee</label>
                         <select
                           className={INPUT_CLS}
                           value={draft.user_id}

@@ -18,6 +18,9 @@ interface SystemSettingsTabProps {
   readonly activeCycleName: string;
   readonly cycleType: CycleType;
   readonly fiscalStartMonth: number;
+  /** IANA timezone string. Anchors every backend calendar-day decision. */
+  readonly timezone: string;
+  readonly onTimezoneChange: (tz: string) => void;
   // Dev / QA date simulation
   readonly simulatedToday: string | null;
   readonly simulationAllowed: boolean;
@@ -28,6 +31,20 @@ interface SystemSettingsTabProps {
   readonly onSaveOrgWide: () => void;
   readonly isSavingOrgWide: boolean;
 }
+
+/** Curated short list of IANA timezones that cover the orgs we deploy
+ *  to. Keeps the dropdown manageable (a full IANA list is ~500 entries).
+ *  Add more as needed; "Other (type below)" lets HR enter any IANA
+ *  string the backend's ZoneInfo will accept. */
+const TIMEZONE_OPTIONS: readonly { value: string; label: string }[] = [
+  { value: "UTC", label: "UTC" },
+  { value: "Asia/Kolkata", label: "Asia/Kolkata (India)" },
+  { value: "Europe/Berlin", label: "Europe/Berlin (Germany)" },
+  { value: "Europe/London", label: "Europe/London (UK)" },
+  { value: "America/New_York", label: "America/New_York (US East)" },
+  { value: "America/Los_Angeles", label: "America/Los_Angeles (US West)" },
+  { value: "Australia/Sydney", label: "Australia/Sydney" },
+];
 
 const MONTHS = [
   { value: 1, label: "January" },
@@ -236,6 +253,8 @@ export function SystemSettingsTab({
   activeCycleName,
   cycleType,
   fiscalStartMonth,
+  timezone,
+  onTimezoneChange,
   simulatedToday,
   simulationAllowed,
   onSimulatedTodayChange,
@@ -572,6 +591,56 @@ export function SystemSettingsTab({
                   Read Only
                 </span>
               </div>
+            </div>
+
+            {/* Organization Timezone — drives every backend calendar-day
+                decision (cycle rollover, FY-end gates, assignment end
+                dates). Display timestamps continue to render in the
+                browser's local zone. Picking the wrong zone won't break
+                anything (cycle_utils falls back to UTC), but FY-end
+                edge cases will be off by hours/days until corrected. */}
+            <div className="md:col-span-2">
+              <label htmlFor="org-tz" className="block text-sm font-medium text-text-main mb-1">
+                Organization Timezone
+              </label>
+              <select
+                id="org-tz"
+                value={
+                  TIMEZONE_OPTIONS.some((o) => o.value === timezone)
+                    ? timezone
+                    : "__other__"
+                }
+                onChange={(e) => {
+                  if (e.target.value !== "__other__") {
+                    onTimezoneChange(e.target.value);
+                  }
+                }}
+                className="w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-text-main outline-none focus:border-brand"
+              >
+                {TIMEZONE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+                {!TIMEZONE_OPTIONS.some((o) => o.value === timezone) && (
+                  <option value="__other__">
+                    Other ({timezone}) — custom IANA, edit below
+                  </option>
+                )}
+              </select>
+              {!TIMEZONE_OPTIONS.some((o) => o.value === timezone) && (
+                <input
+                  type="text"
+                  value={timezone}
+                  onChange={(e) => onTimezoneChange(e.target.value)}
+                  placeholder="e.g. Asia/Singapore"
+                  className="mt-2 w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-text-main outline-none focus:border-brand"
+                />
+              )}
+              <p className="mt-1 text-xs text-text-muted">
+                Anchors what counts as "today" for cycle gates and date-
+                based deadlines. Audit timestamps stay in UTC.
+              </p>
             </div>
           </div>
         </div>

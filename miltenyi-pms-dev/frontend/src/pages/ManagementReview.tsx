@@ -5,7 +5,7 @@
  * enforces the same gate via `_require_management` on every endpoint
  * this page touches — this is purely a UI affordance.
  *
- * Lists every active Staff user in the org for the active cycle,
+ * Lists every active Employee in the org for the active cycle,
  * LEFT-joined against their AnnualReview row, and lets HR_MyOrg
  * set/override the management rating inline once the mentor has
  * submitted. View and Edit affordances are gated per stage.
@@ -179,7 +179,7 @@ export function ManagementReview() {
   // ── Queries ────────────────────────────────────────────────────────
   // 1. The calibration grid (page-level table).
   //    Paginated as of PR #38 (doc 21). The shape is the simplest case
-  //    of the pagination template: each row = one Staff user, so
+  //    of the pagination template: each row = one Employee, so
   //    `total` and `items.length` are the same unit (vs the parent/
   //    child split in doc 20). We still use `useInfiniteQuery` here for
   //    consistency with the other paginated endpoints — `flatMap` over
@@ -221,7 +221,7 @@ export function ManagementReview() {
   // one combined list.
   const rows: CalibrationRow[] =
     gridQuery.data?.pages.flatMap((p) => p.items) ?? [];
-  // Total Staff-user count returned by the server (same on every page,
+  // Total Employee count returned by the server (same on every page,
   // we read it off the latest one). Drives the "Loaded N of T" counter.
   const totalUsers =
     gridQuery.data?.pages[gridQuery.data.pages.length - 1]?.total ?? 0;
@@ -401,7 +401,7 @@ export function ManagementReview() {
   const visibleRows = rows;
 
   // Empty-state branching: empty `rows` can now mean either "org has
-  // no Staff users" or "filter set returned nothing". Computed
+  // no Employees" or "filter set returned nothing". Computed
   // alongside the filters so the toolbar + empty UI agree.
   const hasActiveFilters =
     searchInput !== "" ||
@@ -623,7 +623,7 @@ export function ManagementReview() {
                 <p className="mt-1 text-sm text-text-muted">
                   {hasActiveFilters
                     ? "Try a different search term or adjust your filters."
-                    : "No active Staff users in this cycle yet."}
+                    : "No active Employees in this cycle yet."}
                 </p>
               </div>
             ) : (

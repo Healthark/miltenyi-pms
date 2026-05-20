@@ -21,6 +21,11 @@ export interface SystemSettingsResponse {
   active_cycle_name: string;
   cycle_type: CycleType;
   fiscal_start_month: number;
+  /** IANA timezone string ("UTC", "Asia/Kolkata", "Europe/Berlin", …).
+   *  The backend uses it to anchor every calendar-day decision. The
+   *  frontend currently doesn't need to act on it directly — display
+   *  timestamps still rely on the browser's local zone. */
+  timezone: string;
   cycle_start_date: string | null;
   cycle_end_date: string | null;
   goals_submission_open: boolean;

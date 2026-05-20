@@ -16,7 +16,7 @@ What this seeds (and only this):
         2  HR  — 1 Healthark (HR_MyOrg, Indian name) + 1 Miltenyi (HR_Miltenyi, German)
         3  Mentors (Healthark, Indian names)
         4  PMs    (Miltenyi, German names)
-        9  Staff  (Miltenyi domain, Indian names — 3 mentees per mentor)
+        9  Employee  (Miltenyi domain, Indian names — 3 mentees per mentor)
     - Role expectations for every (function × designation) combination
 
 Everything else is left empty so the stakeholders' first creates are
@@ -282,27 +282,27 @@ def seed_test_database() -> None:
             function_id=func_rnd.id, designation_id=d_lead.id,
         )
 
-        # ── Staff (Miltenyi domain, Indian names; 3 mentees per mentor) ──
+        # ── Employee (Miltenyi domain, Indian names; 3 mentees per mentor) ──
         # Rahul's mentees — R&D
         _ensure_user(
             "aarav.patel@miltenyi.com",
             employee_code="MIL-T-S-01", full_name="Aarav Patel",
             phone="+91 98000 10101",
-            role=Role.STAFF.value, mentor_id=rahul.id,
+            role=Role.EMPLOYEE.value, mentor_id=rahul.id,
             function_id=func_rnd.id, designation_id=d_sci.id,
         )
         _ensure_user(
             "diya.mehta@miltenyi.com",
             employee_code="MIL-T-S-02", full_name="Diya Mehta",
             phone="+91 98000 10102",
-            role=Role.STAFF.value, mentor_id=rahul.id,
+            role=Role.EMPLOYEE.value, mentor_id=rahul.id,
             function_id=func_rnd.id, designation_id=d_sr.id,
         )
         _ensure_user(
             "kabir.singh@miltenyi.com",
             employee_code="MIL-T-S-03", full_name="Kabir Singh",
             phone="+91 98000 10103",
-            role=Role.STAFF.value, mentor_id=rahul.id,
+            role=Role.EMPLOYEE.value, mentor_id=rahul.id,
             function_id=func_rnd.id, designation_id=d_sci.id,
         )
 
@@ -311,21 +311,21 @@ def seed_test_database() -> None:
             "ishaan.joshi@miltenyi.com",
             employee_code="MIL-T-S-04", full_name="Ishaan Joshi",
             phone="+91 98000 10104",
-            role=Role.STAFF.value, mentor_id=neha.id,
+            role=Role.EMPLOYEE.value, mentor_id=neha.id,
             function_id=func_mfg.id, designation_id=d_sr.id,
         )
         _ensure_user(
             "saanvi.reddy@miltenyi.com",
             employee_code="MIL-T-S-05", full_name="Saanvi Reddy",
             phone="+91 98000 10105",
-            role=Role.STAFF.value, mentor_id=neha.id,
+            role=Role.EMPLOYEE.value, mentor_id=neha.id,
             function_id=func_mfg.id, designation_id=d_sci.id,
         )
         _ensure_user(
             "ayaan.khan@miltenyi.com",
             employee_code="MIL-T-S-06", full_name="Ayaan Khan",
             phone="+91 98000 10106",
-            role=Role.STAFF.value, mentor_id=neha.id,
+            role=Role.EMPLOYEE.value, mentor_id=neha.id,
             function_id=func_mfg.id, designation_id=d_sci.id,
         )
 
@@ -334,24 +334,24 @@ def seed_test_database() -> None:
             "riya.nair@miltenyi.com",
             employee_code="MIL-T-S-07", full_name="Riya Nair",
             phone="+91 98000 10107",
-            role=Role.STAFF.value, mentor_id=vikram.id,
+            role=Role.EMPLOYEE.value, mentor_id=vikram.id,
             function_id=func_com.id, designation_id=d_sr.id,
         )
         _ensure_user(
             "arjun.gupta@miltenyi.com",
             employee_code="MIL-T-S-08", full_name="Arjun Gupta",
             phone="+91 98000 10108",
-            role=Role.STAFF.value, mentor_id=vikram.id,
+            role=Role.EMPLOYEE.value, mentor_id=vikram.id,
             function_id=func_com.id, designation_id=d_sci.id,
         )
         _ensure_user(
             "myra.desai@miltenyi.com",
             employee_code="MIL-T-S-09", full_name="Myra Desai",
             phone="+91 98000 10109",
-            role=Role.STAFF.value, mentor_id=vikram.id,
+            role=Role.EMPLOYEE.value, mentor_id=vikram.id,
             function_id=func_com.id, designation_id=d_sci.id,
         )
-        print("  [+] Users (HR×2, Mentors×3, PMs×4, Staff×9)")
+        print("  [+] Users (HR×2, Mentors×3, PMs×4, Employee×9)")
 
         # ============================================================ #
         # 4. SYSTEM SETTINGS                                            #
@@ -428,7 +428,7 @@ def seed_test_database() -> None:
         print("    helena@miltenyi.com          Helena Vogel    (Manufacturing)")
         print("    markus@miltenyi.com          Markus Krause   (Commercial)")
         print("    brigitte@miltenyi.com        Brigitte Hoffmann (R&D)")
-        print("\n  Staff (Miltenyi domain, Healthark mentees)")
+        print("\n  Employee (Miltenyi domain, Healthark mentees)")
         print("    R&D          : aarav.patel@,    diya.mehta@,    kabir.singh@miltenyi.com")
         print("    Manufacturing: ishaan.joshi@,   saanvi.reddy@,  ayaan.khan@miltenyi.com")
         print("    Commercial   : riya.nair@,      arjun.gupta@,   myra.desai@miltenyi.com")

@@ -2,11 +2,11 @@
  * ProjectReviews.tsx — Project Reviews Page (per-role tabs).
  *
  * Tabs are role-gated:
- *   My Reviews            — Staff, expands rows into ReviewDetailPanel /
+ *   My Reviews            — Employee, expands rows into ReviewDetailPanel /
  *                           TableExpandedRow.
  *   Primary Evaluation    — PM, owned by `PrimaryEvaluationTab`.
  *   Secondary Evaluation  — anyone listed as `Project.secondary_evaluator_id`
- *                           on at least one project (Staff / HR), owned by
+ *                           on at least one project (Employee / HR), owned by
  *                           `SecondaryEvalTab`. Visibility is driven by a
  *                           lightweight queue probe at mount.
  *   Mentees' Reviews      — Mentor, read-only over getMenteeReviews().
@@ -119,7 +119,7 @@ export function ProjectReviews() {
   // `has_mentees`, which conflated "PM with a team" and "Mentor with
   // mentees" — wrong under the current taxonomy because Mentors are
   // not project reviewers.
-  const isStaff = user?.role === "Staff";
+  const isEmployee = user?.role === "Employee";
   const isPM = user?.role === "PM";
   const isMentor = user?.role === "Mentor";
   const isHR = user?.role === "HR_MyOrg" || user?.role === "HR_Miltenyi";
@@ -151,12 +151,12 @@ export function ProjectReviews() {
   const cardsQuery = useQuery({
     queryKey: queryKeys.projectReviews.mine(),
     queryFn: projectReviewService.getMyProjects,
-    enabled: isStaff,
+    enabled: isEmployee,
   });
   const expectationsQuery = useQuery({
     queryKey: queryKeys.projectReviews.roleExpectations(),
     queryFn: projectReviewService.getRoleExpectations,
-    enabled: isStaff,
+    enabled: isEmployee,
   });
   const menteeReviewsQuery = useQuery({
     queryKey: queryKeys.projectReviews.mentees(),
@@ -177,7 +177,7 @@ export function ProjectReviews() {
   //
   // - initialPageParam: 0  → first request: ?offset=0&limit=50
   // - getNextPageParam: derives from has_more on the latest page.
-  // - enabled: isHR  → Mentor and Staff don't pre-fetch this; HR's
+  // - enabled: isHR  → Mentor and Employee don't pre-fetch this; HR's
   //                     mentees query has its own key + observer.
   const ALL_REVIEWS_PAGE_SIZE = 50;
   const [allReviewsFilters, setAllReviewsFilters] =
@@ -249,7 +249,7 @@ export function ProjectReviews() {
   // doesn't have a page-level query (their tab loads its own data), so
   // they get a hard `false` — the child tab handles its own loading
   // state.
-  const isLoading = isStaff
+  const isLoading = isEmployee
     ? cardsQuery.isPending
     : isMentor
       ? menteeReviewsQuery.isPending
@@ -330,7 +330,7 @@ export function ProjectReviews() {
         : "border-transparent text-text-muted hover:text-text-main"
     }`;
 
-  // Header text follows the active tab so Staff / HR who flip into the
+  // Header text follows the active tab so Employee / HR who flip into the
   // Secondary tab see context that matches what they're doing.
   const headerTitle =
     activeTab === "primary"
@@ -366,7 +366,7 @@ export function ProjectReviews() {
       {/* ── Main Content Container ── */}
       <div className="rounded-xl border border-border bg-surface shadow-sm overflow-hidden">
         <div className="flex border-b border-border px-2">
-          {isStaff && (
+          {isEmployee && (
             <button
               type="button"
               className={tabCls("my")}
@@ -414,7 +414,7 @@ export function ProjectReviews() {
         </div>
 
         <div className="p-5">
-          {isStaff && activeTab === "my" && (
+          {isEmployee && activeTab === "my" && (
             <div className="flex flex-col gap-5">
               {!isLoading && cards.length > 0 && (
                 <MyReviewsToolbar
@@ -479,7 +479,7 @@ export function ProjectReviews() {
                 isLoading={isLoading}
                 reviews={allReviews}
                 // HR can see project ratings any time — the system-wide
-                // project_ratings_visible toggle is a Staff-facing gate
+                // project_ratings_visible toggle is an Employee-facing gate
                 // and shouldn't blind HR's own org-wide review.
                 projectRatingsVisible={true}
                 employeeColumnLabel="Employee"

@@ -2,7 +2,7 @@
  * HeadcountCard — first HR-dashboard widget.
  *
  * Shows the org's current active-employee count plus a per-role
- * breakdown (Staff / Mentor / PM / HR). Pure snapshot — the dashboard's
+ * breakdown (Employee / Mentor / PM / HR). Pure snapshot — the dashboard's
  * FY filter doesn't affect this card (an FY picker scoping headcount
  * would conflate "live roster" with "joined-in-FY", which is a
  * separate analytic).
@@ -24,21 +24,21 @@ import { InsightStripe } from "./InsightStripe";
 // off the theme tokens so the chart doesn't fight the rest of the
 // dashboard with the saturated brand purple.
 const ROLE_COLORS = {
-  staff: "#60a5fa",
+  employee: "#60a5fa",
   mentor: "#fbbf24",
   pm: "#34d399",
   hr: "#94a3b8",
 } as const;
 
 const ROLE_LABELS = {
-  staff: "Staff",
+  employee: "Employee",
   mentor: "Mentor",
   pm: "Project Manager",
   hr: "HR",
 } as const;
 
 type RoleKey = keyof typeof ROLE_COLORS;
-const ROLE_ORDER: readonly RoleKey[] = ["staff", "mentor", "pm", "hr"];
+const ROLE_ORDER: readonly RoleKey[] = ["employee", "mentor", "pm", "hr"];
 
 interface HeadcountCardProps {
   /** Null while the parent's fetch is in flight. */
@@ -62,7 +62,7 @@ export function HeadcountCard({
             <Users className="h-4 w-4 text-brand" aria-hidden="true" />
           </div>
           <h3 className="font-display text-sm font-semibold text-text-main">
-            Active Employees
+            Active Personnel
           </h3>
         </div>
         <Link
@@ -138,7 +138,7 @@ function buildInsight(data: HeadcountSummary) {
   if (total === 0) {
     return { text: "No active employees yet", tone: "amber" as const };
   }
-  let topKey: RoleKey = "staff";
+  let topKey: RoleKey = "employee";
   let topCount = 0;
   for (const key of ROLE_ORDER) {
     const count = data.by_role[key];

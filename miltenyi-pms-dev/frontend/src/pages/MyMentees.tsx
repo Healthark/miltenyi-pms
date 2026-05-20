@@ -323,7 +323,7 @@ function AllMentorPairings() {
           <Users className="h-10 w-10 text-text-muted" aria-hidden="true" />
           <p className="font-medium text-text-main">No mentors set up yet</p>
           <p className="text-sm text-text-muted">
-            Once Mentor users are created and Staff are paired to them via
+            Once Mentor users are created and Employees are paired to them via
             the Users tab, the org-wide map will appear here.
           </p>
         </div>

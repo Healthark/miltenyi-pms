@@ -3,7 +3,7 @@
  *
  * PM is now a project-level field (Project.pm_id), restricted to users with
  * role=PM. The Secondary evaluator (Project.secondary_evaluator_id) cannot
- * be a PM or Mentor. Project members are Staff only — the PM is NOT in
+ * be a PM or Mentor. Project members are Employees only — the PM is NOT in
  * `assignments` and `assignment.evaluator_type` no longer exists.
  */
 
@@ -80,7 +80,7 @@ export interface ProjectCreatePayload {
   // Optional: senior who adds an impact statement after the PM submits.
   // Cannot be a PM or Mentor.
   secondary_evaluator_id?: number | null;
-  // Staff members assigned to the project. The PM is NOT in this list.
+  // Employees assigned to the project. The PM is NOT in this list.
   assignments: AssignmentCreatePayload[];
 }
 

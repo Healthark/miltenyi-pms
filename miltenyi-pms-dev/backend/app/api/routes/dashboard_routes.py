@@ -60,7 +60,7 @@ from app.schemas.dashboard_schemas import (
     ProjectReviewCompletion,
     StalledGoal,
     StalledGoalsSummary,
-    UnmentoredStaff,
+    UnmentoredEmployee,
 )
 
 
@@ -317,7 +317,7 @@ def get_hr_dashboard_summary(
     headcount = HeadcountSummary(
         total_active=sum(role_counts.values()),
         by_role=HeadcountByRole(
-            staff=role_counts.get(Role.STAFF.value, 0),
+            employee=role_counts.get(Role.EMPLOYEE.value, 0),
             mentor=role_counts.get(Role.MENTOR.value, 0),
             pm=role_counts.get(Role.PM.value, 0),
             # HR chip is HR_MyOrg + HR_Miltenyi combined for HR_MyOrg
@@ -450,7 +450,7 @@ def get_hr_dashboard_summary(
         )
 
     # ── Missing annual reviews — the silent chase list ────────────────
-    # "Missing" = Staff users with NO AnnualReview row at all for the
+    # "Missing" = Employees with NO AnnualReview row at all for the
     # resolved FY. Mentees in DRAFT status are visible in the funnel
     # widget's draft bucket, so they aren't repeated here — this card's
     # purpose is to surface the population that has zero engagement.
@@ -477,7 +477,7 @@ def get_hr_dashboard_summary(
             )
             .filter(
                 User.org_id == current_user.org_id,
-                User.role == Role.STAFF.value,
+                User.role == Role.EMPLOYEE.value,
                 User.is_deleted == False,  # noqa: E712
             )
         )
@@ -559,12 +559,12 @@ def get_hr_dashboard_summary(
         )
 
     # ── Mentor coverage — pairing health snapshot ─────────────────────
-    # Two insights bundled together: unmentored Staff (operationally
+    # Two insights bundled together: unmentored Employees (operationally
     # blocked from goals/reviews) and the most-loaded mentors (so HR
-    # can spot overload before assigning new Staff).
+    # can spot overload before assigning new Employees).
     # Not FY-scoped — this is a "right now" picture of the org.
 
-    # Fetch all active Staff with their mentor relationship eager-loaded
+    # Fetch all active Employees with their mentor relationship eager-loaded
     # so we can check (a) mentor exists, (b) mentor isn't deactivated.
     all_staff = (
         db.query(User)
@@ -575,7 +575,7 @@ def get_hr_dashboard_summary(
         )
         .filter(
             User.org_id == current_user.org_id,
-            User.role == Role.STAFF.value,
+            User.role == Role.EMPLOYEE.value,
             User.is_deleted == False,  # noqa: E712
         )
         .order_by(User.full_name.asc())
@@ -583,7 +583,7 @@ def get_hr_dashboard_summary(
     )
 
     unmentored = [
-        UnmentoredStaff(
+        UnmentoredEmployee(
             user_id=s.id,
             full_name=s.full_name,
             function_name=s.function.name if s.function else None,
@@ -593,14 +593,14 @@ def get_hr_dashboard_summary(
         if s.mentor_id is None or s.mentor is None or s.mentor.is_deleted
     ]
 
-    # Active mentee counts per mentor — only counts Staff whose mentor
+    # Active mentee counts per mentor — only counts Employees whose mentor
     # is still active (so a dangling FK to a deactivated mentor doesn't
     # inflate anyone's load).
     mentee_count_rows = (
         db.query(User.mentor_id, func.count(User.id))
         .filter(
             User.org_id == current_user.org_id,
-            User.role == Role.STAFF.value,
+            User.role == Role.EMPLOYEE.value,
             User.is_deleted == False,  # noqa: E712
             User.mentor_id.isnot(None),
         )
@@ -632,7 +632,7 @@ def get_hr_dashboard_summary(
         top_mentors = []
 
     mentor_coverage = MentorCoverage(
-        unmentored_staff=unmentored,
+        unmentored_employees=unmentored,
         top_mentors=top_mentors,
     )
 

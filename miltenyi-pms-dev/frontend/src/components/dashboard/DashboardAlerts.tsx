@@ -64,7 +64,7 @@ function readInitialDismissed(): Set<string> {
 
 interface GateBannerCopy {
   /** Per-role text. `null` means this role doesn't see this banner. */
-  readonly Staff?: string;
+  readonly Employee?: string;
   readonly Mentor?: string;
   readonly PM?: string;
   readonly HR_MyOrg?: string;
@@ -117,7 +117,7 @@ export function DashboardAlerts() {
       key: "annual_reviews_enabled",
       active: settings.annual_reviews_enabled === false,
       copy: {
-        Staff:
+        Employee:
           "Annual review submissions are paused. You can't submit your self-review right now.",
         Mentor:
           "Annual review submissions are paused. You can't submit team evaluations right now.",
@@ -129,7 +129,7 @@ export function DashboardAlerts() {
       key: "annual_goals_edit_enabled",
       active: settings.annual_goals_edit_enabled === false,
       copy: {
-        Staff:
+        Employee:
           "Annual goal editing is disabled. You can't create or edit goals right now.",
         Mentor:
           "Annual goal editing is disabled. New goals from your mentees are paused.",
@@ -141,20 +141,20 @@ export function DashboardAlerts() {
       key: "project_ratings_visible",
       active: settings.project_ratings_visible === false,
       copy: {
-        Staff:
+        Employee:
           "Project performance ratings are hidden for the current cycle.",
-        PM: "Project ratings are hidden from staff for the current cycle.",
+        PM: "Project ratings are hidden from employees for the current cycle.",
         HR_MyOrg:
-          "Project ratings are hidden from staff. Re-enable in System Settings.",
+          "Project ratings are hidden from employees. Re-enable in System Settings.",
         HR_Miltenyi:
-          "Project ratings are hidden from staff. Re-enable in System Settings.",
+          "Project ratings are hidden from employees. Re-enable in System Settings.",
       },
     },
     {
       key: "annual_review_final_rating_visible",
       active: settings.annual_review_final_rating_visible === false,
       copy: {
-        Staff:
+        Employee:
           "Final annual review ratings are hidden for the current cycle.",
         HR_MyOrg:
           "Final ratings hidden. Re-enable when calibration is complete.",

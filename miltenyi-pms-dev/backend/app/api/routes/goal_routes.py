@@ -57,6 +57,7 @@ from app.core.cycle_utils import (
     get_goal_cycle_name,
     get_year_override,
     is_review_window_open,
+    resolve_now,
     resolve_today,
 )
 
@@ -296,10 +297,16 @@ def create_goal(
     # ── Gate check + cycle stamping for annual goals ───────────────────
     cycle_name: Optional[str] = None
     if goal_in.goal_type == GoalType.ANNUAL:
-        # Stamp the FY cycle at creation time ("FY26-27") from wall-clock
-        # UTC. Derived first so the gate check uses the goal's own FY —
-        # not a stale active_cycle_name.
-        cycle_name = get_goal_cycle_name(datetime.now(timezone.utc))
+        # Stamp the FY cycle at creation time ("FY26-27") from the
+        # org's local "now" (timezone-aware). Critical near midnight on
+        # a fiscal-year boundary: a user in IST creating a goal at
+        # 01:00 IST on April 1 should land in FY27-28, not the server's
+        # UTC-still-March-31 answer. Derived first so the gate check
+        # below uses the goal's own FY — not a stale active_cycle_name.
+        settings = db.query(SystemSettings).filter(
+            SystemSettings.org_id == current_user.org_id
+        ).first()
+        cycle_name = get_goal_cycle_name(resolve_now(settings))
         _assert_annual_gate_open(db, current_user.org_id, cycle_name)
 
     # ── Build the Goal record ──────────────────────────────────────────

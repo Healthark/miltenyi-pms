@@ -25,10 +25,12 @@ from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import func
 
 from app.api.dependencies import DbSession, CurrentUser
+from app.core.cycle_utils import resolve_today
 from app.models.project_models import (
     Project, ProjectAssignment,
     PROJECT_STATUS_ACTIVE, PROJECT_STATUS_COMPLETED,
 )
+from app.models.system_settings_models import SystemSettings
 from app.models.user_models import User, Role, ADMIN_ROLES
 from app.models.reference_models import Function
 from app.schemas.project_schemas import (
@@ -562,7 +564,13 @@ def end_assignment(
         # Idempotent: already ended.
         return None
 
-    assignment.end_date = date.today()
+    # Use the org's configured timezone for "today" so HR ending an
+    # assignment near midnight in IST/AEST/etc. lands on the day they
+    # actually pressed the button — not the server's UTC day.
+    settings = db.query(SystemSettings).filter(
+        SystemSettings.org_id == current_user.org_id
+    ).first()
+    assignment.end_date = resolve_today(settings)
     assignment.ended_by_id = current_user.id
     db.commit()
     return None
@@ -663,7 +671,14 @@ def complete_project(
         ).scalar() or 0
         return _build_project_response(project, db, count)
 
-    today = date.today()
+    # `today` is used as the assignments' end_date — a calendar-day
+    # decision that should reflect the org's local timezone. The
+    # `project.completed_at` instant below stays UTC for audit trail
+    # canonicalisation.
+    settings = db.query(SystemSettings).filter(
+        SystemSettings.org_id == current_user.org_id
+    ).first()
+    today = resolve_today(settings)
     project.status = PROJECT_STATUS_COMPLETED
     project.completed_at = datetime.now(timezone.utc)
     project.completed_by_id = current_user.id

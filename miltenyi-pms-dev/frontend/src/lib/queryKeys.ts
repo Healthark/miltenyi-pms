@@ -65,7 +65,7 @@ export const queryKeys = {
   },
 
   // ── Dashboard summaries ────────────────────────────────────────────
-  // `summary()` is the Staff/Mentor personal summary. `hrSummary(fy)`
+  // `summary()` is the Employee/Mentor personal summary. `hrSummary(fy)`
   // is the HR org-wide rollup, parameterized by fiscal start year so
   // each FY has its own cache entry.
   dashboard: {
@@ -149,7 +149,7 @@ export const queryKeys = {
     all: ["profile"] as const,
     expectations: () => [...queryKeys.profile.all, "expectations"] as const,
     // /users/me — rich profile (email, function, designation, mentor name).
-    // Used by the Staff dashboard's My Mentor card. Profile.tsx still
+    // Used by the Employee dashboard's My Mentor card. Profile.tsx still
     // uses a direct fetch and can migrate to this key later; until it
     // does the two sources stay in sync via the standard staleTime.
     me: () => [...queryKeys.profile.all, "me"] as const,

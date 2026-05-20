@@ -67,8 +67,8 @@ export function AnnualReviews() {
 
   // Role-based detection. Replaces the previous `has_mentees` shortcut so
   // HR_MyOrg gets their view-only "All Reviews" tab instead of falling
-  // through to the Staff layout.
-  const isStaff = user?.role === "Staff";
+  // through to the Employee layout.
+  const isEmployee = user?.role === "Employee";
   const isMentor = user?.role === "Mentor";
   const isHRMyOrg = user?.role === "HR_MyOrg";
 
@@ -90,7 +90,7 @@ export function AnnualReviews() {
 
   const queryClient = useQueryClient();
 
-  // Role-gated queries. Two endpoints back this page — Staff get their
+  // Role-gated queries. Two endpoints back this page — Employees get their
   // own history, HR_MyOrg gets the org-wide list. We register BOTH
   // queries unconditionally so the hooks-order rule is happy, but use
   // `enabled` to keep each one parked unless the current user's role
@@ -103,7 +103,7 @@ export function AnnualReviews() {
   const myReviewsQuery = useQuery({
     queryKey: queryKeys.annualReviews.mine(),
     queryFn: annualReviewService.getMyReviewHistory,
-    enabled: isStaff,
+    enabled: isEmployee,
   });
 
   // Paginated as of PR #19 (foundation for the pagination theme).
@@ -189,7 +189,7 @@ export function AnnualReviews() {
   // (no pages loaded yet). Subsequent `fetchNextPage` calls flip
   // `isFetchingNextPage` instead — handled separately near the Load
   // More button below.
-  const isLoading = isStaff
+  const isLoading = isEmployee
     ? myReviewsQuery.isPending
     : isHRMyOrg
       ? allReviewsQuery.isPending
@@ -298,8 +298,8 @@ export function AnnualReviews() {
     }`;
 
   // Header text per role. HR_MyOrg → "All Reviews" (org-wide view-only).
-  // Mentor → "Team Reviews" (they're evaluating their mentees). Staff and
-  // any other role → "Annual Reviews" (generic — Staff only have their
+  // Mentor → "Team Reviews" (they're evaluating their mentees). Employees and
+  // any other role → "Annual Reviews" (generic — Employees only have their
   // own self-review here and shouldn't see a "Team" label since they
   // don't have a team).
   const headerTitle = isHRMyOrg
@@ -318,7 +318,7 @@ export function AnnualReviews() {
   // as a banner so the absence of action buttons isn't mysterious.
   // Suppressed for HR_MyOrg: they're the one who flipped the toggle, so
   // the announcement adds no information for them and just clutters
-  // their view. Staff and Mentors still see it.
+  // their view. Employees and Mentors still see it.
   const submissionsPaused =
     settings?.annual_reviews_enabled === false && !isHRMyOrg;
 
@@ -359,7 +359,7 @@ export function AnnualReviews() {
       {/* Tab container */}
       <div className="rounded-xl border border-border bg-surface shadow-sm overflow-hidden">
         <div className="flex border-b border-border px-2">
-          {isStaff && (
+          {isEmployee && (
             <button
               type="button"
               className={tabCls("my")}
@@ -389,7 +389,7 @@ export function AnnualReviews() {
         </div>
 
         <div className="p-5">
-          {isStaff && activeTab === "my" && (
+          {isEmployee && activeTab === "my" && (
             <SelfReviewTab
               reviews={reviews}
               isLoading={isLoading}
@@ -609,7 +609,7 @@ function AllReviewsTab({
         <p className="mt-1 text-sm text-text-muted">
           {hasActiveFilters
             ? "Try clearing one or more filters above to broaden the result."
-            : "Reviews will appear here once Staff submit self-reviews and mentors start evaluating."}
+            : "Reviews will appear here once employees submit self-reviews and mentors start evaluating."}
         </p>
       </div>
     );

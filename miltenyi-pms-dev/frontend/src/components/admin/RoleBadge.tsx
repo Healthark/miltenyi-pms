@@ -6,7 +6,7 @@
  *   HR_Miltenyi  — limited admin (Miltenyi HR)
  *   Mentor       — fixed mentor (reviews mentee goals + annual reviews)
  *   PM           — Miltenyi project manager
- *   Staff        — employee (default)
+ *   Employee     — Miltenyi employee (default)
  */
 
 const ROLE_LABELS: Record<string, string> = {
@@ -14,7 +14,7 @@ const ROLE_LABELS: Record<string, string> = {
   HR_Miltenyi: "HR · Miltenyi",
   Mentor: "Mentor",
   PM: "PM",
-  Staff: "Staff",
+  Employee: "Employee",
 };
 
 const ROLE_STYLES: Record<string, string> = {
@@ -22,7 +22,7 @@ const ROLE_STYLES: Record<string, string> = {
   HR_Miltenyi: "bg-purple-100 text-purple-700",
   Mentor: "bg-emerald-100 text-emerald-700",
   PM: "bg-amber-100 text-amber-700",
-  Staff: "bg-slate-100 text-slate-600",
+  Employee: "bg-slate-100 text-slate-600",
 };
 
 interface RoleBadgeProps {

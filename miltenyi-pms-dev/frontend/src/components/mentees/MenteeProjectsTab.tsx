@@ -340,7 +340,7 @@ export function MenteeProjectsTab({
   //                                   anywhere
   //   dashboard.all                 → BROADCAST: project_reviews_
   //                                   pending_primary / _secondary
-  //                                   counts on Staff/HR dashboards
+  //                                   counts on Employee/HR dashboards
   //
   // The mentees side stays specific (PR #27's pattern — per-mentee
   // data; broadcasting would over-invalidate other mentees we have

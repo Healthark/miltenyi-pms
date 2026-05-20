@@ -8,7 +8,7 @@ interface MyMentorWidgetProps {
 }
 
 /**
- * MyMentorWidget — Staff-dashboard tile that surfaces who the user
+ * MyMentorWidget — Employee-dashboard tile that surfaces who the user
  * reports to. Renders the mentor's name plus a "View profile" CTA
  * pointing at the user's own profile page (which shows the mentor row
  * in full).

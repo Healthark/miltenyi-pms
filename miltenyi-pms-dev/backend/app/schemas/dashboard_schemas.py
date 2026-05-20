@@ -64,7 +64,7 @@ class DashboardSummary(BaseModel):
 
 class HeadcountByRole(BaseModel):
     """Active-user breakdown by role. HR combines HR_MyOrg + HR_Miltenyi."""
-    staff: int = 0
+    employee: int = 0
     mentor: int = 0
     pm: int = 0
     hr: int = 0
@@ -133,10 +133,10 @@ class MissingAnnualReviewUser(BaseModel):
 
 
 class MissingAnnualReviewsSummary(BaseModel):
-    """Staff users with NO AnnualReview row for the selected FY — the
+    """Employees with NO AnnualReview row for the selected FY — the
     silent population that the funnel widget can't surface.
 
-    Scope is Staff only: Mentors / PMs / HR aren't rated in this system
+    Scope is Employee only: Mentors / PMs / HR aren't rated in this system
     so they're never expected to have an annual review row.
     `count` always equals `len(users)` — we keep both so the frontend
     can render a headline number even if the list is cropped client-
@@ -170,8 +170,8 @@ class StalledGoalsSummary(BaseModel):
     goals: list[StalledGoal] = []
 
 
-class UnmentoredStaff(BaseModel):
-    """One row in the unmentored-Staff list."""
+class UnmentoredEmployee(BaseModel):
+    """One row in the unmentored-Employee list."""
     user_id: int
     full_name: str
     function_name: str | None = None
@@ -189,7 +189,7 @@ class MentorCoverage(BaseModel):
     """Org-wide mentor pairing health snapshot.
 
     Two paired insights HR cares about:
-      - `unmentored_staff` — active Staff with no mentor (or with a
+      - `unmentored_employees` — active Staff with no mentor (or with a
         mentor that's been deactivated). These users are blocked from
         submitting annual goals/reviews. List is unbounded; the
         frontend scrolls.
@@ -199,7 +199,7 @@ class MentorCoverage(BaseModel):
 
     Not FY-scoped — this is a "right now" snapshot, like Headcount.
     """
-    unmentored_staff: list[UnmentoredStaff] = []
+    unmentored_employees: list[UnmentoredEmployee] = []
     top_mentors: list[MentorLoad] = []
 
 

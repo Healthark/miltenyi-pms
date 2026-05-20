@@ -217,7 +217,7 @@ export function MenteeGoalsTab({ goals, menteeName, menteeId }: MenteeGoalsTabPr
   //     MenteeDetail re-fetches and re-renders this tab with fresh
   //     goals).
   //   - queryKeys.goals.all                 — TeamGoalsTab's queue,
-  //     Staff's mine, HR's org. Broadcast catches all of them.
+  //     Employee's mine, HR's org. Broadcast catches all of them.
   //   - queryKeys.dashboard.all             — dashboard counts
   //     (goal_approval_funnel + completion percentages).
   //

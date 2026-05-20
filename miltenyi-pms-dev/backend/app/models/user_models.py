@@ -11,11 +11,11 @@ class Role(str, PyEnum):
     Five distinct values:
       HR_MyOrg     — full super-admin (the platform owner's HR)
       HR_Miltenyi  — limited admin (the client's HR; cannot edit Mentors or HR_MyOrg users)
-      Mentor       — fixed mentor; reviews mentee goals + writes annual reviews;
+      Mentor       — fixed mentor; reviews Employee goals + writes annual reviews;
                      no own goals, never rated, never on a project
       PM           — Miltenyi project manager; submits per-cycle project reviews
                      on their team; no goals, never rated
-      Staff        — MyOrg employee assigned to Miltenyi work; sets goals,
+      Employee     — MyOrg employee assigned to Miltenyi work; sets goals,
                      self-reviews on goals (H1/H2) and annual reviews,
                      receives project reviews from PMs and annual reviews from Mentors
 
@@ -26,7 +26,7 @@ class Role(str, PyEnum):
     HR_MILTENYI = "HR_Miltenyi"
     MENTOR = "Mentor"
     PM = "PM"
-    STAFF = "Staff"
+    EMPLOYEE = "Employee"
 
 
 # Role groupings used by auth guards. Centralised so the routes stay readable
@@ -52,7 +52,7 @@ class User(Base):
     # One of the Role enum values above.
     role = Column(String, nullable=False)
 
-    # Self-referencing FK for the mentoring hierarchy. Set on Staff users only;
+    # Self-referencing FK for the mentoring hierarchy. Set on Employee users only;
     # points to a Mentor row. Other roles leave this NULL.
     mentor_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 

@@ -23,7 +23,7 @@ import { queryKeys } from "@/lib/queryKeys";
  *   and handles unmount-mid-fetch via AbortController internally.
  *
  *   queryKey: queryKeys.projectReviews.detail(id) — same key used by
- *   MenteeProjectsTab's impact modal (PR #12). When a Staff user's
+ *   MenteeProjectsTab's impact modal (PR #12). When an Employee's
  *   ReviewDetailPanel and a Mentor's MenteeProjectsTab impact modal
  *   reference the same review row at the same time (rare but possible),
  *   they share one cache entry.

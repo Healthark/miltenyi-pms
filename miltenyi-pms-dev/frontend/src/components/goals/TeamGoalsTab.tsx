@@ -267,7 +267,7 @@ export function TeamGoalsTab() {
 
   // ── Mutations ──────────────────────────────────────────────────────
   // All five goal-side mutations broadcast-invalidate the same two
-  // namespaces: ['goals'] (catches mentor's queue + Staff's mine + HR's
+  // namespaces: ['goals'] (catches mentor's queue + Employee's mine + HR's
   // org) and ['dashboard'] (catches goal_approval_funnel + the various
   // completion counts).
   //

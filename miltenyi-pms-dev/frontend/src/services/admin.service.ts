@@ -30,6 +30,12 @@ export interface UserResponse {
   created_at: string;
   function: FunctionBrief | null;
   designation: DesignationBrief | null;
+  /** Active project managers for this user — sorted, deduplicated full
+   *  names of every PM running a project the user is currently assigned
+   *  to (assignment.end_date IS NULL). Empty for non-Employee or for Employee
+   *  with no active assignments. Drives the Project Manager column in
+   *  the Users tab for HR_Miltenyi viewers. */
+  project_manager_names: string[];
 }
 
 export interface SystemSettings {
@@ -38,6 +44,10 @@ export interface SystemSettings {
   active_cycle: string | null;
   cycle_type: string;
   fiscal_start_month: number;
+  /** IANA timezone (e.g. "UTC", "Asia/Kolkata", "Europe/Berlin"). Drives
+   *  every calendar-day decision on the backend so users near midnight
+   *  in non-UTC zones don't hit off-by-one cycle rollovers. */
+  timezone: string;
   goals_edit_enabled: boolean;
   annual_goals_edit_enabled: boolean;
   project_ratings_visible: boolean;
@@ -56,6 +66,8 @@ export interface SystemSettings {
 export interface AdminSettingsUpdatePayload {
   cycle_type?: string;
   fiscal_start_month?: number;
+  /** IANA timezone string. Backend rejects values ZoneInfo can't load. */
+  timezone?: string;
   goals_edit_enabled?: boolean;
   annual_goals_edit_enabled?: boolean;
   project_ratings_visible?: boolean;

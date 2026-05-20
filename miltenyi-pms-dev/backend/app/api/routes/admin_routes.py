@@ -35,6 +35,7 @@ from app.core.config import settings
 from app.core.security import get_password_hash
 from app.models.user_models import User, Role, ADMIN_ROLES, PROTECTED_USER_ROLES
 from app.models.reference_models import Function, Designation
+from app.models.project_models import Project, ProjectAssignment
 from app.models.system_settings_models import SystemSettings, CycleType
 from app.core.cycle_utils import (
     YEAR_OVERRIDE_FLAGS,
@@ -54,6 +55,7 @@ from app.services.send_email import (
     send_welcome_user_email,
 )
 from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from app.schemas.admin_schemas import (
     FunctionBrief,
     DesignationBrief,
@@ -116,7 +118,7 @@ def _authorize_user_mutation(current_user: User, target_role: str | None) -> Non
     mentors or the HR from MyOrg as a security measure."
 
     Also blocks HR_Miltenyi from *promoting* a user TO a protected role
-    (e.g. flipping a Staff row's role to Mentor).
+    (e.g. flipping an Employee row's role to Mentor).
 
     Pass `target_role=None` when the operation doesn't change the role
     (e.g. deactivate); we look up the row's existing role at the call site.
@@ -145,7 +147,9 @@ def list_users(
     Return every user in the organization (including deactivated ones).
 
     Uses joinedload to eagerly fetch function + designation in ONE query,
-    avoiding the N+1 problem when the table renders 50+ rows.
+    avoiding the N+1 problem when the table renders 50+ rows. The PM
+    names for each Employee row are stitched in via a single batched query
+    below — also N+1-safe.
     """
     _require_hr_any(current_user)
 
@@ -159,6 +163,41 @@ def list_users(
         .order_by(User.created_at.desc())
         .all()
     )
+
+    # Resolve each user's active project managers in one batched query.
+    # An "active" assignment is one where end_date IS NULL. Joins:
+    #   ProjectAssignment → Project (to find pm_id)
+    #   Project → User (to get the PM's full_name)
+    # Soft-deleted PMs and projects are excluded. Distinct() here makes
+    # the SQL emit DISTINCT so we don't double-count when an Employee has
+    # multiple active rows under the same project.
+    pm_rows = (
+        db.query(ProjectAssignment.user_id, User.full_name)
+        .join(Project, Project.id == ProjectAssignment.project_id)
+        .join(User, User.id == Project.pm_id)
+        .filter(
+            ProjectAssignment.org_id == current_user.org_id,
+            ProjectAssignment.end_date.is_(None),
+            Project.is_deleted.is_(False),
+            User.is_deleted == False,  # noqa: E712
+        )
+        .distinct()
+        .all()
+    )
+    pm_names_by_user: dict[int, set[str]] = {}
+    for user_id, pm_name in pm_rows:
+        pm_names_by_user.setdefault(user_id, set()).add(pm_name)
+
+    # Pydantic builds UserResponse instances directly from the SQLAlchemy
+    # models via `from_attributes`; we need to surface the computed PM
+    # list on each row before serialisation. Setting it as a plain
+    # attribute on the ORM instance is the lightest path — Pydantic's
+    # `model_validate` picks it up the same way as the joined columns.
+    for u in users:
+        names = sorted(pm_names_by_user.get(u.id, set()))
+        # Attach as a transient attribute; the model doesn't have a
+        # column for it. SQLAlchemy doesn't try to persist this.
+        u.project_manager_names = names  # type: ignore[attr-defined]
 
     return users
 
@@ -287,7 +326,7 @@ def update_user(
     # compare incoming values to stored ones so a no-op payload (same
     # value resubmitted) still passes — only real changes raise 403.
     # The new-user creation path is untouched: HR_Miltenyi may still
-    # provision a Staff/PM/HR_Miltenyi row with full field control.
+    # provision an Employee/PM/HR_Miltenyi row with full field control.
     update_data = user_in.model_dump(exclude_unset=True)
     if current_user.role == Role.HR_MILTENYI.value:
         HR_MILTENYI_EDITABLE_FIELDS = {"function_id", "designation_id"}
@@ -523,6 +562,7 @@ def get_admin_settings(
             active_cycle=live_active_cycle,
             cycle_type=row.cycle_type,
             fiscal_start_month=row.fiscal_start_month,
+            timezone=row.timezone or "UTC",
             goals_edit_enabled=row.goals_edit_enabled,
             annual_goals_edit_enabled=override.annual_goals_edit_enabled,
             project_ratings_visible=override.project_ratings_visible,
@@ -582,13 +622,29 @@ def update_admin_settings(
             ),
         )
 
-    # Apply cadence / fiscal / simulated_today changes — these stay
-    # org-wide. The four access-control toggles below now route to the
-    # per-FY override table.
+    # Apply cadence / fiscal / timezone / simulated_today changes —
+    # these stay org-wide. The four access-control toggles below now
+    # route to the per-FY override table.
     if settings_in.cycle_type is not None:
         settings_row.cycle_type = settings_in.cycle_type
     if settings_in.fiscal_start_month is not None:
         settings_row.fiscal_start_month = settings_in.fiscal_start_month
+    if settings_in.timezone is not None:
+        # Validate the IANA string here so the admin gets a 400 (rather
+        # than the next cycle-determination call silently falling back
+        # to UTC). cycle_utils' read-side fallback still catches DB-
+        # legacy bad values gracefully.
+        try:
+            ZoneInfo(settings_in.timezone)
+        except (ZoneInfoNotFoundError, Exception):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Unknown timezone '{settings_in.timezone}'. Use an "
+                    "IANA name like 'Asia/Kolkata', 'Europe/Berlin', or 'UTC'."
+                ),
+            )
+        settings_row.timezone = settings_in.timezone
     if settings_in.clear_simulated_today:
         settings_row.simulated_today = None
     elif settings_in.simulated_today is not None:
@@ -645,6 +701,7 @@ def update_admin_settings(
         active_cycle=settings_row.active_cycle_name,
         cycle_type=settings_row.cycle_type,
         fiscal_start_month=settings_row.fiscal_start_month,
+        timezone=settings_row.timezone or "UTC",
         goals_edit_enabled=settings_row.goals_edit_enabled,
         annual_goals_edit_enabled=override.annual_goals_edit_enabled,
         project_ratings_visible=override.project_ratings_visible,
@@ -698,14 +755,14 @@ def settings_preflight(
     active_fy = extract_fy_label(active_cycle)
 
     # ── annual_goals_edit_enabled ───────────────────────────────────
-    # Count active Staff in this org with zero annual Goal rows for the
+    # Count active Employees in this org with zero annual Goal rows for the
     # active FY. They're the users who would be locked out by flipping
     # this off mid-cycle.
     staff_ids_subq = (
         db.query(User.id)
         .filter(
             User.org_id == current_user.org_id,
-            User.role == Role.STAFF.value,
+            User.role == Role.EMPLOYEE.value,
             User.is_deleted == False,  # noqa: E712
         )
         .subquery()
@@ -731,7 +788,7 @@ def settings_preflight(
     # Two buckets, summed:
     #   1. Reviews already started but not yet past the mentor stage
     #      (draft / pending_mentor) — they can't progress while paused.
-    #   2. Active Staff with no AnnualReview row for the active FY at
+    #   2. Active Employees with no AnnualReview row for the active FY at
     #      all — they can't even create one while paused.
     in_flight_reviews = (
         db.query(sql_func.count(AnnualReview.id))
@@ -1035,7 +1092,7 @@ def year_settings_preflight(
         db.query(User.id)
         .filter(
             User.org_id == current_user.org_id,
-            User.role == Role.STAFF.value,
+            User.role == Role.EMPLOYEE.value,
             User.is_deleted == False,  # noqa: E712
         )
         .subquery()
@@ -1130,8 +1187,14 @@ def _load_user_with_relations(db: DbSession, user_id: int) -> User:
 
     Called after create/update to ensure the response includes nested
     function and designation objects, not just their IDs.
+
+    `project_manager_names` is set to an empty list here. The mutation
+    responses don't strictly need the field populated — the frontend
+    invalidates `admin.users()` after success and refetches `list_users`,
+    which computes the real PM names via a single batched query. The
+    empty-list default keeps Pydantic happy without an extra round-trip.
     """
-    return (
+    user = (
         db.query(User)
         .options(
             joinedload(User.function),
@@ -1140,3 +1203,6 @@ def _load_user_with_relations(db: DbSession, user_id: int) -> User:
         .filter(User.id == user_id)
         .first()
     )
+    if user is not None:
+        user.project_manager_names = []  # type: ignore[attr-defined]
+    return user

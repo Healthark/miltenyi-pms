@@ -23,6 +23,11 @@ class SystemSettingsResponse(BaseModel):
     active_cycle_name: str
     cycle_type: CycleType
     fiscal_start_month: int
+    # IANA timezone (e.g. "UTC", "Asia/Kolkata", "Europe/Berlin"). Used
+    # by the backend to anchor every calendar-day decision so users near
+    # midnight in non-UTC zones don't hit off-by-one rollovers. Exposed
+    # here for completeness; the frontend doesn't need to act on it.
+    timezone: str = "UTC"
     cycle_start_date: Optional[date] = None
     cycle_end_date: Optional[date] = None
 

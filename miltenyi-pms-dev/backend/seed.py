@@ -22,7 +22,7 @@ Accounts (all passwords: password123):
     lukas@miltenyi.com            Lukas Lange       (PM)
     dieter@miltenyi.com           Dieter Becker     (PM, reserve)
 
-  Staff (Healthark employees with Miltenyi-issued accounts):
+  Employee (Healthark employees with Miltenyi-issued accounts):
     bob@, charlie@, dana@, iris@miltenyi.com               (R&D)
     evan@, fiona@, klaus@miltenyi.com                       (Manufacturing)
     mia@, nils@miltenyi.com                                 (Commercial)
@@ -212,7 +212,7 @@ def seed_database() -> None:
             function_id=func_rnd.id, designation_id=d_lead.id,
         )
 
-        # ── Staff (Healthark employees, Miltenyi-issued logins) ───────
+        # ── Employee (Healthark employees, Miltenyi-issued logins) ───────
         # Mentor pairings:
         #   Anjali → Bob, Charlie, Dana
         #   Mark   → Iris, Evan, Fiona
@@ -221,66 +221,66 @@ def seed_database() -> None:
             "bob@miltenyi.com",
             employee_code="STF-001", full_name="Bob Builder",
             phone="+49 30 1234 2001",
-            role=Role.STAFF.value, mentor_id=anjali.id,
+            role=Role.EMPLOYEE.value, mentor_id=anjali.id,
             function_id=func_rnd.id, designation_id=d_sr.id,
         )
         charlie = _ensure_user(
             "charlie@miltenyi.com",
             employee_code="STF-002", full_name="Charlie Chemist",
             phone="+49 30 1234 2002",
-            role=Role.STAFF.value, mentor_id=anjali.id,
+            role=Role.EMPLOYEE.value, mentor_id=anjali.id,
             function_id=func_rnd.id, designation_id=d_sci.id,
         )
         dana = _ensure_user(
             "dana@miltenyi.com",
             employee_code="STF-003", full_name="Dana DNA",
             phone="+49 30 1234 2003",
-            role=Role.STAFF.value, mentor_id=anjali.id,
+            role=Role.EMPLOYEE.value, mentor_id=anjali.id,
             function_id=func_rnd.id, designation_id=d_sci.id,
         )
         iris = _ensure_user(
             "iris@miltenyi.com",
             employee_code="STF-004", full_name="Iris Immel",
             phone="+49 30 1234 2004",
-            role=Role.STAFF.value, mentor_id=mark.id,
+            role=Role.EMPLOYEE.value, mentor_id=mark.id,
             function_id=func_rnd.id, designation_id=d_sr.id,
         )
         evan = _ensure_user(
             "evan@miltenyi.com",
             employee_code="STF-005", full_name="Evan Engineer",
             phone="+49 30 1234 2005",
-            role=Role.STAFF.value, mentor_id=mark.id,
+            role=Role.EMPLOYEE.value, mentor_id=mark.id,
             function_id=func_mfg.id, designation_id=d_lead.id,
         )
         fiona = _ensure_user(
             "fiona@miltenyi.com",
             employee_code="STF-006", full_name="Fiona Factory",
             phone="+49 30 1234 2006",
-            role=Role.STAFF.value, mentor_id=mark.id,
+            role=Role.EMPLOYEE.value, mentor_id=mark.id,
             function_id=func_mfg.id, designation_id=d_sci.id,
         )
         klaus = _ensure_user(
             "klaus@miltenyi.com",
             employee_code="STF-007", full_name="Klaus Köhler",
             phone="+49 30 1234 2007",
-            role=Role.STAFF.value, mentor_id=priya.id,
+            role=Role.EMPLOYEE.value, mentor_id=priya.id,
             function_id=func_mfg.id, designation_id=d_sci.id,
         )
         mia = _ensure_user(
             "mia@miltenyi.com",
             employee_code="STF-008", full_name="Mia Markt",
             phone="+49 30 1234 2008",
-            role=Role.STAFF.value, mentor_id=priya.id,
+            role=Role.EMPLOYEE.value, mentor_id=priya.id,
             function_id=func_com.id, designation_id=d_sr.id,
         )
         nils = _ensure_user(
             "nils@miltenyi.com",
             employee_code="STF-009", full_name="Nils Niedermeier",
             phone="+49 30 1234 2009",
-            role=Role.STAFF.value, mentor_id=priya.id,
+            role=Role.EMPLOYEE.value, mentor_id=priya.id,
             function_id=func_com.id, designation_id=d_sci.id,
         )
-        print("  [+] Users (HR×2, Mentors×3, PMs×4, Staff×9)")
+        print("  [+] Users (HR×2, Mentors×3, PMs×4, Employee×9)")
 
         # ============================================================ #
         # 4. SYSTEM SETTINGS                                            #
@@ -310,7 +310,7 @@ def seed_database() -> None:
         # 5. PROJECTS                                                   #
         # ============================================================ #
         # PM = Miltenyi PM. Secondary = a non-PM/non-Mentor user (HR or other).
-        # Members are Staff only — the PM is NOT in `assignments`.
+        # Members are Employee only — the PM is NOT in `assignments`.
         def _ensure_project(
             code: str, name: str, description: str,
             pm: User, secondary: User | None,
@@ -518,9 +518,9 @@ def seed_database() -> None:
             print("  [~] Role expectations already exist; reusing.")
 
         # ============================================================ #
-        # 7. ANNUAL GOALS + H1 SELF-REVIEWS (Staff only)                #
+        # 7. ANNUAL GOALS + H1 SELF-REVIEWS (Employee only)                #
         # ============================================================ #
-        # Goals are owned by Staff; the manager_id is the Staff's mentor.
+        # Goals are owned by Employee; the manager_id is the Employee's mentor.
         def _ensure_goal(
             owner: User, mentor: User, title: str, description: str,
             cycle_name: str, approval: str, fy_year: int,
@@ -626,12 +626,12 @@ def seed_database() -> None:
                 "Run discovery interviews with target accounts across APAC.",
                 cycle_name="FY26-27", approval=ApprovalStatus.PENDING_APPROVAL.value, fy_year=2026,
             )
-            print("  [+] Annual goals (FY26-27) for all Staff with mixed approval states")
+            print("  [+] Annual goals (FY26-27) for all Employee with mixed approval states")
         else:
             print("  [~] Goals already exist; reusing.")
 
         # ============================================================ #
-        # 8. ANNUAL REVIEWS (Staff only, mentor-driven)                 #
+        # 8. ANNUAL REVIEWS (Employee only, mentor-driven)                 #
         # ============================================================ #
         STAFF_BY_MENTOR = [
             (bob, anjali), (charlie, anjali), (dana, anjali),
@@ -851,7 +851,7 @@ def seed_database() -> None:
         print("    greta@miltenyi.com          Greta Schmidt (PRJ-102)")
         print("    lukas@miltenyi.com          Lukas Lange   (PRJ-104)")
         print("    dieter@miltenyi.com         Dieter Becker (reserve)")
-        print("\n  Staff (Healthark @ Miltenyi):")
+        print("\n  Employee (Healthark @ Miltenyi):")
         print("    R&D:        bob@, charlie@, dana@, iris@miltenyi.com")
         print("    Mfg:        evan@, fiona@, klaus@miltenyi.com")
         print("    Commercial: mia@, nils@miltenyi.com")

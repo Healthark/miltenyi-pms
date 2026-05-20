@@ -79,25 +79,25 @@ const NavItem = ({
 //   Dashboard       — every role (placeholder for now; real per-role
 //                     surfaces are coming. Always show so each user has a
 //                     home page when they land.)
-//   Project Reviews — Staff, PM, HR_Miltenyi, HR_MyOrg
-//   Annual Goals    — Staff, Mentor, HR_MyOrg
-//   Annual Reviews  — Staff, Mentor, HR_MyOrg
+//   Project Reviews — Employee, PM, HR_Miltenyi, HR_MyOrg
+//   Annual Goals    — Employee, Mentor, HR_MyOrg
+//   Annual Reviews  — Employee, Mentor, HR_MyOrg
 //   My Mentees      — Mentor, HR_MyOrg     (gated on has_mentees)
 //   Management Review — HR_MyOrg only (Healthark admin)
 //   Admin Panel     — HR_Miltenyi, HR_MyOrg
 const MAIN_NAV: NavItemData[] = [
   { id: "dashboard", path: "/dashboard", label: "Dashboard", icon: LayoutDashboard,
     feature: "dashboard",
-    requiredRole: ["Staff", "Mentor", "PM", "HR_Miltenyi", "HR_MyOrg"] },
+    requiredRole: ["Employee", "Mentor", "PM", "HR_Miltenyi", "HR_MyOrg"] },
   { id: "project-reviews", path: "/project-reviews", label: "Project Reviews", icon: Briefcase,
     feature: "project_reviews",
-    requiredRole: ["Staff", "PM", "Mentor", "HR_Miltenyi", "HR_MyOrg"] },
+    requiredRole: ["Employee", "PM", "Mentor", "HR_Miltenyi", "HR_MyOrg"] },
   { id: "annual-goals", path: "/annual-goals", label: "Annual Goals", icon: Target,
     feature: "goals",
-    requiredRole: ["Staff", "Mentor", "HR_MyOrg"] },
+    requiredRole: ["Employee", "Mentor", "HR_MyOrg"] },
   { id: "annual-reviews", path: "/annual-reviews", label: "Annual Reviews", icon: FileText,
     feature: "annual_reviews",
-    requiredRole: ["Staff", "Mentor", "HR_MyOrg"] },
+    requiredRole: ["Employee", "Mentor", "HR_MyOrg"] },
   { id: "my-mentees", path: "/my-mentees", label: "My Mentees", icon: Users,
     feature: "mentoring",
     requiredRole: ["Mentor", "HR_MyOrg"],

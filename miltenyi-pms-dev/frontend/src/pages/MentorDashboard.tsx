@@ -4,11 +4,11 @@
  * with their mentees, not the mentor's own employee data — mentors in
  * this org structure do not maintain their own goals or annual review,
  * so the personal "My Goals" / "My Review" / "My Action Items" widgets
- * that the Staff dashboard renders are deliberately omitted.
+ * that the Employee dashboard renders are deliberately omitted.
  *
  * Layout:
  *   Row 1: Active Project Cycle | Active Goal Cycle    — cycle anchors,
- *          identical to the Mentee/Staff dashboard's top row.
+ *          identical to the Mentee/Employee dashboard's top row.
  *   Row 2: Mentee Goal Funnel | Mentee Annual Review   — HR-style donut
  *          cards aggregated across every mentee. Surface where work
  *          sits in the approval / evaluation pipeline.
@@ -45,7 +45,7 @@ export function MentorDashboard() {
   // not serialise them). Both share global defaults from queryClient
   // (30s staleTime, 5min gcTime, refetch-on-focus).
   //
-  // Note ['dashboard', 'summary'] matches StaffDashboard's key on purpose:
+  // Note ['dashboard', 'summary'] matches EmployeeDashboard's key on purpose:
   // a Mentor who also lands on /dashboard sees the same cached entry,
   // and any future mutation that invalidates ['dashboard'] refreshes
   // BOTH variants at once.

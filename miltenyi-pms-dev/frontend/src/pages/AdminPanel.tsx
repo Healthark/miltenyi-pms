@@ -53,6 +53,13 @@ export default function AdminPanel() {
   const canSeeExports =
     user?.role === "HR_MyOrg" || user?.role === "HR_Miltenyi";
 
+  // System Settings tab is HR_MyOrg-only. HR_Miltenyi has no controls
+  // they can flip there (cycle cadence, fiscal anchor, timezone,
+  // per-FY toggles, date simulation are all Healthark-owned), so the
+  // tab is hidden entirely rather than shown read-only. Same role-gate
+  // pattern as canSeeExports above.
+  const canSeeSystemSettings = user?.role === "HR_MyOrg";
+
   // ── Server state ──────────────────────────────────────────────────────────
   // Four independent queries that fire in parallel on mount. Each owns
   // its own cache entry under the ['admin', ...] namespace. Mutations
@@ -105,6 +112,10 @@ export default function AdminPanel() {
   // tab so it can render the read-only display.
   const [cycleType, setCycleType] = useState<CycleType>("half_yearly");
   const [fiscalStartMonth, setFiscalStartMonth] = useState(4);
+  // IANA timezone string. Anchors every backend calendar-day decision
+  // (cycle rollover, FY-end gates, assignment end dates). Defaults to
+  // "UTC" until HR picks the org's actual zone.
+  const [timezone, setTimezone] = useState<string>("UTC");
   // Dev/QA date simulation. simulatedToday is an ISO date string (or
   // empty when unset). simulationAllowed mirrors the backend's env
   // flag so the field hides itself outside dev/staging.
@@ -126,6 +137,7 @@ export default function AdminPanel() {
     if (settings && !hasInitializedForm) {
       setCycleType((settings.cycle_type as CycleType) ?? "half_yearly");
       setFiscalStartMonth(settings.fiscal_start_month ?? 4);
+      setTimezone(settings.timezone ?? "UTC");
       setSimulatedToday(settings.simulated_today ?? "");
       setSimulationAllowed(settings.simulation_allowed ?? false);
       setClearSimulatedTodayPending(false);
@@ -319,6 +331,7 @@ export default function AdminPanel() {
       queryClient.setQueryData(queryKeys.admin.settings(), fresh);
       setCycleType((fresh.cycle_type as CycleType) ?? "half_yearly");
       setFiscalStartMonth(fresh.fiscal_start_month ?? 4);
+      setTimezone(fresh.timezone ?? "UTC");
       setSimulatedToday(fresh.simulated_today ?? "");
       setSimulationAllowed(fresh.simulation_allowed ?? false);
       setClearSimulatedTodayPending(false);
@@ -335,6 +348,7 @@ export default function AdminPanel() {
     const payload: AdminSettingsUpdatePayload = {
       cycle_type: cycleType,
       fiscal_start_month: fiscalStartMonth,
+      timezone: timezone,
     };
     if (clearSimulatedTodayPending) {
       payload.clear_simulated_today = true;
@@ -416,14 +430,16 @@ export default function AdminPanel() {
               Exports
             </button>
           )}
-          <button
-            type="button"
-            className={tabCls("settings")}
-            onClick={() => setActiveTab("settings")}
-          >
-            <Settings className="h-4 w-4" aria-hidden="true" />
-            System Settings
-          </button>
+          {canSeeSystemSettings && (
+            <button
+              type="button"
+              className={tabCls("settings")}
+              onClick={() => setActiveTab("settings")}
+            >
+              <Settings className="h-4 w-4" aria-hidden="true" />
+              System Settings
+            </button>
+          )}
         </div>
 
         {activeTab === "users" && (
@@ -442,11 +458,13 @@ export default function AdminPanel() {
 
         {activeTab === "exports" && canSeeExports && <ExportsTab />}
 
-        {activeTab === "settings" && (
+        {activeTab === "settings" && canSeeSystemSettings && (
           <SystemSettingsTab
             activeCycleName={settings?.active_cycle ?? ""}
             cycleType={cycleType}
             fiscalStartMonth={fiscalStartMonth}
+            timezone={timezone}
+            onTimezoneChange={setTimezone}
             simulatedToday={simulatedToday || null}
             simulationAllowed={simulationAllowed}
             onSimulatedTodayChange={(date) => {

@@ -72,7 +72,7 @@ export interface MenteeAnnualReview extends AnnualReview {
 }
 
 export interface CalibrationRow {
-  /** Null when the Staff user hasn't created a review yet (status === "not_started"). */
+  /** Null when the Employee hasn't created a review yet (status === "not_started"). */
   review_id: number | null;
   user_id: number;
   employee_name: string;
@@ -203,11 +203,11 @@ export const annualReviewService = {
   },
 
   // ── Stage 3: Management ─────────────────────────────────────────
-  /** Calibration grid for the active cycle (every active Staff user in
+  /** Calibration grid for the active cycle (every active Employee in
    *  the org, LEFT-joined against their AnnualReview).
    *
    *  Paginated as of PR #38 (doc 21). Standard offset/limit shape; each
-   *  row corresponds to exactly one Staff user, so unlike /goals/all
+   *  row corresponds to exactly one Employee, so unlike /goals/all
    *  (doc 20) `total` and `items.length` are the same unit — the
    *  user-row count for the page. Pair with `useInfiniteQuery`.
    *
@@ -329,7 +329,7 @@ export type AllReviewsRequestParams = AllReviewsFilters &
 export type { Paginated };
 export type PaginatedAnnualReviews = Paginated<AnnualReview>;
 /** Paginated response from GET /annual-reviews/calibration (PR #38).
- *  Per-row identity is the Staff user; `total` and `items.length` are
+ *  Per-row identity is the Employee; `total` and `items.length` are
  *  the same unit (one calibration row per user). */
 export type PaginatedCalibration = Paginated<CalibrationRow>;
 /** Paginated response from GET /annual-reviews/mentees (PR #40).

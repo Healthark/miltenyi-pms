@@ -2,7 +2,7 @@ import { CalendarDays, Target } from "lucide-react";
 import { formatFyLabel } from "@/utils/fy";
 
 /**
- * ActiveCyclesCard — combined cycle card for the Staff dashboard.
+ * ActiveCyclesCard — combined cycle card for the Employee dashboard.
  *
  * Replaces the previous two-card row (Active Project Cycle + Active
  * Goal Cycle) with a single card that lists both categories

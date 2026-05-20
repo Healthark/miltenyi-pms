@@ -217,9 +217,9 @@ export function AnnualGoals() {
   const confirm = useConfirm();
 
   // Role-based detection (replaces the old `has_mentees` shortcut).
-  // Staff → "My Goals" tab, Mentor → "Team Goals" tab,
+  // Employee → "My Goals" tab, Mentor → "Team Goals" tab,
   // HR_MyOrg → view-only "All Goals" tab.
-  const isStaff = user?.role === "Staff";
+  const isEmployee = user?.role === "Employee";
   const isMentor = user?.role === "Mentor";
   const isHRMyOrg = user?.role === "HR_MyOrg";
   const annualGoalsEditEnabled = settings?.annual_goals_edit_enabled ?? false;
@@ -269,7 +269,7 @@ export function AnnualGoals() {
   const myGoalsQuery = useQuery({
     queryKey: queryKeys.goals.mine("annual"),
     queryFn: () => goalService.getMyGoals("annual"),
-    enabled: isStaff,
+    enabled: isEmployee,
   });
   // Paginated as of PR #37 (doc 20). Same useInfiniteQuery shape as the
   // AnnualReviews "All Reviews" tab (doc 19), but the server here
@@ -341,7 +341,7 @@ export function AnnualGoals() {
   // For paginated queries `isPending` covers ONLY the first-page fetch
   // (no pages loaded yet); subsequent fetchNextPage() calls flip
   // `isFetchingNextPage` instead, handled at the Load More button below.
-  const isLoading = isStaff
+  const isLoading = isEmployee
     ? myGoalsQuery.isPending
     : isHRMyOrg
       ? allGoalsQuery.isPending
@@ -628,7 +628,7 @@ export function AnnualGoals() {
     }`;
 
   // Header text per role.
-  // Staff/Mentor keep the existing "Team Goals" label.
+  // Employee/Mentor keep the existing "Team Goals" label.
   // HR_MyOrg gets "All Goals" — distinct view-only org-wide scope.
   const headerTitle = isHRMyOrg ? "All Goals" : "Team Goals";
   const headerSubtitle = isHRMyOrg
@@ -655,7 +655,7 @@ export function AnnualGoals() {
 
         {/* Add Goal button is Staff-only (Mentor has no own goals;
             HR_MyOrg view-only). Honors the no-mentor + edit-gate rules. */}
-        {isStaff &&
+        {isEmployee &&
           (user?.has_mentor === false ? (
             <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
               <Lock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
@@ -682,7 +682,7 @@ export function AnnualGoals() {
       <div className="rounded-xl border border-border bg-surface shadow-sm overflow-hidden">
         {/* Tab bar */}
         <div className="flex border-b border-border px-2">
-          {isStaff && (
+          {isEmployee && (
             <button
               type="button"
               className={tabCls("my")}
@@ -713,7 +713,7 @@ export function AnnualGoals() {
 
         <div className="p-5">
           {/* ── My Goals tab ── */}
-          {isStaff && activeTab === "my" && (
+          {isEmployee && activeTab === "my" && (
             <div className="space-y-4">
               {/* Role expectations — button-triggered modal so the reader
                   sees all eight competencies at full width, not just a
@@ -1190,7 +1190,7 @@ function AllGoalsTab({
         <p className="mt-1 text-sm text-text-muted">
           {hasActiveFilters
             ? "Try clearing one or more filters above to broaden the result."
-            : "Goals will appear here once Staff submit them and mentors approve."}
+            : "Goals will appear here once employees submit them and mentors approve."}
         </p>
       </div>
     );

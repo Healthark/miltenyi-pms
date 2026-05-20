@@ -24,7 +24,7 @@ from sqlalchemy.orm import joinedload
 
 from app.api.dependencies import DbSession, CurrentUser
 from app.api.routes.project_review_routes import _build_review_response
-from app.core.cycle_utils import get_current_cycle_info
+from app.core.cycle_utils import get_current_cycle_info, resolve_today
 from app.models.annual_review_models import AnnualReview, ReviewStatus
 from app.models.goal_models import Goal, GoalType, ApprovalStatus, POST_APPROVAL_STATES
 from app.models.project_models import Project, ProjectAssignment
@@ -62,7 +62,10 @@ def _get_active_cycle(db: DbSession, org_id: int) -> str:
         CycleType(settings.cycle_type) if settings else CycleType.HALF_YEARLY
     )
     fiscal_start = settings.fiscal_start_month if settings else 4
-    return get_current_cycle_info(datetime.now(timezone.utc).date(), cycle_type, fiscal_start)
+    # Use the org's timezone-resolved "today" so the computed-cycle
+    # fallback matches what the user sees in their local calendar,
+    # not the server's UTC day.
+    return get_current_cycle_info(resolve_today(settings), cycle_type, fiscal_start)
 
 
 def _list_mentees(db: DbSession, mentor: User) -> list[User]:
@@ -502,7 +505,7 @@ def list_all_mentor_pairings(
 
     Powers the "All Mentor Pairings" view on the MyMentees page when an
     HR_MyOrg user navigates there. One section per active Mentor; mentees
-    are filtered to active Staff users that point to that mentor via
+    are filtered to active Employees that point to that mentor via
     `mentor_id`. Mentors with no mentees are still included so HR can spot
     unassigned coaches.
     """

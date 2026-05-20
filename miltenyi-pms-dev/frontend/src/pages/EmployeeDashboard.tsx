@@ -1,5 +1,5 @@
 /**
- * StaffDashboard — landing page for Staff, PM, and any role without
+ * EmployeeDashboard — landing page for Employee, PM, and any role without
  * direct mentees. Answers the two recurring employee questions:
  *
  *   "What do I owe?"   → S1 My Action Items.
@@ -36,14 +36,14 @@ import { GoalsWidget } from "@/components/dashboard/GoalsWidget";
 import { MyAnnualReviewWidget } from "@/components/dashboard/MyAnnualReviewWidget";
 import { MyMentorWidget } from "@/components/dashboard/MyMentorWidget";
 
-export function StaffDashboard() {
+export function EmployeeDashboard() {
   const { user } = useAuth();
   const snackbar = useSnackbar();
 
   // useQuery replaces the useEffect + useState ceremony:
   //   - The cache is keyed by ['dashboard', 'summary'], so MentorDashboard
   //     (which uses the same key) will hit the same cache entry. Navigate
-  //     Staff → Mentor → Staff and the second Staff mount reads cache
+  //     Employee → Mentor → Employee and the second Employee mount reads cache
   //     instantly while a silent background refetch validates freshness.
   //   - data is undefined until the first fetch resolves; the existing
   //     `summary ? <Widget /> : <Skeleton />` ternaries below already

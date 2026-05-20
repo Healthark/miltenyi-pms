@@ -49,7 +49,7 @@ export interface DashboardSummary {
 // payload for now; widgets that diverge get gated on the frontend.
 
 export interface HeadcountByRole {
-  staff: number;
+  employee: number;
   mentor: number;
   pm: number;
   // Combined HR_MyOrg + HR_Miltenyi.
@@ -134,7 +134,7 @@ export interface StalledGoalsSummary {
   goals: StalledGoal[];
 }
 
-export interface UnmentoredStaff {
+export interface UnmentoredEmployee {
   user_id: number;
   full_name: string;
   function_name: string | null;
@@ -148,7 +148,7 @@ export interface MentorLoad {
 }
 
 export interface MentorCoverage {
-  unmentored_staff: UnmentoredStaff[];
+  unmentored_employees: UnmentoredEmployee[];
   top_mentors: MentorLoad[];
 }
 

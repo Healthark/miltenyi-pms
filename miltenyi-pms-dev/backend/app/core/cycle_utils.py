@@ -12,8 +12,9 @@ cycle code can recover the cadence without an extra arg — see
 `cycle_keys_for`.
 """
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional, TYPE_CHECKING
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from app.models.system_settings_models import CycleType
 
 if TYPE_CHECKING:
@@ -30,22 +31,70 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session as SqlSession
 
 
+def _org_tz(settings: "Optional[SystemSettings]") -> "ZoneInfo | timezone":
+    """Resolve the org's timezone from settings, falling back to UTC.
+
+    `settings.timezone` is a freeform IANA string column. A bad value
+    (typo, deprecated zone, missing tzdata on the host) must not
+    take down the cycle path — we just fall back to UTC. The bad
+    string stays in the DB so HR can correct it later; nothing else
+    breaks.
+    """
+    if settings is None:
+        return timezone.utc
+    tz_name = getattr(settings, "timezone", None)
+    if not tz_name:
+        return timezone.utc
+    try:
+        return ZoneInfo(tz_name)
+    except (ZoneInfoNotFoundError, Exception):
+        return timezone.utc
+
+
 def resolve_today(settings: "Optional[SystemSettings]" = None) -> date:
     """Return the date the rest of the system should treat as "today".
 
-    Falls back to the wall clock unless `settings.simulated_today` is
-    populated, in which case that value wins. Used by every cycle-
-    determination and review-window check so demo / QA environments can
-    simulate cycle rollovers without time-travelling the host.
+    Priority:
+      1. `settings.simulated_today` (demo / QA override) wins outright.
+      2. Otherwise: `datetime.now(org_tz).date()` — the calendar day in
+         the org's configured timezone.
+      3. If `settings` is None or carries an unparseable timezone, falls
+         back to UTC.
+
+    Used by every cycle-determination, FY-end, and review-window check
+    so users near midnight in a non-UTC zone don't experience off-by-
+    one rollovers vs. the server clock.
 
     Audit timestamps (project completion, assignment end, export
     filename) intentionally bypass this helper — they must always
-    reflect real wall time. See the plan in
-    `~/.claude/plans/in-admin-panel-management-delegated-yao.md`.
+    reflect real wall time / a deterministic UTC instant.
     """
     if settings is not None and getattr(settings, "simulated_today", None):
         return settings.simulated_today
-    return date.today()
+    return datetime.now(_org_tz(settings)).date()
+
+
+def resolve_now(settings: "Optional[SystemSettings]" = None) -> datetime:
+    """Return the current wall instant as a timezone-aware datetime in
+    the org's timezone.
+
+    Used for cycle-stamping helpers that need a datetime (not just a
+    date) — e.g. `get_goal_cycle_name(created_at, fiscal_start_month)`
+    which derives the FY label from a timestamp's year+month. Picking
+    the org's tz ensures a user in Asia/Kolkata creating a goal at
+    01:00 IST on April 1 sees the new FY's label, instead of the
+    server's UTC midnight-was-still-yesterday answer.
+
+    When `settings.simulated_today` is set, returns midnight of that
+    date in the org's tz so cycle math stays deterministic during
+    date-simulation demos.
+    """
+    org_tz = _org_tz(settings)
+    if settings is not None and getattr(settings, "simulated_today", None):
+        return datetime.combine(
+            settings.simulated_today, datetime.min.time(), tzinfo=org_tz
+        )
+    return datetime.now(org_tz)
 
 
 def apply_rollover_resets(settings: "SystemSettings", fresh_cycle: str) -> bool:

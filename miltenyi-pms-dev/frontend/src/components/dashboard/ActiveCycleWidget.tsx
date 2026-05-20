@@ -15,7 +15,7 @@ import { formatFyLabel } from "@/utils/fy";
  *     across goal surfaces — so the two cycle cards never drift.
  *
  * Callers pass the cycle string directly (from DashboardSummary on the
- * Staff/Mentor dashboards, or from SystemSettings on the HR dashboard).
+ * Employee/Mentor dashboards, or from SystemSettings on the HR dashboard).
  * When the org hasn't configured a cycle yet, both variants fall back
  * to the same neutral "Not configured" state.
  */

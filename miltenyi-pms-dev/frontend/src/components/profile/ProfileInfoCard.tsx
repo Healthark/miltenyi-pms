@@ -25,12 +25,12 @@ import { RoleBadge } from "@/components/admin/RoleBadge";
 // Both companies share a single org_id in the data model, so the
 // backend's `org_name` doesn't distinguish Healthark folks from
 // Miltenyi folks. Map by role until this is modelled server-side.
-//   HR_MyOrg, Mentor, Staff  -> Healthark
+//   HR_MyOrg, Mentor, Employee  -> Healthark
 //   HR_Miltenyi, PM          -> Miltenyi
 const ROLE_TO_ORG: Record<string, string> = {
   HR_MyOrg: "Healthark",
   Mentor: "Healthark",
-  Staff: "Healthark",
+  Employee: "Healthark",
   HR_Miltenyi: "Miltenyi",
   PM: "Miltenyi",
 };

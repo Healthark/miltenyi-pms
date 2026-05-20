@@ -116,7 +116,7 @@ def _seed_50_reviews(db: Session, org: Organization, pm: User) -> list[ProjectRe
             employee_code=f"STAFF-{i:03d}",
             full_name=f"Staff {i}",
             email=f"staff{i}@test.local",
-            role=Role.STAFF.value,
+            role=Role.EMPLOYEE.value,
             password_hash="not-checked",
         )
         db.add(staff)

@@ -206,7 +206,7 @@ export default function App() {
               element={
                 <ProtectedRoute
                   requiredFeature="goals"
-                  requiredRole={["Staff", "Mentor", "HR_MyOrg"]}
+                  requiredRole={["Employee", "Mentor", "HR_MyOrg"]}
                 />
               }
             >
@@ -217,7 +217,7 @@ export default function App() {
               element={
                 <ProtectedRoute
                   requiredFeature="annual_reviews"
-                  requiredRole={["Staff", "Mentor", "HR_MyOrg"]}
+                  requiredRole={["Employee", "Mentor", "HR_MyOrg"]}
                 />
               }
             >
@@ -236,7 +236,7 @@ export default function App() {
               element={
                 <ProtectedRoute
                   requiredFeature="project_reviews"
-                  requiredRole={["Staff", "PM", "Mentor", "HR_Miltenyi", "HR_MyOrg"]}
+                  requiredRole={["Employee", "PM", "Mentor", "HR_Miltenyi", "HR_MyOrg"]}
                 />
               }
             >

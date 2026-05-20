@@ -13,7 +13,7 @@ import { useAuth } from "@/hooks/useAuth";
 // Role choices in the dropdown — must match the backend Role enum exactly.
 // Labels are display-only; the value is what gets persisted.
 const ROLE_OPTIONS: { value: string; label: string }[] = [
-  { value: "Staff", label: "Staff" },
+  { value: "Employee", label: "Employee" },
   { value: "PM", label: "PM (Miltenyi)" },
   { value: "Mentor", label: "Mentor (Healthark)" },
   { value: "HR_Miltenyi", label: "HR · Miltenyi" },
@@ -76,9 +76,9 @@ export function UserModal({
           full_name: editingUser.full_name,
           email: editingUser.email,
           phone: editingUser.phone ?? "",
-          // Map any legacy/unknown role value back to Staff so the dropdown
+          // Map any legacy/unknown role value back to Employee so the dropdown
           // doesn't render a value that isn't in ROLE_OPTIONS.
-          role: ALL_ROLE_VALUES.includes(editingUser.role) ? editingUser.role : "Staff",
+          role: ALL_ROLE_VALUES.includes(editingUser.role) ? editingUser.role : "Employee",
           function_id: editingUser.function_id?.toString() ?? "",
           designation_id: editingUser.designation_id?.toString() ?? "",
           mentor_id: editingUser.mentor_id?.toString() ?? "",
@@ -89,7 +89,7 @@ export function UserModal({
           full_name: "",
           email: "",
           phone: "",
-          role: "Staff",
+          role: "Employee",
           function_id: "",
           designation_id: "",
           mentor_id: "",
@@ -162,7 +162,7 @@ export function UserModal({
               full_name), the system role, the phone number, and the
               mentor assignment. The lock applies regardless of the
               target's role since HR_Miltenyi has the same authority
-              over any row they're allowed to touch (Staff / PM /
+              over any row they're allowed to touch (Employee / PM /
               HR_Miltenyi — Mentor and HR_MyOrg rows are blocked
               entirely upstream). Mirrors the backend 403 guard in
               admin_routes.update_user. Add-user flow stays
@@ -256,13 +256,13 @@ export function UserModal({
                     value={form.role}
                     onChange={(e) => {
                       const nextRole = e.target.value;
-                      // Only Staff have a mentor — flipping to any other role
+                      // Only Employees have a mentor — flipping to any other role
                       // clears the previous selection so it can't be saved
                       // against a role that shouldn't carry one.
                       setForm((prev) => ({
                         ...prev,
                         role: nextRole,
-                        mentor_id: nextRole === "Staff" ? prev.mentor_id : "",
+                        mentor_id: nextRole === "Employee" ? prev.mentor_id : "",
                       }));
                     }}
                     disabled={isMiltenyiLocked}
@@ -328,11 +328,11 @@ export function UserModal({
               onChange={(id) => set("mentor_id", id !== null ? String(id) : "")}
               label="Assigned Mentor"
               placeholder={
-                form.role === "Staff"
+                form.role === "Employee"
                   ? "Search by name, email, or role…"
-                  : "Only Staff can be assigned a mentor"
+                  : "Only Employees can be assigned a mentor"
               }
-              disabled={form.role !== "Staff"}
+              disabled={form.role !== "Employee"}
               excludeIds={editingUser ? [editingUser.id] : undefined}
             />
           )}

@@ -180,7 +180,7 @@ export function PrimaryEvaluationTab() {
   // ── Mutations ──────────────────────────────────────────────────────
   // Same broadcast-invalidation pattern as PR #22 (goals) / PR #27
   // (goal-approval): every write fans out to every cache entry under
-  // ['project-reviews'] (catches Staff's mine, Mentor's mentees, HR's
+  // ['project-reviews'] (catches Employee's mine, Mentor's mentees, HR's
   // org, the PM queue itself, the secondary queue) plus dashboard
   // (project_reviews_pending_primary / pending_secondary counts on
   // DashboardSummary).

@@ -464,7 +464,7 @@ def get_my_review_history(
     Used by the "My Review" tab to show past cycles alongside the current one.
     Ratings are filtered per visibility rules.
 
-    `mentor_name` is resolved per row (a Staff member may have a
+    `mentor_name` is resolved per row (an Employee may have a
     different mentor across different cycles), so the table can render
     the Mentor column directly without an extra round-trip.
     """
@@ -480,7 +480,7 @@ def get_my_review_history(
     )
 
     # Batch-resolve mentor names so each row carries its historical
-    # mentor (could differ year-over-year if the Staff was reassigned).
+    # mentor (could differ year-over-year if the Employee was reassigned).
     mentor_ids = {r.mentor_id for r in reviews if r.mentor_id is not None}
     mentor_name_by_id: dict[int, str] = {}
     if mentor_ids:
@@ -1086,18 +1086,18 @@ def get_calibration_grid(
     offset: int = Query(
         0,
         ge=0,
-        description="Staff users to skip before this page. 0 for the first page.",
+        description="Employees to skip before this page. 0 for the first page.",
     ),
     # ── Server-side filters (PR #46, doc 29) ─────────────────────────
     # All exact-match equality except `search` which is substring (ILIKE).
     function_: Optional[str] = Query(
         None,
         alias="function",
-        description="Exact match on the Staff user's Function name.",
+        description="Exact match on the Employee's Function name.",
     ),
     designation: Optional[str] = Query(
         None,
-        description="Exact match on the Staff user's Designation name.",
+        description="Exact match on the Employee's Designation name.",
     ),
     mentor: Optional[str] = Query(
         None,
@@ -1158,16 +1158,16 @@ def get_calibration_grid(
     """
     Paginated calibration grid for the active cycle. Management-only.
 
-    Every active Staff user in the org appears as one row, LEFT-joined
-    against their AnnualReview for the active cycle. Staff who haven't
+    Every active Employee in the org appears as one row, LEFT-joined
+    against their AnnualReview for the active cycle. Employees who haven't
     created a review yet still appear with status="not_started" and
     null ratings — the frontend gates per-row actions per stage.
 
     ── Pagination strategy: paginate the user (the row identity) ──────
-    Each calibration row corresponds to exactly one Staff user; reviews
+    Each calibration row corresponds to exactly one Employee; reviews
     are 0-or-1 per user in the active cycle. So the "list-of-parents"
     pattern from PR #37 (doc 20) degenerates here: `total` equals the
-    Staff-user count AND `items.length` equals the user count for the
+    Employee count AND `items.length` equals the user count for the
     page. The two-step pattern still applies — we paginate users via
     OFFSET/LIMIT in SQL (so sorting + paging is consistent with the DB
     instead of Python-side) and then batch-fetch reviews + mentors for
@@ -1193,7 +1193,7 @@ def get_calibration_grid(
     # fetch below (eager loads on a count() are wasted work).
     base_q = db.query(User).filter(
         User.org_id == current_user.org_id,
-        User.role == Role.STAFF.value,
+        User.role == Role.EMPLOYEE.value,
         User.is_deleted == False,  # noqa: E712
     )
 

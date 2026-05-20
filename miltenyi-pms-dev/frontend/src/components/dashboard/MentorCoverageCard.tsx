@@ -2,11 +2,11 @@
  * MentorCoverageCard — mentor pairing health snapshot.
  *
  * Two stacked sections answer one question ("are we paired up well?"):
- *   1. Unmentored Staff — operationally blocked from goals/reviews
+ *   1. Unmentored Employees — operationally blocked from goals/reviews
  *      until they're assigned a mentor. All-clear state with a green
  *      check when zero, scrollable list when non-empty.
  *   2. Top mentors by load — the most-loaded mentors so HR can spot
- *      overload before assigning new Staff.
+ *      overload before assigning new Employees.
  *
  * Not FY-scoped. This is a "right now" snapshot of the org, like the
  * Headcount card.
@@ -58,7 +58,7 @@ export function MentorCoverageCard({
         <SkeletonBody />
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <UnmentoredSection unmentored={data.unmentored_staff} />
+          <UnmentoredSection unmentored={data.unmentored_employees} />
           <TopMentorsSection mentors={data.top_mentors} />
         </div>
       )}
@@ -71,20 +71,20 @@ export function MentorCoverageCard({
 function UnmentoredSection({
   unmentored,
 }: {
-  readonly unmentored: MentorCoverage["unmentored_staff"];
+  readonly unmentored: MentorCoverage["unmentored_employees"];
 }) {
   const count = unmentored.length;
   return (
     <section className="space-y-2">
       <SectionLabel icon={<UserMinus className="h-3 w-3" />}>
-        Unmentored Staff
+        Unmentored Employees
       </SectionLabel>
 
       {count === 0 ? (
         <div className="rounded-lg bg-emerald-50/40 dark:bg-emerald-900/20 border border-dashed border-emerald-200 dark:border-emerald-500/40 px-3 py-2.5 text-center">
           <p className="text-[12px] text-emerald-700 inline-flex items-center gap-1.5">
             <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
-            Every active Staff member has a mentor.
+            Every active Employee has a mentor.
           </p>
         </div>
       ) : (
@@ -93,7 +93,7 @@ function UnmentoredSection({
             <span className="font-semibold text-text-main tabular-nums">
               {count}
             </span>{" "}
-            {count === 1 ? "Staff member is" : "Staff members are"} blocked
+            {count === 1 ? "Employee is" : "Employees are"} blocked
             from goals + reviews.
           </p>
           <div className="rounded-lg border border-border bg-slate-50/40 max-h-32 overflow-y-auto divide-y divide-border/60">
