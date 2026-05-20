@@ -21,7 +21,7 @@ Backfill strategy:
 - Active rows (`is_deleted = False`) get `NULL` — they're alive.
 
 Revision ID: c4d9e5f8a712
-Revises: b2f9e4a7c081
+Revises: c5a8e2f9b704
 Create Date: 2026-05-19
 """
 from typing import Sequence, Union
@@ -31,7 +31,11 @@ import sqlalchemy as sa
 
 
 revision: str = "c4d9e5f8a712"
-down_revision: Union[str, None] = "b2f9e4a7c081"
+# Rebased onto c5a8e2f9b704 (generalize_notifications) so the two
+# migrations that originally branched from b2f9e4a7c081 form a single
+# linear chain. The two are semantically independent (notifications
+# table vs users.deleted_at column) so the rebase is safe.
+down_revision: Union[str, None] = "c5a8e2f9b704"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

@@ -2,6 +2,14 @@ import { ListChecks, AlertTriangle, ClipboardCheck, FileEdit, ArrowRight, CheckC
 import { Link } from "react-router-dom";
 import type { LucideIcon } from "lucide-react";
 import type { DashboardSummary } from "@/services/dashboard.service";
+import { useSystemSettings } from "@/hooks/useSystemSettings";
+import { daysUntilFyEnd } from "@/utils/fy";
+
+/** How many days before the FY ends we start surfacing the annual-self-
+ *  review nudge. Earlier than this the row stays hidden so the action
+ *  list doesn't carry a year-long "Start annual self-review" pin that
+ *  the user can't act on yet. 30 ≈ "the last month of the FY". */
+const ANNUAL_REVIEW_NUDGE_WINDOW_DAYS = 30;
 
 interface ActionItemsWidgetProps {
   readonly summary: DashboardSummary;
@@ -44,17 +52,43 @@ export function ActionItemsWidget({ summary }: ActionItemsWidgetProps) {
     annual_review_status,
     annual_review_cycle,
   } = summary;
+  const { settings } = useSystemSettings();
 
   // Project reviews collapse into a single line — the user doesn't care
   // whether they're owed as PM or as Secondary, the page handles that.
   const project_reviews_pending =
     project_reviews_pending_primary + project_reviews_pending_secondary;
 
-  // Annual self-review nudge: surface it iff a row hasn't been submitted
-  // yet (no row at all OR still in DRAFT). Once submitted the action is
-  // off the user's plate — it's the mentor/management's turn.
+  // Time-gate the annual-review nudge to the last ~30 days of the FY.
+  // Earlier in the cycle there's no urgency, so pinning "Start annual
+  // self-review" on the action list 11 months early is just noise. We
+  // honour `simulated_today` when set so date-simulation demos can
+  // preview the late-FY behaviour without waiting for the calendar.
+  const isAnnualReviewWindowOpen = (() => {
+    if (!settings?.active_cycle_name) return false;
+    const today = settings.simulated_today
+      ? new Date(settings.simulated_today)
+      : new Date();
+    const daysLeft = daysUntilFyEnd(
+      settings.active_cycle_name,
+      settings.fiscal_start_month ?? 4,
+      today,
+    );
+    return (
+      daysLeft !== null &&
+      daysLeft >= 0 &&
+      daysLeft <= ANNUAL_REVIEW_NUDGE_WINDOW_DAYS
+    );
+  })();
+
+  // Annual self-review nudge: surface it iff (a) a row hasn't been
+  // submitted yet (no row at all OR still in DRAFT) AND (b) we're
+  // inside the FY-end window above. Once submitted (status flips past
+  // draft) the action is off the user's plate — it's the mentor's turn.
   const annual_review_pending: 0 | 1 =
-    annual_review_cycle != null && (annual_review_status === null || annual_review_status === "draft")
+    annual_review_cycle != null &&
+    (annual_review_status === null || annual_review_status === "draft") &&
+    isAnnualReviewWindowOpen
       ? 1
       : 0;
 

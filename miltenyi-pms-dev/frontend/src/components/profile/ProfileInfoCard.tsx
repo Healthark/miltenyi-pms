@@ -63,15 +63,24 @@ function Skeleton() {
   );
 }
 
-/** A single row in the info list. */
+/** A single row in the info list.
+ *
+ * `emptyText` lets callers distinguish "field is missing/unknown" (the
+ * default em-dash) from "field doesn't apply to this row at all" (e.g.
+ * Function/Designation on roles that don't have them — they pass
+ * `"N/A"`). Keeping it a prop instead of hard-coding the override at
+ * the call site means new not-applicable fields can opt in later
+ * without touching the row logic. */
 function InfoRow({
   icon: Icon,
   label,
   value,
+  emptyText = "—",
 }: {
   readonly icon: typeof Mail;
   readonly label: string;
   readonly value: string | null;
+  readonly emptyText?: string;
 }) {
   return (
     <div className="flex items-start gap-3">
@@ -82,7 +91,7 @@ function InfoRow({
       <div className="min-w-0">
         <p className="text-xs text-text-muted">{label}</p>
         <p className="text-sm font-medium text-text-main truncate">
-          {value ?? "—"}
+          {value ?? emptyText}
         </p>
       </div>
     </div>
@@ -145,11 +154,13 @@ export function ProfileInfoCard({ profile, isLoading }: ProfileInfoCardProps) {
           icon={Briefcase}
           label="Function"
           value={profile.function}
+          emptyText="N/A"
         />
         <InfoRow
           icon={Briefcase}
           label="Designation"
           value={profile.designation}
+          emptyText="N/A"
         />
         <InfoRow icon={Users} label="Mentor" value={profile.mentor_name} />
         <InfoRow icon={Calendar} label="Joined" value={joinDate} />
