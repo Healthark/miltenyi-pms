@@ -124,7 +124,7 @@ class ProjectReviewCompletion(BaseModel):
 
 
 class MissingAnnualReviewUser(BaseModel):
-    """One row in the missing-annual-reviews chase list."""
+    """One row in the missing-annual-reviews chase list (not-started)."""
     user_id: int
     full_name: str
     function_name: str | None = None
@@ -132,19 +132,46 @@ class MissingAnnualReviewUser(BaseModel):
     mentor_name: str | None = None
 
 
-class MissingAnnualReviewsSummary(BaseModel):
-    """Employees with NO AnnualReview row for the selected FY — the
-    silent population that the funnel widget can't surface.
+class DraftAnnualReviewUser(BaseModel):
+    """One row in the in-progress (draft) annual reviews chase list.
 
-    Scope is Employee only: Mentors / PMs / HR aren't rated in this system
-    so they're never expected to have an annual review row.
-    `count` always equals `len(users)` — we keep both so the frontend
-    can render a headline number even if the list is cropped client-
-    side. (Backend doesn't cap the list itself; org sizes are small.)
+    Shape mirrors `MissingAnnualReviewUser` for symmetric rendering,
+    plus the `review_id` so the HR dashboard can deep-link to the
+    existing draft row instead of asking HR to scroll the All Reviews
+    list.
+    """
+    user_id: int
+    review_id: int
+    full_name: str
+    function_name: str | None = None
+    designation_name: str | None = None
+    mentor_name: str | None = None
+
+
+class MissingAnnualReviewsSummary(BaseModel):
+    """Two-bucket chase list for the HR Pending Actions card.
+
+    Buckets:
+      - `users`   (count: `count`)       — Employees with NO AnnualReview
+                                            row at all for the active FY.
+      - `drafts`  (count: `draft_count`) — Employees who opened a review
+                                            but never submitted it
+                                            (status='draft'). Drafts
+                                            previously got lumped in
+                                            with "started" — they are
+                                            no longer.
+
+    Scope is Employee only: Mentors / PMs / HR aren't rated in this
+    system so they're never expected to have an annual review row.
+
+    `count == len(users)` and `draft_count == len(drafts)` — both kept
+    for the frontend's headline numbers without forcing a length call.
     """
     fy_year: int | None = None
     count: int = 0
     users: list[MissingAnnualReviewUser] = []
+    draft_count: int = 0
+    drafts: list[DraftAnnualReviewUser] = []
 
 
 class StalledGoal(BaseModel):

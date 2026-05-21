@@ -110,10 +110,27 @@ export interface MissingAnnualReviewUser {
   mentor_name: string | null;
 }
 
+/** Same shape as MissingAnnualReviewUser but with the existing draft
+ *  row's id so the HR dashboard can deep-link to a specific review. */
+export interface DraftAnnualReviewUser {
+  user_id: number;
+  review_id: number;
+  full_name: string;
+  function_name: string | null;
+  designation_name: string | null;
+  mentor_name: string | null;
+}
+
 export interface MissingAnnualReviewsSummary {
   fy_year: number | null;
+  /** Count of employees with NO AnnualReview row at all. */
   count: number;
   users: MissingAnnualReviewUser[];
+  /** Count of employees who opened a review but never submitted it
+   *  (AnnualReview row exists with status='draft'). Surfaced as a
+   *  separate chase list on the HR Pending Actions card. */
+  draft_count: number;
+  drafts: DraftAnnualReviewUser[];
 }
 
 export interface StalledGoal {

@@ -49,6 +49,7 @@ from app.core.cycle_utils import extract_fy_label, extract_fy_year
 from app.schemas.dashboard_schemas import (
     AnnualReviewFunnel,
     DashboardSummary,
+    DraftAnnualReviewUser,
     GoalApprovalFunnel,
     HeadcountByRole,
     HeadcountSummary,
@@ -449,26 +450,49 @@ def get_hr_dashboard_summary(
             total=pending_count + draft_count + reviewed_count,
         )
 
-    # ── Missing annual reviews — the silent chase list ────────────────
-    # "Missing" = Employees with NO AnnualReview row at all for the
-    # resolved FY. Mentees in DRAFT status are visible in the funnel
-    # widget's draft bucket, so they aren't repeated here — this card's
-    # purpose is to surface the population that has zero engagement.
+    # ── Annual Reviews chase list — two buckets ───────────────────────
+    # Bucket A (`users`):  Employees with NO AnnualReview row at all
+    #                      for the resolved FY ("not started").
+    # Bucket B (`drafts`): Employees with an AnnualReview row whose
+    #                      status is still 'draft' (opened the form but
+    #                      never submitted to their mentor).
+    #
+    # Drafts were previously lumped under "started" by the dashboard,
+    # which made the card show a misleading "Every Employee has started"
+    # message when employees were stuck mid-form. They're now their own
+    # bucket so HR can chase those rows specifically.
+    #
     # PMs / Mentors / HR are never rated in this system, so they're
     # excluded from the "expected to have a review" denominator.
     missing_reviews = MissingAnnualReviewsSummary(fy_year=resolved_fy)
     if resolved_fy is not None:
-        reviewed_user_ids = {
-            row[0]
-            for row in (
-                db.query(AnnualReview.user_id, AnnualReview.cycle_name)
-                .filter(AnnualReview.org_id == current_user.org_id)
-                .all()
+        # Fetch all AR rows for the org once, then partition in Python.
+        # Each pair = (user_id, cycle_name, status, review_id).
+        ar_rows = (
+            db.query(
+                AnnualReview.user_id,
+                AnnualReview.cycle_name,
+                AnnualReview.status,
+                AnnualReview.id,
             )
-            if extract_fy_year(row[1]) == resolved_fy
-        }
+            .filter(AnnualReview.org_id == current_user.org_id)
+            .all()
+        )
+        # Employees who have ANY row for this FY (filters them out of
+        # the "not started" bucket). Map of user_id → review_id for
+        # users whose row is in draft (powers the drafts deep-link).
+        reviewed_user_ids: set[int] = set()
+        draft_review_by_user: dict[int, int] = {}
+        for user_id, cycle_name, ar_status, review_id in ar_rows:
+            if extract_fy_year(cycle_name) != resolved_fy:
+                continue
+            reviewed_user_ids.add(user_id)
+            if ar_status == ReviewStatus.DRAFT.value:
+                draft_review_by_user[user_id] = review_id
 
-        staff_query = (
+        # Pull every active Employee in the org with their relations
+        # eager-loaded. We'll split into the two buckets in Python.
+        all_employees = (
             db.query(User)
             .options(
                 joinedload(User.function),
@@ -480,10 +504,11 @@ def get_hr_dashboard_summary(
                 User.role == Role.EMPLOYEE.value,
                 User.is_deleted == False,  # noqa: E712
             )
+            .order_by(User.full_name.asc())
+            .all()
         )
-        if reviewed_user_ids:
-            staff_query = staff_query.filter(~User.id.in_(reviewed_user_ids))
-        missing_staff = staff_query.order_by(User.full_name.asc()).all()
+        missing_staff = [u for u in all_employees if u.id not in reviewed_user_ids]
+        draft_staff = [u for u in all_employees if u.id in draft_review_by_user]
 
         missing_reviews = MissingAnnualReviewsSummary(
             fy_year=resolved_fy,
@@ -499,6 +524,20 @@ def get_hr_dashboard_summary(
                     mentor_name=u.mentor.full_name if u.mentor else None,
                 )
                 for u in missing_staff
+            ],
+            draft_count=len(draft_staff),
+            drafts=[
+                DraftAnnualReviewUser(
+                    user_id=u.id,
+                    review_id=draft_review_by_user[u.id],
+                    full_name=u.full_name,
+                    function_name=u.function.name if u.function else None,
+                    designation_name=(
+                        u.designation.name if u.designation else None
+                    ),
+                    mentor_name=u.mentor.full_name if u.mentor else None,
+                )
+                for u in draft_staff
             ],
         )
 

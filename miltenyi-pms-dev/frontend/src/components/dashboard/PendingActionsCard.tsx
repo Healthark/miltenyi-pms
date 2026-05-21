@@ -17,6 +17,7 @@ import {
   CheckCircle2,
   ClipboardX,
   Clock,
+  FileEdit,
   Hourglass,
   UserX,
 } from "lucide-react";
@@ -64,7 +65,7 @@ export function PendingActionsCard({
 const SECTION_PANEL =
   "flex flex-col gap-3 rounded-lg border border-border/60 bg-slate-50/50 p-4";
 
-// ── Section: Missing Annual Reviews ───────────────────────────────────
+// ── Section: Outstanding Annual Reviews (Not Started + In Draft) ──────
 
 function MissingReviewsSection({
   data,
@@ -74,12 +75,16 @@ function MissingReviewsSection({
   readonly viewAllHref: string;
 }) {
   const isLoading = data === null;
-  const count = data?.count ?? 0;
-  const isAllClear = !isLoading && count === 0;
+  const notStartedCount = data?.count ?? 0;
+  const draftCount = data?.draft_count ?? 0;
+  const isAllClear = !isLoading && notStartedCount === 0 && draftCount === 0;
 
   return (
     <section className={SECTION_PANEL}>
-      <div className="flex items-center justify-between gap-3">
+      {/* Header: section name + per-bucket count chips. Draft and
+          not-started carry different urgency, so each gets its own
+          count chip rather than one combined number. */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2.5">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-light">
             <ClipboardX
@@ -88,29 +93,127 @@ function MissingReviewsSection({
             />
           </div>
           <h4 className="font-display text-sm font-semibold text-text-main">
-            Missing Annual Reviews
+            Outstanding Annual Reviews
           </h4>
         </div>
-        <CountBadge count={count} isAllClear={isAllClear} label="Missing" />
+        {isAllClear ? (
+          <CountBadge count={0} isAllClear label="" />
+        ) : (
+          <div className="flex items-center gap-1.5">
+            {notStartedCount > 0 && (
+              <span className="inline-flex items-center rounded-md bg-red px-2 py-1 text-[11px] font-semibold text-white tabular-nums">
+                {notStartedCount} Not Started
+              </span>
+            )}
+            {draftCount > 0 && (
+              <span className="inline-flex items-center rounded-md bg-amber-100 px-2 py-1 text-[11px] font-semibold text-amber-800 tabular-nums">
+                {draftCount} Draft{draftCount === 1 ? "" : "s"}
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
+      {/* Body: loading → skeleton; both empty → all-clear; otherwise
+          two stacked sub-blocks, each with its own list. Sub-block
+          for an empty bucket is hidden so the card stays compact. */}
       {isLoading ? (
         <SkeletonList />
       ) : isAllClear ? (
         <AllClearBlock
           icon={<CheckCircle2 className="h-5 w-5 text-green" />}
-          title="Every Employee has started."
-          subtitle="Full coverage across the selected FY."
+          title="Every Employee has submitted their review."
+          subtitle="No drafts pending, no employees missing — full coverage."
         />
       ) : (
-        <ul className="flex flex-col gap-1">
-          {data.users.slice(0, INLINE_LIMIT).map((u) => (
-            <li
-              key={u.user_id}
-              className="flex items-center gap-3 rounded-lg px-2 py-2"
-            >
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-rose-50">
-                <UserX className="h-4 w-4 text-red" aria-hidden="true" />
+        <div className="flex flex-col gap-3">
+          {notStartedCount > 0 && (
+            <ChaseList
+              sublabel="Not Started"
+              iconBgClass="bg-rose-50"
+              iconColorClass="text-red"
+              icon={UserX}
+              users={data.users.slice(0, INLINE_LIMIT).map((u) => ({
+                key: u.user_id,
+                full_name: u.full_name,
+                function_name: u.function_name,
+                designation_name: u.designation_name,
+                mentor_name: u.mentor_name,
+              }))}
+            />
+          )}
+          {draftCount > 0 && (
+            <ChaseList
+              sublabel="In Draft"
+              iconBgClass="bg-amber-50"
+              iconColorClass="text-amber"
+              icon={FileEdit}
+              users={data.drafts.slice(0, INLINE_LIMIT).map((u) => ({
+                key: u.user_id,
+                full_name: u.full_name,
+                function_name: u.function_name,
+                designation_name: u.designation_name,
+                mentor_name: u.mentor_name,
+                // Draft rows deep-link to the All Reviews page so HR
+                // can read what the employee has saved and decide
+                // whether to nudge them. We pass a `status_filter`
+                // query param the AnnualReviews page can pick up to
+                // pre-filter the All Reviews tab.
+                href: `${viewAllHref}?status_filter=draft`,
+              }))}
+            />
+          )}
+        </div>
+      )}
+
+      <Link
+        to={viewAllHref}
+        className="block w-full rounded-lg bg-brand-light py-2 text-center text-[12px] font-semibold text-brand transition-colors hover:bg-brand hover:text-white"
+      >
+        View All Reviews
+      </Link>
+    </section>
+  );
+}
+
+/** Subsection within MissingReviewsSection. Renders one bucket's chase
+ *  list with a small heading + accented icon. When a row carries an
+ *  `href`, the row becomes clickable (used by drafts so HR can deep-
+ *  link to the existing review). Plain (not-started) rows have no
+ *  target — there's no review row to open yet. */
+function ChaseList({
+  sublabel,
+  icon: Icon,
+  iconBgClass,
+  iconColorClass,
+  users,
+}: {
+  readonly sublabel: string;
+  readonly icon: typeof UserX;
+  readonly iconBgClass: string;
+  readonly iconColorClass: string;
+  readonly users: Array<{
+    key: number;
+    full_name: string;
+    function_name: string | null;
+    designation_name: string | null;
+    mentor_name: string | null;
+    href?: string;
+  }>;
+}) {
+  return (
+    <div>
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-text-muted mb-1">
+        {sublabel}
+      </p>
+      <ul className="flex flex-col gap-1">
+        {users.map((u) => {
+          const rowContent = (
+            <>
+              <div
+                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${iconBgClass}`}
+              >
+                <Icon className={`h-4 w-4 ${iconColorClass}`} aria-hidden="true" />
               </div>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[13px] font-semibold text-text-main">
@@ -128,18 +231,27 @@ function MissingReviewsSection({
               >
                 {u.mentor_name ?? <span className="italic">no mentor</span>}
               </p>
+            </>
+          );
+          return (
+            <li key={u.key}>
+              {u.href ? (
+                <Link
+                  to={u.href}
+                  className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-slate-100 transition-colors"
+                >
+                  {rowContent}
+                </Link>
+              ) : (
+                <div className="flex items-center gap-3 rounded-lg px-2 py-2">
+                  {rowContent}
+                </div>
+              )}
             </li>
-          ))}
-        </ul>
-      )}
-
-      <Link
-        to={viewAllHref}
-        className="block w-full rounded-lg bg-brand-light py-2 text-center text-[12px] font-semibold text-brand transition-colors hover:bg-brand hover:text-white"
-      >
-        View All Reviews
-      </Link>
-    </section>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 
