@@ -80,7 +80,7 @@ def _extract_token(cookie_token: str | None, auth_header: str | None) -> str | N
     return None
 
 
-def get_current_user(
+def resolve_authenticated_user(
     db: DbSession,
     response: Response,
     cookie_token: Annotated[
@@ -94,7 +94,12 @@ def get_current_user(
     authorization: Annotated[str | None, Header()] = None,
 ) -> User:
     """
-    Intercepts the request, decodes the JWT, and returns the Database User object.
+    Decode the JWT, look up the User, run tenant + soft-delete checks, and
+    slide the cookie window forward. Does NOT enforce the
+    `must_change_password` gate — that lives in `get_current_user` so the
+    three exempt routes (password change, logout, session refresh) can
+    depend on this resolver via `get_current_user_allow_password_reset`
+    and remain reachable while a user is gated.
 
     Sliding refresh: after the user is validated, both auth cookies are re-
     stamped with a fresh `max_age` so the session window rolls forward with
@@ -149,6 +154,47 @@ def get_current_user(
 
     return user
 
+
+def get_current_user(
+    user: Annotated[User, Depends(resolve_authenticated_user)],
+) -> User:
+    """
+    Standard authenticated-user dependency. Resolves the JWT and then
+    enforces the post-admin-reset `must_change_password` gate: a user whose
+    flag is set cannot reach any route gated on this dependency until they
+    change their password. Without this server-side gate, the flag was only
+    enforced by the frontend's `ProtectedRoute` redirect — a direct API
+    client could ignore it entirely (risk-register 1.2).
+
+    The three exempt routes the user must still reach while gated
+    (POST /users/me/password, POST /auth/logout, GET /auth/session)
+    depend on `get_current_user_allow_password_reset` instead.
+    """
+    if user.must_change_password:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You must change your password before continuing.",
+        )
+    return user
+
+
+def get_current_user_allow_password_reset(
+    user: Annotated[User, Depends(resolve_authenticated_user)],
+) -> User:
+    """
+    Same JWT resolution as `get_current_user` but WITHOUT the
+    `must_change_password` gate. Use on the narrow set of routes a gated
+    user must still reach — namely the password-change endpoint itself
+    (so they can clear the flag), logout (so they can leave), and the
+    session refresh endpoint (so the frontend's refreshSession() can
+    still observe the gated state and route them to /change-password).
+    """
+    return user
+
+
 # --- The Architect's Trick: The Golden Dependency ---
 # Anytime you want to lock down an endpoint, you will simply add: `current_user: CurrentUser`
 CurrentUser = Annotated[User, Depends(get_current_user)]
+# Use only on the password-change / logout / session-refresh routes —
+# everywhere else, prefer `CurrentUser` so the password-change gate fires.
+CurrentUserAllowingPasswordReset = Annotated[User, Depends(get_current_user_allow_password_reset)]

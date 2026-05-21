@@ -47,7 +47,7 @@ from sqlalchemy.pool import StaticPool
 # `create_all` below has the full schema. The `app.models` package's
 # __init__ imports every model module.
 import app.models  # noqa: F401
-from app.api.dependencies import get_current_user
+from app.api.dependencies import get_current_user, get_current_user_allow_password_reset
 from app.core.database import Base, get_db
 from app.models.user_models import User
 
@@ -141,6 +141,11 @@ def as_user(app_with_db: FastAPI) -> Callable[[User], TestClient]:
 
     def make(user: User) -> TestClient:
         app_with_db.dependency_overrides[get_current_user] = lambda: user
+        # The exempt routes (password change, logout, session refresh)
+        # depend on the bypass variant instead of get_current_user, so
+        # override both — otherwise a test asking to act "as user X"
+        # against /auth/session would fall through to the real JWT path.
+        app_with_db.dependency_overrides[get_current_user_allow_password_reset] = lambda: user
         return TestClient(app_with_db)
 
     return make

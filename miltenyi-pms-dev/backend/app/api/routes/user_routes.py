@@ -17,7 +17,7 @@ Security Layers Applied:
 
 from fastapi import APIRouter, HTTPException, status
 
-from app.api.dependencies import DbSession, CurrentUser
+from app.api.dependencies import DbSession, CurrentUser, CurrentUserAllowingPasswordReset
 from app.core.security import verify_password, get_password_hash
 from app.schemas.user_schemas import PasswordChangeRequest, UserProfile
 from app.models.role_expectation_models import RoleExpectation
@@ -59,12 +59,17 @@ def get_my_profile(
 def change_password(
     request: PasswordChangeRequest,
     db: DbSession,
-    current_user: CurrentUser,
+    current_user: CurrentUserAllowingPasswordReset,
 ):
     """
     Allows any authenticated user to change their own password.
     Requires the current password for verification — prevents session
     hijacking from an unlocked screen.
+
+    Uses `CurrentUserAllowingPasswordReset` so a user with
+    `must_change_password=True` (after an admin reset or forgot-password
+    flow) can actually reach this endpoint to clear the flag. Every other
+    authenticated route is gated until the flag clears.
     """
     # 1. Verify they actually know their current password
     if not verify_password(request.current_password, current_user.password_hash):
