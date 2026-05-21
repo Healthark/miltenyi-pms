@@ -2,7 +2,6 @@
  * GoalsWidget — mentee-facing companion to HR's GoalApprovalFunnelCard.
  *
  * Visual treatment mirrors the HR card: legend on the left, donut on
- * the right, an InsightStripe surfacing the single most-actionable
  * callout. Where HR sees a 3-bucket public view, the mentee sees their
  * own work including drafts — four buckets total.
  *
@@ -22,7 +21,6 @@ import { Target } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { DashboardSummary } from "@/services/dashboard.service";
 import { DonutChart } from "./DonutChart";
-import { InsightStripe, type InsightTone } from "./InsightStripe";
 
 interface GoalsWidgetProps {
   readonly summary: DashboardSummary;
@@ -156,71 +154,10 @@ export function GoalsWidget({ summary }: GoalsWidgetProps) {
             </div>
           )}
 
-          <InsightStripe
-            {...buildInsight({
-              draft_goals,
-              submitted_goals,
-              changes_requested_goals,
-              approved_goals,
-              completion_percent,
-            })}
-          />
         </>
       )}
     </article>
   );
-}
-
-// Mentee-specific actionability ladder: revisions sit at the top
-// because the mentor has already pushed back and the cycle stalls
-// until the employee re-submits.
-function buildInsight(stats: {
-  draft_goals: number;
-  submitted_goals: number;
-  changes_requested_goals: number;
-  approved_goals: number;
-  completion_percent: number;
-}): { text: string; tone: InsightTone } {
-  if (stats.changes_requested_goals > 0) {
-    return {
-      text: `${stats.changes_requested_goals} ${pluralize(
-        stats.changes_requested_goals,
-        "goal",
-      )} need your revision`,
-      tone: "red",
-    };
-  }
-  if (stats.draft_goals > 0) {
-    return {
-      text: `${stats.draft_goals} ${pluralize(
-        stats.draft_goals,
-        "draft",
-      )} ready to submit`,
-      tone: "amber",
-    };
-  }
-  if (stats.submitted_goals > 0) {
-    return {
-      text: `${stats.submitted_goals} ${pluralize(
-        stats.submitted_goals,
-        "goal",
-      )} awaiting mentor approval`,
-      tone: "brand",
-    };
-  }
-  if (stats.approved_goals > 0) {
-    return {
-      text: `${stats.completion_percent}% complete across approved goals`,
-      tone: "green",
-    };
-  }
-  // hasData=true with all four buckets at zero shouldn't happen — fall
-  // through to a neutral copy so we never render an empty stripe.
-  return { text: "All submissions cleared", tone: "green" };
-}
-
-function pluralize(n: number, word: string): string {
-  return n === 1 ? word : `${word}s`;
 }
 
 function EmptyBody() {

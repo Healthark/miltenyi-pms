@@ -1,47 +1,42 @@
 /**
  * PendingActionsCard — combined "needs attention" surface for HR.
  *
- * Merges the two follow-up widgets that used to live as separate cards
- * (Missing Annual Reviews + Stalled Goal Approvals) into a single tall
- * card. Both lists share the same HR mental model — "who do I chase
- * next?" — so they sit better in one frame, freeing the right column
- * of the dashboard for a 2×2 of summary cards on the left.
+ * Two subsections share the HR mental model "what needs my
+ * attention?":
+ *   1. Outstanding Annual Reviews — not-started + draft chase lists.
+ *   2. Paused Settings — org-wide gate flags currently OFF. Self-
+ *      reminder to re-enable. Replaces the retired ActiveOverridesCard.
  *
- * Each section keeps the same shape it had as a standalone card:
- *   - red count badge in the subheader,
+ * Each section keeps the same shape:
+ *   - badge in the subheader (count or "All clear"),
  *   - top INLINE_LIMIT rows inline,
- *   - per-section "View all" CTA leading to its respective page.
+ *   - per-section CTA at the bottom.
  */
 
 import {
   CheckCircle2,
   ClipboardX,
-  Clock,
   FileEdit,
-  Hourglass,
+  Pause,
+  PauseCircle,
   UserX,
 } from "lucide-react";
 import { Link } from "react-router-dom";
-import type {
-  MissingAnnualReviewsSummary,
-  StalledGoalsSummary,
-} from "@/services/dashboard.service";
+import type { MissingAnnualReviewsSummary } from "@/services/dashboard.service";
+import { useSystemSettings } from "@/hooks/useSystemSettings";
+import type { SystemSettingsResponse } from "@/services/system-settings.service";
 
 const INLINE_LIMIT = 3;
-const CRITICAL_DAYS = 14;
+const SETTINGS_HREF = "/admin?tab=settings";
 
 interface PendingActionsCardProps {
   readonly missingReviews: MissingAnnualReviewsSummary | null;
-  readonly stalledGoals: StalledGoalsSummary | null;
   readonly missingReviewsHref?: string;
-  readonly stalledGoalsHref?: string;
 }
 
 export function PendingActionsCard({
   missingReviews,
-  stalledGoals,
   missingReviewsHref = "/annual-reviews",
-  stalledGoalsHref = "/annual-goals",
 }: PendingActionsCardProps) {
   return (
     <article className="flex h-full flex-col gap-5 rounded-xl border border-border bg-surface p-5 shadow-sm">
@@ -49,10 +44,7 @@ export function PendingActionsCard({
         data={missingReviews}
         viewAllHref={missingReviewsHref}
       />
-      <StalledGoalsSection
-        data={stalledGoals}
-        viewAllHref={stalledGoalsHref}
-      />
+      <PausedSettingsSection />
     </article>
   );
 }
@@ -255,41 +247,63 @@ function ChaseList({
   );
 }
 
-// ── Section: Stalled Goal Approvals ───────────────────────────────────
+// ── Section: Paused Settings ──────────────────────────────────────────
 
-function StalledGoalsSection({
-  data,
-  viewAllHref,
-}: {
-  readonly data: StalledGoalsSummary | null;
-  readonly viewAllHref: string;
-}) {
-  const isLoading = data === null;
-  const count = data?.count ?? 0;
+/** Display list of the four org-wide gate flags, in the order they
+ *  appear in System Settings. Each entry pairs a settings field name
+ *  with the short label shown when that gate is OFF (i.e. the
+ *  override is active). Kept inside this section so the section is
+ *  self-contained — no prop drilling from HrDashboard. */
+const PAUSED_SETTINGS: ReadonlyArray<{
+  readonly settingKey: keyof Pick<
+    SystemSettingsResponse,
+    | "annual_reviews_enabled"
+    | "annual_goals_edit_enabled"
+    | "project_ratings_visible"
+    | "annual_review_final_rating_visible"
+  >;
+  readonly label: string;
+}> = [
+  {
+    settingKey: "annual_reviews_enabled",
+    label: "Annual reviews paused",
+  },
+  {
+    settingKey: "annual_goals_edit_enabled",
+    label: "Goal editing disabled",
+  },
+  {
+    settingKey: "project_ratings_visible",
+    label: "Project ratings hidden",
+  },
+  {
+    settingKey: "annual_review_final_rating_visible",
+    label: "Final ratings hidden",
+  },
+];
+
+function PausedSettingsSection() {
+  const { settings } = useSystemSettings();
+  const isLoading = !settings;
+  // Setting OFF (false) → override is active → row is shown.
+  const activeRows = !isLoading
+    ? PAUSED_SETTINGS.filter((s) => settings[s.settingKey] === false)
+    : [];
+  const count = activeRows.length;
   const isAllClear = !isLoading && count === 0;
-  const thresholdSuffix =
-    data && !isAllClear ? ` · waiting > ${data.threshold_days}d` : "";
 
   return (
     <section className={SECTION_PANEL}>
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-light">
-            <Hourglass
-              className="h-4 w-4 text-brand"
-              aria-hidden="true"
-            />
+            <Pause className="h-4 w-4 text-brand" aria-hidden="true" />
           </div>
           <h4 className="font-display text-sm font-semibold text-text-main">
-            Stalled Goal Approvals
-            {thresholdSuffix && (
-              <span className="ml-1 text-[11px] font-normal text-text-muted">
-                {thresholdSuffix}
-              </span>
-            )}
+            Paused Settings
           </h4>
         </div>
-        <CountBadge count={count} isAllClear={isAllClear} label="Stalled" />
+        <CountBadge count={count} isAllClear={isAllClear} label="Paused" />
       </div>
 
       {isLoading ? (
@@ -297,72 +311,37 @@ function StalledGoalsSection({
       ) : isAllClear ? (
         <AllClearBlock
           icon={<CheckCircle2 className="h-5 w-5 text-green" />}
-          title="No goals stalled in approval."
-          subtitle={
-            data
-              ? `Nothing waiting > ${data.threshold_days}d.`
-              : "Nothing waiting past threshold."
-          }
+          title="No settings paused."
+          subtitle="All org-wide gates are at default."
         />
       ) : (
         <ul className="flex flex-col gap-1">
-          {data.goals.slice(0, INLINE_LIMIT).map((g) => {
-            const isCritical = g.days_waiting >= CRITICAL_DAYS;
-            return (
-              <li
-                key={g.goal_id}
-                className="flex items-center gap-3 rounded-lg px-2 py-2"
+          {activeRows.map((row) => (
+            <li key={row.settingKey}>
+              <Link
+                to={SETTINGS_HREF}
+                className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-slate-100 transition-colors"
               >
-                <div
-                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
-                    isCritical ? "bg-rose-50" : "bg-amber-50"
-                  }`}
-                >
-                  <Clock
-                    className={`h-4 w-4 ${
-                      isCritical ? "text-red" : "text-amber"
-                    }`}
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-50">
+                  <PauseCircle
+                    className="h-4 w-4 text-amber"
                     aria-hidden="true"
                   />
                 </div>
-                <div className="min-w-0 flex-1">
-                  <p
-                    className="truncate text-[13px] font-semibold text-text-main"
-                    title={g.title}
-                  >
-                    {g.title}
-                  </p>
-                  <p
-                    className="mt-0.5 truncate text-[11px] text-text-muted"
-                    title={g.mentor_name ?? "no mentor"}
-                  >
-                    {g.owner_name}
-                    {g.mentor_name && (
-                      <>
-                        {" · "}
-                        <span>mentor: {g.mentor_name}</span>
-                      </>
-                    )}
-                  </p>
-                </div>
-                <p
-                  className={`shrink-0 text-right font-display text-[13px] font-semibold tabular-nums ${
-                    isCritical ? "text-red" : "text-amber"
-                  }`}
-                >
-                  {g.days_waiting}d
+                <p className="flex-1 truncate text-[13px] font-semibold text-text-main">
+                  {row.label}
                 </p>
-              </li>
-            );
-          })}
+              </Link>
+            </li>
+          ))}
         </ul>
       )}
 
       <Link
-        to={viewAllHref}
+        to={SETTINGS_HREF}
         className="block w-full rounded-lg bg-brand-light py-2 text-center text-[12px] font-semibold text-brand transition-colors hover:bg-brand hover:text-white"
       >
-        View All Goals
+        Open System Settings
       </Link>
     </section>
   );

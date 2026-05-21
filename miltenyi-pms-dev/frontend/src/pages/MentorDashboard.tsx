@@ -35,7 +35,6 @@ import { ActiveCycleWidget } from "@/components/dashboard/ActiveCycleWidget";
 import { MenteesWidget } from "@/components/dashboard/MenteesWidget";
 import { MenteeGoalFunnelCard } from "@/components/dashboard/MenteeGoalFunnelCard";
 import { MenteeReviewFunnelCard } from "@/components/dashboard/MenteeReviewFunnelCard";
-import { DashboardAlerts } from "@/components/dashboard/DashboardAlerts";
 
 export function MentorDashboard() {
   const { user } = useAuth();
@@ -75,10 +74,6 @@ export function MentorDashboard() {
 
   return (
     <div className="space-y-6">
-      {/* State-derived alert banners (paused submissions, hidden
-          ratings, cycle rollover dismiss). */}
-      <DashboardAlerts />
-
       {/* Header */}
       <div>
         <h1 className="font-display text-xl font-semibold text-text-main">

@@ -460,6 +460,14 @@ const ALL_REVIEWS_GRID_TEMPLATE_COLUMNS =
   "minmax(100px, 1fr) minmax(120px, 1.1fr) minmax(80px, 0.8fr) " +
   "minmax(80px, 0.8fr) minmax(80px, 0.8fr)";
 
+// Sum of the GRID_TEMPLATE_COLUMNS minimums plus a little breathing
+// room. Drives the table's min-width so the outer horizontal-scroll
+// wrapper engages BEFORE the body's implicit overflow-x (legacy CSS
+// pairing for overflow-y: auto) does — otherwise the body scrolls
+// horizontally on its own and the header stays put. Mirrors the same
+// fix in ManagementReview.tsx.
+const ALL_REVIEWS_TABLE_MIN_WIDTH_PX = 960;
+
 // Starting guess for a collapsed row's height (py-3 + text-[13px] line
 // height ≈ 46px; round up). Unlike PR #15's ManagementReview, this
 // table has VARIABLE-height rows (inline expansion). The virtualizer
@@ -752,6 +760,7 @@ function AllReviewsTab({
           aria-label="All annual reviews"
           aria-rowcount={sorted.length}
           className="text-[13px]"
+          style={{ minWidth: ALL_REVIEWS_TABLE_MIN_WIDTH_PX }}
         >
           {/* Header — non-virtualized, sticky at top of x-scroll viewport */}
           <div role="rowgroup" className="bg-slate-50/80 border-b border-border">

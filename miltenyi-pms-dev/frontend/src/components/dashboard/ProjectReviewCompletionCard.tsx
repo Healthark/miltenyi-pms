@@ -22,7 +22,6 @@ import { Link } from "react-router-dom";
 import type { ProjectReviewCompletion } from "@/services/dashboard.service";
 import { formatFyYearSpan } from "@/utils/fy";
 import { DonutChart } from "./DonutChart";
-import { InsightStripe, type InsightTone } from "./InsightStripe";
 
 // Local chart palette (slate-400 / amber-400 / emerald-400). Kept off
 // the theme tokens so the donut reads subtler than chip/badge accents.
@@ -118,45 +117,10 @@ export function ProjectReviewCompletionCard({
               ariaLabel={`${data.reviewed} of ${data.total} project reviews complete (${completionPercent}%)`}
             />
           </div>
-          <InsightStripe {...buildInsight(data, completionPercent)} />
         </>
       )}
     </article>
   );
-}
-
-// Most-actionable callout for the bottom strip: surface the bucket
-// HR can still influence (pending → drafts → all clear).
-function buildInsight(
-  data: ProjectReviewCompletion,
-  completionPercent: number,
-): { text: string; tone: InsightTone } {
-  if (data.pending > 0) {
-    return {
-      text: `${data.pending} ${pluralize(
-        data.pending,
-        "review",
-      )} not started yet`,
-      tone: "amber",
-    };
-  }
-  if (data.draft > 0) {
-    return {
-      text: `${data.draft} ${pluralize(
-        data.draft,
-        "review",
-      )} drafted, awaiting submission`,
-      tone: "amber",
-    };
-  }
-  return {
-    text: `${completionPercent}% complete · cycle wrapped`,
-    tone: "green",
-  };
-}
-
-function pluralize(n: number, word: string): string {
-  return n === 1 ? word : `${word}s`;
 }
 
 // ── Internal pieces ───────────────────────────────────────────────────
@@ -173,7 +137,6 @@ function SkeletonBody() {
     </div>
   );
 }
-
 
 function EmptyBody({ fyLabel }: { readonly fyLabel: string | null }) {
   return (

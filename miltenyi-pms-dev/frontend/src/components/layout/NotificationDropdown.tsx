@@ -1,18 +1,23 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   AlertTriangle,
   Info,
   CheckCircle,
   BellDot,
+  Megaphone,
   Target,
   ClipboardCheck,
   Briefcase,
   FolderKanban,
   UserCog,
+  X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { NotificationItem, UserNotificationItem } from "@/services/notification.service";
+import type { SessionClaims } from "@/services/auth.service";
+import type { SystemSettingsResponse } from "@/services/system-settings.service";
+import { authService } from "@/services/auth.service";
 
 interface NotificationDropdownProps {
   readonly notifications: NotificationItem[];
@@ -21,6 +26,16 @@ interface NotificationDropdownProps {
   readonly anchorRect: DOMRect;
   readonly onClose: () => void;
   readonly onMarkAllRead: () => Promise<void>;
+  /** Current authenticated user — needed to compute the per-role
+   *  Announcement copy and the cycle-rolled-over message. Null while
+   *  auth resolves; the Announcements tab simply renders empty. */
+  readonly user: SessionClaims | null;
+  /** Current system settings — drives the gate-state announcements.
+   *  Null while settings resolve. */
+  readonly settings: SystemSettingsResponse | null;
+  /** Refresh the session so user.last_seen_cycle updates after the
+   *  cycle-rolled-over dismiss button is clicked. */
+  readonly onRefreshSession: () => Promise<void>;
 }
 
 const SEVERITY_STYLES: Record<
@@ -40,9 +55,7 @@ const SEVERITY_STYLES: Record<
   },
 };
 
-// Per-module icon. Keyed on the `module` value the backend writes
-// (notification_service._MODULE_URL). Unknown / missing modules fall
-// back to the generic bell icon.
+// Per-module icon for direct user notifications.
 const MODULE_ICONS: Record<string, LucideIcon> = {
   goal: Target,
   annual_review: ClipboardCheck,
@@ -51,14 +64,174 @@ const MODULE_ICONS: Record<string, LucideIcon> = {
   admin: UserCog,
 };
 
+// ── Announcement copy ────────────────────────────────────────────────
+//
+// Per-role messaging for the four org-wide gate flags. Lifted from the
+// retired `DashboardAlerts` component. Each entry returns the copy
+// for the active role (or null when this role doesn't see this
+// announcement at all). Roles that aren't keyed get no message.
+
+type AnnouncementKey =
+  | "annual_reviews_enabled"
+  | "annual_goals_edit_enabled"
+  | "project_ratings_visible"
+  | "annual_review_final_rating_visible";
+
+type RoleCopy = Partial<Record<string, string>>;
+
+const GATE_COPY: Record<AnnouncementKey, RoleCopy> = {
+  annual_reviews_enabled: {
+    Employee:
+      "Annual review submissions are paused. You can't submit your self-review right now.",
+    Mentor:
+      "Annual review submissions are paused. You can't submit team evaluations right now.",
+    HR_MyOrg:
+      "Annual review submissions are paused. Re-enable in System Settings when ready.",
+  },
+  annual_goals_edit_enabled: {
+    Employee:
+      "Annual goal editing is disabled. You can't create or edit goals right now.",
+    Mentor:
+      "Annual goal editing is disabled. New goals from your mentees are paused.",
+    HR_MyOrg:
+      "Annual goal editing is disabled. Re-enable in System Settings when ready.",
+  },
+  project_ratings_visible: {
+    Employee:
+      "Project performance ratings are hidden for the current cycle.",
+    PM: "Project ratings are hidden from employees for the current cycle.",
+    HR_MyOrg:
+      "Project ratings are hidden from employees. Re-enable in System Settings.",
+    HR_Miltenyi:
+      "Project ratings are hidden from employees. Re-enable in System Settings.",
+  },
+  annual_review_final_rating_visible: {
+    Employee:
+      "Final annual review ratings are hidden for the current cycle.",
+    HR_MyOrg:
+      "Final ratings hidden. Re-enable when calibration is complete.",
+  },
+};
+
+interface AnnouncementRow {
+  /** Stable key so React can reconcile and the cycle row gets its own
+   *  dismiss handler. */
+  readonly key: string;
+  readonly title: string;
+  readonly body: string;
+  /** Click → call this. Currently only the cycle-rollover row sets it. */
+  readonly onDismiss?: () => Promise<void>;
+}
+
+function buildAnnouncements(
+  user: SessionClaims | null,
+  settings: SystemSettingsResponse | null,
+  onRefreshSession: () => Promise<void>,
+): AnnouncementRow[] {
+  if (!user || !settings) return [];
+  const role = user.role;
+  const rows: AnnouncementRow[] = [];
+
+  // Gate-flag announcements (an entry is included only when the flag
+  // is OFF AND the current role has copy for it).
+  const checks: Array<{
+    key: AnnouncementKey;
+    active: boolean;
+    title: string;
+  }> = [
+    {
+      key: "annual_reviews_enabled",
+      active: settings.annual_reviews_enabled === false,
+      title: "Annual review submissions paused",
+    },
+    {
+      key: "annual_goals_edit_enabled",
+      active: settings.annual_goals_edit_enabled === false,
+      title: "Annual goal editing disabled",
+    },
+    {
+      key: "project_ratings_visible",
+      active: settings.project_ratings_visible === false,
+      title: "Project ratings hidden",
+    },
+    {
+      key: "annual_review_final_rating_visible",
+      active: settings.annual_review_final_rating_visible === false,
+      title: "Final annual review ratings hidden",
+    },
+  ];
+  for (const c of checks) {
+    if (!c.active) continue;
+    const body = GATE_COPY[c.key][role];
+    if (!body) continue;
+    rows.push({ key: c.key, title: c.title, body });
+  }
+
+  // Cycle-rolled-over announcement — driven by user.last_seen_cycle
+  // diverging from the live active_cycle_name. Dismiss persists across
+  // sessions via the backend (stamps last_seen_cycle).
+  const cycleMismatch =
+    user.last_seen_cycle !== null &&
+    user.last_seen_cycle !== settings.active_cycle_name;
+  if (cycleMismatch) {
+    rows.push({
+      key: "cycle_rollover",
+      title: `Rolled into ${settings.active_cycle_name}`,
+      body:
+        "The active cycle has changed. HR will re-open submission gates as needed.",
+      onDismiss: async () => {
+        try {
+          await authService.dismissCycleBanner();
+        } catch {
+          /* best-effort — banner reappears on next visit if this fails */
+        }
+        await onRefreshSession();
+      },
+    });
+  }
+
+  return rows;
+}
+
+// Public helper so the Topbar can decide whether to light the bell dot
+// without duplicating the gate logic. Returns true iff at least one
+// announcement is currently active for this user.
+export function hasActiveAnnouncements(
+  user: SessionClaims | null,
+  settings: SystemSettingsResponse | null,
+): boolean {
+  if (!user || !settings) return false;
+  return buildAnnouncements(user, settings, async () => {}).length > 0;
+}
+
+// ── Component ─────────────────────────────────────────────────────────
+
+type ActiveTab = "notifications" | "announcements";
+
 export function NotificationDropdown({
   notifications,
   userNotifications,
   anchorRect,
   onClose,
   onMarkAllRead,
+  user,
+  settings,
+  onRefreshSession,
 }: NotificationDropdownProps) {
   const ref = useRef<HTMLDivElement>(null);
+
+  const announcements = useMemo(
+    () => buildAnnouncements(user, settings, onRefreshSession),
+    [user, settings, onRefreshSession],
+  );
+
+  // Default to the tab with content — if there are announcements but
+  // no notifications, open Announcements. Otherwise open Notifications.
+  const hasNotifs =
+    notifications.length > 0 || userNotifications.length > 0;
+  const [tab, setTab] = useState<ActiveTab>(
+    hasNotifs ? "notifications" : announcements.length > 0 ? "announcements" : "notifications",
+  );
 
   // Close on click outside
   useEffect(() => {
@@ -84,7 +257,7 @@ export function NotificationDropdown({
     <div
       ref={ref}
       role="dialog"
-      aria-label="Notifications"
+      aria-label="Notifications and announcements"
       className="w-80 rounded-xl border border-border bg-surface shadow-lg overflow-hidden"
       style={{
         position: "fixed",
@@ -93,11 +266,26 @@ export function NotificationDropdown({
         zIndex: 50,
       }}
     >
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-        <p className="font-display text-sm font-semibold text-text-main">
-          Notifications
-        </p>
-        {userNotifications.some((n) => !n.is_read) && (
+      {/* Tab bar */}
+      <div className="flex border-b border-border bg-slate-50/40">
+        <TabButton
+          label="Notifications"
+          active={tab === "notifications"}
+          onClick={() => setTab("notifications")}
+          showDot={hasNotifs}
+        />
+        <TabButton
+          label="Announcements"
+          active={tab === "announcements"}
+          onClick={() => setTab("announcements")}
+          showDot={announcements.length > 0}
+        />
+      </div>
+
+      {/* Action bar — only on Notifications tab, and only when there's
+          something to mark read. Keeps the Announcements tab clean. */}
+      {tab === "notifications" && userNotifications.some((n) => !n.is_read) && (
+        <div className="flex items-center justify-end px-4 py-2 border-b border-border">
           <button
             type="button"
             onClick={onMarkAllRead}
@@ -105,64 +293,169 @@ export function NotificationDropdown({
           >
             Mark all read
           </button>
-        )}
-      </div>
-
-      {notifications.length === 0 && userNotifications.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 py-8 px-4 text-center">
-          <CheckCircle className="h-8 w-8 text-green-400" aria-hidden="true" />
-          <p className="text-sm font-medium text-text-main">
-            You're all caught up!
-          </p>
-          <p className="text-xs text-text-muted">
-            No pending actions right now.
-          </p>
         </div>
+      )}
+
+      {/* Body */}
+      {tab === "notifications" ? (
+        <NotificationsBody
+          notifications={notifications}
+          userNotifications={userNotifications}
+          onClose={onClose}
+        />
       ) : (
-        <ul className="divide-y divide-border max-h-80 overflow-y-auto">
-          {/* System-computed notifications */}
-          {notifications.map((n) => {
-            const { icon: Icon, iconClass, bgClass } = SEVERITY_STYLES[n.severity];
-            return (
-              <li
-                key={n.type}
-                className={`flex items-start gap-3 px-4 py-3 ${bgClass}`}
-              >
-                <Icon className={`h-4 w-4 mt-0.5 shrink-0 ${iconClass}`} aria-hidden="true" />
-                <p className="text-sm text-text-main">{n.message}</p>
-              </li>
-            );
-          })}
-          {/* Direct user notifications — polymorphic across modules */}
-          {userNotifications.map((n) => {
-            const Icon = (n.module && MODULE_ICONS[n.module]) || BellDot;
-            const row = (
-              <li
-                className={`flex items-start gap-3 px-4 py-3 ${n.is_read ? "bg-white" : "bg-blue-50"}`}
-              >
-                <Icon
-                  className={`h-4 w-4 mt-0.5 shrink-0 ${n.is_read ? "text-text-muted" : "text-blue-500"}`}
-                  aria-hidden="true"
-                />
-                <p className="text-sm text-text-main">{n.message}</p>
-              </li>
-            );
-            return n.entity_url ? (
-              <a
-                key={n.id}
-                href={n.entity_url}
-                onClick={onClose}
-                className="block hover:bg-slate-50"
-              >
-                {row}
-              </a>
-            ) : (
-              <div key={n.id}>{row}</div>
-            );
-          })}
-        </ul>
+        <AnnouncementsBody announcements={announcements} />
       )}
     </div>,
     document.body,
+  );
+}
+
+// ── Sub-components ────────────────────────────────────────────────────
+
+function TabButton({
+  label,
+  active,
+  onClick,
+  showDot,
+}: {
+  readonly label: string;
+  readonly active: boolean;
+  readonly onClick: () => void;
+  readonly showDot: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`relative flex-1 px-4 py-2.5 text-[12px] font-semibold transition-colors ${
+        active
+          ? "text-text-main bg-surface"
+          : "text-text-muted hover:text-text-main"
+      }`}
+    >
+      {label}
+      {showDot && (
+        <span
+          aria-hidden="true"
+          className="absolute top-2 right-3 h-1.5 w-1.5 rounded-full bg-accent"
+        />
+      )}
+      {active && (
+        <span
+          aria-hidden="true"
+          className="absolute bottom-0 left-2 right-2 h-0.5 bg-brand rounded-full"
+        />
+      )}
+    </button>
+  );
+}
+
+function NotificationsBody({
+  notifications,
+  userNotifications,
+  onClose,
+}: {
+  readonly notifications: NotificationItem[];
+  readonly userNotifications: UserNotificationItem[];
+  readonly onClose: () => void;
+}) {
+  if (notifications.length === 0 && userNotifications.length === 0) {
+    return (
+      <div className="flex flex-col items-center gap-2 py-8 px-4 text-center">
+        <CheckCircle className="h-8 w-8 text-green-400" aria-hidden="true" />
+        <p className="text-sm font-medium text-text-main">You're all caught up!</p>
+        <p className="text-xs text-text-muted">No pending actions right now.</p>
+      </div>
+    );
+  }
+  return (
+    <ul className="divide-y divide-border max-h-80 overflow-y-auto">
+      {notifications.map((n) => {
+        const { icon: Icon, iconClass, bgClass } = SEVERITY_STYLES[n.severity];
+        return (
+          <li
+            key={n.type}
+            className={`flex items-start gap-3 px-4 py-3 ${bgClass}`}
+          >
+            <Icon className={`h-4 w-4 mt-0.5 shrink-0 ${iconClass}`} aria-hidden="true" />
+            <p className="text-sm text-text-main">{n.message}</p>
+          </li>
+        );
+      })}
+      {userNotifications.map((n) => {
+        const Icon = (n.module && MODULE_ICONS[n.module]) || BellDot;
+        const row = (
+          <li
+            className={`flex items-start gap-3 px-4 py-3 ${n.is_read ? "bg-white" : "bg-blue-50"}`}
+          >
+            <Icon
+              className={`h-4 w-4 mt-0.5 shrink-0 ${n.is_read ? "text-text-muted" : "text-blue-500"}`}
+              aria-hidden="true"
+            />
+            <p className="text-sm text-text-main">{n.message}</p>
+          </li>
+        );
+        return n.entity_url ? (
+          <a
+            key={n.id}
+            href={n.entity_url}
+            onClick={onClose}
+            className="block hover:bg-slate-50"
+          >
+            {row}
+          </a>
+        ) : (
+          <div key={n.id}>{row}</div>
+        );
+      })}
+    </ul>
+  );
+}
+
+function AnnouncementsBody({
+  announcements,
+}: {
+  readonly announcements: AnnouncementRow[];
+}) {
+  if (announcements.length === 0) {
+    return (
+      <div className="flex flex-col items-center gap-2 py-8 px-4 text-center">
+        <Megaphone className="h-8 w-8 text-text-muted" aria-hidden="true" />
+        <p className="text-sm font-medium text-text-main">
+          No announcements right now.
+        </p>
+        <p className="text-xs text-text-muted">
+          Everything is running at default settings.
+        </p>
+      </div>
+    );
+  }
+  return (
+    <ul className="divide-y divide-border max-h-80 overflow-y-auto">
+      {announcements.map((a) => (
+        <li key={a.key} className="flex items-start gap-3 px-4 py-3 bg-amber-50/40">
+          <AlertTriangle
+            className="h-4 w-4 mt-0.5 shrink-0 text-amber-600"
+            aria-hidden="true"
+          />
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] font-semibold text-text-main">{a.title}</p>
+            <p className="mt-0.5 text-[12px] text-text-muted">{a.body}</p>
+          </div>
+          {a.onDismiss && (
+            <button
+              type="button"
+              onClick={() => void a.onDismiss?.()}
+              className="rounded-md p-1 text-amber-700 hover:bg-amber-100 shrink-0"
+              aria-label="Dismiss"
+              title="Dismiss"
+            >
+              <X className="h-3.5 w-3.5" aria-hidden="true" />
+            </button>
+          )}
+        </li>
+      ))}
+    </ul>
   );
 }

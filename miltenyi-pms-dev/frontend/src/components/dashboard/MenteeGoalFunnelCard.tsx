@@ -3,7 +3,6 @@
  * GoalApprovalFunnelCard, aggregated across every mentee reporting to
  * the current user.
  *
- * Renders the same donut + vertical legend + InsightStripe treatment
  * as the HR card so the visual language carries across the app. The
  * four buckets mirror what the mentee sees on their own dashboard:
  *
@@ -25,7 +24,6 @@ import { Target } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { MenteeSummary } from "@/services/mentee.service";
 import { DonutChart } from "./DonutChart";
-import { InsightStripe, type InsightTone } from "./InsightStripe";
 
 // Palette matches GoalApprovalFunnelCard / GoalsWidget so a viewer
 // flipping between HR / Mentor / Mentee dashboards reads the same
@@ -155,57 +153,10 @@ export function MenteeGoalFunnelCard({ mentees }: MenteeGoalFunnelCardProps) {
               ariaLabel={`${funnel.approved} of ${funnel.total} mentee goals approved (${approvalPercent}%)`}
             />
           </div>
-          <InsightStripe {...buildInsight(funnel, approvalPercent)} />
         </>
       )}
     </article>
   );
-}
-
-// Mentor-action-first ladder: anything in `submitted` is the mentor's
-// queue and should land at the top. Changes-requested is the mentee's
-// turn — note it but lower priority. Drafts mean mentees haven't even
-// started yet (gentle nudge candidate). All-approved is the green
-// finish line.
-function buildInsight(
-  funnel: Funnel,
-  approvalPercent: number,
-): { text: string; tone: InsightTone } {
-  if (funnel.submitted > 0) {
-    return {
-      text: `${funnel.submitted} ${pluralize(
-        funnel.submitted,
-        "goal",
-      )} awaiting your approval`,
-      tone: "red",
-    };
-  }
-  if (funnel.changes_requested > 0) {
-    return {
-      text: `${funnel.changes_requested} ${pluralize(
-        funnel.changes_requested,
-        "goal",
-      )} waiting for mentee revision`,
-      tone: "amber",
-    };
-  }
-  if (funnel.draft > 0) {
-    return {
-      text: `${funnel.draft} ${pluralize(
-        funnel.draft,
-        "draft",
-      )} not yet submitted`,
-      tone: "amber",
-    };
-  }
-  return {
-    text: `${approvalPercent}% approved · all submissions cleared`,
-    tone: "green",
-  };
-}
-
-function pluralize(n: number, word: string): string {
-  return n === 1 ? word : `${word}s`;
 }
 
 // ── Internal pieces ───────────────────────────────────────────────────

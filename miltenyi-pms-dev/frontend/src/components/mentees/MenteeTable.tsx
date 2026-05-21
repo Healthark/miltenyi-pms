@@ -35,7 +35,7 @@ export function MenteeTable({ mentees, sort, onSort }: MenteeTableProps) {
 
   return (
     <div className="overflow-x-auto rounded-lg border border-border bg-surface">
-      <table className="w-full text-[13px]">
+      <table className="w-full min-w-max text-[13px]">
         <thead>
           <tr className="border-b border-border bg-slate-50/80">
             <th className={thCls}>

@@ -98,7 +98,20 @@ export default function AdminPanel() {
   const isLoading = usersQuery.isPending;
 
   // ── UI state ──────────────────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<ActiveTab>("users");
+  // Honor a `?tab=<id>` query param on initial mount so deep-links
+  // from elsewhere in the app (e.g. the "Re-enable →" link on the HR
+  // dashboard's Active Overrides card) can open the right tab. Falls
+  // back to "users" for any unknown / missing value. URL is read once
+  // synchronously inside useState's initializer so the right tab
+  // paints from the first render.
+  const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const requested = params.get("tab");
+    const valid: ActiveTab[] = ["users", "projects", "exports", "settings"];
+    return (valid as readonly string[]).includes(requested ?? "")
+      ? (requested as ActiveTab)
+      : "users";
+  });
   const [searchQuery, setSearchQuery] = useState("");
   const [showUserModal, setShowUserModal] = useState(false);
   const [editingUser, setEditingUser] = useState<UserResponse | null>(null);

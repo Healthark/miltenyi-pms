@@ -831,7 +831,7 @@ export function AnnualGoals() {
               ) : (
                 /* ── Table View ── */
                 <div className="overflow-x-auto rounded-lg border border-border">
-                  <table className="w-full text-[13px]">
+                  <table className="w-full min-w-max text-[13px]">
                     <thead>
                       <tr className="bg-slate-50/80 border-b border-border">
                         <th className="text-left px-5 py-2.5">
@@ -1051,6 +1051,14 @@ export function AnnualGoals() {
 const ALL_GOALS_GRID_TEMPLATE_COLUMNS =
   "minmax(180px, 1.6fr) minmax(140px, 1.4fr) minmax(140px, 1.4fr) " +
   "minmax(100px, 1fr) minmax(140px, 1.3fr)";
+
+// Sum of the GRID_TEMPLATE_COLUMNS minimums plus a little breathing
+// room. Drives the table's min-width so the outer horizontal-scroll
+// wrapper engages BEFORE the body's implicit overflow-x (legacy CSS
+// pairing for overflow-y: auto) does — otherwise the body scrolls
+// horizontally on its own and the header stays put. Mirrors the same
+// fix in ManagementReview.tsx.
+const ALL_GOALS_TABLE_MIN_WIDTH_PX = 760;
 
 // Collapsed user row (~48px) — text-[13px] + py-3 padding. measureElement
 // records the real size after render; this estimate seeds the initial
@@ -1328,6 +1336,7 @@ function AllGoalsTab({
           aria-label="All annual goals (HR view)"
           aria-rowcount={sortedGroups.length}
           className="text-[13px]"
+          style={{ minWidth: ALL_GOALS_TABLE_MIN_WIDTH_PX }}
         >
           {/* Header — non-virtualized */}
           <div role="rowgroup" className="bg-slate-50/80 border-b border-border">

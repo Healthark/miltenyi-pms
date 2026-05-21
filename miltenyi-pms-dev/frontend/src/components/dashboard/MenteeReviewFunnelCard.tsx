@@ -4,7 +4,6 @@
  * the current user.
  *
  * Visual treatment mirrors the HR card: donut + vertical legend +
- * InsightStripe. Where HR's four-stage funnel surfaces the org's
  * Draft / Pending Mentor / Pending Mgmt / Completed split, the mentor
  * view collapses anything pre-submission ("draft", "not_started",
  * missing rows) into a single "Not Started" bucket — for the mentor
@@ -23,7 +22,6 @@ import { ClipboardCheck } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { MenteeSummary } from "@/services/mentee.service";
 import { DonutChart } from "./DonutChart";
-import { InsightStripe, type InsightTone } from "./InsightStripe";
 
 // Palette matches AnnualReviewFunnelCard. "Pending You" is amber to
 // signal "your action needed" — same convention HR uses for its
@@ -168,56 +166,10 @@ export function MenteeReviewFunnelCard({
               ariaLabel={`${funnel.completed} of ${funnel.total} mentee annual reviews complete (${completionPercent}%)`}
             />
           </div>
-          <InsightStripe {...buildInsight(funnel, completionPercent)} />
         </>
       )}
     </article>
   );
-}
-
-// Mentor-action-first ladder: pending_you sits at the top — that's the
-// mentor's evaluation queue. Then pending_management (informational
-// for the mentor), then not_started (gentle nudge candidate), then
-// the all-clear state.
-function buildInsight(
-  funnel: Funnel,
-  completionPercent: number,
-): { text: string; tone: InsightTone } {
-  if (funnel.pending_you > 0) {
-    return {
-      text: `${funnel.pending_you} ${pluralize(
-        funnel.pending_you,
-        "review",
-      )} awaiting your evaluation`,
-      tone: "red",
-    };
-  }
-  if (funnel.pending_management > 0) {
-    return {
-      text: `${funnel.pending_management} ${pluralize(
-        funnel.pending_management,
-        "review",
-      )} with management`,
-      tone: "brand",
-    };
-  }
-  if (funnel.not_started > 0) {
-    return {
-      text: `${funnel.not_started} ${pluralize(
-        funnel.not_started,
-        "mentee",
-      )} not yet started`,
-      tone: "amber",
-    };
-  }
-  return {
-    text: `${completionPercent}% complete · all reviews on track`,
-    tone: "green",
-  };
-}
-
-function pluralize(n: number, word: string): string {
-  return n === 1 ? word : `${word}s`;
 }
 
 // ── Internal pieces ───────────────────────────────────────────────────

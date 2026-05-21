@@ -23,11 +23,11 @@ import { fyTokenToStartYear, formatFyYearSpan } from "@/utils/fy";
 import { getErrorMessage } from "@/utils/errors";
 import { HeadcountCard } from "@/components/dashboard/HeadcountCard";
 import { AnnualReviewFunnelCard } from "@/components/dashboard/AnnualReviewFunnelCard";
-import { DashboardAlerts } from "@/components/dashboard/DashboardAlerts";
 import { GoalApprovalFunnelCard } from "@/components/dashboard/GoalApprovalFunnelCard";
 import { ProjectReviewCompletionCard } from "@/components/dashboard/ProjectReviewCompletionCard";
 import { PendingActionsCard } from "@/components/dashboard/PendingActionsCard";
 import { ActiveCycleWidget } from "@/components/dashboard/ActiveCycleWidget";
+import { ActiveCyclesCard } from "@/components/dashboard/ActiveCyclesCard";
 
 export function HrDashboard() {
   const { user } = useAuth();
@@ -95,11 +95,6 @@ export function HrDashboard() {
 
   return (
     <div className="space-y-6">
-      {/* State-derived alert banners (paused submissions, hidden
-          ratings, cycle rollover dismiss). Always rendered first so
-          they read as page-level context. */}
-      <DashboardAlerts />
-
       {/* Header: greeting + FY picker */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
@@ -137,58 +132,57 @@ export function HrDashboard() {
         </div>
       </div>
 
-      {/* Row 1: Active Project Cycle | Active Goal Cycle — cycle
-          anchors at the top, matching the Employee/Mentor dashboards. The
-          goal cycle is hidden for Miltenyi HR since their scope
-          excludes annual goals (see header comment), so they get a
-          single full-width project cycle card instead. */}
-      <div
-        className={
-          isMiltenyiHR
-            ? "grid grid-cols-1 gap-4"
-            : "grid grid-cols-1 gap-4 md:grid-cols-2"
-        }
-      >
-        <ActiveCycleWidget
-          activeCycle={activeCycleName ?? null}
-          variant="project"
-        />
-        {!isMiltenyiHR && (
-          <ActiveCycleWidget
-            activeCycle={activeCycleName ?? null}
-            variant="goal"
-          />
-        )}
-      </div>
-
-      {/* Summary grid — four progress cards in a 2×2 on the left, and
-          the combined "Needs Attention" follow-up card spanning both
-          rows on the right. Miltenyi HR doesn't see annual reviews or
-          annual goals, so for them we collapse to a single-row layout
-          with just the cards they're scoped to. */}
+      {/* HR_Miltenyi: simpler layout — single project-cycle anchor +
+          their two-card summary grid. They don't see annual reviews,
+          annual goals, or PendingActions, so no merge needed. */}
       {isMiltenyiHR ? (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <ProjectReviewCompletionCard
-            data={summary?.project_review_completion ?? null}
-          />
-          <HeadcountCard data={summary?.headcount ?? null} />
-        </div>
+        <>
+          <div className="grid grid-cols-1 gap-4">
+            <ActiveCycleWidget
+              activeCycle={activeCycleName ?? null}
+              variant="project"
+            />
+          </div>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <ProjectReviewCompletionCard
+              data={summary?.project_review_completion ?? null}
+            />
+            <HeadcountCard data={summary?.headcount ?? null} />
+          </div>
+        </>
       ) : (
+        /* HR_MyOrg: single grid pairing the merged Cycles card with
+           Pending Actions in the top row, then a 2×2 of funnel /
+           data cards beneath. Pending Actions stays tall on the right
+           (it has 3 subsections); the merged Cycles card sits to its
+           left at half-width-ish, replacing the previous two-card
+           cycles row above. This frees the funnel cards from having
+           to stretch tall to match Pending Actions' height.
+           xl layout:
+             Row 1: [ActiveCyclesCard cols 1-2] [PendingActions col 3, row-span 3]
+             Row 2: [AnnualRev col 1] [ProjectRev col 2] [PA cont]
+             Row 3: [GoalApprov col 1] [Headcount col 2] [PA cont]
+           md (2-col) layout:
+             Row 1: ActiveCyclesCard (full row, col-span-2)
+             Row 2: PendingActions (full row, col-span-2)
+             Row 3: AnnualRev | ProjectRev
+             Row 4: GoalApprov | Headcount
+        */
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <div className="md:col-span-2 xl:col-span-2">
+            <ActiveCyclesCard activeCycle={activeCycleName ?? null} />
+          </div>
+          <div className="md:col-span-2 xl:col-span-1 xl:col-start-3 xl:row-start-1 xl:row-span-3">
+            <PendingActionsCard
+              missingReviews={summary?.missing_annual_reviews ?? null}
+            />
+          </div>
           <AnnualReviewFunnelCard
             data={summary?.annual_review_funnel ?? null}
           />
           <ProjectReviewCompletionCard
             data={summary?.project_review_completion ?? null}
           />
-          {/* Merged follow-up card sits in column 3 and spans both
-              rows, matching the 2×2 grid height beside it. */}
-          <div className="xl:col-start-3 xl:row-start-1 xl:row-span-2">
-            <PendingActionsCard
-              missingReviews={summary?.missing_annual_reviews ?? null}
-              stalledGoals={summary?.stalled_goals ?? null}
-            />
-          </div>
           <GoalApprovalFunnelCard
             data={summary?.goal_approval_funnel ?? null}
           />

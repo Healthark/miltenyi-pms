@@ -341,7 +341,7 @@ export function UsersTab({
         </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-border">
-          <table className="w-full text-sm">
+          <table className="w-full min-w-max text-sm">
             <thead>
               <tr className="border-b border-border bg-slate-50 text-left">
                 <th className="px-5 py-3">
