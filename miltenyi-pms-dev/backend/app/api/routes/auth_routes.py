@@ -24,7 +24,7 @@ from app.schemas.auth_schemas import (
     ThemePreferenceUpdate,
 )
 from app.schemas.user_schemas import UserProfile as UserProfileResponse
-from app.api.dependencies import CurrentUser, issue_auth_cookies
+from app.api.dependencies import CurrentUser, CurrentUserAllowingPasswordReset, issue_auth_cookies
 from app.services.send_email import is_smtp_configured, send_password_reset_email
 
 router = APIRouter()
@@ -126,11 +126,16 @@ def logout(response: Response):
 
 
 @router.get("/session", response_model=SessionResponse)
-def get_session(current_user: CurrentUser, db: DbSession):
+def get_session(current_user: CurrentUserAllowingPasswordReset, db: DbSession):
     """
     Live-refresh the auth claims (role, features, has_mentor, has_mentees) that
     were cached at login. The frontend calls this on app mount so promotions,
     feature toggles, and mentor assignments take effect without re-login.
+
+    Uses `CurrentUserAllowingPasswordReset` so a user gated by
+    `must_change_password` can still refresh their session — the response
+    carries `must_change_password: True`, which is what the frontend's
+    `ProtectedRoute` uses to route them to `/change-password`.
     """
     return _build_session(current_user, db)
 
