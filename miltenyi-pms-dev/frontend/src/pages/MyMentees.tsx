@@ -29,7 +29,6 @@ const MENTEE_TABLE_SORT_CONFIG: Record<
   email:                 { kind: "alpha",   get: (m) => m.email },
   function_name:       { kind: "alpha",   get: (m) => m.function_name },
   designation_name:      { kind: "alpha",   get: (m) => m.designation_name },
-  pending_actions_count: { kind: "numeric", get: (m) => m.pending_actions_count },
 };
 
 function CardSkeleton() {
@@ -62,7 +61,6 @@ export function MyMentees() {
 
 function MyMenteesView() {
   const [search, setSearch] = useState("");
-  const [onlyPending, setOnlyPending] = useState(false);
   const [sortKey, setSortKey] = useState<MenteeSortKey>("name");
   const [viewMode, setViewMode] = useState<MenteeViewMode>("grid");
   const [tableSort, setTableSort] = useState<SortState<MenteeTableSortKey> | null>(null);
@@ -86,11 +84,6 @@ function MyMenteesView() {
     ? "Could not load mentees. Please try again."
     : null;
 
-  const totalPendingActions = useMemo(
-    () => mentees.reduce((sum, m) => sum + m.pending_actions_count, 0),
-    [mentees],
-  );
-
   const visibleMentees = useMemo(() => {
     const q = search.trim().toLowerCase();
     let out = mentees;
@@ -100,9 +93,6 @@ function MyMenteesView() {
           m.full_name.toLowerCase().includes(q) ||
           m.employee_code.toLowerCase().includes(q),
       );
-    }
-    if (onlyPending) {
-      out = out.filter((m) => m.pending_actions_count > 0);
     }
 
     // Table mode with an active column sort takes precedence over the
@@ -115,12 +105,6 @@ function MyMenteesView() {
     }
 
     return [...out].sort((a, b) => {
-      if (sortKey === "pending") {
-        // Most pending first, then name tiebreak
-        const delta = b.pending_actions_count - a.pending_actions_count;
-        if (delta !== 0) return delta;
-        return a.full_name.localeCompare(b.full_name);
-      }
       if (sortKey === "designation") {
         const av = a.designation_name ?? "";
         const bv = b.designation_name ?? "";
@@ -128,7 +112,7 @@ function MyMenteesView() {
       }
       return a.full_name.localeCompare(b.full_name);
     });
-  }, [mentees, search, onlyPending, sortKey, viewMode, tableSort]);
+  }, [mentees, search, sortKey, viewMode, tableSort]);
 
   return (
     <div className="space-y-6">
@@ -154,11 +138,8 @@ function MyMenteesView() {
             <MenteeToolbar
               search={search}
               onSearchChange={setSearch}
-              onlyPending={onlyPending}
-              onOnlyPendingChange={setOnlyPending}
               sortKey={sortKey}
               onSortChange={setSortKey}
-              totalPendingActions={totalPendingActions}
               viewMode={viewMode}
               onViewModeChange={setViewMode}
             />
@@ -379,9 +360,6 @@ function AllMentorPairings() {
                       <th className="text-left px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-text-muted">
                         Designation
                       </th>
-                      <th className="text-left px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-text-muted">
-                        Pending Actions
-                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border/50">
@@ -401,15 +379,6 @@ function AllMentorPairings() {
                         </td>
                         <td className="px-4 py-2.5 text-text-muted">
                           {m.designation_name ?? "—"}
-                        </td>
-                        <td className="px-4 py-2.5">
-                          {m.pending_actions_count > 0 ? (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-700">
-                              {m.pending_actions_count}
-                            </span>
-                          ) : (
-                            <span className="text-text-muted">—</span>
-                          )}
                         </td>
                       </tr>
                     ))}

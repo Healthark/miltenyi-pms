@@ -1,16 +1,17 @@
-import { ArrowRight, AlertTriangle } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { MenteeSummary } from "@/services/mentee.service";
 import { SortableHeader } from "@/components/SortableHeader";
 import type { SortState } from "@/utils/sort";
 
+// `pending_actions_count` was removed pending a rebuild of the
+// "Needs attention" signal — the column + its sort key came out with it.
 export type MenteeTableSortKey =
   | "full_name"
   | "employee_code"
   | "email"
   | "function_name"
-  | "designation_name"
-  | "pending_actions_count";
+  | "designation_name";
 
 interface MenteeTableProps {
   readonly mentees: readonly MenteeSummary[];
@@ -54,15 +55,11 @@ export function MenteeTable({ mentees, sort, onSort }: MenteeTableProps) {
             <th className={thCls}>
               <SortableHeader label="Designation" columnKey="designation_name" sort={sort} onSort={onSort} />
             </th>
-            <th className={thCls}>
-              <SortableHeader label="Pending" columnKey="pending_actions_count" sort={sort} onSort={onSort} />
-            </th>
             <th className={`${plainThCls} text-right`}>Actions</th>
           </tr>
         </thead>
         <tbody>
           {mentees.map((m) => {
-            const hasPending = m.pending_actions_count > 0;
             const initials = initialsFor(m.full_name);
             return (
               <tr
@@ -95,16 +92,6 @@ export function MenteeTable({ mentees, sort, onSort }: MenteeTableProps) {
                 </td>
                 <td className="px-4 py-3 text-text-main">
                   {m.designation_name ?? "—"}
-                </td>
-                <td className="px-4 py-3">
-                  {hasPending ? (
-                    <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
-                      <AlertTriangle className="h-3 w-3" aria-hidden="true" />
-                      {m.pending_actions_count}
-                    </span>
-                  ) : (
-                    <span className="text-text-muted">—</span>
-                  )}
                 </td>
                 <td className="px-4 py-3 text-right">
                   <Link

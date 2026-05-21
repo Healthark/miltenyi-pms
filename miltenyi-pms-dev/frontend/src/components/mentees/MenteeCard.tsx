@@ -1,6 +1,5 @@
 import {
   ArrowRight,
-  AlertTriangle,
   BadgeCheck,
   Mail,
   Phone,
@@ -25,12 +24,16 @@ function initialsFor(name: string): string {
 }
 
 export function MenteeCard({ mentee }: MenteeCardProps) {
-  const hasPending = mentee.pending_actions_count > 0;
   const initials = initialsFor(mentee.full_name);
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4 shadow-sm transition hover:shadow-md">
-      {/* Header — avatar, name, active dot, attention pill */}
+      {/* Header — avatar, name, active dot.
+          The "Attention" pill (driven by mentee.pending_actions_count)
+          was removed pending a proper rebuild of the signal — its old
+          heuristic was noisy / often misleading. The backing
+          `pending_actions_count` field stays on MenteeSummary for now
+          in case the next iteration reuses it. */}
       <div className="flex items-center gap-3">
         <div
           className="flex h-11 w-11 items-center justify-center rounded-full bg-brand text-sm font-bold text-white shrink-0"
@@ -42,17 +45,6 @@ export function MenteeCard({ mentee }: MenteeCardProps) {
           <p className="truncate font-medium text-text-main">{mentee.full_name}</p>
           <p className="truncate text-xs text-text-muted">{mentee.role}</p>
         </div>
-        {hasPending && (
-          <span
-            className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 shrink-0"
-            title={`${mentee.pending_actions_count} item${
-              mentee.pending_actions_count === 1 ? "" : "s"
-            } need${mentee.pending_actions_count === 1 ? "s" : ""} your attention`}
-          >
-            <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden="true" />
-            Attention
-          </span>
-        )}
         <span
           className={`flex h-2.5 w-2.5 shrink-0 rounded-full ${
             mentee.is_active ? "bg-green-500" : "bg-slate-300"

@@ -3,7 +3,7 @@
  *
  * Two subsections share the HR mental model "what needs my
  * attention?":
- *   1. Outstanding Annual Reviews — not-started + draft chase lists.
+ *   1. Unsubmitted Annual Reviews — not-started + draft chase lists.
  *   2. Paused Settings — org-wide gate flags currently OFF. Self-
  *      reminder to re-enable. Replaces the retired ActiveOverridesCard.
  *
@@ -57,7 +57,7 @@ export function PendingActionsCard({
 const SECTION_PANEL =
   "flex flex-col gap-3 rounded-lg border border-border/60 bg-slate-50/50 p-4";
 
-// ── Section: Outstanding Annual Reviews (Not Started + In Draft) ──────
+// ── Section: Unsubmitted Annual Reviews (Not Started + In Draft) ──────
 
 function MissingReviewsSection({
   data,
@@ -85,7 +85,7 @@ function MissingReviewsSection({
             />
           </div>
           <h4 className="font-display text-sm font-semibold text-text-main">
-            Outstanding Annual Reviews
+            Unsubmitted Annual Reviews
           </h4>
         </div>
         {isAllClear ? (

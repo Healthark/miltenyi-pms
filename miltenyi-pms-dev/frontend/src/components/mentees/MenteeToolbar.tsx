@@ -1,16 +1,16 @@
-import { Search, AlertTriangle, ArrowUpDown, LayoutGrid, Table2 } from "lucide-react";
+import { Search, ArrowUpDown, LayoutGrid, Table2 } from "lucide-react";
 
-export type MenteeSortKey = "name" | "designation" | "pending";
+/** "pending" was removed — the underlying "Needs attention" signal is
+ *  being rebuilt; the dropdown / filter / sort surfaces tied to it
+ *  came out with it. */
+export type MenteeSortKey = "name" | "designation";
 export type MenteeViewMode = "grid" | "table";
 
 interface MenteeToolbarProps {
   readonly search: string;
   readonly onSearchChange: (value: string) => void;
-  readonly onlyPending: boolean;
-  readonly onOnlyPendingChange: (value: boolean) => void;
   readonly sortKey: MenteeSortKey;
   readonly onSortChange: (value: MenteeSortKey) => void;
-  readonly totalPendingActions: number;
   readonly viewMode: MenteeViewMode;
   readonly onViewModeChange: (value: MenteeViewMode) => void;
 }
@@ -18,11 +18,8 @@ interface MenteeToolbarProps {
 export function MenteeToolbar({
   search,
   onSearchChange,
-  onlyPending,
-  onOnlyPendingChange,
   sortKey,
   onSortChange,
-  totalPendingActions,
   viewMode,
   onViewModeChange,
 }: MenteeToolbarProps) {
@@ -49,30 +46,9 @@ export function MenteeToolbar({
         />
       </div>
 
-      {/* Right: filter + sort + view toggle */}
+      {/* Right: sort + view toggle. The 'Needs attention' filter button
+          used to sit here; removed pending a rebuild of the signal. */}
       <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => onOnlyPendingChange(!onlyPending)}
-          className={`flex h-9 items-center gap-1.5 rounded-md border px-3 text-xs font-medium transition-colors ${
-            onlyPending
-              ? "border-amber-300 bg-amber-50 text-amber-700"
-              : "border-border bg-surface text-text-muted hover:text-text-main"
-          }`}
-        >
-          <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />
-          Needs attention
-          {totalPendingActions > 0 && (
-            <span
-              className={`ml-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
-                onlyPending ? "bg-amber-200 text-amber-800" : "bg-slate-100 text-text-muted"
-              }`}
-            >
-              {totalPendingActions}
-            </span>
-          )}
-        </button>
-
         {viewMode === "grid" && (
           <div className="flex h-9 items-center gap-1.5 rounded-md border border-border bg-surface px-2 text-xs">
             <ArrowUpDown className="h-3.5 w-3.5 text-text-muted" aria-hidden="true" />
@@ -87,7 +63,6 @@ export function MenteeToolbar({
             >
               <option value="name">Name</option>
               <option value="designation">Designation</option>
-              <option value="pending">Pending actions</option>
             </select>
           </div>
         )}
