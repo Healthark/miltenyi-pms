@@ -2,7 +2,7 @@ import hashlib
 import secrets
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -12,6 +12,7 @@ from app.core.database import get_db
 from app.core.security import verify_password, get_password_hash
 from app.core.config import settings
 from app.core.cycle_utils import get_current_cycle_info, resolve_today
+from app.core.rate_limit import limiter
 from app.models.user_models import User
 from app.models.organization_models import Organization
 from app.models.password_reset_token_models import PasswordResetToken
@@ -77,18 +78,20 @@ def _build_session(user: User, db: Session) -> dict:
 
 
 @router.post("/login", response_model=TokenResponse)
+@limiter.limit("5/5minutes")
 def login(
-    request: Annotated[OAuth2PasswordRequestForm, Depends()],
+    request: Request,
+    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     db: DbSession,
     response: Response,
 ):
     # Normalize email to lowercase so "David@x.com" and "david@x.com" both log
     # in the same account. Requires emails to be stored lowercase — enforced
     # at user creation time and verified with case-insensitive lookup here.
-    email = (request.username or "").strip().lower()
+    email = (form_data.username or "").strip().lower()
     user = db.query(User).filter(func.lower(User.email) == email).first()
 
-    if not user or not verify_password(request.password, user.password_hash):
+    if not user or not verify_password(form_data.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
@@ -197,7 +200,9 @@ def reset_password(payload: ResetPasswordRequest, db: DbSession):
 
 
 @router.post("/forgot-password", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("10/hour")
 def forgot_password(
+    request: Request,
     payload: ForgotPasswordRequest,
     db: DbSession,
     background_tasks: BackgroundTasks,
@@ -212,12 +217,19 @@ def forgot_password(
     the process exactly once via the email — only its SHA-256 hash is
     persisted.
 
-    Behaviour:
-        - 204: token issued (or would be issued — email send is best-effort
-               via background task).
-        - 404: no active account is registered for the supplied email.
-        - 429: 3 active reset tokens have been issued for this account in
-               the last hour (prevents email-bombing a victim).
+    Returns 204 unconditionally. The endpoint deliberately does NOT
+    distinguish "unknown email" from "valid email, token issued" from
+    "valid email, per-user quota hit" — all three return the same
+    status code with the same shape of work performed up front, so the
+    response cannot be used to enumerate registered accounts (risk 1.8).
+
+    Abuse protection:
+        - Per-IP rate limit (10/hour) via the slowapi decorator above,
+          which is the only path that legitimately returns 429.
+        - Per-user reset cap (RESETS_PER_USER_PER_HOUR) silently caps
+          how many active tokens a single account can accumulate, so a
+          high-throughput IP that spreads requests across many accounts
+          still can't email-bomb any one victim.
 
     Unauthenticated by design — the user has lost access to their account.
     The CSRF middleware exempts this path because no auth/CSRF cookies
@@ -226,37 +238,29 @@ def forgot_password(
     email = payload.email.strip().lower()
     user = db.query(User).filter(func.lower(User.email) == email).first()
 
-    if not user or user.is_deleted:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No account is registered with that email address.",
-        )
-
-    # Per-user rate limit — mirrors the admin reset path. Self-service has
-    # no admin actor, so we only apply the per-target cap.
+    # Pre-compute the same crypto + DB work along every path so response
+    # time does not leak whether the email maps to a real account. We
+    # query against `user.id` when present and a sentinel (-1) otherwise;
+    # both incur the same index lookup cost.
     one_hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
     recent = (
         db.query(PasswordResetToken)
         .filter(
-            PasswordResetToken.user_id == user.id,
+            PasswordResetToken.user_id == (user.id if user else -1),
             PasswordResetToken.created_at >= one_hour_ago,
         )
         .count()
     )
-    if recent >= RESETS_PER_USER_PER_HOUR:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=(
-                f"This email already has {RESETS_PER_USER_PER_HOUR} active "
-                "reset requests in the last hour. Please wait for the existing "
-                "link to expire or be used before requesting another."
-            ),
-        )
-
-    # Issue the token — same shape as admin_routes.reset_user_password().
     raw_token = secrets.token_urlsafe(32)
-    expires_at = datetime.now(timezone.utc) + timedelta(minutes=RESET_TOKEN_TTL_MINUTES)
     token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+
+    # Silently skip the issue + email side-effects if the email is unknown,
+    # the account is deactivated, or the per-user quota is exhausted. The
+    # response itself is identical to the success path.
+    if not user or user.is_deleted or recent >= RESETS_PER_USER_PER_HOUR:
+        return None
+
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=RESET_TOKEN_TTL_MINUTES)
 
     db.add(
         PasswordResetToken(

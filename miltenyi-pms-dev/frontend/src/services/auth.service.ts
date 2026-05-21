@@ -76,11 +76,14 @@ export const authService = {
 
   /**
    * Self-service password reset request. Backend looks up the email and
-   * (if found + active) issues a reset token + emails the link, using the
-   * same template as the admin-triggered reset.
+   * (if found + active + under per-user quota) issues a reset token +
+   * emails the link, using the same template as the admin-triggered reset.
    *
-   * Resolves on 204. Throws on 404 (no account), 429 (rate-limited), or
-   * any other non-2xx status — the caller should surface the message.
+   * Always resolves on 204 — the backend deliberately does not signal
+   * "unknown email" or "per-user quota hit" to avoid leaking which
+   * addresses have accounts. The UI should treat 204 as "if your email is
+   * registered, you'll get a link shortly". Throws on 429 (per-IP
+   * rate-limited) or transport failure.
    */
   forgotPassword: async (email: string): Promise<void> => {
     await apiClient.post("/auth/forgot-password", { email });
