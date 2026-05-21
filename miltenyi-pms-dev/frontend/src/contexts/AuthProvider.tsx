@@ -87,15 +87,43 @@ export function AuthProvider({ children }: Readonly<AuthProviderProps>) {
     }
   }, []);
 
-  // App-bootstrap session refresh. `react-hooks/set-state-in-effect`
-  // flags any setState reachable from an effect body, but here that's
-  // exactly what we want: on first mount, ask the server who the user
-  // is and populate the auth context. There is no "render the right
-  // UI without doing a fetch" alternative — the page has just loaded
-  // and we don't yet know whether the user is authenticated.
+  // App-bootstrap session refresh + sliding keep-alive. Three triggers:
+  //   1. on mount — populate auth context (the page just loaded and we
+  //      don't yet know if the user is authenticated).
+  //   2. on tab visibility regain — catches "user comes back after lunch":
+  //      their role may have changed (risk 1.6) or the JWT may need its
+  //      sliding window reset before the next interaction (risk 1.7).
+  //   3. every 10 min while visible — pre-empts the 30-min JWT TTL so
+  //      idle-but-open tabs don't drop in-flight form work to a silent 401.
+  // The periodic ping is guarded by visibilityState so hidden tabs don't
+  // burn API calls or phone battery. refreshSession swallows non-auth
+  // errors, and the axios interceptor only forces logout on 401/deactivated
+  // 403 — a transient 5xx during a background ping leaves cached claims
+  // alone.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void refreshSession();
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void refreshSession();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    const intervalId = window.setInterval(
+      () => {
+        if (document.visibilityState === "visible") {
+          void refreshSession();
+        }
+      },
+      10 * 60 * 1000,
+    );
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.clearInterval(intervalId);
+    };
   }, [refreshSession]);
 
   /**
