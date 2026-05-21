@@ -364,7 +364,7 @@ function AllMentorPairings() {
                   No mentees assigned to this mentor yet.
                 </div>
               ) : (
-                <table className="w-full text-[13px]">
+                <table className="w-full min-w-max text-[13px]">
                   <thead>
                     <tr className="border-b border-border bg-slate-50/60">
                       <th className="text-left px-5 py-2 text-[11px] font-bold uppercase tracking-wider text-text-muted">

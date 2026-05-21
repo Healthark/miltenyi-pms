@@ -452,7 +452,7 @@ export function MenteeGoalsTab({ goals, menteeName, menteeId }: MenteeGoalsTabPr
       ) : (
         /* ── Table view ── */
         <div className="overflow-x-auto rounded-lg border border-border">
-          <table className="w-full text-[13px]">
+          <table className="w-full min-w-max text-[13px]">
             <thead>
               <tr className="bg-slate-50/80 border-b border-border">
                 <th className="text-left px-5 py-2.5">

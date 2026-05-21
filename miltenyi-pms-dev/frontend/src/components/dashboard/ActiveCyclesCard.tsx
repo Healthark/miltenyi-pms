@@ -1,19 +1,24 @@
-import { CalendarDays, Target } from "lucide-react";
+import { CalendarDays, CalendarRange, Target } from "lucide-react";
 import { formatFyLabel } from "@/utils/fy";
 
 /**
- * ActiveCyclesCard — combined cycle card for the Employee dashboard.
+ * ActiveCyclesCard — combined cycle card for the Employee and HR dashboards.
  *
- * Replaces the previous two-card row (Active Project Cycle + Active
- * Goal Cycle) with a single card that lists both categories
- * side-by-side in two columns. Keeps the card's height in line with
- * the My Mentor card sitting next to it on Row 1, instead of
- * stretching tall like a stacked layout would.
+ * Renders three time anchors side-by-side, in this order:
+ *   1. Fiscal Year         — the org's current FY span ("FY 2026-27").
+ *   2. Goal Review Cycle   — the half (H1 / H2) the goal-review
+ *                            window currently belongs to, plus the FY
+ *                            token ("H1 FY26-27"). Goal reviews are
+ *                            uniformly half-yearly even when the org's
+ *                            project cadence is quarterly, so this can
+ *                            differ from #3 below.
+ *   3. Project Review Cycle — raw active cycle as configured by HR
+ *                            ("H1 FY26-27" for half-yearly orgs, or
+ *                            "Q2 FY26-27" / similar for quarterly orgs).
  *
- * Both values are derived from the same `activeCycle` token (e.g.
- * "H1 FY26-27"): the project line shows the raw cycle, the goal line
- * shows the spanning FY via `formatFyLabel` — same helper used
- * everywhere else, so the two never drift.
+ * All three are derived from the same `activeCycle` token (e.g.
+ * "H1 FY26-27" or "Q2 FY26-27"). When `activeCycle` is null the
+ * blocks render their "Not configured" state.
  *
  * `ActiveCycleWidget` (the single-variant card) stays around because
  * MentorDashboard still consumes it for its two-up cycle row.
@@ -23,38 +28,68 @@ interface ActiveCyclesCardProps {
   readonly activeCycle: string | null;
 }
 
+/** Derive the goal-review half from the active cycle string.
+ *
+ * Goal self- and mentor-reviews are always filed half-yearly (H1 / H2)
+ * regardless of the org's `cycle_type`, so a quarterly org's
+ * "Q3 FY26-27" maps to "H2 FY26-27" for the purpose of goal reviews.
+ *
+ * Quarter → half mapping mirrors backend `current_half_and_fy`:
+ *   Q1, Q2 → H1
+ *   Q3, Q4 → H2
+ * Half-yearly orgs come back unchanged. Annual (no prefix) returns
+ * the raw string so the block surfaces whatever's stored.
+ */
+function deriveGoalReviewCycle(activeCycle: string): string {
+  const parts = activeCycle.trim().split(/\s+/);
+  if (parts.length < 2) return activeCycle;
+  const prefix = parts[0].toUpperCase();
+  const fyToken = parts.slice(1).join(" ");
+  if (prefix === "Q1" || prefix === "Q2") return `H1 ${fyToken}`;
+  if (prefix === "Q3" || prefix === "Q4") return `H2 ${fyToken}`;
+  return activeCycle;
+}
+
 export function ActiveCyclesCard({ activeCycle }: ActiveCyclesCardProps) {
-  const projectValue = activeCycle;
-  const goalValue = activeCycle ? formatFyLabel(activeCycle) : null;
+  // Fiscal Year: human-formatted span ("FY 2026-27") via the same
+  // helper every FY surface uses. Falls back to extracting just the
+  // FY token when format fails.
+  const fyValue = activeCycle ? formatFyLabel(activeCycle) : null;
+  // Goal Review Cycle: always H1/H2 + FY.
+  const goalReviewValue = activeCycle
+    ? deriveGoalReviewCycle(activeCycle)
+    : null;
+  // Project Review Cycle: raw active cycle string as configured.
+  const projectReviewValue = activeCycle;
 
   return (
     <article className="rounded-xl border border-border bg-surface p-5 shadow-sm flex flex-col gap-4 h-full">
-      {/* Header */}
-      <div className="flex items-center gap-2">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-light">
-          <CalendarDays className="h-5 w-5 text-brand" aria-hidden="true" />
-        </div>
-        <p className="text-xs font-medium text-text-muted uppercase tracking-wide">
-          Active Cycles
-        </p>
-      </div>
-
-      {/* Body — two cycle blocks side-by-side with a thin vertical
+      {/* Body — three cycle blocks side-by-side with a thin vertical
           divider between them on sm+ screens. Stacks on the smallest
-          viewports so values stay readable. */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-0 sm:divide-x sm:divide-border">
+          viewports so values stay readable.
+          Order is Fiscal Year → Goal Review → Project Review (broad
+          time anchor first, then the more specific cycle windows). */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-0 sm:divide-x sm:divide-border">
         <CycleBlock
-          icon={CalendarDays}
-          label="Project Cycle"
-          value={projectValue}
-          tagline="All new project reviews are tagged to this period."
+          icon={CalendarRange}
+          label="Fiscal Year"
+          value={fyValue}
+          tagline="The org's current fiscal year span."
         />
         <div className="sm:pl-4">
           <CycleBlock
             icon={Target}
-            label="Goal Cycle"
-            value={goalValue}
-            tagline="All new annual goals are tagged to this fiscal year."
+            label="Goal Review Cycle"
+            value={goalReviewValue}
+            tagline="H1 / H2 window goal reviews are tagged to."
+          />
+        </div>
+        <div className="sm:pl-4">
+          <CycleBlock
+            icon={CalendarDays}
+            label="Project Review Cycle"
+            value={projectReviewValue}
+            tagline="All new project reviews are tagged to this period."
           />
         </div>
       </div>

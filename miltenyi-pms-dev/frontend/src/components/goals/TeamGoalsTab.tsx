@@ -889,7 +889,7 @@ export function TeamGoalsTab() {
         </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-border">
-          <table className="w-full text-[13px]">
+          <table className="w-full min-w-max text-[13px]">
             <thead>
               <tr className="bg-slate-50/80 border-b border-border">
                 <th className="text-left px-5 py-2.5">
@@ -981,7 +981,7 @@ export function TeamGoalsTab() {
                     {isExpanded && (
                       <tr className="bg-slate-50/80">
                         <td colSpan={5} className="p-0">
-                          <table className="w-full text-[13px]">
+                          <table className="w-full min-w-max text-[13px]">
                             <thead>
                               <tr className="text-left text-[11px] font-bold uppercase tracking-wider text-text-muted border-b border-border/40">
                                 <th className="px-10 py-2 font-bold">Goal</th>

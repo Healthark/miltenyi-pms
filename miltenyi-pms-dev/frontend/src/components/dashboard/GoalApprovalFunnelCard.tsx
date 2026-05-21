@@ -21,7 +21,6 @@ import { Link } from "react-router-dom";
 import type { GoalApprovalFunnel } from "@/services/dashboard.service";
 import { formatFyYearSpan } from "@/utils/fy";
 import { DonutChart } from "./DonutChart";
-import { InsightStripe, type InsightTone } from "./InsightStripe";
 
 // Local chart palette (amber-400 / blue-400 / emerald-400). Kept off
 // the theme tokens so the donut reads subtler than chip/badge accents.
@@ -124,46 +123,10 @@ export function GoalApprovalFunnelCard({
               ariaLabel={`${data.approved} of ${data.total} annual goals approved (${approvalPercent}%)`}
             />
           </div>
-          <InsightStripe {...buildInsight(data, approvalPercent)} />
         </>
       )}
     </article>
   );
-}
-
-// Most-actionable callout. "Changes requested" is friction (employee
-// has to revise + resubmit) so we surface it ahead of plain pending —
-// it's the bucket most likely to stall the cycle.
-function buildInsight(
-  data: GoalApprovalFunnel,
-  approvalPercent: number,
-): { text: string; tone: InsightTone } {
-  if (data.changes_requested > 0) {
-    return {
-      text: `${data.changes_requested} ${pluralize(
-        data.changes_requested,
-        "goal",
-      )} awaiting revision`,
-      tone: "red",
-    };
-  }
-  if (data.pending_approval > 0) {
-    return {
-      text: `${data.pending_approval} ${pluralize(
-        data.pending_approval,
-        "goal",
-      )} awaiting mentor approval`,
-      tone: "amber",
-    };
-  }
-  return {
-    text: `${approvalPercent}% approved · all submissions cleared`,
-    tone: "green",
-  };
-}
-
-function pluralize(n: number, word: string): string {
-  return n === 1 ? word : `${word}s`;
 }
 
 // ── Internal pieces ───────────────────────────────────────────────────
@@ -180,7 +143,6 @@ function SkeletonBody() {
     </div>
   );
 }
-
 
 function EmptyBody({ fyLabel }: { readonly fyLabel: string | null }) {
   return (

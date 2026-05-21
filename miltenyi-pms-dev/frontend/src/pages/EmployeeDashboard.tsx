@@ -31,7 +31,6 @@ import { profileService } from "@/services/profile.service";
 import { getErrorMessage } from "@/utils/errors";
 import { ActionItemsWidget } from "@/components/dashboard/ActionItemsWidget";
 import { ActiveCyclesCard } from "@/components/dashboard/ActiveCyclesCard";
-import { DashboardAlerts } from "@/components/dashboard/DashboardAlerts";
 import { GoalsWidget } from "@/components/dashboard/GoalsWidget";
 import { MyAnnualReviewWidget } from "@/components/dashboard/MyAnnualReviewWidget";
 import { MyMentorWidget } from "@/components/dashboard/MyMentorWidget";
@@ -80,10 +79,6 @@ export function EmployeeDashboard() {
 
   return (
     <div className="space-y-6">
-      {/* State-derived alert banners (paused submissions, hidden
-          ratings, cycle rollover dismiss). */}
-      <DashboardAlerts />
-
       {/* Header */}
       <div>
         <h1 className="font-display text-xl font-semibold text-text-main">

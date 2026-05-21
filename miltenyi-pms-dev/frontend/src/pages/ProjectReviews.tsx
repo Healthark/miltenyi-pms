@@ -548,6 +548,14 @@ const READ_ONLY_GRID_TEMPLATE_COLUMNS =
   "minmax(100px, 1fr) minmax(120px, 1.1fr) minmax(120px, 1.1fr) " +
   "minmax(100px, 0.9fr)";
 
+// Sum of the READ_ONLY_GRID_TEMPLATE_COLUMNS minimums plus a little
+// breathing room. Drives the table's min-width so the outer horizontal-
+// scroll wrapper engages BEFORE the body's implicit overflow-x (legacy
+// CSS pairing for overflow-y: auto) does — otherwise the body scrolls
+// horizontally on its own and the header stays put. Mirrors the same
+// fix in ManagementReview.tsx.
+const READ_ONLY_TABLE_MIN_WIDTH_PX = 1000;
+
 // Starting guess for the collapsed row height (project cell's 2-line
 // content + py-3 padding ≈ 60-64px). measureElement corrects after
 // render — most rows are uniform, but long project names can wrap and
@@ -883,6 +891,7 @@ function ReadOnlyReviewsList({
           aria-label="Read-only project reviews"
           aria-rowcount={sorted.length}
           className="text-[13px]"
+          style={{ minWidth: READ_ONLY_TABLE_MIN_WIDTH_PX }}
         >
           {/* Header — non-virtualized, pinned at top */}
           <div role="rowgroup" className="bg-slate-50/80 border-b border-border">
@@ -1147,7 +1156,7 @@ function renderMyReviewsBody(args: {
   // Table view
   return (
     <div className="overflow-x-auto rounded-lg border border-border">
-      <table className="w-full text-[13px]">
+      <table className="w-full min-w-max text-[13px]">
         <thead>
           <tr className="bg-slate-50/80 border-b border-border">
             <th className="text-left px-5 py-2.5">

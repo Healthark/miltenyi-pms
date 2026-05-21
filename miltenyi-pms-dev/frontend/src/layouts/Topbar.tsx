@@ -7,10 +7,13 @@ import {
   notificationService,
   type TopbarSummary,
 } from "@/services/notification.service";
-import { NotificationDropdown } from "@/components/layout/NotificationDropdown";
+import {
+  NotificationDropdown,
+  hasActiveAnnouncements,
+} from "@/components/layout/NotificationDropdown";
 
 export function Topbar() {
-  const { user } = useAuth();
+  const { user, refreshSession } = useAuth();
   const { isDark, toggleTheme } = useTheme();
 
   // ── Active Cycle — from the dedicated SystemSettings context ──────
@@ -64,8 +67,16 @@ export function Topbar() {
 
   const unreadUserCount =
     summary?.user_notifications.filter((n) => !n.is_read).length ?? 0;
+  // Bell dot now reflects three sources: system-computed notifications,
+  // unread user notifications, AND active announcements (org-wide gate
+  // flags + cycle-rolled-over message). Announcements behave as a
+  // live status indicator — the dot stays lit until the underlying
+  // flag is re-enabled / the cycle banner is dismissed.
+  const announcementsActive = hasActiveAnnouncements(user, settings ?? null);
   const hasNotifications =
-    (summary?.notifications.length ?? 0) > 0 || unreadUserCount > 0;
+    (summary?.notifications.length ?? 0) > 0 ||
+    unreadUserCount > 0 ||
+    announcementsActive;
 
   const initials = user?.full_name
     ? user.full_name
@@ -129,14 +140,20 @@ export function Topbar() {
         </div>
       </div>
 
-      {/* Notification dropdown — Portal so it escapes the header's layout */}
-      {anchorRect && summary && (
+      {/* Notification dropdown — Portal so it escapes the header's
+          layout. We render even when `summary` hasn't loaded yet so
+          the Announcements tab is still reachable — notifications
+          fall back to empty arrays in that case. */}
+      {anchorRect && (
         <NotificationDropdown
-          notifications={summary.notifications}
-          userNotifications={summary.user_notifications}
+          notifications={summary?.notifications ?? []}
+          userNotifications={summary?.user_notifications ?? []}
           anchorRect={anchorRect}
           onClose={handleClose}
           onMarkAllRead={handleMarkAllRead}
+          user={user}
+          settings={settings ?? null}
+          onRefreshSession={refreshSession}
         />
       )}
     </header>

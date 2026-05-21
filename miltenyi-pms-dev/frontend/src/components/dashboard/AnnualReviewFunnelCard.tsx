@@ -18,7 +18,6 @@ import { Link } from "react-router-dom";
 import type { AnnualReviewFunnel } from "@/services/dashboard.service";
 import { formatFyYearSpan } from "@/utils/fy";
 import { DonutChart } from "./DonutChart";
-import { InsightStripe, type InsightTone } from "./InsightStripe";
 
 // Local chart palette. Intentionally separate from theme tokens
 // (--color-brand / --color-amber / --color-green) so the dashboard
@@ -134,52 +133,10 @@ export function AnnualReviewFunnelCard({
               ariaLabel={`${data.completed} of ${data.total} annual reviews complete (${completionPercent}%)`}
             />
           </div>
-          <InsightStripe {...buildInsight(data, completionPercent)} />
         </>
       )}
     </article>
   );
-}
-
-// Derive the most-actionable callout for the bottom of the card. We
-// surface the deepest still-incomplete bucket — that's the work HR
-// needs to chase up next — and choose a tone that matches urgency.
-function buildInsight(
-  data: AnnualReviewFunnel,
-  completionPercent: number,
-): { text: string; tone: InsightTone } {
-  if (data.pending_management > 0) {
-    return {
-      text: `${data.pending_management} ${pluralize(
-        data.pending_management,
-        "review",
-      )} ready for management`,
-      tone: "brand",
-    };
-  }
-  if (data.pending_mentor > 0) {
-    return {
-      text: `${data.pending_mentor} ${pluralize(
-        data.pending_mentor,
-        "review",
-      )} awaiting mentor`,
-      tone: "amber",
-    };
-  }
-  if (data.draft > 0) {
-    return {
-      text: `${data.draft} ${pluralize(data.draft, "draft")} still in progress`,
-      tone: "amber",
-    };
-  }
-  return {
-    text: `${completionPercent}% complete · all reviews on track`,
-    tone: "green",
-  };
-}
-
-function pluralize(n: number, word: string): string {
-  return n === 1 ? word : `${word}s`;
 }
 
 // ── Internal pieces ───────────────────────────────────────────────────
@@ -197,7 +154,6 @@ function SkeletonBody() {
     </div>
   );
 }
-
 
 function EmptyBody({ fyLabel }: { readonly fyLabel: string | null }) {
   return (

@@ -8,15 +8,13 @@
  * separate analytic).
  *
  * Layout mirrors the row 2 progress cards (Goal Approval): legend on
- * the left, donut on the right, InsightStripe at the bottom surfacing
- * the largest cohort.
+ * the left, donut on the right.
  */
 
 import { Users } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { HeadcountSummary } from "@/services/dashboard.service";
 import { DonutChart } from "./DonutChart";
-import { InsightStripe } from "./InsightStripe";
 
 // Stable role-segment palette. Donut walks clockwise in ROLE_ORDER so
 // the legend (top → bottom) matches the chart's 12-o'clock-first
@@ -83,7 +81,6 @@ export function HeadcountCard({
 
 function LoadedBody({ data }: { readonly data: HeadcountSummary }) {
   const total = data.total_active;
-  const insight = buildInsight(data);
 
   // Only show buckets that have at least one user. Empty buckets
   // (e.g. `mentor: 0` for HR_Miltenyi viewers, where Healthark
@@ -126,32 +123,8 @@ function LoadedBody({ data }: { readonly data: HeadcountSummary }) {
           ariaLabel={`${total} active employees across ${visibleRoles.length} roles`}
         />
       </div>
-      <InsightStripe {...insight} />
     </>
   );
-}
-
-// Largest cohort = the natural "headline" insight for HR — drives
-// staffing-mix conversations.
-function buildInsight(data: HeadcountSummary) {
-  const total = data.total_active;
-  if (total === 0) {
-    return { text: "No active employees yet", tone: "amber" as const };
-  }
-  let topKey: RoleKey = "employee";
-  let topCount = 0;
-  for (const key of ROLE_ORDER) {
-    const count = data.by_role[key];
-    if (count > topCount) {
-      topKey = key;
-      topCount = count;
-    }
-  }
-  const pct = Math.round((topCount / total) * 100);
-  return {
-    text: `${ROLE_LABELS[topKey]} make up ${pct}% of headcount`,
-    tone: "brand" as const,
-  };
 }
 
 function SkeletonBody() {
