@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, Fragment } from "react";
+import { useCallback, useState, Fragment } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/queryKeys";
 import { createPortal } from "react-dom";
@@ -292,11 +292,6 @@ export function MenteeGoalsTab({ goals, menteeName, menteeId }: MenteeGoalsTabPr
     }
   };
 
-  // Reset expanded row when filters change so the UI stays coherent
-  useEffect(() => {
-    setExpandedGoalId(null);
-  }, [statusFilter, yearFilter, searchQuery, viewMode]);
-
   const availableYears = Array.from(
     new Set(goals.map((g) => g.fy_year).filter((y): y is number => y !== null)),
   ).sort((a, b) => b - a);
@@ -308,6 +303,16 @@ export function MenteeGoalsTab({ goals, menteeName, menteeId }: MenteeGoalsTabPr
       const q = searchQuery.trim().toLowerCase();
       return q === "" || g.title.toLowerCase().includes(q);
     });
+
+  // Derive the visible expanded row instead of resetting it via effect
+  // when filters change. If the user filtered the expanded goal out of
+  // view, treat it as collapsed without mutating state. The stored
+  // `expandedGoalId` is restored automatically if the user clears the
+  // filter — matches the existing "UI stays coherent" intent.
+  const visibleExpandedId =
+    expandedGoalId !== null && filtered.some((g) => g.id === expandedGoalId)
+      ? expandedGoalId
+      : null;
 
   const sortedGoals = sort
     ? filtered.slice().sort((a, b) => {
@@ -486,7 +491,7 @@ export function MenteeGoalsTab({ goals, menteeName, menteeId }: MenteeGoalsTabPr
             </thead>
             <tbody className="divide-y divide-border/50">
               {sortedGoals.map((goal) => {
-                const isExpanded = expandedGoalId === goal.id;
+                const isExpanded = visibleExpandedId === goal.id;
                 const isSubmitted = goal.approval_status === "pending_approval";
                 const isApproved = isPostApproved(goal.approval_status);
                 const isChangesRequested =

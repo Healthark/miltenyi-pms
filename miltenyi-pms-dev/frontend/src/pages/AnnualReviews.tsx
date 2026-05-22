@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import {
   useInfiniteQuery,
   useMutation,
@@ -16,6 +16,7 @@ import { SelfReviewTab } from "@/components/reviews/SelfReviewTab";
 import { TeamReviewTab } from "@/components/reviews/TeamReviewTab";
 import { SelfReviewFormModal } from "@/components/reviews/SelfReviewFormModal";
 import { PerformanceRatingBadge } from "@/components/reviews/PerformanceRatingBadge";
+import { ReviewStatusBadge } from "@/components/reviews/ReviewStatusBadge";
 import { StringCombobox } from "@/components/common/StringCombobox";
 import { ExportExcelButton } from "@/components/admin/ExportExcelButton";
 import { SortableHeader } from "@/components/SortableHeader";
@@ -79,14 +80,17 @@ export function AnnualReviews() {
     ? formatFyLabel(settings.active_cycle_name)
     : null;
 
-  const [activeTab, setActiveTab] = useState<ActiveTab>("my");
-
-  // Switch to the role's primary tab once auth resolves.
-  useEffect(() => {
-    if (isMentor) setActiveTab("team");
-    else if (isHRMyOrg) setActiveTab("all");
-    else setActiveTab("my");
-  }, [isMentor, isHRMyOrg]);
+  // The role-driven default. Recomputed every render — cheap. When auth
+  // hasn't resolved yet, isMentor / isHRMyOrg are both false so this
+  // falls through to "my"; once auth flips, the new value flows through
+  // without a setState-in-effect.
+  const defaultTab: ActiveTab = isMentor ? "team" : isHRMyOrg ? "all" : "my";
+  // `null` ⇒ "no explicit click yet, honour the role default". On click
+  // we lock to the explicit choice so a stale render of useAuth() can't
+  // yank the user back to the role-default tab mid-session.
+  const [userPickedTab, setUserPickedTab] = useState<ActiveTab | null>(null);
+  const activeTab = userPickedTab ?? defaultTab;
+  const setActiveTab = setUserPickedTab;
 
   const queryClient = useQueryClient();
 
@@ -584,6 +588,7 @@ function AllReviewsTab({
   // rendering extra rows that the user can't see costs a bit more
   // here. Tune up if scrolling on slow devices flashes empty rows.
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual's useVirtualizer returns non-memoisable functions; React Compiler logs a benign skip here.
   const rowVirtualizer = useVirtualizer({
     count: sorted.length,
     getScrollElement: () => scrollContainerRef.current,
@@ -880,8 +885,8 @@ function AllReviewsTab({
                             {r.cycle_name}
                           </span>
                         </div>
-                        <div role="cell" className="px-4 py-3 text-text-muted capitalize">
-                          {r.status.replace("_", " ")}
+                        <div role="cell" className="px-4 py-3">
+                          <ReviewStatusBadge status={r.status} />
                         </div>
                         <div role="cell" className="px-4 py-3">
                           <PerformanceRatingBadge value={r.self_performance_rating} />

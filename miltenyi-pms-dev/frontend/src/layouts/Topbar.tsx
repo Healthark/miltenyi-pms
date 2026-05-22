@@ -7,10 +7,8 @@ import {
   notificationService,
   type TopbarSummary,
 } from "@/services/notification.service";
-import {
-  NotificationDropdown,
-  hasActiveAnnouncements,
-} from "@/components/layout/NotificationDropdown";
+import { NotificationDropdown } from "@/components/layout/NotificationDropdown";
+import { hasActiveAnnouncements } from "@/components/layout/announcements";
 
 export function Topbar() {
   const { user, refreshSession } = useAuth();

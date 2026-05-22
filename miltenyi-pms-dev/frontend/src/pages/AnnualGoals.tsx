@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef, useState, Fragment } from "react";
+import { useCallback, useRef, useState, Fragment } from "react";
 import {
   useInfiniteQuery,
   useMutation,
@@ -232,7 +232,11 @@ export function AnnualGoals() {
 
   const queryClient = useQueryClient();
 
-  const [activeTab, setActiveTab] = useState<ActiveTab>("my");
+  // Tab selection: role-driven default + explicit user override. Picking
+  // a tab locks the choice so a stale render of useAuth() can't yank the
+  // user back to the role-default tab mid-session. See AnnualReviews for
+  // the same pattern.
+  const [userPickedTab, setUserPickedTab] = useState<ActiveTab | null>(null);
   const [approvalFilter, setApprovalFilter] = useState<ApprovalFilter>("all");
   const [yearFilter, setYearFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -347,12 +351,10 @@ export function AnnualGoals() {
       ? allGoalsQuery.isPending
       : false;
 
-  // Auto-switch to the role's primary tab once auth resolves.
-  useEffect(() => {
-    if (isMentor) setActiveTab("team");
-    else if (isHRMyOrg) setActiveTab("all");
-    else setActiveTab("my");
-  }, [isMentor, isHRMyOrg]);
+  // Role-driven default tab. `userPickedTab` (above) overrides once set.
+  const defaultTab: ActiveTab = isMentor ? "team" : isHRMyOrg ? "all" : "my";
+  const activeTab = userPickedTab ?? defaultTab;
+  const setActiveTab = setUserPickedTab;
 
   // Modal helpers
   const openAdd = () => {
@@ -1166,6 +1168,7 @@ function AllGoalsTab({
   // count. Same pattern as PR #16/#17, applied to the most variable
   // expansion shape so far.
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual's useVirtualizer returns non-memoisable functions; React Compiler logs a benign skip here.
   const rowVirtualizer = useVirtualizer({
     count: sortedGroups.length,
     getScrollElement: () => scrollContainerRef.current,

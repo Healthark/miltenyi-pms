@@ -1471,10 +1471,14 @@ def set_management_rating(
     )
 
     # Detect whether this is the first-time finalize (PENDING_MANAGEMENT →
-    # COMPLETED) versus a recalibration (COMPLETED → COMPLETED). Only the
-    # first-time transition pings the employee; subsequent rating tweaks
-    # don't re-notify so admins can recalibrate without spamming.
+    # COMPLETED) versus a recalibration (COMPLETED → COMPLETED). Both paths
+    # notify the employee, but with different copy:
+    #   first-time finalize          → "Your final rating is now available."
+    #   recalibration (value changed) → "Your final rating was updated."
+    # A recalibration that doesn't actually change the value (admin re-saved
+    # the same number) stays silent so we don't spam on accidental saves.
     was_pending = review.status == ReviewStatus.PENDING_MANAGEMENT.value
+    prior_rating = review.management_performance_rating
 
     review.management_performance_rating = payload.management_performance_rating
     # Persist the synthesized final so HR_MyOrg's `/all` view, mentor mentee
@@ -1490,6 +1494,13 @@ def set_management_rating(
     db.refresh(review)
 
     if was_pending:
+        message = f"Your final {review.cycle_name} rating is now available."
+        should_notify = True
+    else:
+        message = f"Your final {review.cycle_name} rating was updated."
+        should_notify = prior_rating != payload.management_performance_rating
+
+    if should_notify:
         notify(
             db,
             org_id=current_user.org_id,
@@ -1498,7 +1509,7 @@ def set_management_rating(
             module="annual_review",
             entity_type="annual_review",
             entity_id=review.id,
-            message=f"Your final {review.cycle_name} rating is now available.",
+            message=message,
             entity_url=f"/annual-reviews?review_id={review.id}",
         )
         db.commit()

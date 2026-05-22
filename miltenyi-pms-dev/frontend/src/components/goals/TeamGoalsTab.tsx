@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, Fragment } from "react";
+import { useState, useCallback, Fragment } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/queryKeys";
 import { patchRowsAcross } from "@/lib/optimistic";
@@ -709,15 +709,15 @@ export function TeamGoalsTab() {
           }),
         );
 
-  useEffect(() => {
-    setExpandedUserId(null);
-  }, [
-    statusFilter,
-    yearFilter,
-    functionFilter,
-    designationFilter,
-    menteeFilter,
-  ]);
+  // Derive the visible expanded row instead of resetting it via effect
+  // when filters change. If the user filtered the expanded mentee out
+  // of view, treat them as collapsed without mutating state — the
+  // stored id is restored automatically when the filter is cleared.
+  const visibleExpandedUserId =
+    expandedUserId !== null &&
+    sortedGroups.some((g) => g.user_id === expandedUserId)
+      ? expandedUserId
+      : null;
 
   // ── Render ────────────────────────────────────────────────────────
 
@@ -936,7 +936,7 @@ export function TeamGoalsTab() {
             </thead>
             <tbody className="divide-y divide-border/50">
               {sortedGroups.map((group) => {
-                const isExpanded = expandedUserId === group.user_id;
+                const isExpanded = visibleExpandedUserId === group.user_id;
                 const goalCount = group.goals.length;
                 return (
                   <Fragment key={group.user_id}>

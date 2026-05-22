@@ -24,7 +24,7 @@ from sqlalchemy.orm import joinedload
 
 from app.api.dependencies import DbSession, CurrentUser
 from app.api.routes.project_review_routes import _build_review_response
-from app.core.cycle_utils import get_current_cycle_info, resolve_today
+from app.core.cycle_utils import extract_fy_label, get_current_cycle_info, resolve_today
 from app.models.annual_review_models import AnnualReview, ReviewStatus
 from app.models.goal_models import Goal, GoalType, ApprovalStatus, POST_APPROVAL_STATES
 from app.models.project_models import Project, ProjectAssignment
@@ -54,6 +54,15 @@ def _get_active_cycle(db: DbSession, org_id: int) -> str:
     Return the active cycle name for this org. Falls back to a computed
     label if SystemSettings is missing an active_cycle_name so the endpoint
     never 500s purely because settings are mid-setup.
+
+    Returns the FULL cycle name including the half/quarter prefix
+    (e.g. "Q1 FY26-27", "H1 FY26-27"). Use this for ProjectReview.cycle
+    lookups — those rows store the full name.
+
+    For AnnualReview and annual-Goal rows, which are stamped with the
+    BARE FY token only ("FY26-27"), use `_get_active_fy_label` instead.
+    Mixing them is the bug that made the Mentor's Annual Reviews funnel
+    bucket every mentee as "Not Started" on half-yearly/quarterly orgs.
     """
     settings = db.query(SystemSettings).filter(SystemSettings.org_id == org_id).first()
     if settings and settings.active_cycle_name:
@@ -66,6 +75,17 @@ def _get_active_cycle(db: DbSession, org_id: int) -> str:
     # fallback matches what the user sees in their local calendar,
     # not the server's UTC day.
     return get_current_cycle_info(resolve_today(settings), cycle_type, fiscal_start)
+
+
+def _get_active_fy_label(db: DbSession, org_id: int) -> str:
+    """Bare FY token ("FY26-27") for the active cycle.
+
+    AnnualReview.cycle_name and annual Goal.cycle_name are stored as the
+    bare FY token regardless of the org's review cadence (see
+    cycle_utils._fy_label_of_review). Comparing them against the full
+    cycle string ("Q1 FY26-27") matches zero rows on half/quarterly orgs.
+    """
+    return extract_fy_label(_get_active_cycle(db, org_id))
 
 
 def _list_mentees(db: DbSession, mentor: User) -> list[User]:
@@ -149,9 +169,19 @@ def _build_review_status(active_review: AnnualReview | None) -> MenteeReviewStat
 def _build_project_stats(
     assignments: list[ProjectAssignment],
     reviews: list[ProjectReview],
+    active_cycle: str,
 ) -> MenteeProjectsStats:
-    """Active project count + outstanding reviews + latest rating."""
-    pending_reviews = [r for r in reviews if r.status == ProjectReviewStatus.PENDING.value]
+    """Active project count + outstanding reviews (active cycle only) + latest rating.
+
+    `pending_reviews_count` is scoped to `active_cycle` so leftover PENDING
+    rows from prior cycles (cycle opened, no PM action, then a new cycle
+    started) don't inflate the mentor's "needs attention" count.
+    """
+    pending_reviews = [
+        r for r in reviews
+        if r.status == ProjectReviewStatus.PENDING.value
+        and r.cycle == active_cycle
+    ]
 
     latest_rated = [
         r for r in reviews
@@ -178,10 +208,11 @@ def _compose_summary(
     active_review: AnnualReview | None,
     assignments: list[ProjectAssignment],
     reviews: list[ProjectReview],
+    active_cycle: str,
 ) -> MenteeSummary:
     goals = _build_goal_stats(annual_goals)
     review = _build_review_status(active_review)
-    projects = _build_project_stats(assignments, reviews)
+    projects = _build_project_stats(assignments, reviews, active_cycle)
 
     pending_actions = goals.submitted
     if review.status == ReviewStatus.PENDING_MENTOR.value:
@@ -225,7 +256,11 @@ def list_mentee_summaries(
         return []
 
     mentee_ids = [u.id for u in mentees]
+    # Two cycle shapes are needed:
+    #   active_cycle ("Q1 FY26-27") for ProjectReview.cycle lookups.
+    #   active_fy_label ("FY26-27") for AnnualReview.cycle_name lookups.
     active_cycle = _get_active_cycle(db, current_user.org_id)
+    active_fy_label = extract_fy_label(active_cycle)
 
     # One query each for goals, reviews, assignments, project reviews —
     # then bucket by user_id in Python. Avoids N+1s across the mentee list.
@@ -248,7 +283,7 @@ def list_mentee_summaries(
         .filter(
             AnnualReview.org_id == current_user.org_id,
             AnnualReview.user_id.in_(mentee_ids),
-            AnnualReview.cycle_name == active_cycle,
+            AnnualReview.cycle_name == active_fy_label,
         )
         .all()
     )
@@ -286,6 +321,7 @@ def list_mentee_summaries(
             active_review=review_by_user.get(u.id),
             assignments=assignments_by_user[u.id],
             reviews=project_reviews_by_user[u.id],
+            active_cycle=active_cycle,
         )
         for u in mentees
     ]
@@ -321,7 +357,11 @@ def get_mentee_detail(
             detail="Mentee not found or not assigned to you.",
         )
 
+    # Both shapes are needed here:
+    #   active_cycle ("Q1 FY26-27") → ProjectReview.cycle lookups.
+    #   active_fy_label ("FY26-27") → AnnualReview.cycle_name lookups.
     active_cycle = _get_active_cycle(db, current_user.org_id)
+    active_fy_label = extract_fy_label(active_cycle)
 
     # Annual goals for this mentee (drives stats + goals tab).
     annual_goals = (
@@ -382,7 +422,9 @@ def get_mentee_detail(
                 if r.management_performance_rating is not None
                 else r.mentor_performance_rating
             )
-    active_review = next((r for r in reviews_list if r.cycle_name == active_cycle), None)
+    active_review = next(
+        (r for r in reviews_list if r.cycle_name == active_fy_label), None
+    )
 
     # Project assignments, joined with the review for the active cycle
     # (if one exists). Latest rating stat needs all reviews though.
@@ -482,6 +524,7 @@ def get_mentee_detail(
         active_review=active_review,
         assignments=assignments,
         reviews=project_reviews,
+        active_cycle=active_cycle,
     )
 
     return MenteeDetail(
@@ -548,7 +591,9 @@ def list_all_mentor_pairings(
 
     # Counts of pending actions per mentee — same definition as MenteeSummary:
     # SUBMITTED annual goals + active-cycle PENDING_MENTOR review.
-    active_cycle = _get_active_cycle(db, current_user.org_id)
+    # AnnualReview rows are stamped with the bare FY token; match against
+    # that, not the full cycle (Q1 FY26-27).
+    active_fy_label = _get_active_fy_label(db, current_user.org_id)
     mentee_ids = [m.id for m in mentees]
 
     submitted_goal_counts: dict[int, int] = {}
@@ -573,7 +618,7 @@ def list_all_mentor_pairings(
             .filter(
                 AnnualReview.org_id == current_user.org_id,
                 AnnualReview.user_id.in_(mentee_ids),
-                AnnualReview.cycle_name == active_cycle,
+                AnnualReview.cycle_name == active_fy_label,
                 AnnualReview.status == ReviewStatus.PENDING_MENTOR.value,
             )
             .all()

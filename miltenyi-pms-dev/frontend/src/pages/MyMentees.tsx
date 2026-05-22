@@ -74,7 +74,12 @@ function MyMenteesView() {
     queryKey: queryKeys.mentees.summaries(),
     queryFn: menteeService.getSummaries,
   });
-  const mentees = menteesQuery.data ?? [];
+  // Memoised so the `?? []` fallback doesn't manufacture a fresh array
+  // every render — downstream useMemo deps stay stable.
+  const mentees = useMemo(
+    () => menteesQuery.data ?? [],
+    [menteesQuery.data],
+  );
   const isLoading = menteesQuery.isPending;
   // useQuery's `error` is unknown by default; coerce to a user-facing
   // string. We don't display the actual error.message because backend
@@ -214,7 +219,12 @@ function AllMentorPairings() {
     queryKey: queryKeys.mentees.pairings(),
     queryFn: menteeService.getAllPairings,
   });
-  const groups = pairingsQuery.data ?? [];
+  // Memoised so the `?? []` fallback doesn't manufacture a fresh array
+  // every render — downstream useMemo deps stay stable.
+  const groups = useMemo(
+    () => pairingsQuery.data ?? [],
+    [pairingsQuery.data],
+  );
   const isLoading = pairingsQuery.isPending;
   const error: string | null = pairingsQuery.isError
     ? "Could not load pairings. Please try again."

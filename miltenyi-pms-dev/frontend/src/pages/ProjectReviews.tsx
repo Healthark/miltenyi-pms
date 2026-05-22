@@ -18,7 +18,7 @@
  * picks between Skeleton / Empty / Grid / Table.
  */
 
-import { useEffect, useMemo, useRef, useState, Fragment } from "react";
+import { useMemo, useRef, useState, Fragment } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
@@ -124,7 +124,18 @@ export function ProjectReviews() {
   const isMentor = user?.role === "Mentor";
   const isHR = user?.role === "HR_MyOrg" || user?.role === "HR_Miltenyi";
 
-  const [activeTab, setActiveTab] = useState<ActiveTab>("my");
+  // Role-driven default tab + explicit-click override (see AnnualReviews
+  // for the same pattern). `null` ⇒ "no click yet, honour the default".
+  const [userPickedTab, setUserPickedTab] = useState<ActiveTab | null>(null);
+  const defaultTab: ActiveTab = isPM
+    ? "primary"
+    : isMentor
+      ? "mentees"
+      : isHR
+        ? "all-reviews"
+        : "my";
+  const activeTab = userPickedTab ?? defaultTab;
+  const setActiveTab = setUserPickedTab;
   const [viewMode, setViewMode] = useState<ViewMode>("table");
   // Lazy-init from settings so we don't run a follow-up effect just to
   // copy `settings.active_cycle_name` into local state on first paint.
@@ -231,10 +242,22 @@ export function ProjectReviews() {
   });
   const hasSecondaryWork = (secondaryQueueQuery.data?.length ?? 0) > 0;
 
-  // `?? []` defaults keep downstream code working with arrays.
-  const cards = cardsQuery.data ?? [];
-  const expectations = expectationsQuery.data ?? [];
-  const menteeReviews = menteeReviewsQuery.data ?? [];
+  // `?? []` defaults keep downstream code working with arrays. Memoised
+  // so the fallback doesn't manufacture a fresh array each render —
+  // every downstream useMemo depending on `cards`/`expectations`/
+  // `menteeReviews` would otherwise rebuild on every render.
+  const cards = useMemo(
+    () => cardsQuery.data ?? [],
+    [cardsQuery.data],
+  );
+  const expectations = useMemo(
+    () => expectationsQuery.data ?? [],
+    [expectationsQuery.data],
+  );
+  const menteeReviews = useMemo(
+    () => menteeReviewsQuery.data ?? [],
+    [menteeReviewsQuery.data],
+  );
   // Flatten loaded pages → review array (PR #39). Downstream filter /
   // sort / virtualizer code reads one combined list.
   const allReviews =
@@ -257,13 +280,8 @@ export function ProjectReviews() {
         ? allReviewsQuery.isPending
         : false;
 
-  // Auto-switch to the role's primary tab once auth resolves.
-  useEffect(() => {
-    if (isPM) setActiveTab("primary");
-    else if (isMentor) setActiveTab("mentees");
-    else if (isHR) setActiveTab("all-reviews");
-    else setActiveTab("my");
-  }, [isPM, isMentor, isHR]);
+  // Tab auto-selection now lives in the derived `defaultTab` + `activeTab`
+  // computation above — no effect needed.
 
   // ── Derived filter sources + filtered/sorted cards (memoised) ──────
 
@@ -718,6 +736,7 @@ function ReadOnlyReviewsList({
   // the row is fixed-height; ResizeObserver fires once per row and
   // the virtualizer caches that height for the row's lifetime.
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual's useVirtualizer returns non-memoisable functions; React Compiler logs a benign skip here.
   const rowVirtualizer = useVirtualizer({
     count: sorted.length,
     getScrollElement: () => scrollContainerRef.current,
