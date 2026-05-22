@@ -29,7 +29,6 @@ from app.models.goal_models import Goal, ApprovalStatus
 from app.models.user_models import User
 from app.models.notification_models import Notification
 from app.schemas.notification_schemas import NotificationItem, UserNotificationItem, TopbarSummary
-from app.core.cycle_utils import get_current_cycle_info, resolve_today
 
 router = APIRouter()
 
@@ -44,21 +43,16 @@ def get_topbar_summary(
     for the currently authenticated user.
     """
     # ── Active Cycle ─────────────────────────────────────────────────
+    # Read the STORED active cycle (the same one /dashboard/summary returns)
+    # rather than recomputing from the calendar. Before this change the
+    # topbar showed a calendar-true cycle while the dashboard showed the
+    # rolled-over value, so a user could see two different "active cycles"
+    # on the same screen until HR ran the rollover.
     settings = db.query(SystemSettings).filter(
         SystemSettings.org_id == current_user.org_id
     ).first()
 
-    # Dynamically calculate the active cycle based on the org's cadence.
-    # Uses resolve_today() so simulated_today (when set) shifts the cycle
-    # consistently with the rest of the app.
-    if settings:
-        active_cycle = get_current_cycle_info(
-            current_date=resolve_today(settings),
-            cycle_type=settings.cycle_type,
-            fiscal_start_month=settings.fiscal_start_month
-        )
-    else:
-        active_cycle = None
+    active_cycle = settings.active_cycle_name if settings else None
 
     # ── Computed Notifications ───────────────────────────────────────
     notifications: list[NotificationItem] = []

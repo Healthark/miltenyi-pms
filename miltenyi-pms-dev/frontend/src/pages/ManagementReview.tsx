@@ -218,9 +218,13 @@ export function ManagementReview() {
   });
   // Flatten loaded pages → row array. As HR clicks "Load more" this
   // grows; every downstream consumer (filters, sort, virtualizer) sees
-  // one combined list.
-  const rows: CalibrationRow[] =
-    gridQuery.data?.pages.flatMap((p) => p.items) ?? [];
+  // one combined list. Memoised so the `?? []` fallback doesn't
+  // manufacture a fresh array each render and break downstream useMemo
+  // dependency stability.
+  const rows: CalibrationRow[] = useMemo(
+    () => gridQuery.data?.pages.flatMap((p) => p.items) ?? [],
+    [gridQuery.data],
+  );
   // Total Employee count returned by the server (same on every page,
   // we read it off the latest one). Drives the "Loaded N of T" counter.
   const totalUsers =
@@ -420,6 +424,7 @@ export function ManagementReview() {
   // filter changes, we'd need to lift this state and snapshot/restore
   // it explicitly.
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual's useVirtualizer returns non-memoisable functions; React Compiler logs a benign skip here.
   const rowVirtualizer = useVirtualizer({
     count: visibleRows.length,
     getScrollElement: () => scrollContainerRef.current,

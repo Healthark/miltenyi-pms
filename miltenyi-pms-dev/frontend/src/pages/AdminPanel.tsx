@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/queryKeys";
 import {
@@ -140,23 +140,20 @@ export default function AdminPanel() {
   const [clearSimulatedTodayPending, setClearSimulatedTodayPending] = useState(false);
 
   // Sync the local settings form ONCE when the query first resolves.
-  // Re-syncs on the *server's* terms also need to land here (e.g. the
-  // settings mutation's onSuccess uses queryClient.setQueryData to
-  // freshen the cache, which triggers this effect). The
-  // `hasInitializedForm` flag prevents background refetches from
-  // overwriting an in-progress edit.
+  // Done during render via the "previous prop snapshot" pattern (React 19
+  // recommended path — see the `set-state-in-effect` rule docs) instead
+  // of a useEffect that would otherwise be flagged. Background refetches
+  // never re-sync because `hasInitializedForm` flips on the first run.
   const [hasInitializedForm, setHasInitializedForm] = useState(false);
-  useEffect(() => {
-    if (settings && !hasInitializedForm) {
-      setCycleType((settings.cycle_type as CycleType) ?? "half_yearly");
-      setFiscalStartMonth(settings.fiscal_start_month ?? 4);
-      setTimezone(settings.timezone ?? "UTC");
-      setSimulatedToday(settings.simulated_today ?? "");
-      setSimulationAllowed(settings.simulation_allowed ?? false);
-      setClearSimulatedTodayPending(false);
-      setHasInitializedForm(true);
-    }
-  }, [settings, hasInitializedForm]);
+  if (settings && !hasInitializedForm) {
+    setCycleType((settings.cycle_type as CycleType) ?? "half_yearly");
+    setFiscalStartMonth(settings.fiscal_start_month ?? 4);
+    setTimezone(settings.timezone ?? "UTC");
+    setSimulatedToday(settings.simulated_today ?? "");
+    setSimulationAllowed(settings.simulation_allowed ?? false);
+    setClearSimulatedTodayPending(false);
+    setHasInitializedForm(true);
+  }
 
   // ── Derived ───────────────────────────────────────────────────────────────
   // Any active user can mentor — Manager/Principal/Admin gating is a UX

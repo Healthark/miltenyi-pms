@@ -8,7 +8,7 @@
  * Secondary impact statements live in their own tab (`SecondaryEvalTab`).
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/queryKeys";
 import {
@@ -166,10 +166,12 @@ export function PrimaryEvaluationTab() {
   const [projectFilter, setProjectFilter] = useState<string>("all");
   const [employeeFilter, setEmployeeFilter] = useState<string>("all");
   // Default the cycle filter to the active cycle once settings load.
+  // Snapshot during render via React 19's "store info from previous
+  // renders" pattern; the conditional gate prevents an infinite loop.
   const [cycleFilter, setCycleFilter] = useState<string>("");
-  useEffect(() => {
-    if (cycleFilter === "" && activeCycle) setCycleFilter(activeCycle);
-  }, [activeCycle, cycleFilter]);
+  if (cycleFilter === "" && activeCycle) {
+    setCycleFilter(activeCycle);
+  }
   const [sort, setSort] = useState<SortState<EvalSortKey> | null>(null);
 
   // Modal state

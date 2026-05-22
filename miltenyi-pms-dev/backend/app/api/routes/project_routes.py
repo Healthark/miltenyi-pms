@@ -279,6 +279,25 @@ def create_project(
     db.commit()
     db.refresh(new_project)
 
+    # Tell the assigned Secondary they have an impact statement to write on
+    # this project's review cycle. Without this they'd find out only by
+    # stumbling onto the Project Reviews page.
+    if new_project.secondary_evaluator_id is not None:
+        notify(
+            db,
+            org_id=current_user.org_id,
+            recipient_id=new_project.secondary_evaluator_id,
+            sender_id=current_user.id,
+            module="project_review",
+            entity_type="project",
+            entity_id=new_project.id,
+            message=(
+                f"You were assigned as Secondary evaluator on {new_project.name}."
+            ),
+            entity_url=f"/projects/{new_project.id}",
+        )
+        db.commit()
+
     assignment_responses = [_build_assignment_response(a, db) for a in new_project.assignments]
 
     return ProjectDetail(
@@ -410,11 +429,39 @@ def update_project(
             detail="Secondary Evaluator must be a different user than the PM.",
         )
 
+    # Capture the prior Secondary so we can notify when it changes. Done
+    # BEFORE the setattr loop overwrites the column.
+    prior_secondary_id = project.secondary_evaluator_id
+
     for field, value in update_data.items():
         setattr(project, field, value)
 
     db.commit()
     db.refresh(project)
+
+    # Notify the newly-assigned Secondary when they weren't the previous
+    # assignee. Covers both "no prior secondary" and "swap to a different
+    # user" cases. We don't notify the displaced previous secondary —
+    # they'd see the Project Reviews row drop off their queue naturally.
+    new_secondary_id = project.secondary_evaluator_id
+    if (
+        new_secondary_id is not None
+        and new_secondary_id != prior_secondary_id
+    ):
+        notify(
+            db,
+            org_id=current_user.org_id,
+            recipient_id=new_secondary_id,
+            sender_id=current_user.id,
+            module="project_review",
+            entity_type="project",
+            entity_id=project.id,
+            message=(
+                f"You were assigned as Secondary evaluator on {project.name}."
+            ),
+            entity_url=f"/projects/{project.id}",
+        )
+        db.commit()
 
     count = db.query(func.count(ProjectAssignment.id)).filter(
         ProjectAssignment.project_id == project.id

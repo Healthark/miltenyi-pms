@@ -273,7 +273,12 @@ export function SystemSettingsTab({
     queryFn: adminService.listSettingsYears,
   });
 
-  const yearOptions = yearsQuery.data?.years ?? [];
+  // Memoised so the `?? []` fallback doesn't manufacture a fresh array
+  // each render — keeps downstream useMemo deps stable.
+  const yearOptions = useMemo(
+    () => yearsQuery.data?.years ?? [],
+    [yearsQuery.data],
+  );
   const defaultYear = useMemo(
     () => yearOptions.find((y) => y.is_current)?.fy_label ?? yearOptions[0]?.fy_label ?? null,
     [yearOptions],
@@ -281,12 +286,12 @@ export function SystemSettingsTab({
 
   const [selectedYear, setSelectedYear] = useState<string | null>(null);
   // Snap to the default once the dropdown options arrive. After that,
-  // HR's selection sticks across refetches.
-  useEffect(() => {
-    if (selectedYear === null && defaultYear !== null) {
-      setSelectedYear(defaultYear);
-    }
-  }, [defaultYear, selectedYear]);
+  // HR's selection sticks across refetches. Done during render via the
+  // "snapshot the prop" pattern (React 19) — the conditional guard
+  // prevents an infinite loop.
+  if (selectedYear === null && defaultYear !== null) {
+    setSelectedYear(defaultYear);
+  }
 
   // ── Selected year's saved values ─────────────────────────────────
   const yearSettingsQuery = useQuery({
@@ -308,17 +313,18 @@ export function SystemSettingsTab({
     project_ratings_visible: false,
   });
   const [formKey, setFormKey] = useState<string | null>(null);
-  useEffect(() => {
-    if (savedYear && formKey !== savedYear.fy_label) {
-      setForm({
-        annual_reviews_enabled: savedYear.annual_reviews_enabled,
-        annual_review_final_rating_visible: savedYear.annual_review_final_rating_visible,
-        annual_goals_edit_enabled: savedYear.annual_goals_edit_enabled,
-        project_ratings_visible: savedYear.project_ratings_visible,
-      });
-      setFormKey(savedYear.fy_label);
-    }
-  }, [savedYear, formKey]);
+  // Re-snapshot the form when HR picks a different FY (or the saved row
+  // first resolves). Render-phase setState gated by `formKey` so it only
+  // fires once per FY change — the React 19 alternative to a sync effect.
+  if (savedYear && formKey !== savedYear.fy_label) {
+    setForm({
+      annual_reviews_enabled: savedYear.annual_reviews_enabled,
+      annual_review_final_rating_visible: savedYear.annual_review_final_rating_visible,
+      annual_goals_edit_enabled: savedYear.annual_goals_edit_enabled,
+      project_ratings_visible: savedYear.project_ratings_visible,
+    });
+    setFormKey(savedYear.fy_label);
+  }
 
   // Diff between local form state and last-saved values — drives the
   // confirmation card's row list. Empty when HR hasn't touched anything.
