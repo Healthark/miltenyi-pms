@@ -609,38 +609,46 @@ export function SystemSettingsTab({
               <label htmlFor="org-tz" className="block text-sm font-medium text-text-main mb-1">
                 Organization Timezone
               </label>
-              <select
-                id="org-tz"
-                value={
-                  TIMEZONE_OPTIONS.some((o) => o.value === timezone)
-                    ? timezone
-                    : "__other__"
-                }
-                onChange={(e) => {
-                  if (e.target.value !== "__other__") {
-                    onTimezoneChange(e.target.value);
+              <div className="flex items-center gap-2">
+                <select
+                  id="org-tz"
+                  value={
+                    TIMEZONE_OPTIONS.some((o) => o.value === timezone)
+                      ? timezone
+                      : "__other__"
                   }
-                }}
-                className="w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-text-main outline-none focus:border-brand"
-              >
-                {TIMEZONE_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-                {!TIMEZONE_OPTIONS.some((o) => o.value === timezone) && (
-                  <option value="__other__">
-                    Other ({timezone}) — custom IANA, edit below
-                  </option>
-                )}
-              </select>
+                  onChange={(e) => {
+                    if (e.target.value !== "__other__") {
+                      onTimezoneChange(e.target.value);
+                    }
+                  }}
+                  disabled
+                  className="w-full rounded-lg border border-border bg-gray-50 px-3 py-2 text-sm text-text-muted outline-none cursor-not-allowed disabled:opacity-100"
+                >
+                  {TIMEZONE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                  {!TIMEZONE_OPTIONS.some((o) => o.value === timezone) && (
+                    <option value="__other__">
+                      Other ({timezone}) — custom IANA, edit below
+                    </option>
+                  )}
+                </select>
+                <span className="flex items-center gap-1.5 text-xs text-text-muted bg-gray-100 px-2 py-1 rounded-md border border-gray-200 shrink-0">
+                  <Info className="w-3.5 h-3.5" />
+                  Read Only
+                </span>
+              </div>
               {!TIMEZONE_OPTIONS.some((o) => o.value === timezone) && (
                 <input
                   type="text"
                   value={timezone}
                   onChange={(e) => onTimezoneChange(e.target.value)}
                   placeholder="e.g. Asia/Singapore"
-                  className="mt-2 w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-text-main outline-none focus:border-brand"
+                  disabled
+                  className="mt-2 w-full rounded-lg border border-border bg-gray-50 px-3 py-2 text-sm text-text-muted outline-none cursor-not-allowed"
                 />
               )}
               <p className="mt-1 text-xs text-text-muted">

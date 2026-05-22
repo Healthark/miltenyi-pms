@@ -47,6 +47,7 @@ from app.models.project_review_models import ProjectReview, ProjectReviewStatus
 from app.models.annual_review_models import AnnualReview, ReviewStatus
 from app.models.goal_models import Goal, ApprovalStatus, GoalType
 from app.models.goal_self_review_models import GoalSelfReview, SelfReviewCycleHalf
+from app.models.goal_mentor_review_models import GoalMentorReview
 from app.models.role_expectation_models import RoleExpectation
 
 
@@ -342,6 +343,17 @@ def seed_database() -> None:
             db.refresh(proj)
             return proj
 
+        # Bob's flagship — full FY25-26 span; underwrites the demo data in §11.
+        proj_bob_flagship = _ensure_project(
+            "MIL-PRJ-100",
+            "CAR-T Platform Development Programme",
+            "Year-long platform development running across the full FY25-26 — Bob's flagship engagement.",
+            pm=hans, secondary=sarah,
+            start=date(2025, 4, 1), end=date(2026, 3, 31),
+            members=[
+                (bob, d_sr, func_rnd, date(2025, 4, 1)),
+            ],
+        )
         proj_cell = _ensure_project(
             "MIL-PRJ-101",
             "Next-Gen CAR-T Workflow Automation",
@@ -389,7 +401,7 @@ def seed_database() -> None:
                 (nils, d_sci, func_com, date(2026, 1, 5)),
             ],
         )
-        print("  [+] Projects: MIL-PRJ-101..104")
+        print("  [+] Projects: MIL-PRJ-100..104")
 
         # ============================================================ #
         # 6. ROLE EXPECTATIONS                                          #
@@ -834,6 +846,422 @@ def seed_database() -> None:
             print("  [~] Charlie already has an active MIL-PRJ-103 stint; skipping re-join.")
 
         # ============================================================ #
+        # 11. FULL-YEAR DEMO DATA — Bob Builder, FY25-26                #
+        # ============================================================ #
+        # Loads Bob (bob@miltenyi.com, mentor Anjali Rao) with a
+        # demo-quality "complete fiscal year" view for FY25-26:
+        #   • 3 annual goals — every one walked end-to-end through
+        #     APPROVED → H1 self → H1 mentor → H2 self → H2 mentor
+        #     (final approval_status = H2_MENTOR_REVIEWED).
+        #   • 4 project reviews on MIL-PRJ-100 (Q1..Q4 FY25-26),
+        #     all REVIEWED with the full 7-competency comment set
+        #     plus performance_group + impact_statement.
+        #   • Annual review FY25-26 upgraded from baseline rating-2
+        #     to a fully-published COMPLETED row at rating 1 with
+        #     rich self + mentor + management calibration content.
+        #
+        # When demoing the "My Mentees → mentee detail" page,
+        # open this account: bob@miltenyi.com (password123).
+        # Log in as anjali.rao@healthark.ai to see the mentor view.
+
+        # ── Narrative blocks for goal self-reviews / mentor reviews ──
+        BOB_FLAGSHIP_GOAL_H1_SELF = (
+            "Owned the full automation stack design for the CAR-T MVP this half — "
+            "instrument selection, vendor evaluation, integration spec, and the "
+            "first end-to-end pipeline demo. The biggest unlock was reframing the "
+            "cellscreen handoff from a manual two-step into a fully automated "
+            "single-pass — knocked ~40% off the per-run timeline. "
+            "Authored the platform RFC and walked it through engineering, Mfg, "
+            "and the senior R&D council without rework."
+        )
+        BOB_FLAGSHIP_GOAL_H1_MENTOR = (
+            "Bob has been a model of self-starting ownership this half. The "
+            "cellscreen handoff redesign was entirely his initiative and the data "
+            "backs the timeline gains. He's getting sharper at framing trade-offs "
+            "for senior stakeholders too — the platform RFC landed cleanly with "
+            "engineering and Mfg leadership on the first review. Strong half."
+        )
+        BOB_FLAGSHIP_GOAL_H2_SELF = (
+            "H2 was the validation push. Drove the GMP-grade validation campaign "
+            "for the upstream module — 3 protocol revisions, 12 validation runs, "
+            "zero deviations on the critical path. Handed off the validated module "
+            "to Mfg in March with a complete artifact set. Also mentored Charlie "
+            "through his first independent assay design as part of the H2 close."
+        )
+        BOB_FLAGSHIP_GOAL_H2_MENTOR = (
+            "Exceptionally clean H2 delivery. Mfg accepted the validation "
+            "artifacts on first pass — rare for a platform of this novelty. The "
+            "mentoring of Charlie is showing real impact; Charlie's own H2 "
+            "assay work has noticeably tightened. Bob is operating at the "
+            "Senior Scientist mid-band confidently and is ready for stretch "
+            "responsibilities in FY26-27."
+        )
+
+        BOB_MENTOR_GOAL_H1_SELF = (
+            "H1 I focused on building Charlie's and Dana's confidence on "
+            "instrument SOPs and data interpretation. Ran weekly office hours "
+            "and maintained a shared internal doc with troubleshooting recipes. "
+            "Charlie now independently designs his own validation plates."
+        )
+        BOB_MENTOR_GOAL_H1_MENTOR = (
+            "Bob's mentoring approach is structured and consistent. The "
+            "instrument troubleshooting recipe doc has become a team reference, "
+            "used beyond his direct mentees. Charlie's confidence trajectory "
+            "specifically has been impressive this half."
+        )
+        BOB_MENTOR_GOAL_H2_SELF = (
+            "H2 widened the mentoring scope — onboarded two new joiners through "
+            "their first validation runs, and ran a cross-team brown-bag series "
+            "on assay debugging. The internal recipe doc now has 30+ entries and "
+            "is the de-facto onboarding artifact for new R&D scientists."
+        )
+        BOB_MENTOR_GOAL_H2_MENTOR = (
+            "Bob has quietly become a mentoring multiplier on this team. The "
+            "brown-bag series has expanded mentoring impact beyond his own "
+            "assigned mentees, and the recipe doc is now actively maintained by "
+            "the broader team. Real culture work — exceeds expectations for the "
+            "Senior Scientist band."
+        )
+
+        BOB_PAPER_GOAL_H1_SELF = (
+            "Drafted the outline and first two sections of the internal "
+            "technical paper on the cellscreen automation results. Took peer "
+            "review feedback from two senior scientists and restructured the "
+            "methodology section based on their comments — v2 is meaningfully "
+            "sharper than v1."
+        )
+        BOB_PAPER_GOAL_H1_MENTOR = (
+            "On track. The outline and methodology framing are solid. Bob took "
+            "peer feedback constructively and the v2 is genuinely sharper than "
+            "v1 — a good signal for the H2 finish."
+        )
+        BOB_PAPER_GOAL_H2_SELF = (
+            "Completed the paper end-to-end, published to the internal "
+            "knowledge base in February. Presented the work at the all-hands "
+            "R&D session in March; received strong engagement and three new "
+            "collaboration leads off the back of it."
+        )
+        BOB_PAPER_GOAL_H2_MENTOR = (
+            "Paper landed well and the all-hands presentation was confident. "
+            "The follow-on collaboration interest is a strong external signal. "
+            "Bob has built up real technical-writing muscle this year — a "
+            "stretch ask we set in April and fully delivered against."
+        )
+
+        # ── Helper: fully-completed annual goal ──────────────────────
+        def _ensure_full_lifecycle_goal(
+            owner: User, mentor: User, title: str, description: str,
+            cycle_name: str, fy_year: int,
+            h1_self: str, h1_mentor: str, h2_self: str, h2_mentor: str,
+        ) -> Goal:
+            existing = db.query(Goal).filter_by(
+                org_id=miltenyi.id, user_id=owner.id,
+                title=title, cycle_name=cycle_name,
+            ).first()
+            if existing:
+                return existing
+            g = Goal(
+                org_id=miltenyi.id,
+                user_id=owner.id, manager_id=mentor.id,
+                title=title, description=description,
+                goal_type=GoalType.ANNUAL.value, cycle_name=cycle_name,
+                approval_status=ApprovalStatus.H2_MENTOR_REVIEWED.value,
+                approved_at=datetime(fy_year, 4, 20, tzinfo=timezone.utc),
+            )
+            db.add(g)
+            db.flush()
+            db.add_all([
+                GoalSelfReview(
+                    goal_id=g.id, org_id=miltenyi.id,
+                    cycle_half=SelfReviewCycleHalf.H1.value,
+                    self_overall_review=h1_self,
+                ),
+                GoalMentorReview(
+                    goal_id=g.id, org_id=miltenyi.id,
+                    cycle_half=SelfReviewCycleHalf.H1.value,
+                    mentor_overall_review=h1_mentor,
+                ),
+                GoalSelfReview(
+                    goal_id=g.id, org_id=miltenyi.id,
+                    cycle_half=SelfReviewCycleHalf.H2.value,
+                    self_overall_review=h2_self,
+                ),
+                GoalMentorReview(
+                    goal_id=g.id, org_id=miltenyi.id,
+                    cycle_half=SelfReviewCycleHalf.H2.value,
+                    mentor_overall_review=h2_mentor,
+                ),
+            ])
+            db.commit()
+            return g
+
+        # 11a. Three FY25-26 annual goals, all fully lifecycle-completed
+        _ensure_full_lifecycle_goal(
+            bob, anjali,
+            "Lead CAR-T Lab Automation MVP",
+            "Stand up the end-to-end automated CAR-T processing MVP — own the "
+            "design, build, validation, and hand-off to Mfg.",
+            cycle_name="FY25-26", fy_year=2025,
+            h1_self=BOB_FLAGSHIP_GOAL_H1_SELF,
+            h1_mentor=BOB_FLAGSHIP_GOAL_H1_MENTOR,
+            h2_self=BOB_FLAGSHIP_GOAL_H2_SELF,
+            h2_mentor=BOB_FLAGSHIP_GOAL_H2_MENTOR,
+        )
+        _ensure_full_lifecycle_goal(
+            bob, anjali,
+            "Mentor Two Junior Scientists",
+            "Coach Charlie and Dana through assay design and instrument SOPs; "
+            "build a team-wide troubleshooting reference.",
+            cycle_name="FY25-26", fy_year=2025,
+            h1_self=BOB_MENTOR_GOAL_H1_SELF,
+            h1_mentor=BOB_MENTOR_GOAL_H1_MENTOR,
+            h2_self=BOB_MENTOR_GOAL_H2_SELF,
+            h2_mentor=BOB_MENTOR_GOAL_H2_MENTOR,
+        )
+        _ensure_full_lifecycle_goal(
+            bob, anjali,
+            "Publish Internal Technical Paper on Automation Results",
+            "Author and present an internal technical paper on the cellscreen "
+            "automation outcomes; aim for an all-hands R&D session.",
+            cycle_name="FY25-26", fy_year=2025,
+            h1_self=BOB_PAPER_GOAL_H1_SELF,
+            h1_mentor=BOB_PAPER_GOAL_H1_MENTOR,
+            h2_self=BOB_PAPER_GOAL_H2_SELF,
+            h2_mentor=BOB_PAPER_GOAL_H2_MENTOR,
+        )
+        print("  [+] Bob — 3 FY25-26 annual goals, each fully lifecycle-completed (H2_MENTOR_REVIEWED)")
+
+        # 11b. Project reviews — Q1..Q4 FY25-26 on MIL-PRJ-100
+        # Q1 FY25-26: platform design phase (Apr-Jun 2025)
+        BOB_PR_Q1 = dict(
+            cycle="Q1 FY25-26", pg="2",
+            impact=(
+                "Anchored the early platform design phase — instrument shortlist, "
+                "integration spec, and the first cellscreen handoff prototype."
+            ),
+            comment_task_execution=(
+                "Delivered the integration spec on a tight timeline; vendor "
+                "evaluation matrix was thorough and decision-ready."
+            ),
+            comment_ownership=(
+                "Took ownership of the platform design without prompting; "
+                "raised the instrument-procurement risk early enough that we "
+                "had buffer to react."
+            ),
+            comment_project_management=(
+                "Clean tracker discipline from week one. Milestones reset "
+                "transparently when the vendor pushback came in."
+            ),
+            comment_client_deliverables=(
+                "Integration spec was client-ready on first review — "
+                "engineering accepted it without redlines."
+            ),
+            comment_communication=(
+                "Confident framing in cross-functional reviews. Wrote "
+                "concise weekly summaries that the senior R&D council relied on."
+            ),
+            comment_mentoring=(
+                "Started weekly office hours for Charlie and Dana from Week 3; "
+                "engagement is good."
+            ),
+            comment_competency_skills=(
+                "Strong foundation in cellscreen automation; growing breadth "
+                "into vendor-management."
+            ),
+        )
+        # Q2 FY25-26: build phase (Jul-Sep 2025)
+        BOB_PR_Q2 = dict(
+            cycle="Q2 FY25-26", pg="2",
+            impact=(
+                "Drove the upstream module build through the cellscreen handoff "
+                "redesign — the 40% timeline gain on per-run cycle landed here."
+            ),
+            comment_task_execution=(
+                "Reframed the cellscreen handoff to a single-pass automated "
+                "step; ran the comparator analysis cleanly."
+            ),
+            comment_ownership=(
+                "Stepped up when the vendor delivery slipped — improvised the "
+                "stop-gap and kept the build moving."
+            ),
+            comment_project_management=(
+                "Risk register stayed live; the vendor delay flag was raised "
+                "with mitigation options, not just the problem."
+            ),
+            comment_client_deliverables=(
+                "Build documentation is GMP-friendly already — will pay back "
+                "in Q4 during validation."
+            ),
+            comment_communication=(
+                "Clear cross-team comms when the timeline reset was needed; "
+                "stakeholders aligned without escalation."
+            ),
+            comment_mentoring=(
+                "Charlie attributes his first independent assay design to "
+                "Bob's office-hours coaching."
+            ),
+            comment_competency_skills=(
+                "Deepening on integration tooling; the comparator analysis "
+                "showed real analytical rigor."
+            ),
+        )
+        # Q3 FY25-26: validation prep (Oct-Dec 2025)
+        BOB_PR_Q3 = dict(
+            cycle="Q3 FY25-26", pg="1",
+            impact=(
+                "Authored the validation protocol set and ran the dry runs — "
+                "set up the Q4 validation campaign to land cleanly."
+            ),
+            comment_task_execution=(
+                "Validation protocols are exceptionally well-structured; the "
+                "dry-run learnings folded back into protocol v2 efficiently."
+            ),
+            comment_ownership=(
+                "Owned the whole validation prep without me needing to chase. "
+                "Self-directed and reliable."
+            ),
+            comment_project_management=(
+                "Validation plan with milestones, reagent ordering, and risk "
+                "buffer all in one tracker. Best example on the line right now."
+            ),
+            comment_client_deliverables=(
+                "Protocols passed internal QA review on first submission."
+            ),
+            comment_communication=(
+                "Presented the validation plan to senior R&D council — "
+                "confident, well-prepared, took pushback constructively."
+            ),
+            comment_mentoring=(
+                "Started a cross-team brown-bag series on assay debugging — "
+                "well-received beyond his immediate mentees."
+            ),
+            comment_competency_skills=(
+                "Operating at the Senior Scientist mid-band confidently; "
+                "validation rigor is genuinely strong."
+            ),
+        )
+        # Q4 FY25-26: validation push + handoff (Jan-Mar 2026)
+        BOB_PR_Q4 = dict(
+            cycle="Q4 FY25-26", pg="1",
+            impact=(
+                "Closed the validation campaign — 12 runs, zero critical-path "
+                "deviations — and handed the validated module to Mfg in March."
+            ),
+            comment_task_execution=(
+                "Twelve validation runs with zero critical deviations is an "
+                "outstanding result. Execution discipline through the close was "
+                "exceptional."
+            ),
+            comment_ownership=(
+                "Owned the Mfg handoff end-to-end including the post-handoff "
+                "support window. Saw the work through, didn't just throw it "
+                "over the wall."
+            ),
+            comment_project_management=(
+                "Handoff plan was complete before the final run finished — "
+                "rare for a project of this scope."
+            ),
+            comment_client_deliverables=(
+                "Validation artifact set was accepted by Mfg on the first "
+                "review pass. This basically never happens."
+            ),
+            comment_communication=(
+                "Handoff briefing to Mfg leadership was crisp and "
+                "well-pitched. Set up the relationship for FY26-27 work."
+            ),
+            comment_mentoring=(
+                "Charlie's H2 work shows clear influence from Bob's mentoring "
+                "model — independent design, GMP rigor, clean documentation."
+            ),
+            comment_competency_skills=(
+                "Recognized SME on cellscreen automation; ready for stretch "
+                "scope in FY26-27."
+            ),
+        )
+
+        existing_bob_prs = (
+            db.query(ProjectReview)
+            .filter(
+                ProjectReview.user_id == bob.id,
+                ProjectReview.project_id == proj_bob_flagship.id,
+            )
+            .count()
+        )
+        if existing_bob_prs == 0:
+            for spec in (BOB_PR_Q1, BOB_PR_Q2, BOB_PR_Q3, BOB_PR_Q4):
+                cycle = spec.pop("cycle")
+                pg = spec.pop("pg")
+                impact = spec.pop("impact")
+                db.add(ProjectReview(
+                    org_id=miltenyi.id,
+                    user_id=bob.id,
+                    project_id=proj_bob_flagship.id,
+                    reviewer_id=hans.id,
+                    cycle=cycle,
+                    status=ProjectReviewStatus.REVIEWED.value,
+                    performance_group=pg,
+                    impact_statement=impact,
+                    **spec,
+                ))
+            db.commit()
+            print("  [+] Bob — 4 project reviews on MIL-PRJ-100 (Q1..Q4 FY25-26), all REVIEWED")
+        else:
+            print("  [~] Bob's project reviews on MIL-PRJ-100 already exist; skipping.")
+
+        # 11c. Upgrade Bob's existing FY25-26 annual review to demo-grade
+        bob_ar = db.query(AnnualReview).filter_by(
+            org_id=miltenyi.id, user_id=bob.id, cycle_name="FY25-26",
+        ).first()
+        if bob_ar:
+            bob_ar.status = ReviewStatus.COMPLETED.value
+            bob_ar.self_overall_review = (
+                "FY25-26 was the year I stepped from 'execute on a workstream' "
+                "into 'own the platform.' The headline outcome was the CAR-T "
+                "automation MVP — designed, built, validated, and handed off to "
+                "Mfg in March. The cellscreen handoff redesign in H1 was the "
+                "single biggest unlock (~40% timeline gain per run), and the "
+                "H2 validation campaign closed clean with 12 runs and zero "
+                "critical-path deviations. Beyond the platform itself, I "
+                "doubled down on mentoring — Charlie and Dana shipped their "
+                "first independent assay designs this year, and the assay "
+                "debugging brown-bag I started in Q3 is now a recurring team "
+                "fixture. Finally, the internal technical paper on the "
+                "automation results published in February and led to three "
+                "collaboration conversations off the back of the R&D all-hands "
+                "presentation. Headed into FY26-27 ready to take on broader "
+                "platform scope and more formal team-lead responsibilities."
+            )
+            bob_ar.self_performance_rating = 1
+            bob_ar.mentor_overall_review = (
+                "Bob has delivered a standout year. The CAR-T automation MVP "
+                "is the team's flagship outcome of the cycle and his ownership "
+                "ran through every phase of it — design, build, validation, "
+                "and the Mfg handoff. The most impressive trait this year has "
+                "been the combination of technical depth and quiet leadership: "
+                "the troubleshooting recipe doc and the assay-debugging "
+                "brown-bag have lifted the bar across his peers, not just his "
+                "direct mentees. Charlie's growth trajectory specifically is "
+                "directly attributable to Bob's coaching. Comms with senior "
+                "stakeholders are confident and well-pitched. Recommend "
+                "promotion consideration for FY26-27 alongside stretch "
+                "platform scope."
+            )
+            bob_ar.mentor_performance_rating = 1
+            bob_ar.management_performance_rating = 1
+            bob_ar.final_performance_rating = 1
+            bob_ar.management_comments = (
+                "Calibrated at the top of the Senior Scientist band. Mentor "
+                "rating endorsed without adjustment. Promotion to Team Lead "
+                "track flagged for the FY26-27 mid-year review. Stretch "
+                "scope: lead the FY26-27 platform expansion programme."
+            )
+            bob_ar.final_rating_enabled = True
+            db.commit()
+            print("  [+] Bob — FY25-26 annual review upgraded to COMPLETED at rating 1 (demo-grade)")
+        else:
+            print("  [~] Bob's FY25-26 annual review row missing; demo upgrade skipped.")
+
+        # ============================================================ #
         # DONE                                                          #
         # ============================================================ #
         print("\n" + "=" * 64)
@@ -859,6 +1287,14 @@ def seed_database() -> None:
         print("  MIL-PRJ-101 → Completed (Sarah, 2025-09-01); 3 historical assignments")
         print("  MIL-PRJ-103 → Charlie has TWO stints: ended 2026-04-30 + active 2026-06-01")
         print("    His Q1 PENDING review stays in Hans's queue (in-flight finish).")
+        print("\n--- DEMO-READY MENTEE (FULL FY25-26 HISTORY) ---")
+        print("  Bob Builder  →  bob@miltenyi.com          (Employee)")
+        print("    Mentor    : Anjali Rao (anjali.rao@healthark.ai)")
+        print("    Project   : MIL-PRJ-100 (CAR-T Platform Development Programme)")
+        print("    Goals     : 3 annual goals, all H2_MENTOR_REVIEWED (full lifecycle)")
+        print("    Project   : 4 reviews on MIL-PRJ-100 — Q1..Q4 FY25-26, all REVIEWED")
+        print("    Annual Rv : FY25-26 COMPLETED at rating 1, final published")
+        print("  → Demo: log in as anjali.rao@healthark.ai; My Mentees → Bob.")
         print()
 
     except Exception as e:

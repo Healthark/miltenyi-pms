@@ -674,7 +674,12 @@ export function MenteeAnnualSummaryTab({
                 </p> */}
                 {projectsInFy.h1.map((p) => (
                   <ProjectSummaryCard
-                    key={`h1-${p.project_id}`}
+                    // Include cycle in the key — a mentee can have several
+                    // ProjectReview rows on the same project across cycles
+                    // (Q1..Q4 FY25-26 etc.). Keying by project_id alone
+                    // collapses those into one React node and leaves stale
+                    // cards behind when the FY picker changes selection.
+                    key={`h1-${p.project_id}-${p.cycle ?? "none"}`}
                     assignment={p}
                   />
                 ))}
@@ -687,7 +692,7 @@ export function MenteeAnnualSummaryTab({
                 </p>
                 {projectsInFy.h2.map((p) => (
                   <ProjectSummaryCard
-                    key={`h2-${p.project_id}`}
+                    key={`h2-${p.project_id}-${p.cycle ?? "none"}`}
                     assignment={p}
                   />
                 ))}
@@ -700,7 +705,7 @@ export function MenteeAnnualSummaryTab({
                 </p>
                 {projectsInFy.unknown.map((p) => (
                   <ProjectSummaryCard
-                    key={`u-${p.project_id}`}
+                    key={`u-${p.project_id}-${p.cycle ?? "none"}`}
                     assignment={p}
                   />
                 ))}
