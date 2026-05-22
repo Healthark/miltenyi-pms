@@ -24,7 +24,7 @@ Lock down WHEN each review form opens, closes, what dependencies apply, and what
 
 | # | Decision | Proposed Default | Stakeholder Answer | Notes |
 |---|---|---|---|---|
-| 1.1 | How many days before the cycle (quarter/half) ends should the review form **OPEN** for the PM? | **15 days before cycle end** | | **NEW** system setting `project_review_lead_days` (default 15). Backend `is_review_window_open` already takes the lead-time arg. |
+| 1.1 | How many days before the cycle (quarter/half) ends should the review form **OPEN** for the PM? | **Current and Previous Quarter always open** | | |
 | 1.2 | When does the review **CLOSE** for a given cycle? | **End of FY** containing that cycle (e.g. Q1 of FY26-27 closes 31 Mar 2027) | | Backfill across cycles within the same FY is allowed; cross-FY hard-locks. |
 | 1.3 | Can a PM fill an **earlier cycle** of the **same FY** after it has technically ended? | **Yes — until FY rolls over** | | "I forgot to do Q1, can I submit it in Q3?" → yes, same FY. |
 | 1.4 | Can a PM fill a cycle from a **previous FY**? | **No — locked at FY rollover** | | Once new FY starts (Apr 1 for April-start orgs), prior-FY reviews lock. |
