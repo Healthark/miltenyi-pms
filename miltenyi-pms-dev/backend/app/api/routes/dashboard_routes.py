@@ -46,6 +46,7 @@ from app.models.project_review_models import (
     EvaluatorStatus,
 )
 from app.core.cycle_utils import extract_fy_label, extract_fy_year
+from app.core.user_filters import active_user_ids_query
 from app.schemas.dashboard_schemas import (
     AnnualReviewFunnel,
     DashboardSummary,
@@ -348,9 +349,16 @@ def get_hr_dashboard_summary(
         # SQL prefix match would either miss rows or over-match. Annual-
         # review volume is low (one row per user per FY), so a full
         # in-memory pass is cheap.
+        # Filter out rows owned by deactivated employees — they shouldn't
+        # count toward HR's funnel buckets (no one will action them).
         org_review_rows = (
             db.query(AnnualReview.status, AnnualReview.cycle_name)
-            .filter(AnnualReview.org_id == current_user.org_id)
+            .filter(
+                AnnualReview.org_id == current_user.org_id,
+                AnnualReview.user_id.in_(
+                    active_user_ids_query(db, current_user.org_id)
+                ),
+            )
             .all()
         )
         status_counts: dict[str, int] = {}
@@ -379,12 +387,15 @@ def get_hr_dashboard_summary(
     # three-stage view).
     goal_funnel = GoalApprovalFunnel(fy_year=resolved_fy)
     if resolved_fy is not None:
+        # Same active-user gate as the annual-review funnel above — keeps
+        # the goal counts consistent with the chase lists below.
         org_goal_rows = (
             db.query(Goal.approval_status, Goal.cycle_name)
             .filter(
                 Goal.org_id == current_user.org_id,
                 Goal.goal_type == GoalType.ANNUAL.value,
                 Goal.approval_status != ApprovalStatus.DRAFT.value,
+                Goal.user_id.in_(active_user_ids_query(db, current_user.org_id)),
             )
             .all()
         )
@@ -422,11 +433,17 @@ def get_hr_dashboard_summary(
     # of the active completion picture.
     project_review_completion = ProjectReviewCompletion(fy_year=resolved_fy)
     if resolved_fy is not None:
+        # Active-user gate matches the goal/review funnels — a project
+        # review whose employee was deactivated mid-cycle shouldn't
+        # contribute to HR's "pending PM" counter.
         org_pr_rows = (
             db.query(ProjectReview.status, ProjectReview.cycle)
             .filter(
                 ProjectReview.org_id == current_user.org_id,
                 ProjectReview.is_deleted == False,  # noqa: E712
+                ProjectReview.user_id.in_(
+                    active_user_ids_query(db, current_user.org_id)
+                ),
             )
             .all()
         )
@@ -553,6 +570,10 @@ def get_hr_dashboard_summary(
     )
     if resolved_fy is not None:
         now_utc = datetime.now(timezone.utc)
+        # Skip stalled goals whose owner was deactivated — the mentor
+        # cannot approve a goal for a dead account and HR should not be
+        # nudged to chase them. Historical detail views still resolve
+        # by id (admin reactivate flow).
         pending_goals = (
             db.query(Goal)
             .options(joinedload(Goal.owner), joinedload(Goal.manager))
@@ -560,6 +581,7 @@ def get_hr_dashboard_summary(
                 Goal.org_id == current_user.org_id,
                 Goal.goal_type == GoalType.ANNUAL.value,
                 Goal.approval_status == ApprovalStatus.PENDING_APPROVAL.value,
+                Goal.user_id.in_(active_user_ids_query(db, current_user.org_id)),
             )
             .all()
         )

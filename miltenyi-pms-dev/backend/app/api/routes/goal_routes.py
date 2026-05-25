@@ -634,9 +634,15 @@ def list_all_goals(
     has_goal_subq_q = _apply_goal_level_filters(has_goal_subq_q, filters)
     has_goal_subq = has_goal_subq_q.exists()
 
+    # Exclude deactivated users from HR's "All Goals" pagination —
+    # historical detail views still resolve by id, but ghost rows
+    # for deleted employees should not appear in the listing.
     users_q = (
         db.query(User)
-        .filter(User.org_id == current_user.org_id)
+        .filter(
+            User.org_id == current_user.org_id,
+            User.is_deleted == False,  # noqa: E712
+        )
         .filter(has_goal_subq)
     )
 

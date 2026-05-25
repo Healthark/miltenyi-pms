@@ -15,7 +15,7 @@ identical, so the frontend needs zero changes.
 Security Layers Applied:
     Layer 1 — Authentication:   CurrentUser dependency (JWT validation)
     Layer 2 — Tenant Isolation: All queries filter by current_user.org_id
-    Layer 3 — Role Awareness:   Admin sees all org goals; Mentors see mentee goals based on relationship
+    Layer 3 — Role Awareness:   Mentors see mentee-goal counts; HR_MyOrg gets only own/direct notifications
     Layer 4 — Ownership:        Goal counts scoped to current_user.id
 """
 
@@ -87,17 +87,16 @@ def get_topbar_summary(
             severity="info",
         ))
 
-    # ── Manager-Only Notifications ───────────────────────────────────
-    # HR_MyOrg gets a firm-wide view; mentors see only their direct mentees.
-    if current_user.role == "HR_MyOrg":
-        mentee_ids = [
-            row[0] for row in db.query(User.id).filter(
-                User.org_id == current_user.org_id,
-                User.is_deleted == False,
-                User.id != current_user.id,
-            ).all()
-        ]
-    else:
+    # ── Mentor-Only Notifications ────────────────────────────────────
+    # Only Mentors approve goals — the /goals/{id}/approve endpoint
+    # (goal_routes.py) enforces `goal_owner.mentor_id == current_user.id`
+    # with NO HR_MyOrg bypass, so surfacing a "team awaits your approval"
+    # badge to HR_MyOrg pointed at an action they cannot perform.
+    # Restricting this notification to actual Mentors keeps each mentor's
+    # queue count accurate and silences the misleading org-wide count
+    # that previously fired for HR_MyOrg.
+    mentee_ids: list[int] = []
+    if current_user.role == "Mentor":
         mentee_ids = [
             row[0] for row in db.query(User.id).filter(
                 User.mentor_id == current_user.id,
@@ -122,6 +121,16 @@ def get_topbar_summary(
             ))
 
     # ── Direct User Notifications (polymorphic across modules) ──────
+    #
+    # We intentionally do NOT filter on `Notification.sender_id`'s
+    # is_deleted status. The notification record is a historical
+    # event ("your goal was approved on date X"); the fact the sender
+    # was later deactivated doesn't invalidate the event. Hiding these
+    # rows would make notifications appear and then vanish when their
+    # author is offboarded, which is more confusing than letting the
+    # history stand. The `notify()` writer DOES block writes to
+    # deactivated recipients (notification_service.py) so dead users
+    # never accumulate new alerts.
     raw_user_notifs = (
         db.query(Notification)
         .filter(

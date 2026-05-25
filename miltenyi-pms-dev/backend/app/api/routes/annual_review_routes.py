@@ -650,8 +650,15 @@ def get_all_annual_reviews(
     # Filtered base query — shared between the count() and the windowed
     # fetch so the totals match exactly what the windowed rows are
     # drawn from. Build this once, reuse twice.
+    #
+    # Restrict to live users — a deactivated employee's review row is
+    # preserved for audit but should not surface in HR's All Reviews
+    # listing. Detail views resolve by id and remain accessible.
     base_q = db.query(AnnualReview).filter(
-        AnnualReview.org_id == current_user.org_id
+        AnnualReview.org_id == current_user.org_id,
+        AnnualReview.user_id.in_(
+            active_user_ids_query(db, current_user.org_id)
+        ),
     )
 
     # ── Apply filters + figure out which joins sort also needs ────────
