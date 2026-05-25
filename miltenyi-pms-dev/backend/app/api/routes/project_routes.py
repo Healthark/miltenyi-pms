@@ -142,9 +142,25 @@ def _build_assignment_response(assignment: ProjectAssignment, db: DbSession) -> 
 
 
 def _resolve_user_name(db: DbSession, user_id: int | None) -> str | None:
+    """Resolve a user_id to full_name, skipping deactivated rows.
+
+    Deactivated users keep their row for audit but should not appear in
+    operational project surfaces (HR list, employee project cards, etc.).
+    `admin_routes.deactivate_user` cascades `Project.pm_id` and
+    `Project.secondary_evaluator_id` to NULL on deactivation, which would
+    short-circuit on the `if not user_id` check above — this is the
+    belt-and-braces filter for any row that pre-dates that cascade.
+    """
     if not user_id:
         return None
-    user = db.query(User).filter(User.id == user_id).first()
+    user = (
+        db.query(User)
+        .filter(
+            User.id == user_id,
+            User.is_deleted == False,  # noqa: E712
+        )
+        .first()
+    )
     return user.full_name if user else None
 
 

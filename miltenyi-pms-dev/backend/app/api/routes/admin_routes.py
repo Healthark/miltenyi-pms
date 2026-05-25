@@ -538,6 +538,29 @@ def deactivate_user(
     # whether this user was around during the selected FY. The export
     # rule includes them in any FY that ends on/after `deleted_at`.
     user.deleted_at = datetime.now(timezone.utc)
+
+    # Cascade-null project-level FKs that pointed at this user. These
+    # are operational fields — leaving them populated after the user is
+    # gone would surface ghost names on the HR project list, the
+    # employee's "My Projects" cards, and the management overview,
+    # AND would block ProjectReview generation (the PM is the
+    # reviewer; there must be a live one). Goal / review / project-
+    # assignment rows intentionally keep their user_id for audit; only
+    # the Project's operational pointers are reset.
+    #
+    # Both UPDATEs run unconditionally — secondary evaluator may be
+    # any role except PM/Mentor (see project_routes._validate_secondary_role),
+    # so role-gating these writes would miss cases. For users who hold
+    # neither pointer the UPDATE matches zero rows and is a no-op.
+    db.query(Project).filter(
+        Project.org_id == current_user.org_id,
+        Project.pm_id == user.id,
+    ).update({"pm_id": None})
+    db.query(Project).filter(
+        Project.org_id == current_user.org_id,
+        Project.secondary_evaluator_id == user.id,
+    ).update({"secondary_evaluator_id": None})
+
     db.commit()
 
     return None  # 204 No Content — no body

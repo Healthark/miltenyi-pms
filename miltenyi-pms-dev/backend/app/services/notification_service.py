@@ -115,6 +115,17 @@ def notify(
     if recipient_id == sender_id:
         return None
 
+    # Suppress writes addressed to deactivated users. The CurrentUser
+    # dependency would block their next login anyway, so the in-app row
+    # is unreadable — but if they're ever reactivated, the leftover
+    # rows would surface as a flood of stale alerts. Better to drop the
+    # row at write time and treat the deactivation as "this user is
+    # done." The lookup is a single PK fetch and runs on every notify;
+    # at PMS volume this is negligible.
+    recipient = db.query(User).filter(User.id == recipient_id).first()
+    if recipient is None or recipient.is_deleted:
+        return None
+
     url = entity_url or _build_entity_url(module, entity_id)
 
     row = Notification(
@@ -132,8 +143,9 @@ def notify(
     db.flush()
 
     if send_email and background_tasks is not None and is_smtp_configured():
-        recipient = db.query(User).filter(User.id == recipient_id).first()
-        if recipient and recipient.email:
+        # `recipient` was already fetched above for the is_deleted check
+        # — no need to re-query.
+        if recipient.email:
             background_tasks.add_task(
                 send_notification_email,
                 to_email=recipient.email,
