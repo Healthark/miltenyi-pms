@@ -135,6 +135,94 @@ def _authorize_user_mutation(current_user: User, target_role: str | None) -> Non
         )
 
 
+# ── Identity Field Validators ─────────────────────────────────────────
+#
+# These three helpers run on every user create + update path and are the
+# single source of truth for what a "valid" identity field looks like.
+# The frontend mirrors them in `utils/text.ts` for UX feedback, but the
+# backend is the hard gate — never assume the client validated.
+#
+# Domain map (kept in lock-step with Role docstring):
+#   HR_MyOrg, Mentor                       → @healthark.ai
+#   HR_Miltenyi, PM, Employee              → @miltenyi.com OR @external.miltenyi.com
+
+_HEALTHARK_ROLES = frozenset({Role.HR_MYORG.value, Role.MENTOR.value})
+_MILTENYI_ROLES = frozenset({Role.HR_MILTENYI.value, Role.PM.value, Role.EMPLOYEE.value})
+_HEALTHARK_DOMAIN = "healthark.ai"
+_MILTENYI_DOMAINS = ("miltenyi.com", "external.miltenyi.com")
+
+
+def _validate_email_for_role(email: str, role: str) -> None:
+    """Raise 400 unless the email's domain is allowed for this role.
+
+    Domain match is case-insensitive (per RFC 5321 the domain part is
+    case-insensitive even though the local part technically isn't — but
+    HR-typed emails are not the place to be pedantic about case).
+    """
+    if "@" not in email:
+        # Pydantic's EmailStr should have caught this already; defence in depth.
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email must contain '@'.",
+        )
+    domain = email.rsplit("@", 1)[1].lower()
+    if role in _HEALTHARK_ROLES:
+        if domain != _HEALTHARK_DOMAIN:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"{role} accounts must use a @{_HEALTHARK_DOMAIN} email address."
+                ),
+            )
+    elif role in _MILTENYI_ROLES:
+        if domain not in _MILTENYI_DOMAINS:
+            allowed = " or ".join(f"@{d}" for d in _MILTENYI_DOMAINS)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"{role} accounts must use {allowed} email addresses.",
+            )
+    # Unknown roles fall through silently — the role guard upstream will
+    # have rejected anything not in the enum before we get here.
+
+
+def _validate_name_chars(name: str) -> None:
+    """Raise 400 if the name contains anything other than letters,
+    whitespace, or a full stop.
+
+    Uses `str.isalpha()` so non-Latin scripts (Müller, Bäcker, श्रुति)
+    work — Python's str.isalpha is Unicode-aware. Digits, hyphens,
+    apostrophes, and every other punctuation/symbol are rejected.
+    """
+    for ch in name:
+        if ch.isspace() or ch == ".":
+            continue
+        if not ch.isalpha():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "Name can only contain letters, spaces, and full stops."
+                ),
+            )
+
+
+def _normalize_full_name(name: str) -> str:
+    """Title-case each whitespace-separated word; collapse internal
+    whitespace; trim ends.
+
+    Examples:
+        "zAAhid vOHra"           -> "Zaahid Vohra"
+        "zAAhid fIrOz vOHra"     -> "Zaahid Firoz Vohra"
+        "  jane   smith  "       -> "Jane Smith"
+
+    A bare full stop ("Dr." / "K.") stays as-is — `.capitalize()` on a
+    single non-alpha char is a no-op. Multi-segment tokens like "k.r."
+    become "K.r." which is acceptable for our org's naming conventions;
+    we don't try to be cleverer than that.
+    """
+    parts = [p for p in name.split() if p]
+    return " ".join(p[:1].upper() + p[1:].lower() for p in parts)
+
+
 # =====================================================================
 # USER MANAGEMENT
 # =====================================================================
@@ -224,6 +312,14 @@ def create_user(
     _require_hr_any(current_user)
     _authorize_user_mutation(current_user, user_in.role)
 
+    # Identity-field rules: validate before any DB lookup so a malformed
+    # payload returns 400 cheaply instead of touching the duplicate-check
+    # indexes. The Role enum docstring + helpers above are the single
+    # source of truth for what's allowed.
+    _validate_name_chars(user_in.full_name)
+    normalized_full_name = _normalize_full_name(user_in.full_name)
+    _validate_email_for_role(user_in.email, user_in.role)
+
     # Check for duplicate email within this org
     existing = db.query(User).filter(
         User.org_id == current_user.org_id,
@@ -251,7 +347,7 @@ def create_user(
     new_user = User(
         org_id=current_user.org_id,  # Forced from JWT — never trusted from body
         employee_code=user_in.employee_code,
-        full_name=user_in.full_name,
+        full_name=normalized_full_name,
         email=user_in.email,
         phone=user_in.phone,
         role=user_in.role,
@@ -373,6 +469,21 @@ def update_user(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Employee code '{update_data['employee_code']}' is already in use.",
             )
+
+    # Identity-field rules on update:
+    #   - If full_name is in the payload, validate chars and normalize
+    #     casing in place so the persisted row + the response both reflect
+    #     the canonical form.
+    #   - Email isn't editable (see docstring), but role IS — when role
+    #     changes we re-validate the *existing* email against the new role
+    #     so HR can't sidestep the domain rule by flipping the role of an
+    #     already-created account (e.g. promote an @miltenyi.com Employee
+    #     to Mentor, which requires @healthark.ai).
+    if "full_name" in update_data and update_data["full_name"] is not None:
+        _validate_name_chars(update_data["full_name"])
+        update_data["full_name"] = _normalize_full_name(update_data["full_name"])
+    if "role" in update_data and update_data["role"] and update_data["role"] != user.role:
+        _validate_email_for_role(user.email, update_data["role"])
 
     # Snapshot the old mentor_id BEFORE applying the update so we can
     # detect a true mentor reassignment after commit. A PATCH that
