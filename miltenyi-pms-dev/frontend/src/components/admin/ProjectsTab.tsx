@@ -30,6 +30,7 @@ import { adminService, type UserResponse } from "@/services/admin.service";
 import { getErrorMessage } from "@/utils/errors";
 import { ProjectModal } from "@/components/admin/ProjectModal";
 import { ExportExcelButton } from "@/components/admin/ExportExcelButton";
+import { ClearFiltersButton } from "@/components/common/ClearFiltersButton";
 import { useToast } from "@/hooks/useToast";
 import { useSnackbar } from "@/hooks/useSnackbar";
 import { useConfirm } from "@/hooks/useConfirm";
@@ -332,7 +333,24 @@ export function ProjectsTab({ ref }: ProjectsTabProps = {}) {
             <option value="all">All</option>
           </select>
         </div>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
+          <ClearFiltersButton
+            // Status defaults to "active" (sticky); treat any other
+            // value as a user choice. Everything else clears to "all"
+            // / empty.
+            active={
+              searchQuery.trim().length > 0 ||
+              yearFilter !== "all" ||
+              pmFilter !== "all" ||
+              statusFilter !== "active"
+            }
+            onClear={() => {
+              setSearchQuery("");
+              setYearFilter("all");
+              setPmFilter("all");
+              setStatusFilter("active");
+            }}
+          />
           <ExportExcelButton kind="projects" />
         </div>
       </div>

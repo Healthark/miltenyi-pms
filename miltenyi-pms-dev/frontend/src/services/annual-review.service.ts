@@ -273,6 +273,16 @@ export const annualReviewService = {
     );
     return res.data;
   },
+
+  /** Distinct `cycle_name` values that have at least one annual review
+   *  in this org (e.g. ["FY26-27", "FY25-26"]). Powers the Cycle
+   *  filter dropdown on the HR "All Reviews" tab so its options don't
+   *  shrink to only the selected value once a filter is applied to
+   *  the visible rows. HR_MyOrg-only. */
+  getDistinctCycles: async (): Promise<string[]> => {
+    const res = await apiClient.get<string[]>("/annual-reviews/all/distinct-cycles");
+    return res.data;
+  },
 };
 
 /** Filter set accepted by GET /annual-reviews/all (PR #43, doc 26).

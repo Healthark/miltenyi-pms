@@ -31,6 +31,7 @@ import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { ReviewStatusBadge } from "@/components/reviews/ReviewStatusBadge";
 import { PerformanceRatingBadge } from "@/components/reviews/PerformanceRatingBadge";
 import { AnnualReviewDetailModal } from "@/components/reviews/AnnualReviewDetailModal";
+import { ClearFiltersButton } from "@/components/common/ClearFiltersButton";
 import { SortableHeader } from "@/components/SortableHeader";
 import { type SortState } from "@/utils/sort";
 import { extractFyToken, formatFyLabel, fyTokenToStartYear } from "@/utils/fy";
@@ -412,6 +413,13 @@ export function TeamReviewTab() {
               {totalReviews}{" "}
               {totalReviews === 1 ? "match" : "matches"}
             </span>
+            <ClearFiltersButton
+              active={hasActiveFilters}
+              onClear={() => {
+                setSearchInput("");
+                setFilters({});
+              }}
+            />
           </div>
         </div>
       )}

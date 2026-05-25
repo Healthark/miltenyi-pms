@@ -357,6 +357,16 @@ export const goalService = {
     });
     return res.data;
   },
+
+  /** Distinct fiscal-year integers (e.g. [2026, 2025]) that have at
+   *  least one annual goal in this org. Powers the Year filter on the
+   *  HR "All Goals" tab — a separate fetch is required because the
+   *  /goals/all data is server-filtered and deriving years from it
+   *  would shrink the dropdown to only the selected year. HR-only. */
+  getDistinctGoalYears: async (): Promise<number[]> => {
+    const res = await apiClient.get<number[]>("/goals/all/distinct-years");
+    return res.data;
+  },
 };
 
 /** Paginated response from GET /goals/all. `items` is the goal rows on

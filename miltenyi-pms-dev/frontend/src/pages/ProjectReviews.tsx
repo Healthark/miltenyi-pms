@@ -56,6 +56,10 @@ import {
 import { SortableHeader } from "@/components/SortableHeader";
 import { ExportExcelButton } from "@/components/admin/ExportExcelButton";
 import { StringCombobox } from "@/components/common/StringCombobox";
+import { ClearFiltersButton } from "@/components/common/ClearFiltersButton";
+import { useOrgUsers } from "@/hooks/useOrgUsers";
+import { useProjectReviewCycles } from "@/hooks/useProjectReviewCycles";
+import { useOrgProjectNames } from "@/hooks/useOrgProjectNames";
 import { compareValues, type SortKind, type SortState, type SortValue } from "@/utils/sort";
 
 type ActiveTab = "my" | "primary" | "secondary" | "mentees" | "all-reviews";
@@ -123,6 +127,25 @@ export function ProjectReviews() {
   const isPM = user?.role === "PM";
   const isMentor = user?.role === "Mentor";
   const isHR = user?.role === "HR_MyOrg" || user?.role === "HR_Miltenyi";
+
+  // Canonical filter option sources for the HR "All Reviews" tab. These
+  // back the cycle / project / pm / employee dropdowns there so they
+  // don't shrink to just the currently-selected value once a filter is
+  // applied (the data side IS server-filtered; deriving options from it
+  // would lock the user into their selection).
+  //
+  // Gated on `isHR` because /admin/users and /projects?include_completed
+  // both require admin role on the backend — Employee/PM/Mentor would
+  // hit 403s if the queries fired for them.
+  const { mentorNames: hrMentorNames, pmNames: hrPmNames, allUserNames: hrEmployeeNames } =
+    useOrgUsers(isHR);
+  const { cycles: hrCycleTokens } = useProjectReviewCycles(isHR);
+  const { projectNames: hrProjectNames } = useOrgProjectNames(isHR);
+  // `hrMentorNames` is referenced via the spread above so TS doesn't
+  // complain about an unused destructure (project review filters don't
+  // surface a mentor column today; keeping the destructure forward-
+  // compatible if one's added).
+  void hrMentorNames;
 
   // Role-driven default tab + explicit-click override (see AnnualReviews
   // for the same pattern). `null` ⇒ "no click yet, honour the default".
@@ -512,6 +535,17 @@ export function ProjectReviews() {
                 serverTotal={allReviewsTotal}
                 sort={allReviewsSort}
                 onSortChange={setAllReviewsSort}
+                // Canonical filter options — keeps the dropdowns stable
+                // across filter changes. Mentor consumer below omits
+                // this prop and falls back to the derive-from-reviews
+                // behavior (correct there because its `reviews` is the
+                // full unfiltered mentee roster).
+                filterOptionsOverride={{
+                  cycles: hrCycleTokens,
+                  projects: hrProjectNames,
+                  pms: hrPmNames,
+                  employees: hrEmployeeNames,
+                }}
               />
 
               {/* Load More — outside ReadOnlyReviewsList because that
@@ -602,6 +636,7 @@ function ReadOnlyReviewsList({
   serverTotal,
   sort: controlledSort,
   onSortChange,
+  filterOptionsOverride,
 }: {
   readonly isLoading: boolean;
   readonly reviews: ProjectReviewResponse[];
@@ -629,6 +664,18 @@ function ReadOnlyReviewsList({
   readonly sort?: SortState<ReadOnlySortKey> | null;
   /** Setter for the controlled-mode sort. */
   readonly onSortChange?: (next: SortState<ReadOnlySortKey> | null) => void;
+  /** Canonical filter option lists. Pass from the HR consumer (where
+   *  `reviews` is server-filtered) so dropdown options don't shrink
+   *  to just the selected value as filters narrow the data. Each
+   *  field is optional — keys that are omitted fall back to the local
+   *  derive-from-reviews behavior, which is correct for the Mentor
+   *  consumer (its `reviews` is the full unfiltered mentee roster). */
+  readonly filterOptionsOverride?: {
+    readonly cycles?: readonly string[];
+    readonly projects?: readonly string[];
+    readonly pms?: readonly string[];
+    readonly employees?: readonly string[];
+  };
 }) {
   // Local fallback state — used only when the parent doesn't pass
   // `filters` + `onFiltersChange`. Mentor's mentees view is the
@@ -666,37 +713,50 @@ function ReadOnlyReviewsList({
   // setting this opens the detail modal in place.
   const [viewTarget, setViewTarget] = useState<ProjectReviewResponse | null>(null);
 
+  // Filter dropdown options. When a canonical override is passed (HR
+  // consumer, where `reviews` is server-filtered), use it directly so
+  // the dropdown stays stable as filters narrow. Otherwise derive from
+  // `reviews` — that's correct for the uncontrolled Mentor consumer
+  // whose `reviews` is the full unfiltered mentee roster.
   const cycles = useMemo(
     () =>
-      Array.from(new Set(reviews.map((r) => r.cycle).filter(Boolean))).sort(
-        (a, b) => b.localeCompare(a),
-      ),
-    [reviews],
+      filterOptionsOverride?.cycles
+        ? [...filterOptionsOverride.cycles]
+        : Array.from(
+            new Set(reviews.map((r) => r.cycle).filter(Boolean)),
+          ).sort((a, b) => b.localeCompare(a)),
+    [reviews, filterOptionsOverride?.cycles],
   );
   const projects = useMemo(
     () =>
-      Array.from(
-        new Set(reviews.map((r) => r.project_name).filter(Boolean)),
-      ).sort(),
-    [reviews],
+      filterOptionsOverride?.projects
+        ? [...filterOptionsOverride.projects]
+        : Array.from(
+            new Set(reviews.map((r) => r.project_name).filter(Boolean)),
+          ).sort(),
+    [reviews, filterOptionsOverride?.projects],
   );
   const pms = useMemo(
     () =>
-      Array.from(
-        new Set(
-          reviews
-            .map((r) => r.pm_name ?? r.reviewer_name ?? null)
-            .filter((n): n is string => !!n),
-        ),
-      ).sort(),
-    [reviews],
+      filterOptionsOverride?.pms
+        ? [...filterOptionsOverride.pms]
+        : Array.from(
+            new Set(
+              reviews
+                .map((r) => r.pm_name ?? r.reviewer_name ?? null)
+                .filter((n): n is string => !!n),
+            ),
+          ).sort(),
+    [reviews, filterOptionsOverride?.pms],
   );
   const employees = useMemo(
     () =>
-      Array.from(
-        new Set(reviews.map((r) => r.employee_name).filter(Boolean)),
-      ).sort(),
-    [reviews],
+      filterOptionsOverride?.employees
+        ? [...filterOptionsOverride.employees]
+        : Array.from(
+            new Set(reviews.map((r) => r.employee_name).filter(Boolean)),
+          ).sort(),
+    [reviews, filterOptionsOverride?.employees],
   );
 
   const filtered = useMemo(() => {
@@ -892,6 +952,10 @@ function ReadOnlyReviewsList({
               ? `${serverTotal ?? 0} ${(serverTotal ?? 0) === 1 ? "match" : "matches"}`
               : `${filtered.length} of ${reviews.length}`}
           </span>
+          <ClearFiltersButton
+            active={hasActiveFilters}
+            onClear={() => setActiveFilters({})}
+          />
          </div>
          <div className="shrink-0">
            <ExportExcelButton kind="project-reviews" />
@@ -1062,13 +1126,21 @@ function ReadOnlyReviewsList({
         </div>
       </div>
 
-      {/* Read-only review detail modal — opened from the View button.
-          The row payload already carries every field the modal renders,
-          so this is purely a presentation step (no extra fetch). */}
+      {/* Read-only review detail modal — opened from the View button on
+          the HR All Reviews tab and Mentor Team Reviews tab. The row
+          payload already carries every field the modal renders, so this
+          is purely a presentation step (no extra fetch).
+
+          `projectRatingsVisible={true}` is correct here: both surfaces
+          that open this modal (HR / Mentor) bypass the org-wide
+          `project_ratings_visible` gate, which only governs what an
+          Employee sees on their own reviews. Hiding the rating from
+          the user who *set* it defeats the purpose. */}
       {viewTarget && (
         <ProjectReviewDetailModal
           review={viewTarget}
           onClose={() => setViewTarget(null)}
+          projectRatingsVisible={true}
         />
       )}
     </div>

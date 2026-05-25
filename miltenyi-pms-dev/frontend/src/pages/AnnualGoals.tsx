@@ -42,6 +42,10 @@ import { ApprovalStatusBadge } from "@/components/goals/ApprovalStatusBadge";
 import { CriteriaChecklist } from "@/components/goals/CriteriaChecklist";
 import { RoleExpectationsModal } from "@/components/goals/RoleExpectationsModal";
 import { StringCombobox } from "@/components/common/StringCombobox";
+import { ClearFiltersButton } from "@/components/common/ClearFiltersButton";
+import { useOrgReferenceData } from "@/hooks/useOrgReferenceData";
+import { useOrgUsers } from "@/hooks/useOrgUsers";
+import { useGoalYears } from "@/hooks/useGoalYears";
 import { ExportExcelButton } from "@/components/admin/ExportExcelButton";
 import { SortableHeader } from "@/components/SortableHeader";
 import { compareValues, type SortKind, type SortState, type SortValue } from "@/utils/sort";
@@ -102,52 +106,81 @@ interface AllGoalsEmployeeGroup {
   owner_name: string;
   function_name: string | null;
   designation_name: string | null;
-  /** Latest goal's FY (highest fy_year) — drives the Year column. */
-  latest_fy_year: number | null;
-  /** Mentor on the latest goal — drives the Mentor column. */
-  latest_manager_name: string | null;
+  /** The fiscal year this row's goals belong to. One group per
+   *  (user_id, fy_year) pair — when an employee has goals across
+   *  multiple FYs they show up as multiple adjacent rows, not one
+   *  row with mixed-year contents. `null` only for goals that the
+   *  backend has yet to stamp with a cycle_name (edge case). */
+  fy_year: number | null;
+  /** Mentor on this group's goals. Goals inside a single (user, FY)
+   *  group share a mentor in practice (mentor_id is per-goal but
+   *  the seed associates one mentor per employee per cycle). Read
+   *  from the first goal in the sorted list. */
+  manager_name: string | null;
   goals: TeamGoal[];
 }
 
 // Server-side sort dimensions (PR #48, doc 31). Matches backend's
 // `_ALL_GOALS_SORT_COLUMNS` map exactly. Re-exported as the wire-type
 // `AllGoalsSortBy` from goal.service.ts. Derived columns
-// (`latest_fy_year`, `latest_manager_name`) used to be sortable
-// client-side; on the server they'd need correlated MAX subqueries —
-// deferred. Those column headers stay rendered as plain text.
+// (`fy_year`, `manager_name`) used to be sortable client-side; on the
+// server they'd need correlated MAX subqueries — deferred. Those
+// column headers stay rendered as plain text.
 type AllGoalsSortKey = AllGoalsSortBy;
 // ALL_GOALS_SORT_CONFIG used to live here (per-key {kind, get}
 // accessors driving the client-side sort). Server-side sort makes the
 // accessors unnecessary — backend SQL ORDER BY owns the semantics.
 
+/**
+ * Group goals into one row per (user_id, fy_year). An employee with
+ * goals across multiple fiscal years gets multiple rows — adjacent
+ * because they share owner_name, newest FY first.
+ *
+ * Previously this grouped by user_id alone, which meant Bob Builder's
+ * FY25-26 goals (3 lifecycle-complete) and FY26-27 goal (1 in-progress)
+ * collapsed into one row whose Year column showed only the latest FY.
+ * Expanding that row mixed both years' goals together with no per-row
+ * year demarcation. Splitting by (user, FY) makes each row's Year
+ * column accurate.
+ */
 function buildAllGoalsGroups(goals: readonly TeamGoal[]): AllGoalsEmployeeGroup[] {
-  const map = new Map<number, AllGoalsEmployeeGroup>();
+  const map = new Map<string, AllGoalsEmployeeGroup>();
   for (const g of goals) {
-    const existing = map.get(g.user_id);
+    const key = `${g.user_id}_${g.fy_year ?? "null"}`;
+    const existing = map.get(key);
     if (existing) {
       existing.goals.push(g);
     } else {
-      map.set(g.user_id, {
+      map.set(key, {
         user_id: g.user_id,
         owner_name: g.owner_name,
         function_name: g.owner_function_name,
         designation_name: g.owner_designation_name,
-        latest_fy_year: null,
-        latest_manager_name: null,
+        fy_year: g.fy_year,
+        manager_name: g.manager_name,
         goals: [g],
       });
     }
   }
-  // Inner goals: newest FY first so the drop-down reads top-down. After
-  // sorting, the latest goal is goals[0] — its fy_year and mentor populate
-  // the per-employee Year and Mentor columns.
+  // Inner goals: newest first within a group (created_at proxy via
+  // fy_year fallback). All goals in a single group share an fy_year,
+  // so this is just a stable ordering for the expansion list.
   for (const group of map.values()) {
-    group.goals.sort((a, b) => (b.fy_year ?? 0) - (a.fy_year ?? 0));
-    const latest = group.goals[0];
-    group.latest_fy_year = latest?.fy_year ?? null;
-    group.latest_manager_name = latest?.manager_name ?? null;
+    group.goals.sort(
+      (a, b) =>
+        (b.fy_year ?? 0) - (a.fy_year ?? 0) ||
+        new Date(b.created_at ?? 0).getTime() -
+          new Date(a.created_at ?? 0).getTime(),
+    );
   }
-  return Array.from(map.values());
+  // Final ordering: by owner_name (matches the existing primary sort)
+  // and within the same employee, newer FY first so the active-cycle
+  // row floats to the top of that employee's pair.
+  return Array.from(map.values()).sort((a, b) => {
+    const nameCmp = a.owner_name.localeCompare(b.owner_name);
+    if (nameCmp !== 0) return nameCmp;
+    return (b.fy_year ?? 0) - (a.fy_year ?? 0);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -798,6 +831,19 @@ export function AnnualGoals() {
                         ))}
                       </select>
                     </div>
+
+                    <ClearFiltersButton
+                      active={
+                        approvalFilter !== "all" ||
+                        yearFilter !== "all" ||
+                        searchQuery.trim().length > 0
+                      }
+                      onClear={() => {
+                        setApprovalFilter("all");
+                        setYearFilter("all");
+                        setSearchQuery("");
+                      }}
+                    />
                   </div>
                 </div>
               )}
@@ -1100,37 +1146,28 @@ function AllGoalsTab({
   readonly onSortChange: (next: SortState<AllGoalsSortKey> | null) => void;
 }) {
   // Only the modal target + row expansion are local now — filters AND
-  // sort moved to the page.
-  const [expandedUserId, setExpandedUserId] = useState<number | null>(null);
+  // sort moved to the page. Expansion is keyed by the group's composite
+  // (user_id, fy_year) identity because employees can now appear as
+  // multiple adjacent rows (one per FY) — a plain `user_id` would
+  // expand all of an employee's rows together.
+  const [expandedGroupKey, setExpandedGroupKey] = useState<string | null>(null);
   // The goal whose self/mentor reviews are currently being read in the
   // details modal. null = modal closed.
   const [viewGoal, setViewGoal] = useState<TeamGoal | null>(null);
 
-  // Faceted-style dropdown options — derived from the LOADED (= server-
-  // filtered) goals. When a filter narrows the universe, other
-  // dropdowns shrink to match. Doc 26 Part 4 has the trade-off
-  // discussion + the "facets endpoint" follow-up sketch.
-  const years = Array.from(
-    new Set(goals.map((g) => g.fy_year).filter((y): y is number => y !== null)),
-  ).sort((a, b) => b - a);
-  const employees = Array.from(
-    new Set(goals.map((g) => g.owner_name).filter((n): n is string => !!n)),
-  ).sort();
-  const functions = Array.from(
-    new Set(
-      goals.map((g) => g.owner_function_name).filter((f): f is string => !!f),
-    ),
-  ).sort();
-  const designations = Array.from(
-    new Set(
-      goals
-        .map((g) => g.owner_designation_name)
-        .filter((d): d is string => !!d),
-    ),
-  ).sort();
-  const mentors = Array.from(
-    new Set(goals.map((g) => g.manager_name).filter((m): m is string => !!m)),
-  ).sort();
+  // All filter dropdown options come from canonical org-wide sources,
+  // NOT from the LOADED (= server-filtered) `goals`. Without that,
+  // picking any filter narrows the server response and the dropdown
+  // re-derives to only the selected value — locking the user out of
+  // changing their selection until they clear the filter.
+  //
+  //   functions / designations  -> useOrgReferenceData() (admin refs)
+  //   employees / mentors       -> useOrgUsers() (admin /users)
+  //   years                     -> useGoalYears() (DB DISTINCT + active FY)
+  const { functionNames: functions, designationNames: designations } =
+    useOrgReferenceData();
+  const { employeeNames: employees, mentorNames: mentors } = useOrgUsers();
+  const { years } = useGoalYears();
 
   // `goals` is the server-filtered AND server-sorted universe. The
   // grouping function preserves ordering: it iterates `goals` in the
@@ -1186,26 +1223,31 @@ function AllGoalsTab({
   // Empty-state branching (post-PR-#44): empty `goals` can now mean
   // either "org has no goals" or "filter set returned nothing". Distinct
   // remediation copy for each case.
+  //
+  // IMPORTANT: the empty state is rendered INSIDE the main layout (as a
+  // sibling of the filter toolbar below), NOT as an early-return — so
+  // when a filter returns zero rows the user can still see the filter
+  // toolbar and clear / change their selection. Returning here would
+  // erase the toolbar and trap the user in the empty state.
   const hasActiveFilters = Object.values(filters).some(
     (v) => v !== undefined && v !== "",
   );
-  if (goals.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border py-16 text-center bg-background/50">
-        <Target className="h-10 w-10 text-text-muted mb-3" aria-hidden="true" />
-        <p className="font-display text-base font-medium text-text-main">
-          {hasActiveFilters
-            ? "No goals match these filters"
-            : "No annual goals recorded"}
-        </p>
-        <p className="mt-1 text-sm text-text-muted">
-          {hasActiveFilters
-            ? "Try clearing one or more filters above to broaden the result."
-            : "Goals will appear here once employees submit them and mentors approve."}
-        </p>
-      </div>
-    );
-  }
+  const isEmpty = goals.length === 0;
+  const emptyStateNode = (
+    <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border py-16 text-center bg-background/50">
+      <Target className="h-10 w-10 text-text-muted mb-3" aria-hidden="true" />
+      <p className="font-display text-base font-medium text-text-main">
+        {hasActiveFilters
+          ? "No goals match these filters"
+          : "No annual goals recorded"}
+      </p>
+      <p className="mt-1 text-sm text-text-muted">
+        {hasActiveFilters
+          ? "Try clearing one or more filters above to broaden the result."
+          : "Goals will appear here once employees submit them and mentors approve."}
+      </p>
+    </div>
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -1233,19 +1275,13 @@ function AllGoalsTab({
           >
             Function
           </label>
-          <select
+          <StringCombobox
             id="all-goals-function"
-            value={filters.function ?? "all"}
-            onChange={(e) => setFilter("function", e.target.value)}
-            className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand cursor-pointer min-w-[140px]"
-          >
-            <option value="all">All Functions</option>
-            {functions.map((f) => (
-              <option key={f} value={f}>
-                {f}
-              </option>
-            ))}
-          </select>
+            options={functions}
+            value={filters.function ?? ""}
+            onChange={(v) => setFilter("function", v)}
+            placeholder="All Functions"
+          />
         </div>
         <div className="flex items-center gap-2">
           <label
@@ -1254,19 +1290,13 @@ function AllGoalsTab({
           >
             Designation
           </label>
-          <select
+          <StringCombobox
             id="all-goals-designation"
-            value={filters.designation ?? "all"}
-            onChange={(e) => setFilter("designation", e.target.value)}
-            className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand cursor-pointer min-w-[140px]"
-          >
-            <option value="all">All Designations</option>
-            {designations.map((d) => (
-              <option key={d} value={d}>
-                {d}
-              </option>
-            ))}
-          </select>
+            options={designations}
+            value={filters.designation ?? ""}
+            onChange={(v) => setFilter("designation", v)}
+            placeholder="All Designations"
+          />
         </div>
         <div className="flex items-center gap-2">
           <label
@@ -1321,6 +1351,10 @@ function AllGoalsTab({
           {totalEmployees === 1 ? "employee" : "employees"} · {goals.length}{" "}
           {goals.length === 1 ? "goal" : "goals"}
         </span>
+        <ClearFiltersButton
+          active={hasActiveFilters}
+          onClear={() => onFiltersChange({})}
+        />
        </div>
        <div className="shrink-0">
          <ExportExcelButton kind="goals" />
@@ -1332,7 +1366,13 @@ function AllGoalsTab({
           container handles y-virtualization. The expansion shape here
           is denser than PR #16/#17 — sub-header + N per-goal rows
           inside one outer measured div. measureElement records the
-          total height including the variable expansion. */}
+          total height including the variable expansion.
+
+          When the loaded goals list is empty (either the org has none
+          yet or the current filters produced zero matches), the empty
+          state replaces the table body but the toolbar above stays
+          visible so the user can change / clear their filters. */}
+      {isEmpty ? emptyStateNode : (
       <div className="overflow-x-auto rounded-lg border border-border">
         <div
           role="table"
@@ -1392,13 +1432,14 @@ function AllGoalsTab({
             >
               {rowVirtualizer.getVirtualItems().map((virtualRow) => {
                 const group = sortedGroups[virtualRow.index];
-                const isExpanded = expandedUserId === group.user_id;
+                const groupKey = `${group.user_id}_${group.fy_year ?? "null"}`;
+                const isExpanded = expandedGroupKey === groupKey;
                 return (
                   <div
                     role="row"
                     aria-rowindex={virtualRow.index + 1}
                     aria-expanded={isExpanded}
-                    key={group.user_id}
+                    key={groupKey}
                     // data-index REQUIRED so the ResizeObserver maps
                     // each measurement back to the right group index.
                     // See doc #16 for the full mechanics.
@@ -1421,7 +1462,7 @@ function AllGoalsTab({
                       className="grid items-center cursor-pointer"
                       style={{ gridTemplateColumns: ALL_GOALS_GRID_TEMPLATE_COLUMNS }}
                       onClick={() =>
-                        setExpandedUserId(isExpanded ? null : group.user_id)
+                        setExpandedGroupKey(isExpanded ? null : groupKey)
                       }
                     >
                       <div role="cell" className="px-5 py-3 font-medium text-text-main">
@@ -1442,16 +1483,16 @@ function AllGoalsTab({
                         {group.designation_name ?? "—"}
                       </div>
                       <div role="cell" className="px-4 py-3">
-                        {group.latest_fy_year ? (
+                        {group.fy_year ? (
                           <span className="text-[12px] font-semibold text-text-muted bg-slate-100 px-1.5 py-0.5 rounded">
-                            {formatFyYearSpan(group.latest_fy_year)}
+                            {formatFyYearSpan(group.fy_year)}
                           </span>
                         ) : (
                           <span className="text-[12px] text-text-muted">—</span>
                         )}
                       </div>
                       <div role="cell" className="px-4 py-3 text-text-muted truncate">
-                        {group.latest_manager_name ?? "—"}
+                        {group.manager_name ?? "—"}
                       </div>
                     </div>
 
@@ -1545,6 +1586,7 @@ function AllGoalsTab({
           </div>
         </div>
       </div>
+      )}
 
       {/* Load More — sits BELOW the virtualized scroll card so HR can
           see the "more available" affordance without scrolling to the

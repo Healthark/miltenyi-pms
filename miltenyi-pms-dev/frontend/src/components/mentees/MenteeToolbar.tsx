@@ -1,4 +1,5 @@
 import { Search, ArrowUpDown, LayoutGrid, Table2 } from "lucide-react";
+import { ClearFiltersButton } from "@/components/common/ClearFiltersButton";
 
 /** "pending" was removed — the underlying "Needs attention" signal is
  *  being rebuilt; the dropdown / filter / sort surfaces tied to it
@@ -46,9 +47,14 @@ export function MenteeToolbar({
         />
       </div>
 
-      {/* Right: sort + view toggle. The 'Needs attention' filter button
-          used to sit here; removed pending a rebuild of the signal. */}
+      {/* Right: clear filters (search only here today) + sort + view toggle.
+          The 'Needs attention' filter button used to sit here; removed
+          pending a rebuild of the signal. */}
       <div className="flex items-center gap-2">
+        <ClearFiltersButton
+          active={search.trim().length > 0}
+          onClear={() => onSearchChange("")}
+        />
         {viewMode === "grid" && (
           <div className="flex h-9 items-center gap-1.5 rounded-md border border-border bg-surface px-2 text-xs">
             <ArrowUpDown className="h-3.5 w-3.5 text-text-muted" aria-hidden="true" />

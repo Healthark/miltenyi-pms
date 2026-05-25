@@ -31,6 +31,7 @@ import { compareValues, type SortKind, type SortState, type SortValue } from "@/
 import { EvalModal, type EvalModalCard } from "@/components/project-reviews/EvalModal";
 import { ImpactModal, type ImpactModalRow } from "@/components/project-reviews/ImpactModal";
 import { PerformanceRatingBadge } from "@/components/reviews/PerformanceRatingBadge";
+import { ClearFiltersButton } from "@/components/common/ClearFiltersButton";
 
 // ── Local row shape ────────────────────────────────────────────────
 // Built from MenteeProjectAssignment. Carries the minimum the modals need
@@ -500,11 +501,14 @@ export function MenteeProjectsTab({
     : filteredRows;
 
   const getExpectation = (row: MenteeEvalRow): RoleExpectation | null => {
-    // Best-effort: match by assignment_role when available. If the mentor
-    // doesn't get a match the expectation panel just won't render.
+    // GCC role expectations are keyed by (function, career_level); one
+    // row covers every designation in that band, listed in
+    // `designation_names`. Best-effort match by assignment_role
+    // appearing in that list — if the mentor doesn't get a hit the
+    // expectation panel just won't render.
     if (!row.assignment_role) return null;
     return (
-      expectations.find((e) => e.designation_name === row.assignment_role) ?? null
+      expectations.find((e) => e.designation_names.includes(row.assignment_role!)) ?? null
     );
   };
 
@@ -732,6 +736,18 @@ export function MenteeProjectsTab({
               <option value="reviewed">Reviewed</option>
             </select>
           </div>
+          <ClearFiltersButton
+            active={
+              searchQuery.trim().length > 0 ||
+              cycleFilter !== "all" ||
+              statusFilter !== "all"
+            }
+            onClear={() => {
+              setSearchQuery("");
+              setCycleFilter("all");
+              setStatusFilter("all");
+            }}
+          />
         </div>
       </div>
 

@@ -38,6 +38,7 @@ from sqlalchemy.orm import aliased, joinedload
 
 from app.api.dependencies import DbSession, CurrentUser
 from app.services.notification_service import notify
+from app.core.user_filters import active_user_ids_query
 from app.core.cycle_utils import (
     _fy_label_of_review,
     ensure_year_override_row,
@@ -779,6 +780,46 @@ def get_all_annual_reviews(
         offset=offset,
         has_more=(offset + len(reviews)) < total,
     )
+
+
+@router.get("/all/distinct-cycles", response_model=List[str])
+def list_distinct_annual_review_cycles(
+    db: DbSession,
+    current_user: CurrentUser,
+):
+    """
+    Distinct `cycle_name` values across this org's annual reviews.
+
+    Powers the Cycle filter dropdown on the AnnualReviews HR "All
+    Reviews" tab. Without this endpoint, the dropdown would derive its
+    options from the visible (server-filtered) rows — once HR picks a
+    cycle the list shrinks to that one entry and they can't change it
+    without first clearing the filter.
+
+    Sorted descending so the most recent cycle reads first.
+    """
+    _require_hr_myorg(current_user)
+
+    # Match the All Reviews listing's active-user gate so the dropdown
+    # cannot surface a cycle that, once selected, would render an empty
+    # list because every matching review is owned by a deactivated user.
+    rows = (
+        db.query(AnnualReview.cycle_name)
+        .filter(
+            AnnualReview.org_id == current_user.org_id,
+            AnnualReview.cycle_name.isnot(None),
+            AnnualReview.user_id.in_(
+                active_user_ids_query(db, current_user.org_id)
+            ),
+        )
+        .distinct()
+        .order_by(AnnualReview.cycle_name.desc())
+        .all()
+    )
+    # `cycle_name` is non-null in practice (the column has been NOT NULL
+    # since the table was created), but the filter above is belt-and-
+    # braces for legacy data.
+    return [c for (c,) in rows if c]
 
 
 # =====================================================================

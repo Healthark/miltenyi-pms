@@ -20,6 +20,7 @@ import {
 import type { AnnualReview } from "@/services/annual-review.service";
 import { profileService } from "@/services/profile.service";
 import { ReviewStatusBadge } from "@/components/reviews/ReviewStatusBadge";
+import { ClearFiltersButton } from "@/components/common/ClearFiltersButton";
 import { PerformanceRatingBadge } from "@/components/reviews/PerformanceRatingBadge";
 import { AnnualReviewDetailModal } from "@/components/reviews/AnnualReviewDetailModal";
 import { SortableHeader } from "@/components/SortableHeader";
@@ -448,6 +449,13 @@ export function SelfReviewTab({
               ))}
             </select>
           </div>
+          <ClearFiltersButton
+            active={searchQuery.trim().length > 0 || statusFilter !== "all"}
+            onClear={() => {
+              setSearchQuery("");
+              setStatusFilter("all");
+            }}
+          />
         </div>
         <div className="flex items-center gap-1 rounded-lg border border-border bg-white p-0.5 shrink-0">
           <button type="button" className={viewBtnCls("grid")} onClick={() => setViewMode("grid")}>

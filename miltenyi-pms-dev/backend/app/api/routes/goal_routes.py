@@ -61,6 +61,7 @@ from app.core.cycle_utils import (
     resolve_now,
     resolve_today,
 )
+from app.core.user_filters import active_user_ids_query
 
 router = APIRouter()
 
@@ -734,6 +735,65 @@ def list_all_goals(
         offset=offset,
         has_more=(offset + len(page_users)) < total_users,
     )
+
+
+@router.get("/all/distinct-years", response_model=List[int])
+def list_distinct_goal_years(
+    db: DbSession,
+    current_user: CurrentUser,
+):
+    """
+    Distinct fiscal years that have at least one annual goal in this org.
+
+    Powers the Year filter dropdown on the AnnualGoals HR "All Goals" tab.
+    Without this endpoint, the dropdown options would derive from the
+    server-filtered visible rows — picking any year shrinks the data,
+    which would shrink the dropdown to only the selected year and lock
+    HR out of changing their selection.
+
+    Parses `Goal.cycle_name` ("FY26-27", legacy "FY26", "H1 2026", etc.)
+    to the 4-digit start year using the same logic as
+    `GoalResponse.fy_year`. Returns sorted descending (newest first).
+    """
+    if current_user.role != Role.HR_MYORG.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the Healthark HR can list distinct goal years.",
+        )
+
+    # Restrict to active users so HR's filter dropdown doesn't surface
+    # a cycle that only exists on deactivated employees' rows — they'd
+    # never see any matching rows after picking that year.
+    cycle_rows = (
+        db.query(Goal.cycle_name)
+        .filter(
+            Goal.org_id == current_user.org_id,
+            Goal.goal_type == GoalType.ANNUAL.value,
+            Goal.cycle_name.isnot(None),
+            Goal.user_id.in_(active_user_ids_query(db, current_user.org_id)),
+        )
+        .distinct()
+        .all()
+    )
+
+    years: set[int] = set()
+    for (cycle_name,) in cycle_rows:
+        if not cycle_name:
+            continue
+        for token in cycle_name.upper().split():
+            if token.startswith("FY"):
+                head = token[2:].split("-", 1)[0]
+                if head.isdigit():
+                    if len(head) == 2:
+                        years.add(2000 + int(head))
+                    elif len(head) == 4:
+                        years.add(int(head))
+                break
+            if token.isdigit() and len(token) == 4:
+                years.add(int(token))
+                break
+
+    return sorted(years, reverse=True)
 
 
 @router.get("/{goal_id}", response_model=GoalResponse)

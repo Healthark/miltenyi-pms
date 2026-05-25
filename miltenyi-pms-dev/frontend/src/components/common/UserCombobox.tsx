@@ -105,11 +105,17 @@ export function UserCombobox({
   const filtered = useMemo(() => {
     const pool = users.filter((u) => !excludeSet.has(u.id) || u.id === value);
     const q = query.trim().toLowerCase();
-    if (!q) return pool;
+    // No filter when empty OR when the input still shows the currently-
+    // selected user's label (i.e. dropdown just reopened without
+    // typing). Without the second clause, reopening narrows the list
+    // to only the selected entry because `query` equals userLabel(selected).
+    // The moment the user types anything different, the filter kicks in.
+    const selectedLabel = selected ? userLabel(selected).trim().toLowerCase() : "";
+    if (!q || q === selectedLabel) return pool;
     return pool.filter((u) =>
       `${u.full_name} ${u.email} ${u.role}`.toLowerCase().includes(q),
     );
-  }, [users, query, excludeSet, value]);
+  }, [users, query, excludeSet, value, selected]);
 
   const commit = (userId: number | null) => {
     onChange(userId);

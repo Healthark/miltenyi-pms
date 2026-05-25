@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Users, AlertTriangle } from "lucide-react";
+import { ClearFiltersButton } from "@/components/common/ClearFiltersButton";
 import { useAuth } from "@/hooks/useAuth";
 import { queryKeys } from "@/lib/queryKeys";
 import { MenteeCard } from "@/components/mentees/MenteeCard";
@@ -279,14 +280,20 @@ function AllMentorPairings() {
       {/* Search */}
       {!isLoading && groups.length > 0 && (
         <div className="rounded-xl border border-border bg-surface px-5 py-4 shadow-sm">
-          <input
-            type="search"
-            placeholder="Search by mentor or mentee…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full max-w-md rounded-lg border border-border bg-white py-2 px-3 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-brand"
-            aria-label="Search pairings"
-          />
+          <div className="flex items-center gap-3">
+            <input
+              type="search"
+              placeholder="Search by mentor or mentee…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full max-w-md rounded-lg border border-border bg-white py-2 px-3 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-brand"
+              aria-label="Search pairings"
+            />
+            <ClearFiltersButton
+              active={search.trim().length > 0}
+              onClear={() => setSearch("")}
+            />
+          </div>
         </div>
       )}
 
