@@ -80,6 +80,14 @@ export interface CalibrationRow {
   mentor_name: string | null;
   function: string | null;
   designation: string | null;
+  /** The fiscal-year token this row covers (e.g. "FY26-27").
+   *
+   *  In single-cycle mode every row carries the scoped cycle (incl. the
+   *  synthetic not-started rows). In multi-cycle mode each row carries
+   *  its own cycle so the same employee may appear multiple times,
+   *  once per cycle. Null only in the unexpected legacy-data case
+   *  where a review row has no cycle_name — the column renders "—". */
+  cycle_name: string | null;
   self_performance_rating: number | null;
   mentor_performance_rating: number | null;
   management_performance_rating: number | null;
@@ -349,6 +357,18 @@ export interface CalibrationFilters {
   status?: ReviewStatus;
   /** Substring match; frontend debounces before piping into queryKey. */
   search?: string;
+  /** Cycle scope for the grid.
+   *
+   *  Single-cycle mode: pass a cycle_name (e.g. "FY26-27") — the grid
+   *  shows one row per Employee for that cycle, with synthetic
+   *  not-started rows for employees missing a review.
+   *
+   *  Multi-cycle mode: pass "all" — the grid shows every AnnualReview
+   *  row across cycles, one row per (employee, cycle). No synthetic
+   *  rows.
+   *
+   *  Omitted/empty: backend defaults to the active cycle (back-compat). */
+  cycle?: string;
 }
 
 /** Sort columns accepted by GET /annual-reviews/calibration (PR #48,

@@ -1166,6 +1166,23 @@ def get_calibration_grid(
             "the queryKey to avoid a request per keystroke (doc 29 Part 4)."
         ),
     ),
+    cycle: Optional[str] = Query(
+        None,
+        description=(
+            "Cycle scope for the grid. Three modes:\n"
+            "  * Omitted or empty → defaults to the active cycle "
+            "(historical behaviour preserved). Synthetic `not_started` "
+            "rows surface for employees with no review in that cycle.\n"
+            "  * 'all' (case-insensitive) → multi-cycle mode. The grid "
+            "lists every AnnualReview row (one row per (employee, "
+            "cycle)) — no synthetic rows, since `not_started` is only "
+            "meaningful relative to one cycle. Lets management audit "
+            "and recalibrate prior FYs.\n"
+            "  * Any other value (e.g. 'FY25-26') → single-cycle mode "
+            "for that cycle. Behaves like the default mode but scoped "
+            "to the named cycle."
+        ),
+    ),
     # ── Server-side sort (PR #48, doc 31) ─────────────────────────────
     sort_by: Optional[
         Literal[
@@ -1195,51 +1212,51 @@ def get_calibration_grid(
     ),
 ):
     """
-    Paginated calibration grid for the active cycle. Management-only.
+    Paginated calibration grid. Management-only.
 
-    Every active Employee in the org appears as one row, LEFT-joined
-    against their AnnualReview for the active cycle. Employees who haven't
-    created a review yet still appear with status="not_started" and
-    null ratings — the frontend gates per-row actions per stage.
+    Single-cycle mode (default): every active Employee in the org
+    appears as one row, LEFT-joined against their AnnualReview for the
+    scoped cycle. Employees who haven't created a review yet still
+    appear with status="not_started" and null ratings — the frontend
+    gates per-row actions per stage.
 
-    ── Pagination strategy: paginate the user (the row identity) ──────
-    Each calibration row corresponds to exactly one Employee; reviews
-    are 0-or-1 per user in the active cycle. So the "list-of-parents"
-    pattern from PR #37 (doc 20) degenerates here: `total` equals the
-    Employee count AND `items.length` equals the user count for the
-    page. The two-step pattern still applies — we paginate users via
-    OFFSET/LIMIT in SQL (so sorting + paging is consistent with the DB
-    instead of Python-side) and then batch-fetch reviews + mentors for
-    just the page's user IDs.
+    Multi-cycle mode (`cycle=all`): paginates over actual AnnualReview
+    rows so HR can see every (employee, cycle) pair that has a review.
+    No synthetic `not_started` rows in this mode — `not_started` is
+    cycle-relative, not a property of a review row. Useful for auditing
+    prior FYs or recalibrating closed-cycle ratings.
 
-    ── Server-side filters (PR #46, doc 29) ─────────────────────────
-    Each filter narrows the user universe BEFORE pagination, so `total`
-    is the count of users matching ALL filters. Five dimensions:
-    function, designation, mentor (user-attribute), status (review-
-    attribute via EXISTS), search (substring across name + email).
+    Both modes share the same filter set (function, designation, mentor,
+    status, search) and sort columns. Multi-cycle mode silently ignores
+    `status=not_started` (the filter cannot match any row that exists in
+    the AnnualReview table).
 
-    Sort moves into SQL — `User.full_name.asc()` — because OFFSET/LIMIT
-    only makes sense over a stable order.
+    ── Pagination strategy ──────
+    Single-cycle mode paginates `User` rows so each Employee appears
+    exactly once. Multi-cycle mode paginates `AnnualReview` rows so
+    each (Employee, cycle) pair appears once. Total counts reflect the
+    pagination unit; the frontend renders "Loaded N of T" the same way
+    in both modes.
 
     Returns `Paginated[CalibrationRow]` (the standard wire shape from
-    PR #36).
+    PR #36) with `cycle_name` populated on every emitted row.
     """
     _require_management(current_user)
-    cycle_name = _get_active_cycle(db, current_user.org_id)
 
-    # Filtered base query, ordered by full_name so OFFSET/LIMIT is
-    # deterministic. The eager-load options are applied via the page
-    # fetch below (eager loads on a count() are wasted work).
-    base_q = db.query(User).filter(
-        User.org_id == current_user.org_id,
-        User.role == Role.EMPLOYEE.value,
-        User.is_deleted == False,  # noqa: E712
-    )
+    # Resolve cycle mode. The frontend signals "all" via a literal "all"
+    # token (case-insensitive); a specific cycle name passes through
+    # verbatim; omitted/empty defaults to the active cycle so this
+    # endpoint stays backwards-compatible with callers that pre-date
+    # the cycle parameter.
+    multi_cycle = cycle is not None and cycle.strip().lower() == "all"
+    if multi_cycle:
+        scoped_cycle: Optional[str] = None
+    else:
+        scoped_cycle = (
+            cycle.strip() if cycle and cycle.strip()
+            else _get_active_cycle(db, current_user.org_id)
+        )
 
-    # ── Apply filters + figure out which joins sort also needs ──────
-    # User-attribute joins compose filter ∪ sort needs (doc 30 Part 3).
-    # Sorting by mentor_name, status, or any rating column requires
-    # joins that no current filter alone would have triggered.
     review_sort_keys = (
         "status",
         "self_performance_rating",
@@ -1249,11 +1266,173 @@ def get_calibration_grid(
     needs_function_join = bool(function_) or sort_by == "function"
     needs_designation_join = bool(designation) or sort_by == "designation"
     needs_mentor_join = bool(mentor) or sort_by == "mentor_name"
+
+    if multi_cycle:
+        # ── Multi-cycle path — paginate AnnualReview rows ─────────────
+        # Base shape: INNER join AnnualReview ⨝ User so each emitted
+        # row corresponds to one real review. Function/Designation/Mentor
+        # joins layer on top exactly like the single-cycle path. The
+        # `not_started` status filter is meaningless here (cannot match
+        # any review row) and is silently dropped; the UI already hides
+        # the "Not Started" option in this mode.
+        base_q = (
+            db.query(AnnualReview, User)
+            .join(User, User.id == AnnualReview.user_id)
+            .filter(
+                AnnualReview.org_id == current_user.org_id,
+                User.org_id == current_user.org_id,
+                User.role == Role.EMPLOYEE.value,
+                User.is_deleted == False,  # noqa: E712
+            )
+        )
+
+        if needs_function_join:
+            base_q = base_q.join(Function, Function.id == User.function_id)
+            if function_:
+                base_q = base_q.filter(Function.name == function_)
+        if needs_designation_join:
+            base_q = base_q.join(Designation, Designation.id == User.designation_id)
+            if designation:
+                base_q = base_q.filter(Designation.name == designation)
+        if needs_mentor_join:
+            base_q = base_q.join(
+                _CalibrationMentor, _CalibrationMentor.id == User.mentor_id
+            )
+            if mentor:
+                base_q = base_q.filter(_CalibrationMentor.full_name == mentor)
+
+        if status_ and status_ != ReviewStatus.NOT_STARTED.value:
+            base_q = base_q.filter(AnnualReview.status == status_)
+        # else: status_ == NOT_STARTED or no status filter — fall through
+
+        if search:
+            pattern = f"%{search}%"
+            base_q = base_q.filter(
+                or_(
+                    User.full_name.ilike(pattern),
+                    User.email.ilike(pattern),
+                )
+            )
+
+        # When the status filter is "not_started", multi-cycle mode
+        # returns nothing — that status only matches rows where no
+        # AnnualReview exists, which contradicts the join. Short-circuit
+        # so we don't make Postgres run a count() that will be zero.
+        if status_ == ReviewStatus.NOT_STARTED.value:
+            return Paginated[CalibrationRow](
+                items=[],
+                total=0,
+                limit=limit,
+                offset=offset,
+                has_more=False,
+            )
+
+        total_rows = base_q.with_entities(AnnualReview.id).count()
+
+        # ORDER BY. Default: full_name asc, cycle_name desc so each
+        # employee's reviews group together with newest cycle on top —
+        # mirrors the per-FY grouping shipped on Annual Goals. When the
+        # user picks an explicit sort column, the same secondary tier
+        # (cycle_name desc) survives so multi-row employees stay
+        # adjacent under the chosen primary.
+        if sort_by is None:
+            order_clauses = [
+                User.full_name.asc(),
+                AnnualReview.cycle_name.desc(),
+                AnnualReview.id.asc(),
+            ]
+        else:
+            sort_column = _CALIBRATION_SORT_COLUMNS[sort_by]
+            primary = (
+                sort_column.asc() if sort_dir == "asc" else sort_column.desc()
+            )
+            order_clauses = [
+                primary,
+                AnnualReview.cycle_name.desc(),
+                AnnualReview.id.asc(),
+            ]
+
+        pairs = (
+            base_q
+            .options(
+                joinedload(User.function),
+                joinedload(User.designation),
+            )
+            .order_by(*order_clauses)
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+
+        if not pairs:
+            return Paginated[CalibrationRow](
+                items=[],
+                total=total_rows,
+                limit=limit,
+                offset=offset,
+                has_more=False,
+            )
+
+        # Resolve mentor names from each review's snapshot — accurate
+        # per-cycle (Bob's FY25 row shows his FY25-era mentor even if
+        # the mentor changed since). Mentor fetch is bounded by `limit`.
+        mentor_ids = {
+            r.mentor_id for r, _u in pairs if r.mentor_id is not None
+        }
+        mentors_by_id = {
+            m.id: m
+            for m in db.query(User).filter(User.id.in_(list(mentor_ids))).all()
+        } if mentor_ids else {}
+
+        rows: list[CalibrationRow] = []
+        for review, u in pairs:
+            mentor_row = (
+                mentors_by_id.get(review.mentor_id)
+                if review.mentor_id is not None
+                else None
+            )
+            rows.append(CalibrationRow(
+                review_id=review.id,
+                user_id=u.id,
+                employee_name=u.full_name,
+                employee_email=u.email,
+                mentor_name=mentor_row.full_name if mentor_row else None,
+                function=u.function.name if u.function else None,
+                designation=u.designation.name if u.designation else None,
+                cycle_name=review.cycle_name,
+                self_performance_rating=review.self_performance_rating,
+                mentor_performance_rating=review.mentor_performance_rating,
+                management_performance_rating=review.management_performance_rating,
+                final_performance_rating=review.final_performance_rating,
+                status=review.status,
+                final_rating_enabled=review.final_rating_enabled,
+            ))
+
+        return Paginated[CalibrationRow](
+            items=rows,
+            total=total_rows,
+            limit=limit,
+            offset=offset,
+            has_more=(offset + len(rows)) < total_rows,
+        )
+
+    # ── Single-cycle path ────────────────────────────────────────────
+    # Original behaviour, parameterised on `scoped_cycle` instead of the
+    # implicit active cycle. Filtered base query over User, LEFT-joined
+    # to AnnualReview for the scoped cycle. The eager-load options are
+    # applied via the page fetch below (eager loads on a count() are
+    # wasted work).
+    base_q = db.query(User).filter(
+        User.org_id == current_user.org_id,
+        User.role == Role.EMPLOYEE.value,
+        User.is_deleted == False,  # noqa: E712
+    )
+
     # OUTER join to AnnualReview for sort that reads review columns —
-    # users without an active-cycle review get NULL (sorts last on ASC,
-    # first on DESC; that's Postgres default and matches what a user
-    # expects when sorting by "rating" in a grid where some rows are
-    # blank).
+    # users without a review in the scoped cycle get NULL (sorts last
+    # on ASC, first on DESC; that's Postgres default and matches what a
+    # user expects when sorting by "rating" in a grid where some rows
+    # are blank).
     needs_review_join = sort_by in review_sort_keys
 
     if needs_function_join:
@@ -1276,7 +1455,7 @@ def get_calibration_grid(
             and_(
                 AnnualReview.user_id == User.id,
                 AnnualReview.org_id == current_user.org_id,
-                AnnualReview.cycle_name == cycle_name,
+                AnnualReview.cycle_name == scoped_cycle,
             ),
         )
 
@@ -1286,12 +1465,12 @@ def get_calibration_grid(
             .filter(
                 AnnualReview.user_id == User.id,
                 AnnualReview.org_id == current_user.org_id,
-                AnnualReview.cycle_name == cycle_name,
+                AnnualReview.cycle_name == scoped_cycle,
             )
         )
         if status_ == ReviewStatus.NOT_STARTED.value:
             # "Not started" = no AnnualReview row for this user in the
-            # active cycle. NOT EXISTS is the correct semantic.
+            # scoped cycle. NOT EXISTS is the correct semantic.
             base_q = base_q.filter(~review_exists.exists())
         else:
             # Any other status = a review with that status exists. The
@@ -1350,7 +1529,7 @@ def get_calibration_grid(
         db.query(AnnualReview)
         .filter(
             AnnualReview.org_id == current_user.org_id,
-            AnnualReview.cycle_name == cycle_name,
+            AnnualReview.cycle_name == scoped_cycle,
             AnnualReview.user_id.in_(page_user_ids),
         )
         .all()
@@ -1376,11 +1555,11 @@ def get_calibration_grid(
         for m in db.query(User).filter(User.id.in_(list(mentor_ids))).all()
     } if mentor_ids else {}
 
-    rows: list[CalibrationRow] = []
+    rows = []
     for u in page_users:
         review = reviews_by_user.get(u.id)
         if review is not None:
-            mentor = (
+            mentor_row = (
                 mentors_by_id.get(review.mentor_id)
                 if review.mentor_id is not None
                 else None
@@ -1390,9 +1569,10 @@ def get_calibration_grid(
                 user_id=u.id,
                 employee_name=u.full_name,
                 employee_email=u.email,
-                mentor_name=mentor.full_name if mentor else None,
+                mentor_name=mentor_row.full_name if mentor_row else None,
                 function=u.function.name if u.function else None,
                 designation=u.designation.name if u.designation else None,
+                cycle_name=review.cycle_name,
                 self_performance_rating=review.self_performance_rating,
                 mentor_performance_rating=review.mentor_performance_rating,
                 management_performance_rating=review.management_performance_rating,
@@ -1401,19 +1581,22 @@ def get_calibration_grid(
                 final_rating_enabled=review.final_rating_enabled,
             ))
         else:
-            mentor = (
+            mentor_row = (
                 mentors_by_id.get(u.mentor_id)
                 if u.mentor_id is not None
                 else None
             )
+            # Synthetic not-started row still carries the scoped cycle
+            # so the frontend Cycle column never reads as empty.
             rows.append(CalibrationRow(
                 review_id=None,
                 user_id=u.id,
                 employee_name=u.full_name,
                 employee_email=u.email,
-                mentor_name=mentor.full_name if mentor else None,
+                mentor_name=mentor_row.full_name if mentor_row else None,
                 function=u.function.name if u.function else None,
                 designation=u.designation.name if u.designation else None,
+                cycle_name=scoped_cycle,
                 self_performance_rating=None,
                 mentor_performance_rating=None,
                 management_performance_rating=None,

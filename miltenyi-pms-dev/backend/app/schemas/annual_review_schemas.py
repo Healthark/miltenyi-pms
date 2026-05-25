@@ -123,6 +123,12 @@ class CalibrationRow(BaseModel):
     `review_id` is None for synthetic rows that represent Employees
     who haven't created a review row yet — those rows carry
     `status = "not_started"` and all rating fields null.
+
+    `cycle_name` reflects the FY this row covers. In single-cycle mode
+    it equals the scoped cycle for every row (including synthetic
+    not-started rows). In multi-cycle mode (when the grid lists every
+    AnnualReview row across cycles) each row carries its own cycle so
+    the UI can group/sort and display the "Cycle" column.
     """
     review_id: Optional[int] = None
     user_id: int
@@ -131,6 +137,7 @@ class CalibrationRow(BaseModel):
     mentor_name: Optional[str] = None
     function: Optional[str] = None
     designation: Optional[str] = None
+    cycle_name: Optional[str] = None
     self_performance_rating: Optional[int] = None
     mentor_performance_rating: Optional[int] = None
     management_performance_rating: Optional[int] = None
