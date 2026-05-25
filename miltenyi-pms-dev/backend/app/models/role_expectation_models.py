@@ -1,14 +1,28 @@
 """
-RoleExpectation Model — Reference Data for PM Evaluations.
+RoleExpectation Model — Miltenyi GCC career-path reference data.
 
-Maps Function × Designation to expected behaviors per competency.
-Example: Strategy × Consultant → 8 competency expectation paragraphs.
+Maps Function × Career Level to a 6-column GCC role definition. The PM
+sees these expectations as reference context while evaluating a team
+member; the mentor sees them as guidance on the goal mentor-review form
+and (read-only) on a user's profile.
 
-3 Functions (Strategy, IDT, RWE) × 3 Designations (Consultant,
-Senior Consultant, Manager) = 9 rows.
+Keying:
+    (org_id, function_id, career_level)   — UNIQUE
 
-The PM sees these expectations as reference context while evaluating
-a team member, so they know what "good" looks like for that role.
+    Multiple Designations (titles) can share the same career_level
+    inside one Function — e.g. "Senior Regulatory Affairs Associate"
+    and "Regulatory Affairs Specialist" both sit at career_level=2
+    under Regulatory Affairs. They share ONE expectations row, not two.
+
+The 8 GCC functions × 4 career levels = 32 expectation rows after seed.
+
+Columns:
+    exp_scope_of_role                  — short positioning of the role at this level
+    exp_key_responsibilities           — detailed accountabilities
+    exp_technical_competencies         — required tooling / methodology depth
+    exp_delivery_ownership             — what the person is accountable for delivering
+    exp_regulatory_compliance          — regulatory & compliance exposure at this band
+    exp_project_resource_management    — project management + resource accountability
 """
 
 from sqlalchemy import (
@@ -25,26 +39,27 @@ class RoleExpectation(Base):
     id = Column(Integer, primary_key=True, index=True)
     org_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
     function_id = Column(Integer, ForeignKey("functions.id"), nullable=False)
-    designation_id = Column(Integer, ForeignKey("designations.id"), nullable=False)
 
-    # ── 8 Competency Expectations ────────────────────────────────────
-    exp_task_execution = Column(Text, nullable=True)
-    exp_ownership = Column(Text, nullable=True)
-    exp_project_management = Column(Text, nullable=True)
-    exp_client_deliverables = Column(Text, nullable=True)
-    exp_communication = Column(Text, nullable=True)
-    exp_mentoring = Column(Text, nullable=True)
-    exp_firm_growth = Column(Text, nullable=True)
-    exp_competency_skills = Column(Text, nullable=True)
+    # GCC career level 1..4 (Entry / Mid / Senior / Lead). Resolved by the
+    # API layer from the requesting user's Designation.career_level.
+    career_level = Column(Integer, nullable=False)
+
+    # ── 6 GCC Content Columns ────────────────────────────────────────
+    exp_scope_of_role = Column(Text, nullable=True)
+    exp_key_responsibilities = Column(Text, nullable=True)
+    exp_technical_competencies = Column(Text, nullable=True)
+    exp_delivery_ownership = Column(Text, nullable=True)
+    exp_regulatory_compliance = Column(Text, nullable=True)
+    exp_project_resource_management = Column(Text, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     __table_args__ = (
-        # One expectation row per function × designation per org
+        # One expectation row per (function, career_level) per org.
         Index(
-            "ix_role_exp_org_func_desig",
-            "org_id", "function_id", "designation_id",
+            "ix_role_exp_org_func_level",
+            "org_id", "function_id", "career_level",
             unique=True,
         ),
     )
@@ -52,4 +67,3 @@ class RoleExpectation(Base):
     # Relationships
     organization = relationship("Organization")
     function = relationship("Function")
-    designation = relationship("Designation")

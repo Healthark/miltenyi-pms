@@ -55,13 +55,12 @@ export interface ProjectReviewResponse {
   pm_name: string | null;
   project_name: string;
   project_code: string;
-  comment_task_execution: string | null;
-  comment_ownership: string | null;
-  comment_project_management: string | null;
-  comment_client_deliverables: string | null;
-  comment_communication: string | null;
-  comment_mentoring: string | null;
-  comment_competency_skills: string | null;
+  comment_scope_of_role: string | null;
+  comment_key_responsibilities: string | null;
+  comment_technical_competencies: string | null;
+  comment_delivery_ownership: string | null;
+  comment_regulatory_compliance: string | null;
+  comment_project_resource_management: string | null;
   performance_group: string | null;
   impact_statement: string | null;
   secondary_evaluations: SecondaryEvalResponse[];
@@ -108,15 +107,20 @@ export interface PMPendingReviewCard {
 export interface RoleExpectation {
   id: number;
   function_name: string;
-  designation_name: string;
-  exp_task_execution: string | null;
-  exp_ownership: string | null;
-  exp_project_management: string | null;
-  exp_client_deliverables: string | null;
-  exp_communication: string | null;
-  exp_mentoring: string | null;
-  exp_firm_growth: string | null;
-  exp_competency_skills: string | null;
+  /** GCC career band (1..4) this expectations row covers. */
+  career_level: number;
+  /** Human label for the band ("Entry" / "Mid" / "Senior" / "Lead"). */
+  career_level_label: string | null;
+  /** Every Designation name that maps to this row's (function, career_level).
+   *  Lets consumers match a user's `designation_name` against this list
+   *  without having to know the user's career_level. */
+  designation_names: string[];
+  exp_scope_of_role: string | null;
+  exp_key_responsibilities: string | null;
+  exp_technical_competencies: string | null;
+  exp_delivery_ownership: string | null;
+  exp_regulatory_compliance: string | null;
+  exp_project_resource_management: string | null;
 }
 
 // ── Request Payloads ────────────────────────────────────────────────
@@ -124,13 +128,12 @@ export interface RoleExpectation {
 export interface PMEvaluationPayload {
   performance_group: PerformanceGroup;
   impact_statement: string;
-  comment_task_execution: string;
-  comment_ownership: string;
-  comment_project_management: string;
-  comment_client_deliverables: string;
-  comment_communication: string;
-  comment_mentoring: string;
-  comment_competency_skills: string;
+  comment_scope_of_role: string;
+  comment_key_responsibilities: string;
+  comment_technical_competencies: string;
+  comment_delivery_ownership: string;
+  comment_regulatory_compliance: string;
+  comment_project_resource_management: string;
 }
 
 /** Save-draft payload — every field optional so the PM can park a
@@ -311,6 +314,16 @@ export const projectReviewService = {
   getManagementView: async (cycle?: string): Promise<AdminProjectSummary[]> => {
     const params = cycle ? { cycle } : {};
     const res = await apiClient.get<AdminProjectSummary[]>("/project-reviews/management", { params });
+    return res.data;
+  },
+
+  /** Distinct `cycle` values that have at least one project review in
+   *  this org (e.g. ["Q1 FY26-27", "Q4 FY25-26", ...]). Powers the
+   *  Cycle filter dropdown on the HR "All Reviews" tab so its options
+   *  don't shrink to only the selected value once a filter is applied
+   *  to the visible rows. HR-only (both HR_MyOrg + HR_Miltenyi). */
+  getDistinctCycles: async (): Promise<string[]> => {
+    const res = await apiClient.get<string[]>("/project-reviews/all/distinct-cycles");
     return res.data;
   },
 };

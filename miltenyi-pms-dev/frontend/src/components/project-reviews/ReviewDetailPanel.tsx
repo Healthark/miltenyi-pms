@@ -35,10 +35,14 @@ export function ReviewDetailPanel({
     isPending ? null : card.review_id,
   );
 
+  // GCC role expectations are keyed by (function, career_level). One row
+  // covers every designation at that level — match by function + the
+  // employee's designation_name appearing in the row's title list.
   const roleExp = expectations.find(
     (e) =>
       e.function_name === card.function_name &&
-      e.designation_name === card.assignment_role,
+      card.assignment_role !== null &&
+      e.designation_names.includes(card.assignment_role),
   );
 
   return (

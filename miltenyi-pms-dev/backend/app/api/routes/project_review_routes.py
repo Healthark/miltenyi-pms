@@ -29,6 +29,7 @@ from sqlalchemy.orm import aliased, joinedload
 
 from app.api.dependencies import DbSession, CurrentUser
 from app.services.notification_service import notify
+from app.core.user_filters import active_user_ids_query
 from app.core.cycle_utils import (
     _fy_label_of_project_review,
     cycle_date_range,
@@ -88,13 +89,12 @@ _PROJECT_REVIEWS_SORT_COLUMNS = {
 # ── Helpers ──────────────────────────────────────────────────────────
 
 _DRAFT_COMMENT_FIELDS = (
-    "comment_task_execution",
-    "comment_ownership",
-    "comment_project_management",
-    "comment_client_deliverables",
-    "comment_communication",
-    "comment_mentoring",
-    "comment_competency_skills",
+    "comment_scope_of_role",
+    "comment_key_responsibilities",
+    "comment_technical_competencies",
+    "comment_delivery_ownership",
+    "comment_regulatory_compliance",
+    "comment_project_resource_management",
 )
 
 
@@ -455,13 +455,12 @@ def _build_review_response(
         pm_name=pm_user.full_name if pm_user else None,
         project_name=project.name if project else "Unknown",
         project_code=project.project_code if project else "???",
-        comment_task_execution=review.comment_task_execution,
-        comment_ownership=review.comment_ownership,
-        comment_project_management=review.comment_project_management,
-        comment_client_deliverables=review.comment_client_deliverables,
-        comment_communication=review.comment_communication,
-        comment_mentoring=review.comment_mentoring,
-        comment_competency_skills=review.comment_competency_skills,
+        comment_scope_of_role=review.comment_scope_of_role,
+        comment_key_responsibilities=review.comment_key_responsibilities,
+        comment_technical_competencies=review.comment_technical_competencies,
+        comment_delivery_ownership=review.comment_delivery_ownership,
+        comment_regulatory_compliance=review.comment_regulatory_compliance,
+        comment_project_resource_management=review.comment_project_resource_management,
         performance_group=_redacted_rating(review, viewer, settings, active_cycle, db),
         impact_statement=review.impact_statement,
         secondary_evaluations=secondary_responses,
@@ -519,9 +518,18 @@ def get_my_projects(
 
         func_obj = db.query(Function).filter(Function.id == a.function_id).first() if a.function_id else None
 
-        # PM lives on the project, not in assignments
+        # PM lives on the project, not in assignments. Belt-and-braces
+        # exclude deactivated PMs — the deactivate route now cascades
+        # `Project.pm_id = NULL`, but this guard keeps the card sane if
+        # an existing project still references a soft-deleted PM that
+        # slipped through (e.g. legacy data, race with cascade).
         pm_user = (
-            db.query(User).filter(User.id == project.pm_id).first()
+            db.query(User)
+            .filter(
+                User.id == project.pm_id,
+                User.is_deleted == False,  # noqa: E712
+            )
+            .first()
             if project.pm_id else None
         )
 
@@ -731,34 +739,69 @@ def get_role_expectations(
     current_user: CurrentUser,
 ):
     """
-    Return all role expectations for the org.
-    PM uses this as reference while evaluating team members.
+    Return every GCC role-expectation row in the org, enriched with the
+    list of designation names that map to each (function, career_level)
+    bucket. PMs and mentors use this to look up the matching row for the
+    employee they're evaluating.
+
+    Pulled with three small queries instead of N+1: functions, designations,
+    and expectations are fetched once each and joined in Python.
     """
     expectations = (
         db.query(RoleExpectation)
         .filter(RoleExpectation.org_id == current_user.org_id)
         .all()
     )
+    if not expectations:
+        return []
+
+    functions = (
+        db.query(Function)
+        .filter(Function.org_id == current_user.org_id)
+        .all()
+    )
+    func_name_by_id: dict[int, str] = {f.id: f.name for f in functions}
+
+    designations = (
+        db.query(Designation)
+        .filter(
+            Designation.org_id == current_user.org_id,
+            Designation.is_active == True,           # noqa: E712
+            Designation.career_level.isnot(None),
+        )
+        .all()
+    )
+    # Bucket designation names by career_level — function-agnostic because
+    # in our seed all titles at a given career level belong to a single
+    # function context. If that ever stops being true, key on (function, lvl).
+    titles_by_level: dict[int, list[str]] = {}
+    for d in designations:
+        titles_by_level.setdefault(d.career_level, []).append(d.name)
 
     results: list[RoleExpectationResponse] = []
     for exp in expectations:
-        func_obj = db.query(Function).filter(Function.id == exp.function_id).first()
-        desig = db.query(Designation).filter(Designation.id == exp.designation_id).first()
         results.append(RoleExpectationResponse(
             id=exp.id,
-            function_name=func_obj.name if func_obj else "Unknown",
-            designation_name=desig.name if desig else "Unknown",
-            exp_task_execution=exp.exp_task_execution,
-            exp_ownership=exp.exp_ownership,
-            exp_project_management=exp.exp_project_management,
-            exp_client_deliverables=exp.exp_client_deliverables,
-            exp_communication=exp.exp_communication,
-            exp_mentoring=exp.exp_mentoring,
-            exp_firm_growth=exp.exp_firm_growth,
-            exp_competency_skills=exp.exp_competency_skills,
+            function_name=func_name_by_id.get(exp.function_id, "Unknown"),
+            career_level=exp.career_level,
+            career_level_label=_career_level_label(exp.career_level),
+            designation_names=sorted(titles_by_level.get(exp.career_level, [])),
+            exp_scope_of_role=exp.exp_scope_of_role,
+            exp_key_responsibilities=exp.exp_key_responsibilities,
+            exp_technical_competencies=exp.exp_technical_competencies,
+            exp_delivery_ownership=exp.exp_delivery_ownership,
+            exp_regulatory_compliance=exp.exp_regulatory_compliance,
+            exp_project_resource_management=exp.exp_project_resource_management,
         ))
 
     return results
+
+
+_CAREER_LEVEL_LABELS = {1: "Entry", 2: "Mid", 3: "Senior", 4: "Lead"}
+
+
+def _career_level_label(level: int | None) -> str | None:
+    return _CAREER_LEVEL_LABELS.get(level) if level is not None else None
 
 
 @router.post("/{project_id}/evaluate/{user_id}", response_model=ProjectReviewResponse, status_code=status.HTTP_201_CREATED)
@@ -854,13 +897,12 @@ def submit_pm_evaluation(
         # Promote PENDING / DRAFT row to REVIEWED.
         review.reviewer_id = current_user.id
         review.status = ProjectReviewStatus.REVIEWED.value
-        review.comment_task_execution = payload.comment_task_execution
-        review.comment_ownership = payload.comment_ownership
-        review.comment_project_management = payload.comment_project_management
-        review.comment_client_deliverables = payload.comment_client_deliverables
-        review.comment_communication = payload.comment_communication
-        review.comment_mentoring = payload.comment_mentoring
-        review.comment_competency_skills = payload.comment_competency_skills
+        review.comment_scope_of_role = payload.comment_scope_of_role
+        review.comment_key_responsibilities = payload.comment_key_responsibilities
+        review.comment_technical_competencies = payload.comment_technical_competencies
+        review.comment_delivery_ownership = payload.comment_delivery_ownership
+        review.comment_regulatory_compliance = payload.comment_regulatory_compliance
+        review.comment_project_resource_management = payload.comment_project_resource_management
         review.performance_group = payload.performance_group.value
         review.impact_statement = payload.impact_statement
     else:
@@ -871,13 +913,12 @@ def submit_pm_evaluation(
             reviewer_id=current_user.id,
             cycle=cycle,
             status=ProjectReviewStatus.REVIEWED.value,
-            comment_task_execution=payload.comment_task_execution,
-            comment_ownership=payload.comment_ownership,
-            comment_project_management=payload.comment_project_management,
-            comment_client_deliverables=payload.comment_client_deliverables,
-            comment_communication=payload.comment_communication,
-            comment_mentoring=payload.comment_mentoring,
-            comment_competency_skills=payload.comment_competency_skills,
+            comment_scope_of_role=payload.comment_scope_of_role,
+            comment_key_responsibilities=payload.comment_key_responsibilities,
+            comment_technical_competencies=payload.comment_technical_competencies,
+            comment_delivery_ownership=payload.comment_delivery_ownership,
+            comment_regulatory_compliance=payload.comment_regulatory_compliance,
+            comment_project_resource_management=payload.comment_project_resource_management,
             performance_group=payload.performance_group.value,
             impact_statement=payload.impact_statement,
         )
@@ -1487,9 +1528,16 @@ def get_all_reviews(
 
     # Filtered base query — shared by COUNT and the windowed fetch so the
     # `total` field always matches the page's universe.
+    #
+    # Restrict to live reviewees — a deactivated employee's project
+    # review is preserved for audit but shouldn't appear in HR's All
+    # Reviews tab. Detail views still resolve by id.
     base_q = db.query(ProjectReview).filter(
         ProjectReview.org_id == current_user.org_id,
         ProjectReview.is_deleted == False,  # noqa: E712
+        ProjectReview.user_id.in_(
+            active_user_ids_query(db, current_user.org_id)
+        ),
     )
 
     # ── Apply filters + figure out which joins sort also needs ────────
@@ -1582,6 +1630,48 @@ def get_all_reviews(
     )
 
 
+@router.get("/all/distinct-cycles", response_model=List[str])
+def list_distinct_project_review_cycles(
+    db: DbSession,
+    current_user: CurrentUser,
+):
+    """
+    Distinct `cycle` values across this org's project reviews.
+
+    Powers the Cycle filter dropdown on the ProjectReviews HR "All
+    Reviews" tab. Without this endpoint the dropdown options would
+    derive from the visible (server-filtered) rows — once HR picks a
+    cycle the list shrinks to only that entry and they can't change
+    their selection without first clearing the filter.
+
+    Sorted descending so the most recent cycle reads first (matches
+    the table's default ORDER BY).
+    """
+    if current_user.role not in ADMIN_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only HR users may list distinct project-review cycles.",
+        )
+
+    # Match the All Reviews listing's active-user gate so the dropdown
+    # cannot offer a cycle that resolves to zero visible rows.
+    rows = (
+        db.query(ProjectReview.cycle)
+        .filter(
+            ProjectReview.org_id == current_user.org_id,
+            ProjectReview.is_deleted == False,  # noqa: E712
+            ProjectReview.cycle.isnot(None),
+            ProjectReview.user_id.in_(
+                active_user_ids_query(db, current_user.org_id)
+            ),
+        )
+        .distinct()
+        .order_by(ProjectReview.cycle.desc())
+        .all()
+    )
+    return [c for (c,) in rows if c]
+
+
 # =====================================================================
 # ADMIN MANAGEMENT VIEW
 # =====================================================================
@@ -1643,7 +1733,15 @@ def get_management_overview(
     for project in projects:
         members: list[AdminMemberReviewRow] = []
         reviewed_count = 0
-        pm_name: str | None = project.pm.full_name if project.pm else None
+        # Hide deactivated PMs from the management overview — the
+        # cascade-null in admin_routes.deactivate_user clears the FK
+        # going forward, but this guard handles any legacy row that
+        # still references a soft-deleted PM.
+        pm_name: str | None = (
+            project.pm.full_name
+            if project.pm and not project.pm.is_deleted
+            else None
+        )
 
         for a in project.assignments:
             if not a.user or a.user.is_deleted:
@@ -1719,13 +1817,12 @@ def update_review(
             detail="Only the PM who submitted this review (or Healthark HR) may edit it.",
         )
 
-    review.comment_task_execution = payload.comment_task_execution
-    review.comment_ownership = payload.comment_ownership
-    review.comment_project_management = payload.comment_project_management
-    review.comment_client_deliverables = payload.comment_client_deliverables
-    review.comment_communication = payload.comment_communication
-    review.comment_mentoring = payload.comment_mentoring
-    review.comment_competency_skills = payload.comment_competency_skills
+    review.comment_scope_of_role = payload.comment_scope_of_role
+    review.comment_key_responsibilities = payload.comment_key_responsibilities
+    review.comment_technical_competencies = payload.comment_technical_competencies
+    review.comment_delivery_ownership = payload.comment_delivery_ownership
+    review.comment_regulatory_compliance = payload.comment_regulatory_compliance
+    review.comment_project_resource_management = payload.comment_project_resource_management
     review.impact_statement = payload.impact_statement
     review.performance_group = payload.performance_group.value
 

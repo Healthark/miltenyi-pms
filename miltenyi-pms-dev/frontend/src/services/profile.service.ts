@@ -32,22 +32,22 @@ export interface UserProfile {
 
 /**
  * Resolved role-expectation row for the current user's function × designation.
- * Used by the Goal Self-Review modal to surface Firm Growth and Competency &
- * Skills expectations as a reference panel above the freeform paragraph.
- * Backend fills every field with a "Role expectation not defined" fallback
- * when no mapping exists, so consumers don't have to null-check.
+ * Used by the Goal Self-Review modal to surface the GCC role-expectation
+ * fields as a reference panel. Backend fills every exp_* field with a
+ * "Role expectation not defined" fallback when no (function, career_level)
+ * row exists, so consumers don't have to null-check.
  */
 export interface UserRoleExpectation {
   function_name: string | null;
   designation_name: string | null;
-  exp_task_execution: string;
-  exp_ownership: string;
-  exp_project_management: string;
-  exp_client_deliverables: string;
-  exp_communication: string;
-  exp_mentoring: string;
-  exp_firm_growth: string;
-  exp_competency_skills: string;
+  career_level: number | null;
+  career_level_label: string | null;
+  exp_scope_of_role: string;
+  exp_key_responsibilities: string;
+  exp_technical_competencies: string;
+  exp_delivery_ownership: string;
+  exp_regulatory_compliance: string;
+  exp_project_resource_management: string;
 }
 
 // ── Request Types ───────────────────────────────────────────────────

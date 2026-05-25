@@ -4,9 +4,10 @@ import type {
   RoleExpectation,
 } from "@/services/project-review.service";
 import { ExpectationToggle } from "@/components/project-reviews/ExpectationToggle";
+import { GCC_COMPETENCIES } from "@/constants/gccFramework";
 
 /**
- * Renders the 7 PM-evaluation competency blocks for a reviewed
+ * Renders the 6 GCC PM-evaluation competency blocks for a reviewed
  * project. Each block surfaces:
  *   - the manager's per-competency comment (the only required content)
  *   - a collapsible role-expectation snippet from the matching
@@ -15,65 +16,6 @@ import { ExpectationToggle } from "@/components/project-reviews/ExpectationToggl
  * `compact` shrinks paddings/typography for use inside the table-view
  * expanded row; the grid-view detail panel uses the spacious default.
  */
-
-// Static metadata for the 7 competencies. `commentKey` and `expKey`
-// are narrowed to just the `comment_*` / `exp_*` template-literal keys
-// of the underlying types — that lets `review[commentKey]` resolve to
-// `string | null` without a runtime cast and prevents typos like
-// `comment_id` from compiling.
-type CommentKey = Extract<keyof ProjectReviewResponse, `comment_${string}`>;
-type ExpKey = Extract<keyof RoleExpectation, `exp_${string}`>;
-
-const PROJECT_COMPETENCIES: ReadonlyArray<{
-  readonly key: string;
-  readonly label: string;
-  readonly commentKey: CommentKey;
-  readonly expKey: ExpKey;
-}> = [
-  {
-    key: "task_execution",
-    label: "Task Execution & Problem Solving",
-    commentKey: "comment_task_execution",
-    expKey: "exp_task_execution",
-  },
-  {
-    key: "ownership",
-    label: "Ownership & Accountability",
-    commentKey: "comment_ownership",
-    expKey: "exp_ownership",
-  },
-  {
-    key: "project_management",
-    label: "Project Management and Risk Mitigation",
-    commentKey: "comment_project_management",
-    expKey: "exp_project_management",
-  },
-  {
-    key: "client_deliverables",
-    label: "Building Client-Ready Deliverables",
-    commentKey: "comment_client_deliverables",
-    expKey: "exp_client_deliverables",
-  },
-  {
-    key: "communication",
-    label: "Communication & Client/Stakeholder Management",
-    commentKey: "comment_communication",
-    expKey: "exp_communication",
-  },
-  {
-    key: "mentoring",
-    label: "Mentoring and Team Development",
-    commentKey: "comment_mentoring",
-    expKey: "exp_mentoring",
-  },
-  {
-    key: "competency_skills",
-    label: "Competency and Skills",
-    commentKey: "comment_competency_skills",
-    expKey: "exp_competency_skills",
-  },
-];
-
 export function CompetencyBlock({
   review,
   roleExp,
@@ -85,7 +27,7 @@ export function CompetencyBlock({
 }) {
   return (
     <div className={`flex flex-col ${compact ? "gap-3" : "gap-4"}`}>
-      {PROJECT_COMPETENCIES.map((comp, idx) => {
+      {GCC_COMPETENCIES.map((comp, idx) => {
         const commentValue = review[comp.commentKey];
         if (!commentValue) return null;
 

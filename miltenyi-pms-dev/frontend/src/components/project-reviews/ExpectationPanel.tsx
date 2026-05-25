@@ -1,29 +1,34 @@
 import { useState } from "react";
 import { BookOpen, ChevronDown, ChevronUp } from "lucide-react";
 import type { RoleExpectation } from "@/services/project-review.service";
-
-// The "exp_*" keys are exactly the role-expectation columns on
-// `RoleExpectation`; constraining the prop to that subset removes the
-// previous `as Record<string, unknown>` cast and lets TypeScript verify
-// callers pass a real column name.
-type ExpKey = Extract<keyof RoleExpectation, `exp_${string}`>;
+import type { GccCompetency } from "@/constants/gccFramework";
 
 /**
  * Collapsible panel that surfaces the role-expectation text for one
- * competency. Used inside evaluation modals so the PM can cross-check
- * against the function/designation's canonical expectations.
+ * GCC competency. Used inside evaluation modals so the PM can
+ * cross-check against the (function, career_level) canonical
+ * expectations.
  */
 export function ExpectationPanel({
   expectation,
   expKey,
 }: {
   readonly expectation: RoleExpectation | null;
-  readonly expKey: ExpKey;
+  /** Strictly typed against the GCC framework's exp_* keys — keeps
+   *  typos out at compile time. */
+  readonly expKey: GccCompetency["expKey"];
 }) {
   const [open, setOpen] = useState(false);
   if (!expectation) return null;
   const text = expectation[expKey];
   if (!text) return null;
+
+  // Footer caption: prefer function + career band ("Regulatory Affairs
+  // / Senior") since one row covers multiple designations now. Fall
+  // back to function only when the label is missing.
+  const caption = expectation.career_level_label
+    ? `${expectation.function_name} / ${expectation.career_level_label}`
+    : expectation.function_name;
 
   return (
     <div className="mb-2">
@@ -41,9 +46,7 @@ export function ExpectationPanel({
           <p className="text-xs text-blue-800 whitespace-pre-wrap leading-relaxed">
             {text.replace(/ \| /g, "\n• ")}
           </p>
-          <p className="mt-1 text-[10px] text-blue-500">
-            {expectation.function_name} / {expectation.designation_name}
-          </p>
+          <p className="mt-1 text-[10px] text-blue-500">{caption}</p>
         </div>
       )}
     </div>

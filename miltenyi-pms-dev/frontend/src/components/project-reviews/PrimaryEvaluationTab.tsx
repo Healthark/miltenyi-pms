@@ -28,6 +28,7 @@ import { SortableHeader } from "@/components/SortableHeader";
 import { compareValues, type SortKind, type SortState, type SortValue } from "@/utils/sort";
 import { EvalModal } from "@/components/project-reviews/EvalModal";
 import { PerformanceRatingBadge } from "@/components/reviews/PerformanceRatingBadge";
+import { ClearFiltersButton } from "@/components/common/ClearFiltersButton";
 
 // ── Constants ───────────────────────────────────────────────────────
 
@@ -302,7 +303,14 @@ export function PrimaryEvaluationTab() {
 
   const getExpectation = (row: PrimaryEvalRow): RoleExpectation | null => {
     if (!row.function_name || !row.designation_name) return null;
-    return expectations.find((e) => e.function_name === row.function_name && e.designation_name === row.designation_name) ?? null;
+    // GCC expectations are keyed by (function, career_level); match by
+    // function + the employee's designation appearing in the row's
+    // titles list.
+    return expectations.find(
+      (e) =>
+        e.function_name === row.function_name &&
+        e.designation_names.includes(row.designation_name!),
+    ) ?? null;
   };
 
   const handleAction = (row: PrimaryEvalRow) => {
@@ -435,6 +443,27 @@ export function PrimaryEvaluationTab() {
               {availableEmployees.map((e) => <option key={e} value={e}>{e}</option>)}
             </select>
           </div>
+          <ClearFiltersButton
+            // Cycle has a sticky default of the current active cycle —
+            // so "cycle is something other than active" counts as a
+            // user choice worth offering to reset.
+            active={
+              searchQuery.trim().length > 0 ||
+              statusFilter !== "all" ||
+              funcFilter !== "all" ||
+              projectFilter !== "all" ||
+              employeeFilter !== "all" ||
+              (cycleFilter !== "" && cycleFilter !== activeCycle)
+            }
+            onClear={() => {
+              setSearchQuery("");
+              setStatusFilter("all");
+              setFuncFilter("all");
+              setProjectFilter("all");
+              setEmployeeFilter("all");
+              setCycleFilter(activeCycle ?? "");
+            }}
+          />
         </div>
       </div>
 

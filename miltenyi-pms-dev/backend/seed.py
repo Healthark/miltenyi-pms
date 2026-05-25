@@ -101,32 +101,122 @@ def seed_database() -> None:
             print("  [~] Organization 'Miltenyi' already exists; reusing.")
 
         # ============================================================ #
-        # 2. FUNCTIONS & DESIGNATIONS                                   #
+        # 2. FUNCTIONS & DESIGNATIONS (Miltenyi GCC career-path)        #
         # ============================================================ #
+        # 8 GCC functions × 4 career levels. Some career levels host
+        # multiple titles (Typical Titles in the GCC doc); each title
+        # becomes its own Designation row sharing the same career_level.
+        # RoleExpectation rows are keyed by (function, career_level),
+        # so multiple Designations at the same band point at the same
+        # expectations row.
+        _LEVEL_LABEL = {1: "Entry", 2: "Mid", 3: "Senior", 4: "Lead"}
+
+        # (function_name, career_level, [titles...])
+        GCC_DESIGNATIONS: list[tuple[str, int, list[str]]] = [
+            # Clinical Data Management
+            ("Clinical Data Management", 1, ["Clinical Data Management Associate"]),
+            ("Clinical Data Management", 2, ["Clinical Data Manager"]),
+            ("Clinical Data Management", 3, ["Senior Clinical Data Manager"]),
+            ("Clinical Data Management", 4, ["Lead - Clinical Data Manager"]),
+            # Biostatistics
+            ("Biostatistics", 1, ["Statistical Programmer", "Data Analyst"]),
+            ("Biostatistics", 2, ["Biostatistician"]),
+            ("Biostatistics", 3, ["Senior BioStatistician"]),
+            ("Biostatistics", 4, ["Lead Biostatistician"]),
+            # Regulatory Affairs
+            ("Regulatory Affairs", 1, ["Regulatory Affairs Associate"]),
+            ("Regulatory Affairs", 2, ["Senior Regulatory Affairs Associate",
+                                       "Regulatory Affairs Specialist"]),
+            ("Regulatory Affairs", 3, ["Regulatory Affairs Manager"]),
+            ("Regulatory Affairs", 4, ["Regulatory Affairs Lead"]),
+            # Pharmacovigilance
+            ("Pharmacovigilance", 1, ["Pharmacovigilance Associate"]),
+            ("Pharmacovigilance", 2, ["Pharmacovigilance Analyst"]),
+            ("Pharmacovigilance", 3, ["Senior Pharmacovigilance Analyst"]),
+            ("Pharmacovigilance", 4, ["Pharmacovigilance Lead"]),
+            # Clinical Trial Management
+            ("Clinical Trial Management", 1, ["Clinical Trial Associate"]),
+            ("Clinical Trial Management", 2, ["Clinical Trial Manager"]),
+            ("Clinical Trial Management", 3, ["Senior Clinical Trial Manager"]),
+            ("Clinical Trial Management", 4, ["Lead - Clinical Trial Manager"]),
+            # Medical Writing
+            ("Medical Writing", 1, ["Medical Writing Associate"]),
+            ("Medical Writing", 2, ["Medical Writer"]),
+            ("Medical Writing", 3, ["Senior Medical Writer"]),
+            ("Medical Writing", 4, ["Lead Medical Writing"]),
+            # Clinical Trial Finance
+            ("Clinical Trial Finance", 1, ["Clinical Finance Analyst"]),
+            ("Clinical Trial Finance", 2, ["Senior Clinical Finance Analyst"]),
+            ("Clinical Trial Finance", 3, ["Clinical Finance Manager"]),
+            ("Clinical Trial Finance", 4, ["Lead Clinical Finance Manager"]),
+            # Legal
+            ("Legal", 1, ["Legal Associate"]),
+            ("Legal", 2, ["Legal Counsel"]),
+            ("Legal", 3, ["Senior Legal Counsel", "Legal Manager"]),
+            ("Legal", 4, ["Lead Legal Counsel"]),
+        ]
+
         if db.query(Function).filter(Function.org_id == miltenyi.id).count() == 0:
-            db.add_all([
-                Function(org_id=miltenyi.id, name="R&D"),
-                Function(org_id=miltenyi.id, name="Manufacturing"),
-                Function(org_id=miltenyi.id, name="Commercial"),
-                Designation(org_id=miltenyi.id, name="Scientist",        level=1),
-                Designation(org_id=miltenyi.id, name="Senior Scientist", level=2),
-                Designation(org_id=miltenyi.id, name="Team Lead",        level=3),
-                Designation(org_id=miltenyi.id, name="Director",         level=4),
-            ])
+            # Functions
+            gcc_function_names = sorted({fname for fname, _, _ in GCC_DESIGNATIONS})
+            for fname in gcc_function_names:
+                db.add(Function(org_id=miltenyi.id, name=fname))
+            db.flush()
+
+            # Designations — each title gets its own row. `level` (legacy
+            # int) is left at the default of 1; `career_level` carries the
+            # GCC band that everything actually keys on.
+            for _, lvl, titles in GCC_DESIGNATIONS:
+                for title in titles:
+                    db.add(Designation(
+                        org_id=miltenyi.id,
+                        name=title,
+                        level=lvl,                  # legacy sort, matches band for now
+                        career_level=lvl,
+                        career_level_label=_LEVEL_LABEL[lvl],
+                    ))
             db.commit()
-            print("  [+] Created Functions & Designations")
+            print(f"  [+] Created {len(gcc_function_names)} GCC Functions and "
+                  f"{sum(len(t) for _, _, t in GCC_DESIGNATIONS)} Designations")
         else:
             print("  [~] Reference data already exists; reusing.")
 
-        # Resolve handles
-        func_rnd  = db.query(Function).filter_by(org_id=miltenyi.id, name="R&D").first()
-        func_mfg  = db.query(Function).filter_by(org_id=miltenyi.id, name="Manufacturing").first()
-        func_com  = db.query(Function).filter_by(org_id=miltenyi.id, name="Commercial").first()
+        # ── Resolve function handles ──────────────────────────────────
+        def _fn(name: str) -> Function:
+            return db.query(Function).filter_by(org_id=miltenyi.id, name=name).first()
 
-        d_sci  = db.query(Designation).filter_by(org_id=miltenyi.id, name="Scientist").first()
-        d_sr   = db.query(Designation).filter_by(org_id=miltenyi.id, name="Senior Scientist").first()
-        d_lead = db.query(Designation).filter_by(org_id=miltenyi.id, name="Team Lead").first()
-        d_dir  = db.query(Designation).filter_by(org_id=miltenyi.id, name="Director").first()
+        func_cdm   = _fn("Clinical Data Management")
+        func_bio   = _fn("Biostatistics")
+        func_ra    = _fn("Regulatory Affairs")
+        func_pv    = _fn("Pharmacovigilance")
+        func_ctm   = _fn("Clinical Trial Management")
+        func_mw    = _fn("Medical Writing")
+        func_ctf   = _fn("Clinical Trial Finance")
+        func_legal = _fn("Legal")
+
+        # ── Resolve designation handles ───────────────────────────────
+        def _desig(name: str) -> Designation:
+            return db.query(Designation).filter_by(org_id=miltenyi.id, name=name).first()
+
+        # Regulatory Affairs band
+        d_ra_specialist  = _desig("Regulatory Affairs Specialist")        # L2 Mid
+        d_ra_assoc_sr    = _desig("Senior Regulatory Affairs Associate")  # L2 Mid
+        d_ra_manager     = _desig("Regulatory Affairs Manager")           # L3 Senior
+        d_ra_lead        = _desig("Regulatory Affairs Lead")              # L4 Lead
+        # Clinical Data Management band
+        d_cdm_sr         = _desig("Senior Clinical Data Manager")         # L3 Senior
+        d_cdm_lead       = _desig("Lead - Clinical Data Manager")         # L4 Lead
+        # Clinical Trial Management band
+        d_ctm_mgr        = _desig("Clinical Trial Manager")               # L2 Mid
+        d_ctm_lead       = _desig("Lead - Clinical Trial Manager")        # L4 Lead
+        # Pharmacovigilance band
+        d_pv_analyst     = _desig("Pharmacovigilance Analyst")            # L2 Mid
+        d_pv_sr_analyst  = _desig("Senior Pharmacovigilance Analyst")     # L3 Senior
+        d_pv_lead        = _desig("Pharmacovigilance Lead")               # L4 Lead
+        # Medical Writing band
+        d_mw_writer      = _desig("Medical Writer")                       # L2 Mid
+        d_mw_sr_writer   = _desig("Senior Medical Writer")                # L3 Senior
+        d_mw_lead        = _desig("Lead Medical Writing")                 # L4 Lead
 
         # ============================================================ #
         # 3. USERS                                                       #
@@ -142,13 +232,16 @@ def seed_database() -> None:
             db.refresh(u)
             return u
 
+        # HR + Mentors don't sit inside a GCC function — they're framework-
+        # external. Their function_id / designation_id stay None.
+
         # ── HR · Healthark (full super-admin) ─────────────────────────
         sarah = _ensure_user(
             "sarah.patel@healthark.ai",
             employee_code="HRK-001", full_name="Sarah Patel",
             phone="+91 98000 00001",
             role=Role.HR_MYORG.value,
-            function_id=None, designation_id=d_dir.id,
+            function_id=None, designation_id=None,
         )
 
         # ── HR · Miltenyi (limited admin) ─────────────────────────────
@@ -157,7 +250,7 @@ def seed_database() -> None:
             employee_code="MIL-HR-001", full_name="Karin Weber",
             phone="+49 30 1234 0001",
             role=Role.HR_MILTENYI.value,
-            function_id=None, designation_id=d_dir.id,
+            function_id=None, designation_id=None,
         )
 
         # ── Mentors (Healthark — fixed pool of 3) ─────────────────────
@@ -166,122 +259,125 @@ def seed_database() -> None:
             employee_code="HRK-M01", full_name="Anjali Rao",
             phone="+91 98000 00010",
             role=Role.MENTOR.value,
-            function_id=None, designation_id=d_dir.id,
+            function_id=None, designation_id=None,
         )
         mark = _ensure_user(
             "mark.singh@healthark.ai",
             employee_code="HRK-M02", full_name="Mark Singh",
             phone="+91 98000 00011",
             role=Role.MENTOR.value,
-            function_id=None, designation_id=d_dir.id,
+            function_id=None, designation_id=None,
         )
         priya = _ensure_user(
             "priya.mehta@healthark.ai",
             employee_code="HRK-M03", full_name="Priya Mehta",
             phone="+91 98000 00012",
             role=Role.MENTOR.value,
-            function_id=None, designation_id=d_dir.id,
+            function_id=None, designation_id=None,
         )
 
-        # ── PMs (Miltenyi) ────────────────────────────────────────────
+        # ── PMs (Miltenyi — each sits in a GCC function at Lead band) ─
         hans = _ensure_user(
             "hans@miltenyi.com",
             employee_code="MIL-PM-01", full_name="Hans Müller",
             phone="+49 30 1234 1001",
             role=Role.PM.value,
-            function_id=func_rnd.id, designation_id=d_dir.id,
+            function_id=func_ra.id, designation_id=d_ra_lead.id,
         )
         greta = _ensure_user(
             "greta@miltenyi.com",
             employee_code="MIL-PM-02", full_name="Greta Schmidt",
             phone="+49 30 1234 1002",
             role=Role.PM.value,
-            function_id=func_mfg.id, designation_id=d_dir.id,
+            function_id=func_ctm.id, designation_id=d_ctm_lead.id,
         )
         lukas = _ensure_user(
             "lukas@miltenyi.com",
             employee_code="MIL-PM-03", full_name="Lukas Lange",
             phone="+49 30 1234 1003",
             role=Role.PM.value,
-            function_id=func_com.id, designation_id=d_lead.id,
+            function_id=func_mw.id, designation_id=d_mw_lead.id,
         )
         dieter = _ensure_user(
             "dieter@miltenyi.com",
             employee_code="MIL-PM-04", full_name="Dieter Becker",
             phone="+49 30 1234 1004",
             role=Role.PM.value,
-            function_id=func_rnd.id, designation_id=d_lead.id,
+            function_id=func_pv.id, designation_id=d_pv_lead.id,
         )
 
-        # ── Employee (Healthark employees, Miltenyi-issued logins) ───────
-        # Mentor pairings:
-        #   Anjali → Bob, Charlie, Dana
-        #   Mark   → Iris, Evan, Fiona
-        #   Priya  → Klaus, Mia, Nils
+        # ── Employees ─────────────────────────────────────────────────
+        # Mentor pairings (preserved from the original seed):
+        #   Anjali → Bob, Charlie, Dana    (all Regulatory Affairs)
+        #   Mark   → Iris, Evan, Fiona     (cross-functional: CDM, CTM, PV)
+        #   Priya  → Klaus, Mia, Nils      (cross-functional: PV, MW, MW)
+        #
+        # Bob is the demo-grade mentee for "My Mentees" walkthroughs and
+        # is intentionally pinned to Regulatory Affairs Manager (L3).
         bob = _ensure_user(
             "bob@miltenyi.com",
             employee_code="STF-001", full_name="Bob Builder",
             phone="+49 30 1234 2001",
             role=Role.EMPLOYEE.value, mentor_id=anjali.id,
-            function_id=func_rnd.id, designation_id=d_sr.id,
+            function_id=func_ra.id, designation_id=d_ra_manager.id,
         )
         charlie = _ensure_user(
             "charlie@miltenyi.com",
             employee_code="STF-002", full_name="Charlie Chemist",
             phone="+49 30 1234 2002",
             role=Role.EMPLOYEE.value, mentor_id=anjali.id,
-            function_id=func_rnd.id, designation_id=d_sci.id,
+            function_id=func_ra.id, designation_id=d_ra_specialist.id,
         )
         dana = _ensure_user(
             "dana@miltenyi.com",
             employee_code="STF-003", full_name="Dana DNA",
             phone="+49 30 1234 2003",
             role=Role.EMPLOYEE.value, mentor_id=anjali.id,
-            function_id=func_rnd.id, designation_id=d_sci.id,
+            function_id=func_ra.id, designation_id=d_ra_assoc_sr.id,
         )
         iris = _ensure_user(
             "iris@miltenyi.com",
             employee_code="STF-004", full_name="Iris Immel",
             phone="+49 30 1234 2004",
             role=Role.EMPLOYEE.value, mentor_id=mark.id,
-            function_id=func_rnd.id, designation_id=d_sr.id,
+            function_id=func_cdm.id, designation_id=d_cdm_sr.id,
         )
         evan = _ensure_user(
             "evan@miltenyi.com",
             employee_code="STF-005", full_name="Evan Engineer",
             phone="+49 30 1234 2005",
             role=Role.EMPLOYEE.value, mentor_id=mark.id,
-            function_id=func_mfg.id, designation_id=d_lead.id,
+            function_id=func_ctm.id, designation_id=d_ctm_mgr.id,
         )
         fiona = _ensure_user(
             "fiona@miltenyi.com",
             employee_code="STF-006", full_name="Fiona Factory",
             phone="+49 30 1234 2006",
             role=Role.EMPLOYEE.value, mentor_id=mark.id,
-            function_id=func_mfg.id, designation_id=d_sci.id,
+            function_id=func_pv.id, designation_id=d_pv_analyst.id,
         )
         klaus = _ensure_user(
             "klaus@miltenyi.com",
             employee_code="STF-007", full_name="Klaus Köhler",
             phone="+49 30 1234 2007",
             role=Role.EMPLOYEE.value, mentor_id=priya.id,
-            function_id=func_mfg.id, designation_id=d_sci.id,
+            function_id=func_pv.id, designation_id=d_pv_sr_analyst.id,
         )
         mia = _ensure_user(
             "mia@miltenyi.com",
             employee_code="STF-008", full_name="Mia Markt",
             phone="+49 30 1234 2008",
             role=Role.EMPLOYEE.value, mentor_id=priya.id,
-            function_id=func_com.id, designation_id=d_sr.id,
+            function_id=func_mw.id, designation_id=d_mw_sr_writer.id,
         )
         nils = _ensure_user(
             "nils@miltenyi.com",
             employee_code="STF-009", full_name="Nils Niedermeier",
             phone="+49 30 1234 2009",
             role=Role.EMPLOYEE.value, mentor_id=priya.id,
-            function_id=func_com.id, designation_id=d_sci.id,
+            function_id=func_mw.id, designation_id=d_mw_writer.id,
         )
-        print("  [+] Users (HR×2, Mentors×3, PMs×4, Employee×9)")
+        print("  [+] Users (HR×2, Mentors×3, PMs×4, Employee×9 across 5 GCC functions)")
 
         # ============================================================ #
         # 4. SYSTEM SETTINGS                                            #
@@ -344,188 +440,356 @@ def seed_database() -> None:
             return proj
 
         # Bob's flagship — full FY25-26 span; underwrites the demo data in §11.
+        # Reframed as a Regulatory Affairs programme to match Bob's
+        # Regulatory Affairs Manager designation under the GCC framework.
         proj_bob_flagship = _ensure_project(
             "MIL-PRJ-100",
-            "CAR-T Platform Development Programme",
-            "Year-long platform development running across the full FY25-26 — Bob's flagship engagement.",
+            "FY25-26 Global Regulatory Submissions Programme",
+            "Year-long Regulatory Affairs programme covering EMA + FDA submissions across the cell-therapy portfolio — Bob's flagship engagement.",
             pm=hans, secondary=sarah,
             start=date(2025, 4, 1), end=date(2026, 3, 31),
             members=[
-                (bob, d_sr, func_rnd, date(2025, 4, 1)),
+                (bob, d_ra_manager, func_ra, date(2025, 4, 1)),
             ],
         )
         proj_cell = _ensure_project(
             "MIL-PRJ-101",
-            "Next-Gen CAR-T Workflow Automation",
-            "Automate end-to-end CAR-T cell processing workflow on the new instrument.",
+            "Next-Gen CAR-T Regulatory Strategy",
+            "Build the regulatory submission strategy for the next-gen CAR-T platform ahead of EMA + FDA filings.",
             pm=hans, secondary=sarah,
             start=date(2025, 1, 15), end=date(2025, 8, 15),
             members=[
-                (bob,     d_sr,  func_rnd, date(2025, 1, 15)),
-                (charlie, d_sci, func_rnd, date(2025, 1, 22)),
-                (dana,    d_sci, func_rnd, date(2025, 2, 1)),
+                (bob,     d_ra_manager,    func_ra, date(2025, 1, 15)),
+                (charlie, d_ra_specialist, func_ra, date(2025, 1, 22)),
+                (dana,    d_ra_assoc_sr,   func_ra, date(2025, 2, 1)),
             ],
         )
         proj_macs = _ensure_project(
             "MIL-PRJ-102",
-            "MACS Quant Scale-Up Program",
-            "Scale manufacturing of the next MACS Quant platform for global rollout.",
+            "MACS Quant Clinical Trial Program",
+            "Multi-site clinical trial programme for the next-gen MACS Quant platform — operations, monitoring, safety.",
             pm=greta, secondary=karin,
             start=date(2025, 3, 5), end=date(2025, 11, 30),
             members=[
-                (evan,  d_lead, func_mfg, date(2025, 3, 5)),
-                (fiona, d_sci,  func_mfg, date(2025, 3, 5)),
-                (klaus, d_sci,  func_mfg, date(2025, 3, 18)),
+                (evan,  d_ctm_mgr,       func_ctm, date(2025, 3, 5)),
+                (fiona, d_pv_analyst,    func_pv,  date(2025, 3, 5)),
+                (klaus, d_pv_sr_analyst, func_pv,  date(2025, 3, 18)),
             ],
         )
         proj_validation = _ensure_project(
             "MIL-PRJ-103",
-            "Cell Therapy Process Validation",
-            "GMP-grade process validation for the next-gen CAR-T pipeline ahead of clinical hand-off.",
+            "Cell Therapy Submission Readiness",
+            "Coordinated CDM + RA workstream preparing the submission package for the cell-therapy pipeline ahead of clinical hand-off.",
             pm=hans, secondary=sarah,
             start=date(2026, 1, 8), end=date(2026, 9, 30),
             members=[
-                (iris,    d_sr,  func_rnd, date(2026, 1, 8)),
-                (charlie, d_sci, func_rnd, date(2026, 1, 8)),
-                (dana,    d_sci, func_rnd, date(2026, 1, 22)),
+                (iris,    d_cdm_sr,        func_cdm, date(2026, 1, 8)),
+                (charlie, d_ra_specialist, func_ra,  date(2026, 1, 8)),
+                (dana,    d_ra_assoc_sr,   func_ra,  date(2026, 1, 22)),
             ],
         )
         proj_launch = _ensure_project(
             "MIL-PRJ-104",
-            "Commercial Launch Strategy 2026",
-            "Cross-functional commercial readiness for the EMEA + APAC launch waves.",
+            "Medical Writing — Launch Documentation 2026",
+            "End-to-end medical-writing deliverables (study reports, regulatory dossier sections, launch collateral) for the 2026 launches.",
             pm=lukas, secondary=karin,
             start=date(2026, 1, 5), end=date(2026, 12, 31),
             members=[
-                (mia,  d_sr,  func_com, date(2026, 1, 5)),
-                (nils, d_sci, func_com, date(2026, 1, 5)),
+                (mia,  d_mw_sr_writer, func_mw, date(2026, 1, 5)),
+                (nils, d_mw_writer,    func_mw, date(2026, 1, 5)),
             ],
         )
         print("  [+] Projects: MIL-PRJ-100..104")
 
         # ============================================================ #
-        # 6. ROLE EXPECTATIONS                                          #
+        # 6. ROLE EXPECTATIONS (Miltenyi GCC career-path content)       #
         # ============================================================ #
-        # Reference data shown to PMs while evaluating; one row per
-        # (function × designation).
-        EXPECTATIONS: dict[str, dict[str, dict[str, str]]] = {
-            "R&D": {
-                "Scientist": {
-                    "exp_task_execution": "Executes assigned bench / analytical tasks reliably with guidance from senior scientists.",
-                    "exp_ownership": "Owns small experimental modules end-to-end; flags blockers early.",
-                    "exp_project_management": "Tracks experiments in lab notebooks and meets agreed timelines.",
-                    "exp_client_deliverables": "Produces clean datasets and well-documented protocols.",
-                    "exp_communication": "Clear written summaries; growing comfort presenting in team meetings.",
-                    "exp_mentoring": "Supports onboarding of new lab joiners on instruments and SOPs.",
-                    "exp_firm_growth": "Participates in internal seminars and lab safety initiatives.",
-                    "exp_competency_skills": "Building proficiency in core wet-lab and analytical assay techniques.",
-                },
-                "Senior Scientist": {
-                    "exp_task_execution": "Designs and runs moderately complex experiments independently; troubleshoots assays.",
-                    "exp_ownership": "Owns workstreams across a project and partners cross-functionally.",
-                    "exp_project_management": "Plans experiment timelines, manages reagent supply, tracks risks.",
-                    "exp_client_deliverables": "Authors method documents and study reports to GMP-friendly standards.",
-                    "exp_communication": "Leads internal reviews and presents data confidently to senior stakeholders.",
-                    "exp_mentoring": "Mentors junior scientists on experimental design and data interpretation.",
-                    "exp_firm_growth": "Contributes to internal best-practice docs; helps interview new scientists.",
-                    "exp_competency_skills": "SME in one platform / assay; expanding into adjacent technologies.",
-                },
-                "Team Lead": {
-                    "exp_task_execution": "Leads scientific direction and protocol design across the team.",
-                    "exp_ownership": "Accountable for project outcomes; balances rigor with delivery timelines.",
-                    "exp_project_management": "Owns project plan, milestones, budget, and stakeholder communication.",
-                    "exp_client_deliverables": "Reviews and signs off on regulatory-grade deliverables.",
-                    "exp_communication": "Represents the team to leadership and external partners.",
-                    "exp_mentoring": "Coaches scientists through career growth and structured feedback.",
-                    "exp_firm_growth": "Drives R&D capability uplift; identifies process improvements.",
-                    "exp_competency_skills": "Recognised expert in the team's platform area; mentors emerging SMEs.",
-                },
+        # Verbatim transcription of the v1.1 Miltenyi GCC career-path
+        # spreadsheet. 32 rows keyed by (function_name, career_level).
+        # Inserted into role_expectations such that every designation at
+        # a given (function, career_level) bucket points at this row.
+        GCC_ROLE_EXPECTATIONS: dict[tuple[str, int], dict[str, str]] = {
+            # ── Clinical Data Management ─────────────────────────────
+            ("Clinical Data Management", 1): {
+                "exp_scope_of_role": "Supports CRF review, data entry validation, and data cleaning activities",
+                "exp_key_responsibilities": "Performs data review, query generation, discrepancy management, and study data tracking.",
+                "exp_technical_competencies": "EDC systems (Medidata Rave/Oracle Clinical), data validation, query management, CDISC awareness.",
+                "exp_delivery_ownership": "Task level",
+                "exp_regulatory_compliance": "Query management, data validation checks.",
+                "exp_project_resource_management": "Works under supervision",
             },
-            "Manufacturing": {
-                "Scientist": {
-                    "exp_task_execution": "Performs routine production / QC tasks reliably; raises deviations promptly.",
-                    "exp_ownership": "Owns assigned process steps and documentation accuracy.",
-                    "exp_project_management": "Adheres to production schedules and escalates risks early.",
-                    "exp_client_deliverables": "Produces clean batch records and SOP-compliant documentation.",
-                    "exp_communication": "Clear shift hand-offs and accurate written status updates.",
-                    "exp_mentoring": "Onboards new operators on cleanroom protocols.",
-                    "exp_firm_growth": "Participates in continuous-improvement (Kaizen) sessions.",
-                    "exp_competency_skills": "Building proficiency on key production instruments and aseptic technique.",
-                },
-                "Senior Scientist": {
-                    "exp_task_execution": "Owns process improvements and root-cause analysis on deviations.",
-                    "exp_ownership": "Drives a workstream across one or more product lines.",
-                    "exp_project_management": "Coordinates with R&D on tech-transfer and runs production planning.",
-                    "exp_client_deliverables": "Authors validation reports and CAPA documentation.",
-                    "exp_communication": "Leads cross-functional production review meetings.",
-                    "exp_mentoring": "Mentors junior staff on GMP and analytical methods.",
-                    "exp_firm_growth": "Drives at least one continuous-improvement initiative per year.",
-                    "exp_competency_skills": "Deep expertise in one production platform; growing breadth.",
-                },
-                "Team Lead": {
-                    "exp_task_execution": "Sets manufacturing strategy and ensures regulatory readiness.",
-                    "exp_ownership": "Owns line-level KPIs (throughput, yield, deviation rate).",
-                    "exp_project_management": "Owns multi-site programs end-to-end with budget accountability.",
-                    "exp_client_deliverables": "Final sign-off on validation, CAPA, and audit-ready documentation.",
-                    "exp_communication": "Owns regulatory and customer-facing communications for the line.",
-                    "exp_mentoring": "Coaches the team on technical depth, GMP rigor, and career growth.",
-                    "exp_firm_growth": "Champions operational excellence; owns hiring plans for the line.",
-                    "exp_competency_skills": "Recognised authority on the line's platforms; sets technical standards.",
-                },
+            ("Clinical Data Management", 2): {
+                "exp_scope_of_role": "Manages study-level data review cycles and query resolution.",
+                "exp_key_responsibilities": "Oversees data cleaning, database updates, reconciliation activities, and data quality checks.",
+                "exp_technical_competencies": "Database build review, edit checks, reconciliation (SAE/lab/vendor data), CDISC standards.",
+                "exp_delivery_ownership": "Study / functional deliverables",
+                "exp_regulatory_compliance": "Database lock activities, SAE reconciliation.",
+                "exp_project_resource_management": "Limited project coordination",
             },
-            "Commercial": {
-                "Scientist": {
-                    "exp_task_execution": "Supports market analysis, customer onboarding, and tracker maintenance.",
-                    "exp_ownership": "Owns assigned tasks within accounts / regions reliably.",
-                    "exp_project_management": "Maintains opportunity trackers and meets reporting cadences.",
-                    "exp_client_deliverables": "Produces clean pitch decks and customer-ready collateral with guidance.",
-                    "exp_communication": "Clear written customer summaries; growing confidence on calls.",
-                    "exp_mentoring": "Helps onboard new commercial joiners on tools and processes.",
-                    "exp_firm_growth": "Participates in customer events and knowledge-sharing.",
-                    "exp_competency_skills": "Building proficiency in commercial systems, CRM, and product fundamentals.",
-                },
-                "Senior Scientist": {
-                    "exp_task_execution": "Independently scopes and runs customer engagements end-to-end.",
-                    "exp_ownership": "Owns one region / segment with quota and pipeline accountability.",
-                    "exp_project_management": "Drives launch readiness across stakeholders (R&D, Mfg, Marketing).",
-                    "exp_client_deliverables": "Crafts compelling pitch material and strategy briefs.",
-                    "exp_communication": "Leads customer pitches and senior internal reviews.",
-                    "exp_mentoring": "Mentors junior commercial staff on customer skills.",
-                    "exp_firm_growth": "Owns at least one launch or commercial initiative per year.",
-                    "exp_competency_skills": "SME in a product line or therapeutic area; growing strategic breadth.",
-                },
-                "Team Lead": {
-                    "exp_task_execution": "Sets commercial strategy across multiple regions / product lines.",
-                    "exp_ownership": "Accountable for regional pipeline, revenue, and customer satisfaction.",
-                    "exp_project_management": "Owns launch programs end-to-end with cross-functional governance.",
-                    "exp_client_deliverables": "Final sign-off on enterprise customer proposals and strategy decks.",
-                    "exp_communication": "Owns C-level customer relationships and internal leadership reviews.",
-                    "exp_mentoring": "Coaches the team on customer skills, deal craft, and career growth.",
-                    "exp_firm_growth": "Drives go-to-market evolution; owns hiring + retention.",
-                    "exp_competency_skills": "Recognised authority on the region / segment; sets commercial playbooks.",
-                },
+            ("Clinical Data Management", 3): {
+                "exp_scope_of_role": "Leads data management activities across clinical studies.",
+                "exp_key_responsibilities": "Manages database lock readiness, vendor coordination, and cross-functional data governance.",
+                "exp_technical_competencies": "Advanced CDISC implementation (SDTM/ADaM), vendor data integration, database governance.",
+                "exp_delivery_ownership": "Study or program ownership",
+                "exp_regulatory_compliance": "Vendor coordination, risk-based data review.",
+                "exp_project_resource_management": "Team management and resource allocation",
+            },
+            ("Clinical Data Management", 4): {
+                "exp_scope_of_role": "Provides strategic oversight of clinical data management across programs",
+                "exp_key_responsibilities": "Defines CDM strategy, oversees multi-study data governance, and drives data quality frameworks",
+                "exp_technical_competencies": "Enterprise data standards, global CDISC compliance, data architecture strategy.",
+                "exp_delivery_ownership": "Portfolio or organizational oversight",
+                "exp_regulatory_compliance": "Data strategy, inspection readiness, CDISC governance.",
+                "exp_project_resource_management": "Department leadership and budget accountability",
+            },
+            # ── Biostatistics ─────────────────────────────────────────
+            ("Biostatistics", 1): {
+                "exp_scope_of_role": "Supports statistical programming and clinical data analysis activities.",
+                "exp_key_responsibilities": "Assists in generating datasets, statistical outputs, and data summaries for clinical studies",
+                "exp_technical_competencies": "SAS/R programming, clinical data standards awareness, data validation, statistical reporting.",
+                "exp_delivery_ownership": "Task Level",
+                "exp_regulatory_compliance": "Compliance with CDISC standards and statistical documentation requirements.",
+                "exp_project_resource_management": "Works under supervision",
+            },
+            ("Biostatistics", 2): {
+                "exp_scope_of_role": "Performs statistical analysis and supports study design and data interpretation.",
+                "exp_key_responsibilities": "Develops statistical analysis plans, performs data analysis, and interprets clinical study data",
+                "exp_technical_competencies": "Statistical modeling, SAS/R programming, clinical trial design, CDISC standards (SDTM/ADaM).",
+                "exp_delivery_ownership": "Task level/functional deliverables",
+                "exp_regulatory_compliance": "Statistical analysis compliance for regulatory submissions.",
+                "exp_project_resource_management": "Limited project coordination",
+            },
+            ("Biostatistics", 3): {
+                "exp_scope_of_role": "Leads statistical analysis for clinical studies and ensures methodological accuracy.",
+                "exp_key_responsibilities": "Oversees statistical analysis plans, reviews outputs, and supports regulatory submissions.",
+                "exp_technical_competencies": "Advanced biostatistics methods, trial design strategy, regulatory submission support.",
+                "exp_delivery_ownership": "Study or program ownership/functional deliverables",
+                "exp_regulatory_compliance": "Health authority statistical review readiness and regulatory compliance",
+                "exp_project_resource_management": "Team management and resource allocation",
+            },
+            ("Biostatistics", 4): {
+                "exp_scope_of_role": "Provides strategic statistical leadership across clinical programs.",
+                "exp_key_responsibilities": "Defines statistical strategy, oversees complex analyses, and supports regulatory interactions.",
+                "exp_technical_competencies": "Advanced statistical methodologies, regulatory strategy alignment, portfolio-level analytics.",
+                "exp_delivery_ownership": "Portfolio or organizational oversight",
+                "exp_regulatory_compliance": "Global regulatory submission strategy and statistical governance.",
+                "exp_project_resource_management": "Department leadership and budget accountability",
+            },
+            # ── Regulatory Affairs ────────────────────────────────────
+            ("Regulatory Affairs", 1): {
+                "exp_scope_of_role": "Supports regulatory documentation and submission preparation activities.",
+                "exp_key_responsibilities": "Assists in preparation, formatting, and tracking of regulatory submission documents and correspondence.",
+                "exp_technical_competencies": "Regulatory guidelines awareness, document management systems, submission formatting, regulatory research.",
+                "exp_delivery_ownership": "Task level",
+                "exp_regulatory_compliance": "Basic awareness of regulatory frameworks (ICH, GCP)",
+                "exp_project_resource_management": "Works under supervision",
+            },
+            ("Regulatory Affairs", 2): {
+                "exp_scope_of_role": "Manages regulatory submission preparation and supports regulatory strategy execution.",
+                "exp_key_responsibilities": "Prepares regulatory submissions, tracks approval timelines, and coordinates with cross-functional teams.",
+                "exp_technical_competencies": "Regulatory submission preparation, regulatory intelligence, dossier management, submission systems (eCTD).",
+                "exp_delivery_ownership": "Study / functional deliverables",
+                "exp_regulatory_compliance": "Submission compliance monitoring and regulatory documentation management.",
+                "exp_project_resource_management": "Limited project coordination",
+            },
+            ("Regulatory Affairs", 3): {
+                "exp_scope_of_role": "Leads regulatory submission activities and ensures compliance with global regulatory requirements.",
+                "exp_key_responsibilities": "Oversees regulatory submissions, manages health authority interactions, and drives regulatory strategy implementation.",
+                "exp_technical_competencies": "Regulatory strategy development, submission management, regulatory intelligence, risk assessment",
+                "exp_delivery_ownership": "Study or program ownership",
+                "exp_regulatory_compliance": "Regulatory authority interactions and submission governance.",
+                "exp_project_resource_management": "Team management and resource allocation",
+            },
+            ("Regulatory Affairs", 4): {
+                "exp_scope_of_role": "Provides strategic regulatory oversight across programs and ensures global regulatory compliance.",
+                "exp_key_responsibilities": "Defines regulatory strategy, oversees global submissions, and manages regulatory risk and governance.",
+                "exp_technical_competencies": "Global regulatory strategy, health authority negotiation, regulatory policy interpretation, governance frameworks.",
+                "exp_delivery_ownership": "Portfolio or organizational oversight",
+                "exp_regulatory_compliance": "Global regulatory compliance leadership and health authority engagement.",
+                "exp_project_resource_management": "Department leadership and budget accountability",
+            },
+            # ── Pharmacovigilance ─────────────────────────────────────
+            ("Pharmacovigilance", 1): {
+                "exp_scope_of_role": "Performs individual case safety report (ICSR) processing under supervision.",
+                "exp_key_responsibilities": "• Review source documents to identify AEs/SAEs. • Enter safety data into PV database (Argus/ArisG) as per CDSCO/DCGI timelines. • Draft medically sound case narratives. • Code adverse events using MedDRA. • Track follow-up requests to ensure case completeness.",
+                "exp_technical_competencies": "MedDRA coding, safety database systems (Argus/ArisG), ICSR processing basics.",
+                "exp_delivery_ownership": "Task level",
+                "exp_regulatory_compliance": "ICSR data entry, MedDRA coding, narrative writing, follow-up tracking.",
+                "exp_project_resource_management": "Works under supervision",
+            },
+            ("Pharmacovigilance", 2): {
+                "exp_scope_of_role": "Independently manages case processing, literature review, and supports signal detection activities.",
+                "exp_key_responsibilities": "• Independently process and QC AE/SAE cases. • Perform database reconciliation and ensure timely reporting. • Monitor safety signal trends and escalate potential risks. • Contribute to aggregate reports (PSUR/PBRER). • Support audit and inspection documentation readiness.",
+                "exp_technical_competencies": "Advanced case processing, safety database management, signal monitoring basics.",
+                "exp_delivery_ownership": "Study / functional deliverables",
+                "exp_regulatory_compliance": "Quality review of cases, reconciliation activities, aggregate report inputs (PSUR/PBRER/DSUR).",
+                "exp_project_resource_management": "Limited project coordination",
+            },
+            ("Pharmacovigilance", 3): {
+                "exp_scope_of_role": "Leads PV case teams, oversees aggregate reporting and signal management processes.",
+                "exp_key_responsibilities": "• Lead signal detection and benefit-risk evaluations. • Oversee SAE reporting compliance and quality metrics. • Manage vendor oversight and workload distribution. • Interface with Regulatory and Medical teams for safety strategy.",
+                "exp_technical_competencies": "Advanced GVP knowledge, signal detection methods, safety data analysis.",
+                "exp_delivery_ownership": "Study or program ownership",
+                "exp_regulatory_compliance": "Signal detection review, health authority response coordination, vendor oversight.",
+                "exp_project_resource_management": "Team management and resource allocation",
+            },
+            ("Pharmacovigilance", 4): {
+                "exp_scope_of_role": "Drives PV strategy, inspection readiness, global safety governance.",
+                "exp_key_responsibilities": "• Define pharmacovigilance governance framework. • Lead regulatory authority inspections (CDSCO/FDA/EMA). • Drive risk management strategy and signal governance. • Ensure enterprise-level compliance and PV system optimization.",
+                "exp_technical_competencies": "Global pharmacovigilance strategy, safety governance frameworks, regulatory risk management.",
+                "exp_delivery_ownership": "Portfolio or organizational oversight",
+                "exp_regulatory_compliance": "Risk management strategy, global audit readiness, HA inspections (FDA/EMA/MHRA).",
+                "exp_project_resource_management": "Department leadership and budget accountability",
+            },
+            # ── Clinical Trial Management ─────────────────────────────
+            ("Clinical Trial Management", 1): {
+                "exp_scope_of_role": "Supports clinical trial operations and documentation activities.",
+                "exp_key_responsibilities": "Assists in site documentation review, trial tracking, and coordination of study activities.",
+                "exp_technical_competencies": "GCP awareness, clinical trial documentation, CTMS usage, site communication.",
+                "exp_delivery_ownership": "Task level",
+                "exp_regulatory_compliance": "Protocol compliance and trial documentation standards.",
+                "exp_project_resource_management": "Works under supervision supporting study coordination, tracker updates, and operational task execution.",
+            },
+            ("Clinical Trial Management", 2): {
+                "exp_scope_of_role": "Manages operational execution of clinical trials across sites.",
+                "exp_key_responsibilities": "Oversees site performance, trial timelines, vendor coordination, and monitoring activities.",
+                "exp_technical_competencies": "Clinical trial management, CTMS tools, site management, risk mitigation.",
+                "exp_delivery_ownership": "Study / functional deliverables",
+                "exp_regulatory_compliance": "Monitoring compliance and audit readiness support.",
+                "exp_project_resource_management": "Limited project coordination including site performance tracking, vendor coordination, and milestone monitoring.",
+            },
+            ("Clinical Trial Management", 3): {
+                "exp_scope_of_role": "Leads global or regional clinical trial operations and delivery.",
+                "exp_key_responsibilities": "Manages cross-functional coordination, study timelines, vendor oversight, and quality compliance.",
+                "exp_technical_competencies": "Global trial management, risk-based monitoring, vendor governance.",
+                "exp_delivery_ownership": "Study or program ownership",
+                "exp_regulatory_compliance": "Health authority inspection readiness and regulatory compliance.",
+                "exp_project_resource_management": "Team management and resource allocation across study-level clinical trial activities and operational deliverables.",
+            },
+            ("Clinical Trial Management", 4): {
+                "exp_scope_of_role": "Provides strategic oversight for clinical trial programs across the portfolio.",
+                "exp_key_responsibilities": "Defines trial execution strategy, oversees multiple studies, and drives operational excellence.",
+                "exp_technical_competencies": "Clinical development strategy, portfolio trial governance, operational leadership.",
+                "exp_delivery_ownership": "Portfolio or organizational oversight",
+                "exp_regulatory_compliance": "Global clinical trial compliance and regulatory governance.",
+                "exp_project_resource_management": "Team management and resource allocation across study-level clinical trial activities and operational deliverables.",
+            },
+            # ── Medical Writing ───────────────────────────────────────
+            ("Medical Writing", 1): {
+                "exp_scope_of_role": "Supports preparation and formatting of clinical and regulatory documents under supervision while ensuring adherence to scientific accuracy and regulatory guidelines.",
+                "exp_key_responsibilities": "Assists in drafting, editing, formatting, and quality checking of clinical and regulatory documents while coordinating with cross-functional teams.",
+                "exp_technical_competencies": "Scientific writing fundamentals, literature review, clinical study document structure, referencing tools, and basic regulatory writing guidelines.",
+                "exp_delivery_ownership": "Basic awareness of ICH GCP / regulatory frameworks",
+                "exp_regulatory_compliance": "Document formatting, literature citation compliance, basic regulatory document review.",
+                "exp_project_resource_management": "Works under supervision",
+            },
+            ("Medical Writing", 2): {
+                "exp_scope_of_role": "Independently develops clinical and regulatory documents by interpreting scientific data and collaborating with cross-functional teams.",
+                "exp_key_responsibilities": "Drafts and manages clinical and regulatory documents such as protocols, CSRs, and study reports while ensuring consistency and adherence to timelines.",
+                "exp_technical_competencies": "Regulatory writing expertise, data interpretation, clinical document development, referencing systems, and document management systems.",
+                "exp_delivery_ownership": "Working knowledge of regulatory submission requirements",
+                "exp_regulatory_compliance": "Submission document preparation, regulatory writing compliance, document QC for submission readiness.",
+                "exp_project_resource_management": "Limited project coordination",
+            },
+            ("Medical Writing", 3): {
+                "exp_scope_of_role": "Leads development of complex clinical and regulatory documents while ensuring quality, regulatory compliance, and strategic alignment with clinical programs.",
+                "exp_key_responsibilities": "Oversees preparation of complex regulatory documents, reviews deliverables, mentors junior writers, and ensures consistency across clinical programs.",
+                "exp_technical_competencies": "Advanced regulatory writing strategy, complex document development, clinical data interpretation, publication planning, and quality review expertise.",
+                "exp_delivery_ownership": "Regulatory inspection readiness",
+                "exp_regulatory_compliance": "Regulatory submission documentation oversight, health authority response coordination, and audit readiness support.",
+                "exp_project_resource_management": "Team management and resource allocation",
+            },
+            ("Medical Writing", 4): {
+                "exp_scope_of_role": "Provides strategic oversight of medical writing activities across programs, ensuring consistency, regulatory compliance, and alignment with global clinical development objectives.",
+                "exp_key_responsibilities": "Defines medical writing strategy, oversees global document development, ensures regulatory submission readiness, and drives writing standards and governance.",
+                "exp_technical_competencies": "Global regulatory writing strategy, document governance frameworks, enterprise writing standards, submission strategy alignment, and digital authoring tools.",
+                "exp_delivery_ownership": "Global regulatory and compliance oversight",
+                "exp_regulatory_compliance": "Global regulatory submission strategy, health authority interactions, and enterprise compliance oversight.",
+                "exp_project_resource_management": "Department leadership and budget accountability",
+            },
+            # ── Clinical Trial Finance ────────────────────────────────
+            ("Clinical Trial Finance", 1): {
+                "exp_scope_of_role": "Supports financial tracking and reporting for clinical trials, including budget monitoring, invoice processing, and financial data reconciliation under supervision.",
+                "exp_key_responsibilities": "Assists in study budget tracking, invoice processing, financial reconciliation, and preparation of financial reports for clinical trials.",
+                "exp_technical_competencies": "Clinical trial budgeting basics, financial data analysis, Excel-based financial tracking, invoice reconciliation, and financial reporting fundamentals.",
+                "exp_delivery_ownership": "Task level",
+                "exp_regulatory_compliance": "Financial documentation accuracy, invoice verification, and compliance with internal financial policies.",
+                "exp_project_resource_management": "Works under supervision",
+            },
+            ("Clinical Trial Finance", 2): {
+                "exp_scope_of_role": "Independently manages study-level financial tracking, budget reconciliation, and financial reporting while coordinating with clinical operations and vendors.",
+                "exp_key_responsibilities": "Monitors study budgets, reviews vendor invoices, manages financial reconciliation, and prepares financial reports aligned with study timelines.",
+                "exp_technical_competencies": "Clinical trial budget management, financial forecasting, cost tracking tools, financial reconciliation, and financial analytics",
+                "exp_delivery_ownership": "Study / functional deliverables",
+                "exp_regulatory_compliance": "Budget compliance monitoring, audit documentation support, and financial reporting accuracy.",
+                "exp_project_resource_management": "Limited project coordination",
+            },
+            ("Clinical Trial Finance", 3): {
+                "exp_scope_of_role": "Leads financial management of clinical trials including budget planning, forecasting, financial risk monitoring, and oversight of study financial performance.",
+                "exp_key_responsibilities": "Oversees clinical trial budget planning, financial forecasting, cost variance analysis, and vendor financial performance monitoring.",
+                "exp_technical_competencies": "Advanced clinical finance strategy, budget forecasting, financial risk assessment, contract and vendor financial oversight.",
+                "exp_delivery_ownership": "Study or program ownership",
+                "exp_regulatory_compliance": "Financial governance, regulatory financial audit readiness, and compliance with clinical trial financial regulations.",
+                "exp_project_resource_management": "Team management and resource allocation",
+            },
+            ("Clinical Trial Finance", 4): {
+                "exp_scope_of_role": "Provides strategic oversight of clinical trial financial operations across programs, ensuring budget governance, financial compliance, and alignment with global clinical development strategy.",
+                "exp_key_responsibilities": "Defines financial governance frameworks, oversees portfolio-level budgets, manages financial risk strategies, and aligns clinical finance with global R&D strategy.",
+                "exp_technical_competencies": "Enterprise financial strategy, portfolio budget governance, financial analytics frameworks, and global financial compliance.",
+                "exp_delivery_ownership": "Portfolio or organizational oversight",
+                "exp_regulatory_compliance": "Global financial compliance oversight, audit leadership, and enterprise clinical finance governance.",
+                "exp_project_resource_management": "Department leadership and budget accountability",
+            },
+            # ── Legal ────────────────────────────────────────────────
+            ("Legal", 1): {
+                "exp_scope_of_role": "Supports legal documentation review and contract management activities.",
+                "exp_key_responsibilities": "Assists in contract review, legal documentation preparation, and compliance tracking.",
+                "exp_technical_competencies": "Contract review basics, legal research, regulatory awareness, document management.",
+                "exp_delivery_ownership": "Task level",
+                "exp_regulatory_compliance": "Legal documentation compliance and regulatory policy awareness.",
+                "exp_project_resource_management": "Works under supervision/Limited project coordination",
+            },
+            ("Legal", 2): {
+                "exp_scope_of_role": "Provides legal advisory and contract management support across business functions.",
+                "exp_key_responsibilities": "Reviews commercial contracts, provides legal advice, and ensures regulatory compliance.",
+                "exp_technical_competencies": "Contract negotiation, legal risk analysis, regulatory interpretation, compliance frameworks.",
+                "exp_delivery_ownership": "Functional deliverables",
+                "exp_regulatory_compliance": "Contract compliance monitoring and regulatory advisory support.",
+                "exp_project_resource_management": "Limited project coordination",
+            },
+            ("Legal", 3): {
+                "exp_scope_of_role": "Leads legal support for business operations and manages legal risk across projects.",
+                "exp_key_responsibilities": "Oversees complex contracts, manages legal disputes, and ensures governance compliance.",
+                "exp_technical_competencies": "Legal strategy development, risk management, regulatory interpretation, dispute management.",
+                "exp_delivery_ownership": "Study or program ownership/functional deliverables",
+                "exp_regulatory_compliance": "Legal governance oversight and regulatory compliance management.",
+                "exp_project_resource_management": "Team management and resource allocation",
+            },
+            ("Legal", 4): {
+                "exp_scope_of_role": "Provides strategic legal oversight and governance across organizational operations.",
+                "exp_key_responsibilities": "Defines legal strategy, manages corporate governance, and leads regulatory risk management.",
+                "exp_technical_competencies": "Enterprise legal strategy, corporate governance, regulatory compliance frameworks.",
+                "exp_delivery_ownership": "Portfolio or organizational oversight",
+                "exp_regulatory_compliance": "Global regulatory compliance leadership and legal governance.",
+                "exp_project_resource_management": "Department leadership and budget accountability",
             },
         }
 
         if db.query(RoleExpectation).filter(RoleExpectation.org_id == miltenyi.id).count() == 0:
             inserted = 0
-            for func_name, by_desig in EXPECTATIONS.items():
+            for (func_name, level), fields in GCC_ROLE_EXPECTATIONS.items():
                 fn = db.query(Function).filter_by(org_id=miltenyi.id, name=func_name).first()
                 if not fn:
                     continue
-                for desig_name, comp in by_desig.items():
-                    desig = db.query(Designation).filter_by(org_id=miltenyi.id, name=desig_name).first()
-                    if not desig:
-                        continue
-                    db.add(RoleExpectation(
-                        org_id=miltenyi.id,
-                        function_id=fn.id,
-                        designation_id=desig.id,
-                        **comp,
-                    ))
-                    inserted += 1
+                db.add(RoleExpectation(
+                    org_id=miltenyi.id,
+                    function_id=fn.id,
+                    career_level=level,
+                    **fields,
+                ))
+                inserted += 1
             db.commit()
-            print(f"  [+] Role Expectations: {inserted} rows")
+            print(f"  [+] Role Expectations: {inserted} rows (one per function × career level)")
         else:
             print("  [~] Role expectations already exist; reusing.")
 
@@ -572,73 +836,73 @@ def seed_database() -> None:
             return g
 
         if db.query(Goal).filter(Goal.org_id == miltenyi.id).count() == 0:
-            # Bob — strong performer with H1 self-review submitted
+            # Bob — Regulatory Affairs Manager, strong performer with H1 self-review submitted
             _ensure_goal(
                 bob, anjali,
-                "CAR-T Workflow Automation Module",
-                "Own the automation of the upstream CAR-T processing workflow on the new instrument.",
+                "CAR-T IND Filing — Regulatory Programme Lead",
+                "Own the regulatory submission programme for the CAR-T IND filing — strategy, dossier coordination, HA interactions.",
                 cycle_name="FY26-27", approval=ApprovalStatus.APPROVED.value, fy_year=2026,
                 with_h1_self_review=True,
             )
-            # Charlie — pending mentor approval
+            # Charlie — RA Specialist, pending mentor approval
             _ensure_goal(
                 charlie, anjali,
-                "Assay Validation for Next-Gen CAR-T",
-                "Design and run validation assays for the next-gen CAR-T platform.",
+                "Module 3 Quality Submission Package",
+                "Author and submit the Module 3 quality content for the next-gen CAR-T IND filing.",
                 cycle_name="FY26-27", approval=ApprovalStatus.PENDING_APPROVAL.value, fy_year=2026,
             )
-            # Dana — draft (employee still drafting)
+            # Dana — Senior RA Associate, draft
             _ensure_goal(
                 dana, anjali,
-                "Reagent Optimisation Pipeline",
-                "Reduce turnaround time for the validation reagent prep pipeline by 25%.",
+                "HA Response Tracker & Documentation Hygiene",
+                "Operationalise the agency response tracker and tighten documentation governance across the RA team.",
                 cycle_name="FY26-27", approval=ApprovalStatus.DRAFT.value, fy_year=2026,
             )
-            # Iris — approved, no self-review yet (mid-cycle)
+            # Iris — Senior Clinical Data Manager, approved, no self-review yet
             _ensure_goal(
                 iris, mark,
-                "Cell Therapy Validation Lead",
-                "Lead protocol design + execution for FY26 validation runs.",
+                "Cell Therapy Database Lock Programme",
+                "Lead end-to-end database lock readiness for the cell-therapy trial portfolio in FY26-27.",
                 cycle_name="FY26-27", approval=ApprovalStatus.APPROVED.value, fy_year=2026,
             )
-            # Evan — approved with H1 self-review
+            # Evan — Clinical Trial Manager, approved with H1 self-review
             _ensure_goal(
                 evan, mark,
-                "Mfg Throughput +15% Initiative",
-                "Drive a 15% throughput uplift across the MACS Quant line by year-end.",
+                "MACS Quant Trial Sites Activation",
+                "Activate and stabilise the 12 trial sites for the MACS Quant clinical programme by Q3.",
                 cycle_name="FY26-27", approval=ApprovalStatus.APPROVED.value, fy_year=2026,
                 with_h1_self_review=True, self_review_text=STRONG_SELF,
             )
-            # Fiona — pending approval
+            # Fiona — PV Analyst, pending approval
             _ensure_goal(
                 fiona, mark,
-                "Aseptic Process Documentation",
-                "Author the next revision of the aseptic processing SOPs.",
+                "Signal-Detection Methodology Uplift",
+                "Implement an updated signal-detection methodology across the PV team aligned with current GVP guidance.",
                 cycle_name="FY26-27", approval=ApprovalStatus.PENDING_APPROVAL.value, fy_year=2026,
             )
-            # Klaus — draft
+            # Klaus — Senior PV Analyst, draft
             _ensure_goal(
                 klaus, priya,
-                "Mfg QC Capability Uplift",
-                "Lead QC tooling capability uplift initiative across two product lines.",
+                "PSUR/PBRER Aggregate Reporting Programme",
+                "Lead the FY26-27 aggregate-reporting cycle (PSUR + PBRER) end-to-end across the product portfolio.",
                 cycle_name="FY26-27", approval=ApprovalStatus.DRAFT.value, fy_year=2026,
             )
-            # Mia — approved with H1 self-review
+            # Mia — Senior Medical Writer, approved with H1 self-review
             _ensure_goal(
                 mia, priya,
-                "EMEA Launch Readiness",
-                "Own EMEA launch readiness for the new MACS Quant product line.",
+                "EMA + FDA CSR Authoring Programme",
+                "Author the two priority Clinical Study Reports for the FY26-27 EMA and FDA submission tracks.",
                 cycle_name="FY26-27", approval=ApprovalStatus.APPROVED.value, fy_year=2026,
                 with_h1_self_review=True,
             )
-            # Nils — pending approval
+            # Nils — Medical Writer, pending approval
             _ensure_goal(
                 nils, priya,
-                "APAC Customer Discovery",
-                "Run discovery interviews with target accounts across APAC.",
+                "Protocol Authoring — Pediatric Indication",
+                "Draft and shepherd the pediatric-indication protocol through internal review and submission readiness.",
                 cycle_name="FY26-27", approval=ApprovalStatus.PENDING_APPROVAL.value, fy_year=2026,
             )
-            print("  [+] Annual goals (FY26-27) for all Employee with mixed approval states")
+            print("  [+] Annual goals (FY26-27) for all Employees, GCC-themed, with mixed approval states")
         else:
             print("  [~] Goals already exist; reusing.")
 
@@ -734,14 +998,13 @@ def seed_database() -> None:
             # MIL-PRJ-101 (Hans) — Charlie reviewed, Bob/Dana pending
             _ensure_pr(
                 charlie, proj_cell, hans, ProjectReviewStatus.REVIEWED.value, pg="4",
-                impact="Charlie drove the upstream automation module with strong technical depth.",
-                comment_task_execution="Independently designed and validated the upstream module.",
-                comment_ownership="Owned the deliverable end-to-end and cleared blockers proactively.",
-                comment_project_management="Tight tracker discipline; risk flags raised early.",
-                comment_client_deliverables="Validation reports were GMP-ready on first review.",
-                comment_communication="Clear with peers and the Mfg liaison.",
-                comment_mentoring="Coached Dana on assay troubleshooting.",
-                comment_competency_skills="Strong cell-therapy assay expertise; growing depth in automation.",
+                impact="Charlie owned the Module 3 quality dossier section and the IND submission preparatory work.",
+                comment_scope_of_role="Operated solidly inside the Regulatory Affairs Specialist remit — submission prep + cross-functional coordination.",
+                comment_key_responsibilities="Owned Module 3 quality content end-to-end; drove the agency response tracker for two HA query cycles.",
+                comment_technical_competencies="Strong eCTD discipline and submission-systems fluency; deepening regulatory intelligence on cell-therapy precedent.",
+                comment_delivery_ownership="Reliable on functional deliverables; willing to step into program-level coordination when asked.",
+                comment_regulatory_compliance="Submissions tracked cleanly; documentation management is audit-clean.",
+                comment_project_resource_management="Light project coordination across the Module 3 contributors — kept the tracker live.",
             )
             _ensure_pr(bob,  proj_cell, hans)
             _ensure_pr(dana, proj_cell, hans)
@@ -749,14 +1012,13 @@ def seed_database() -> None:
             # MIL-PRJ-102 (Greta) — Fiona reviewed, others pending
             _ensure_pr(
                 fiona, proj_macs, greta, ProjectReviewStatus.REVIEWED.value, pg="4",
-                impact="Fiona authored the scale-up SOP set and led validation runs.",
-                comment_task_execution="Structured the SOP framework end-to-end with strong rigor.",
-                comment_ownership="Took ownership beyond scope on the validation runs.",
-                comment_project_management="Excellent timeline discipline; zero deviations on critical path.",
-                comment_client_deliverables="SOPs accepted on first internal audit pass.",
-                comment_communication="Clear shift hand-offs and proactive cross-team updates.",
-                comment_mentoring="Supported Klaus on aseptic technique.",
-                comment_competency_skills="Senior Scientist trajectory in production validation.",
+                impact="Fiona stood up the PV reconciliation framework for the trial and drove signal-monitoring discipline.",
+                comment_scope_of_role="Operated firmly inside the Pharmacovigilance Analyst remit — case processing + signal monitoring + aggregate report support.",
+                comment_key_responsibilities="Independently QC'd AE/SAE cases and contributed to two aggregate report inputs; reconciliation discipline tightened across the quarter.",
+                comment_technical_competencies="Strong case processing and safety-database fluency; signal monitoring instincts growing.",
+                comment_delivery_ownership="Owned functional deliverables; partnered well with the Clinical Trial Manager.",
+                comment_regulatory_compliance="Quality review of cases is clean; reconciliation activities are well-documented.",
+                comment_project_resource_management="Coordinated effectively on shared safety deliverables across the trial sites.",
             )
             _ensure_pr(evan,  proj_macs, greta)
             _ensure_pr(klaus, proj_macs, greta)
@@ -836,8 +1098,8 @@ def seed_database() -> None:
                 org_id=miltenyi.id,
                 project_id=proj_validation.id,
                 user_id=charlie.id,
-                assignment_role=d_sci.name,
-                function_id=func_rnd.id,
+                assignment_role=d_ra_specialist.name,
+                function_id=func_ra.id,
                 assigned_date=date(2026, 6, 1),
             ))
             db.commit()
@@ -865,87 +1127,101 @@ def seed_database() -> None:
         # Log in as anjali.rao@healthark.ai to see the mentor view.
 
         # ── Narrative blocks for goal self-reviews / mentor reviews ──
+        # Bob is a Regulatory Affairs Manager. His FY25-26 flagship goal
+        # was leading the Global Regulatory Submissions Programme — EMA +
+        # FDA submissions across the cell-therapy portfolio.
+
         BOB_FLAGSHIP_GOAL_H1_SELF = (
-            "Owned the full automation stack design for the CAR-T MVP this half — "
-            "instrument selection, vendor evaluation, integration spec, and the "
-            "first end-to-end pipeline demo. The biggest unlock was reframing the "
-            "cellscreen handoff from a manual two-step into a fully automated "
-            "single-pass — knocked ~40% off the per-run timeline. "
-            "Authored the platform RFC and walked it through engineering, Mfg, "
-            "and the senior R&D council without rework."
+            "Owned the H1 submission strategy and execution end-to-end. "
+            "Mapped the HA landscape, built the FY25-26 submissions plan "
+            "with full dependency tracking, and filed the EMA pre-"
+            "submission package on schedule. Successfully managed two HA "
+            "query cycles with clean, on-time responses. The biggest "
+            "unlock was tightening the cross-functional handoff with CDM "
+            "and Clinical Operations — Module 3 inputs now arrive a week "
+            "before the planned freeze date."
         )
         BOB_FLAGSHIP_GOAL_H1_MENTOR = (
-            "Bob has been a model of self-starting ownership this half. The "
-            "cellscreen handoff redesign was entirely his initiative and the data "
-            "backs the timeline gains. He's getting sharper at framing trade-offs "
-            "for senior stakeholders too — the platform RFC landed cleanly with "
-            "engineering and Mfg leadership on the first review. Strong half."
+            "Bob has been a model of regulatory program ownership this "
+            "half. The EMA filing landed on schedule and the HA query "
+            "responses were genuinely high-quality. He's getting sharper "
+            "at framing trade-offs with the broader team too — the "
+            "Module 3 handoff redesign was his initiative and is working "
+            "well. Strong half."
         )
         BOB_FLAGSHIP_GOAL_H2_SELF = (
-            "H2 was the validation push. Drove the GMP-grade validation campaign "
-            "for the upstream module — 3 protocol revisions, 12 validation runs, "
-            "zero deviations on the critical path. Handed off the validated module "
-            "to Mfg in March with a complete artifact set. Also mentored Charlie "
-            "through his first independent assay design as part of the H2 close."
+            "H2 closed the EMA cycle (zero outstanding queries) and "
+            "opened the FDA pre-IND track. Authored the pre-IND briefing "
+            "document, ran the agency meeting, and walked away with an "
+            "agreed pathway for the FY26-27 IND filing. Mentored Charlie "
+            "through his first independent Module 3 authoring as part of "
+            "the H2 close — he's now operating cleanly at the Specialist "
+            "band."
         )
         BOB_FLAGSHIP_GOAL_H2_MENTOR = (
-            "Exceptionally clean H2 delivery. Mfg accepted the validation "
-            "artifacts on first pass — rare for a platform of this novelty. The "
-            "mentoring of Charlie is showing real impact; Charlie's own H2 "
-            "assay work has noticeably tightened. Bob is operating at the "
-            "Senior Scientist mid-band confidently and is ready for stretch "
-            "responsibilities in FY26-27."
+            "Exceptionally clean H2 delivery. The FDA pre-IND outcome "
+            "was unusually positive — agency feedback specifically called "
+            "out the briefing document narrative. Mentoring of Charlie "
+            "is showing real impact. Bob is operating at the top of the "
+            "Regulatory Affairs Manager band and is ready for stretch "
+            "Lead-band responsibilities in FY26-27."
         )
 
         BOB_MENTOR_GOAL_H1_SELF = (
             "H1 I focused on building Charlie's and Dana's confidence on "
-            "instrument SOPs and data interpretation. Ran weekly office hours "
-            "and maintained a shared internal doc with troubleshooting recipes. "
-            "Charlie now independently designs his own validation plates."
+            "eCTD authoring, regulatory intelligence, and agency-response "
+            "drafting. Ran weekly office hours and maintained a shared "
+            "internal playbook covering common HA query response patterns "
+            "for our therapeutic area. Charlie now independently drafts "
+            "Module 3 quality content; Dana owns the agency response "
+            "tracker end-to-end."
         )
         BOB_MENTOR_GOAL_H1_MENTOR = (
             "Bob's mentoring approach is structured and consistent. The "
-            "instrument troubleshooting recipe doc has become a team reference, "
-            "used beyond his direct mentees. Charlie's confidence trajectory "
+            "agency-response playbook has become a team reference, used "
+            "beyond his direct mentees. Charlie's confidence trajectory "
             "specifically has been impressive this half."
         )
         BOB_MENTOR_GOAL_H2_SELF = (
-            "H2 widened the mentoring scope — onboarded two new joiners through "
-            "their first validation runs, and ran a cross-team brown-bag series "
-            "on assay debugging. The internal recipe doc now has 30+ entries and "
-            "is the de-facto onboarding artifact for new R&D scientists."
+            "H2 widened the scope — onboarded two new RA joiners through "
+            "their first submission cycle, and ran a cross-team brown-bag "
+            "series on HA query response strategy. The internal playbook "
+            "now has 30+ patterns and is the de-facto onboarding artifact "
+            "for new RA hires."
         )
         BOB_MENTOR_GOAL_H2_MENTOR = (
-            "Bob has quietly become a mentoring multiplier on this team. The "
-            "brown-bag series has expanded mentoring impact beyond his own "
-            "assigned mentees, and the recipe doc is now actively maintained by "
-            "the broader team. Real culture work — exceeds expectations for the "
-            "Senior Scientist band."
+            "Bob has quietly become a mentoring multiplier on the RA "
+            "team. The brown-bag series has expanded mentoring impact "
+            "beyond his own assigned mentees, and the playbook is now "
+            "actively maintained by the broader team. Real culture work "
+            "— exceeds expectations for the Regulatory Affairs Manager band."
         )
 
         BOB_PAPER_GOAL_H1_SELF = (
             "Drafted the outline and first two sections of the internal "
-            "technical paper on the cellscreen automation results. Took peer "
-            "review feedback from two senior scientists and restructured the "
-            "methodology section based on their comments — v2 is meaningfully "
-            "sharper than v1."
+            "regulatory paper on the HA query response strategy that "
+            "drove the EMA cycle. Took peer review feedback from two "
+            "senior RA leads and restructured the methodology section "
+            "based on their comments — v2 is meaningfully sharper than v1."
         )
         BOB_PAPER_GOAL_H1_MENTOR = (
-            "On track. The outline and methodology framing are solid. Bob took "
-            "peer feedback constructively and the v2 is genuinely sharper than "
-            "v1 — a good signal for the H2 finish."
+            "On track. The outline and methodology framing are solid. "
+            "Bob took peer feedback constructively and the v2 is "
+            "genuinely sharper than v1 — a good signal for the H2 finish."
         )
         BOB_PAPER_GOAL_H2_SELF = (
             "Completed the paper end-to-end, published to the internal "
-            "knowledge base in February. Presented the work at the all-hands "
-            "R&D session in March; received strong engagement and three new "
-            "collaboration leads off the back of it."
+            "knowledge base in February. Presented the work at the "
+            "all-hands Regulatory Affairs session in March; received "
+            "strong engagement and three new cross-team collaboration "
+            "leads off the back of it."
         )
         BOB_PAPER_GOAL_H2_MENTOR = (
-            "Paper landed well and the all-hands presentation was confident. "
-            "The follow-on collaboration interest is a strong external signal. "
-            "Bob has built up real technical-writing muscle this year — a "
-            "stretch ask we set in April and fully delivered against."
+            "Paper landed well and the all-hands presentation was "
+            "confident. The follow-on collaboration interest is a strong "
+            "external signal. Bob has built up real regulatory-writing "
+            "muscle this year — a stretch ask we set in April and fully "
+            "delivered against."
         )
 
         # ── Helper: fully-completed annual goal ──────────────────────
@@ -998,9 +1274,9 @@ def seed_database() -> None:
         # 11a. Three FY25-26 annual goals, all fully lifecycle-completed
         _ensure_full_lifecycle_goal(
             bob, anjali,
-            "Lead CAR-T Lab Automation MVP",
-            "Stand up the end-to-end automated CAR-T processing MVP — own the "
-            "design, build, validation, and hand-off to Mfg.",
+            "Lead FY25-26 Global Regulatory Submissions Programme",
+            "Own the FY25-26 cell-therapy submissions programme end-to-end — "
+            "EMA filing, HA interactions, and FDA pre-IND pathway.",
             cycle_name="FY25-26", fy_year=2025,
             h1_self=BOB_FLAGSHIP_GOAL_H1_SELF,
             h1_mentor=BOB_FLAGSHIP_GOAL_H1_MENTOR,
@@ -1009,9 +1285,9 @@ def seed_database() -> None:
         )
         _ensure_full_lifecycle_goal(
             bob, anjali,
-            "Mentor Two Junior Scientists",
-            "Coach Charlie and Dana through assay design and instrument SOPs; "
-            "build a team-wide troubleshooting reference.",
+            "Mentor Two Junior RA Team Members",
+            "Coach Charlie and Dana through eCTD authoring and HA response "
+            "drafting; build a team-wide regulatory playbook.",
             cycle_name="FY25-26", fy_year=2025,
             h1_self=BOB_MENTOR_GOAL_H1_SELF,
             h1_mentor=BOB_MENTOR_GOAL_H1_MENTOR,
@@ -1020,9 +1296,10 @@ def seed_database() -> None:
         )
         _ensure_full_lifecycle_goal(
             bob, anjali,
-            "Publish Internal Technical Paper on Automation Results",
-            "Author and present an internal technical paper on the cellscreen "
-            "automation outcomes; aim for an all-hands R&D session.",
+            "Publish Internal Regulatory Paper on HA Response Strategy",
+            "Author and present an internal regulatory paper on the HA query "
+            "response strategy used in the FY25-26 EMA cycle; aim for an "
+            "all-hands RA session.",
             cycle_name="FY25-26", fy_year=2025,
             h1_self=BOB_PAPER_GOAL_H1_SELF,
             h1_mentor=BOB_PAPER_GOAL_H1_MENTOR,
@@ -1032,150 +1309,170 @@ def seed_database() -> None:
         print("  [+] Bob — 3 FY25-26 annual goals, each fully lifecycle-completed (H2_MENTOR_REVIEWED)")
 
         # 11b. Project reviews — Q1..Q4 FY25-26 on MIL-PRJ-100
-        # Q1 FY25-26: platform design phase (Apr-Jun 2025)
+        # Q1 FY25-26 — regulatory strategy kickoff (Apr-Jun 2025).
+        # Bob's flagship is reframed as a Regulatory Affairs programme:
+        # planning EMA + FDA submissions for the cell-therapy portfolio.
         BOB_PR_Q1 = dict(
             cycle="Q1 FY25-26", pg="2",
             impact=(
-                "Anchored the early platform design phase — instrument shortlist, "
-                "integration spec, and the first cellscreen handoff prototype."
+                "Anchored the Q1 regulatory strategy: HA landscape map, "
+                "submission timeline architecture, and the first draft of "
+                "the Module 1 admin content for the EMA pre-submission."
             ),
-            comment_task_execution=(
-                "Delivered the integration spec on a tight timeline; vendor "
-                "evaluation matrix was thorough and decision-ready."
+            comment_scope_of_role=(
+                "Owned the Regulatory Affairs Manager remit end-to-end — "
+                "submission planning, HA interaction strategy, and "
+                "cross-functional coordination with CDM and Clinical Ops."
             ),
-            comment_ownership=(
-                "Took ownership of the platform design without prompting; "
-                "raised the instrument-procurement risk early enough that we "
-                "had buffer to react."
+            comment_key_responsibilities=(
+                "Drafted the FY25-26 submissions plan with full timeline + "
+                "dependency map. Initiated the Module 1 admin file. "
+                "Established the agency-response tracker that the whole team "
+                "now uses."
             ),
-            comment_project_management=(
-                "Clean tracker discipline from week one. Milestones reset "
-                "transparently when the vendor pushback came in."
+            comment_technical_competencies=(
+                "Strong fluency in regulatory submission preparation and "
+                "regulatory intelligence. Brought eCTD discipline to the "
+                "team workflow from week one. Risk-assessment thinking is "
+                "operating at the senior band."
             ),
-            comment_client_deliverables=(
-                "Integration spec was client-ready on first review — "
-                "engineering accepted it without redlines."
+            comment_delivery_ownership=(
+                "Took clear program ownership of the submissions workstream "
+                "without me needing to chase. Stepped beyond the strict "
+                "Regulatory Affairs Manager scope when the timeline "
+                "demanded coordination across CDM."
             ),
-            comment_communication=(
-                "Confident framing in cross-functional reviews. Wrote "
-                "concise weekly summaries that the senior R&D council relied on."
+            comment_regulatory_compliance=(
+                "HA interaction strategy is well-grounded in ICH guidance. "
+                "Submission governance discipline is exemplary — every "
+                "artifact has a traceable owner and audit log."
             ),
-            comment_mentoring=(
-                "Started weekly office hours for Charlie and Dana from Week 3; "
-                "engagement is good."
-            ),
-            comment_competency_skills=(
-                "Strong foundation in cellscreen automation; growing breadth "
-                "into vendor-management."
+            comment_project_resource_management=(
+                "Started light team coordination from week three — Charlie "
+                "and Dana have a clear sub-workstream allocation. Resource "
+                "tracking is live."
             ),
         )
-        # Q2 FY25-26: build phase (Jul-Sep 2025)
+        # Q2 FY25-26 — first submission cycle (Jul-Sep 2025)
         BOB_PR_Q2 = dict(
             cycle="Q2 FY25-26", pg="2",
             impact=(
-                "Drove the upstream module build through the cellscreen handoff "
-                "redesign — the 40% timeline gain on per-run cycle landed here."
+                "Drove the EMA pre-submission package to first filing. "
+                "Successfully managed two HA query rounds with on-time, "
+                "on-quality responses."
             ),
-            comment_task_execution=(
-                "Reframed the cellscreen handoff to a single-pass automated "
-                "step; ran the comparator analysis cleanly."
+            comment_scope_of_role=(
+                "Operating firmly at the Regulatory Affairs Manager band — "
+                "led the submission, owned HA interactions, and coordinated "
+                "the cross-functional Module 3 inputs."
             ),
-            comment_ownership=(
-                "Stepped up when the vendor delivery slipped — improvised the "
-                "stop-gap and kept the build moving."
+            comment_key_responsibilities=(
+                "Closed Module 1 + Module 2.7 + Module 3 quality content. "
+                "Filed on schedule. Managed two HA query rounds without "
+                "escalation — clean, on-time, on-quality responses."
             ),
-            comment_project_management=(
-                "Risk register stayed live; the vendor delay flag was raised "
-                "with mitigation options, not just the problem."
+            comment_technical_competencies=(
+                "eCTD submission management is at the senior band. "
+                "Regulatory intelligence on EMA precedent for the therapeutic "
+                "area is genuinely deep. Risk assessment on HA query strategy "
+                "was sharp."
             ),
-            comment_client_deliverables=(
-                "Build documentation is GMP-friendly already — will pay back "
-                "in Q4 during validation."
+            comment_delivery_ownership=(
+                "Owned the program through the submission window. Held the "
+                "line on quality when timeline pressure tried to compress "
+                "the QC step — the right call, and the data backs it."
             ),
-            comment_communication=(
-                "Clear cross-team comms when the timeline reset was needed; "
-                "stakeholders aligned without escalation."
+            comment_regulatory_compliance=(
+                "HA interactions handled with appropriate gravitas and "
+                "precision. Documentation governance is audit-ready."
             ),
-            comment_mentoring=(
-                "Charlie attributes his first independent assay design to "
-                "Bob's office-hours coaching."
-            ),
-            comment_competency_skills=(
-                "Deepening on integration tooling; the comparator analysis "
-                "showed real analytical rigor."
+            comment_project_resource_management=(
+                "Resource allocation across the submission workstream was "
+                "well-judged — Charlie carried Module 3 cleanly, Dana "
+                "carried the response tracker. Both are growing under his "
+                "coordination."
             ),
         )
-        # Q3 FY25-26: validation prep (Oct-Dec 2025)
+        # Q3 FY25-26 — response cycles + FDA pre-IND (Oct-Dec 2025)
         BOB_PR_Q3 = dict(
             cycle="Q3 FY25-26", pg="1",
             impact=(
-                "Authored the validation protocol set and ran the dry runs — "
-                "set up the Q4 validation campaign to land cleanly."
+                "Closed the EMA response cycle and opened the FDA pre-IND "
+                "track. Quality response narrative was specifically called "
+                "out by the agency as exemplary."
             ),
-            comment_task_execution=(
-                "Validation protocols are exceptionally well-structured; the "
-                "dry-run learnings folded back into protocol v2 efficiently."
+            comment_scope_of_role=(
+                "Operating at the top of the Regulatory Affairs Manager band "
+                "and starting to demonstrate Lead-band scope on the "
+                "FDA workstream — defining strategy, not just executing."
             ),
-            comment_ownership=(
-                "Owned the whole validation prep without me needing to chase. "
-                "Self-directed and reliable."
+            comment_key_responsibilities=(
+                "Closed all outstanding EMA queries with one round-trip. "
+                "Opened the FDA pre-IND meeting request and authored the "
+                "briefing document. Negotiated the agency meeting agenda."
             ),
-            comment_project_management=(
-                "Validation plan with milestones, reagent ordering, and risk "
-                "buffer all in one tracker. Best example on the line right now."
+            comment_technical_competencies=(
+                "Regulatory strategy development is genuinely senior-level. "
+                "Submission management discipline is becoming a team "
+                "standard. Cross-agency regulatory intelligence is sharp."
             ),
-            comment_client_deliverables=(
-                "Protocols passed internal QA review on first submission."
+            comment_delivery_ownership=(
+                "Owns the full submission portfolio. Took ownership of the "
+                "pre-IND briefing scope beyond the original ask — recognized "
+                "the strategic value of the broader narrative and made the "
+                "right call."
             ),
-            comment_communication=(
-                "Presented the validation plan to senior R&D council — "
-                "confident, well-prepared, took pushback constructively."
+            comment_regulatory_compliance=(
+                "EMA agency feedback on the quality narrative was unusually "
+                "positive. Submission governance is rock-solid. Inspection "
+                "readiness mindset is fully in place."
             ),
-            comment_mentoring=(
-                "Started a cross-team brown-bag series on assay debugging — "
-                "well-received beyond his immediate mentees."
-            ),
-            comment_competency_skills=(
-                "Operating at the Senior Scientist mid-band confidently; "
-                "validation rigor is genuinely strong."
+            comment_project_resource_management=(
+                "Resource allocation across the EMA close + FDA opening is "
+                "well-balanced. The team is operating well under his "
+                "coordination — Charlie is now independently leading Module "
+                "3 for the FDA track."
             ),
         )
-        # Q4 FY25-26: validation push + handoff (Jan-Mar 2026)
+        # Q4 FY25-26 — FDA pre-IND + program close (Jan-Mar 2026)
         BOB_PR_Q4 = dict(
             cycle="Q4 FY25-26", pg="1",
             impact=(
-                "Closed the validation campaign — 12 runs, zero critical-path "
-                "deviations — and handed the validated module to Mfg in March."
+                "Successful FDA pre-IND meeting outcome with agreed pathway "
+                "for the IND filing. Closed FY25-26 program with full "
+                "audit-readiness across all submission packages."
             ),
-            comment_task_execution=(
-                "Twelve validation runs with zero critical deviations is an "
-                "outstanding result. Execution discipline through the close was "
-                "exceptional."
+            comment_scope_of_role=(
+                "Demonstrated Lead-band scope across the FDA workstream and "
+                "the program close. Strategic regulatory leadership is "
+                "clearly in evidence."
             ),
-            comment_ownership=(
-                "Owned the Mfg handoff end-to-end including the post-handoff "
-                "support window. Saw the work through, didn't just throw it "
-                "over the wall."
+            comment_key_responsibilities=(
+                "Led the pre-IND meeting with a positive outcome. Authored "
+                "the post-meeting minutes that the agency adopted with no "
+                "amendments. Closed the FY25-26 program with full "
+                "audit-traceable artifact set."
             ),
-            comment_project_management=(
-                "Handoff plan was complete before the final run finished — "
-                "rare for a project of this scope."
+            comment_technical_competencies=(
+                "Health-authority negotiation in evidence — meeting "
+                "outcome reflects real skill. Regulatory policy "
+                "interpretation is at the senior + level. Governance "
+                "frameworks are mature."
             ),
-            comment_client_deliverables=(
-                "Validation artifact set was accepted by Mfg on the first "
-                "review pass. This basically never happens."
+            comment_delivery_ownership=(
+                "Owned the program close end-to-end. Audit-readiness mindset "
+                "drove every artifact decision in Q4. Set the team up for "
+                "FY26-27 IND filing success."
             ),
-            comment_communication=(
-                "Handoff briefing to Mfg leadership was crisp and "
-                "well-pitched. Set up the relationship for FY26-27 work."
+            comment_regulatory_compliance=(
+                "FDA interaction quality was outstanding. Submission "
+                "governance is the team standard. Audit readiness is "
+                "complete and verified."
             ),
-            comment_mentoring=(
-                "Charlie's H2 work shows clear influence from Bob's mentoring "
-                "model — independent design, GMP rigor, clean documentation."
-            ),
-            comment_competency_skills=(
-                "Recognized SME on cellscreen automation; ready for stretch "
-                "scope in FY26-27."
+            comment_project_resource_management=(
+                "Resource allocation through the program close was excellent. "
+                "Team performed at the top of its range under his "
+                "coordination. Recommend stretch scope at Lead band in FY26-27."
             ),
         )
 
@@ -1215,45 +1512,50 @@ def seed_database() -> None:
         if bob_ar:
             bob_ar.status = ReviewStatus.COMPLETED.value
             bob_ar.self_overall_review = (
-                "FY25-26 was the year I stepped from 'execute on a workstream' "
-                "into 'own the platform.' The headline outcome was the CAR-T "
-                "automation MVP — designed, built, validated, and handed off to "
-                "Mfg in March. The cellscreen handoff redesign in H1 was the "
-                "single biggest unlock (~40% timeline gain per run), and the "
-                "H2 validation campaign closed clean with 12 runs and zero "
-                "critical-path deviations. Beyond the platform itself, I "
-                "doubled down on mentoring — Charlie and Dana shipped their "
-                "first independent assay designs this year, and the assay "
-                "debugging brown-bag I started in Q3 is now a recurring team "
-                "fixture. Finally, the internal technical paper on the "
-                "automation results published in February and led to three "
-                "collaboration conversations off the back of the R&D all-hands "
-                "presentation. Headed into FY26-27 ready to take on broader "
-                "platform scope and more formal team-lead responsibilities."
+                "FY25-26 was the year I stepped from 'execute on a "
+                "workstream' into 'own the regulatory programme.' The "
+                "headline outcome was the FY25-26 Global Regulatory "
+                "Submissions Programme — EMA filing on schedule, two HA "
+                "query cycles closed cleanly, and a successful FDA "
+                "pre-IND meeting outcome that gave us the agreed pathway "
+                "for the FY26-27 IND filing. Beyond the submission "
+                "portfolio itself, I doubled down on mentoring — Charlie "
+                "and Dana shipped their first independent Module 3 "
+                "authoring and HA response cycles this year, and the "
+                "HA-query brown-bag I started in Q3 is now a recurring "
+                "team fixture. Finally, the internal regulatory paper on "
+                "the HA response strategy published in February and led "
+                "to three cross-team collaboration conversations off the "
+                "back of the RA all-hands presentation. Headed into "
+                "FY26-27 ready to take on broader programme scope and "
+                "more formal Lead-band responsibilities."
             )
             bob_ar.self_performance_rating = 1
             bob_ar.mentor_overall_review = (
-                "Bob has delivered a standout year. The CAR-T automation MVP "
-                "is the team's flagship outcome of the cycle and his ownership "
-                "ran through every phase of it — design, build, validation, "
-                "and the Mfg handoff. The most impressive trait this year has "
-                "been the combination of technical depth and quiet leadership: "
-                "the troubleshooting recipe doc and the assay-debugging "
-                "brown-bag have lifted the bar across his peers, not just his "
-                "direct mentees. Charlie's growth trajectory specifically is "
-                "directly attributable to Bob's coaching. Comms with senior "
-                "stakeholders are confident and well-pitched. Recommend "
+                "Bob has delivered a standout year. The FY25-26 "
+                "Submissions Programme is the team's flagship outcome of "
+                "the cycle and his ownership ran through every phase — "
+                "strategy, filing, HA interactions, and the FDA pre-IND "
+                "outcome. The most impressive trait this year has been "
+                "the combination of regulatory depth and quiet "
+                "leadership: the HA response playbook and the brown-bag "
+                "series have lifted the bar across his peers, not just "
+                "his direct mentees. Charlie's growth trajectory "
+                "specifically is directly attributable to Bob's "
+                "coaching. Comms with senior stakeholders and with the "
+                "agency are confident and well-pitched. Recommend "
                 "promotion consideration for FY26-27 alongside stretch "
-                "platform scope."
+                "Lead-band scope."
             )
             bob_ar.mentor_performance_rating = 1
             bob_ar.management_performance_rating = 1
             bob_ar.final_performance_rating = 1
             bob_ar.management_comments = (
-                "Calibrated at the top of the Senior Scientist band. Mentor "
-                "rating endorsed without adjustment. Promotion to Team Lead "
-                "track flagged for the FY26-27 mid-year review. Stretch "
-                "scope: lead the FY26-27 platform expansion programme."
+                "Calibrated at the top of the Regulatory Affairs Manager "
+                "band. Mentor rating endorsed without adjustment. "
+                "Promotion to Regulatory Affairs Lead track flagged for "
+                "the FY26-27 mid-year review. Stretch scope: lead the "
+                "FY26-27 IND filing programme end-to-end."
             )
             bob_ar.final_rating_enabled = True
             db.commit()
@@ -1274,27 +1576,29 @@ def seed_database() -> None:
         print("    anjali.rao@healthark.ai     Anjali Rao    (Bob, Charlie, Dana)")
         print("    mark.singh@healthark.ai     Mark Singh    (Iris, Evan, Fiona)")
         print("    priya.mehta@healthark.ai    Priya Mehta   (Klaus, Mia, Nils)")
-        print("\n  PMs (Miltenyi):")
-        print("    hans@miltenyi.com           Hans Müller   (PRJ-101, PRJ-103)")
-        print("    greta@miltenyi.com          Greta Schmidt (PRJ-102)")
-        print("    lukas@miltenyi.com          Lukas Lange   (PRJ-104)")
-        print("    dieter@miltenyi.com         Dieter Becker (reserve)")
-        print("\n  Employee (Healthark @ Miltenyi):")
-        print("    R&D:        bob@, charlie@, dana@, iris@miltenyi.com")
-        print("    Mfg:        evan@, fiona@, klaus@miltenyi.com")
-        print("    Commercial: mia@, nils@miltenyi.com")
+        print("\n  PMs (Miltenyi — each Lead band in a GCC function):")
+        print("    hans@miltenyi.com           Hans Müller   (Regulatory Affairs Lead)")
+        print("    greta@miltenyi.com          Greta Schmidt (Clinical Trial Management Lead)")
+        print("    lukas@miltenyi.com          Lukas Lange   (Medical Writing Lead)")
+        print("    dieter@miltenyi.com         Dieter Becker (Pharmacovigilance Lead, reserve)")
+        print("\n  Employees (across GCC functions):")
+        print("    Regulatory Affairs:        bob@ (Manager), charlie@ (Specialist), dana@ (Sr Associate)")
+        print("    Clinical Data Management:  iris@ (Sr CDM)")
+        print("    Clinical Trial Management: evan@ (CTM)")
+        print("    Pharmacovigilance:         fiona@ (PV Analyst), klaus@ (Sr PV Analyst)")
+        print("    Medical Writing:           mia@ (Sr Med Writer), nils@ (Med Writer)")
         print("\n--- LIFECYCLE TEST DATA ---")
-        print("  MIL-PRJ-101 → Completed (Sarah, 2025-09-01); 3 historical assignments")
-        print("  MIL-PRJ-103 → Charlie has TWO stints: ended 2026-04-30 + active 2026-06-01")
+        print("  MIL-PRJ-101 -> Completed (Sarah, 2025-09-01); 3 historical assignments")
+        print("  MIL-PRJ-103 -> Charlie has TWO stints: ended 2026-04-30 + active 2026-06-01")
         print("    His Q1 PENDING review stays in Hans's queue (in-flight finish).")
         print("\n--- DEMO-READY MENTEE (FULL FY25-26 HISTORY) ---")
-        print("  Bob Builder  →  bob@miltenyi.com          (Employee)")
+        print("  Bob Builder  ->  bob@miltenyi.com          (Regulatory Affairs Manager)")
         print("    Mentor    : Anjali Rao (anjali.rao@healthark.ai)")
-        print("    Project   : MIL-PRJ-100 (CAR-T Platform Development Programme)")
-        print("    Goals     : 3 annual goals, all H2_MENTOR_REVIEWED (full lifecycle)")
-        print("    Project   : 4 reviews on MIL-PRJ-100 — Q1..Q4 FY25-26, all REVIEWED")
+        print("    Project   : MIL-PRJ-100 (FY25-26 Global Regulatory Submissions Programme)")
+        print("    Goals     : 3 annual goals (RA-themed), all H2_MENTOR_REVIEWED (full lifecycle)")
+        print("    Project Rv: 4 reviews on MIL-PRJ-100 — Q1..Q4 FY25-26, all REVIEWED")
         print("    Annual Rv : FY25-26 COMPLETED at rating 1, final published")
-        print("  → Demo: log in as anjali.rao@healthark.ai; My Mentees → Bob.")
+        print("  -> Demo: log in as anjali.rao@healthark.ai; My Mentees -> Bob.")
         print()
 
     except Exception as e:

@@ -9,6 +9,7 @@ import {
   type RoleExpectation,
 } from "@/services/project-review.service";
 import { ExpectationPanel } from "@/components/project-reviews/ExpectationPanel";
+import { GCC_COMPETENCIES, type GccCompetency } from "@/constants/gccFramework";
 
 /**
  * Minimal header data the modal needs to render its title + context line.
@@ -23,27 +24,10 @@ export interface EvalModalCard {
   review_id: number | null;
 }
 
-const COMPETENCIES = [
-  { key: "task_execution",      label: "Task Execution & Problem Solving",             expKey: "exp_task_execution" },
-  { key: "ownership",           label: "Ownership & Accountability",                    expKey: "exp_ownership" },
-  { key: "project_management",  label: "Project Management and Risk Mitigation",        expKey: "exp_project_management" },
-  { key: "client_deliverables", label: "Building Client-Ready Deliverables",            expKey: "exp_client_deliverables" },
-  { key: "communication",       label: "Communication & Client/Stakeholder Management", expKey: "exp_communication" },
-  { key: "mentoring",           label: "Mentoring and Team Development",                expKey: "exp_mentoring" },
-  { key: "competency_skills",   label: "Competency and Skills",                         expKey: "exp_competency_skills" },
-] as const;
-
-type CompKey = (typeof COMPETENCIES)[number]["key"];
-
-const EMPTY_COMMENTS: Record<CompKey, string> = {
-  task_execution: "",
-  ownership: "",
-  project_management: "",
-  client_deliverables: "",
-  communication: "",
-  mentoring: "",
-  competency_skills: "",
-};
+// Build empty-comments dict at module load, keyed by GCC slug.
+const EMPTY_COMMENTS: Record<string, string> = Object.fromEntries(
+  GCC_COMPETENCIES.map((c) => [c.key, ""]),
+);
 
 const TEXTAREA_CLS =
   "w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-brand resize-none disabled:bg-slate-50 disabled:text-text-muted disabled:cursor-not-allowed";
@@ -64,6 +48,19 @@ interface EvalModalProps {
   readonly isSaving: boolean;
   readonly isDraftSaving?: boolean;
   readonly error: string;
+}
+
+/** Build the comment-payload portion of a PMEvaluation(*) payload from the
+ *  in-memory `comments` map. Each GCC competency contributes one
+ *  `comment_<slug>` entry. */
+function buildCommentPayload(
+  comments: Record<string, string>,
+): Pick<PMEvaluationPayload, GccCompetency["commentKey"]> {
+  const out = {} as Pick<PMEvaluationPayload, GccCompetency["commentKey"]>;
+  for (const c of GCC_COMPETENCIES) {
+    out[c.commentKey] = comments[c.key] ?? "";
+  }
+  return out;
 }
 
 export function EvalModal({
@@ -87,7 +84,7 @@ export function EvalModal({
   const shouldPreload = card.review_id != null;
   const [isLoadingReview, setIsLoadingReview] = useState(shouldPreload);
   const [fetchError, setFetchError] = useState("");
-  const [comments, setComments] = useState<Record<CompKey, string>>(EMPTY_COMMENTS);
+  const [comments, setComments] = useState<Record<string, string>>(EMPTY_COMMENTS);
   const [performanceGroup, setPerformanceGroup] = useState<PerformanceGroup | "">("");
   const [impactStatement, setImpactStatement] = useState("");
 
@@ -97,15 +94,13 @@ export function EvalModal({
     projectReviewService
       .getReview(card.review_id)
       .then((review) => {
-        setComments({
-          task_execution: review.comment_task_execution ?? "",
-          ownership: review.comment_ownership ?? "",
-          project_management: review.comment_project_management ?? "",
-          client_deliverables: review.comment_client_deliverables ?? "",
-          communication: review.comment_communication ?? "",
-          mentoring: review.comment_mentoring ?? "",
-          competency_skills: review.comment_competency_skills ?? "",
-        });
+        // Populate one state slot per GCC competency from the server's
+        // matching comment_<slug> field.
+        const next: Record<string, string> = {};
+        for (const c of GCC_COMPETENCIES) {
+          next[c.key] = (review[c.commentKey] as string | null) ?? "";
+        }
+        setComments(next);
         setPerformanceGroup((review.performance_group ?? "") as PerformanceGroup | "");
         setImpactStatement(review.impact_statement ?? "");
       })
@@ -114,10 +109,10 @@ export function EvalModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const setComment = (key: CompKey, value: string) =>
+  const setComment = (key: string, value: string) =>
     setComments((prev) => ({ ...prev, [key]: value }));
   const allFilled =
-    COMPETENCIES.every((c) => comments[c.key].trim().length > 0) &&
+    GCC_COMPETENCIES.every((c) => (comments[c.key] ?? "").trim().length > 0) &&
     performanceGroup !== "" &&
     impactStatement.trim().length > 0;
 
@@ -168,7 +163,7 @@ export function EvalModal({
 
         {isLoadingReview ? (
           <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6 animate-pulse">
-            {COMPETENCIES.map((c) => (
+            {GCC_COMPETENCIES.map((c) => (
               <div key={c.key} className="space-y-1.5">
                 <div className="h-3 w-48 rounded bg-slate-100" />
                 <div className="h-24 rounded-lg bg-slate-100" />
@@ -237,7 +232,7 @@ export function EvalModal({
                 <option value="5">5</option>
               </select>
             </div>
-            {COMPETENCIES.map((comp, idx) => (
+            {GCC_COMPETENCIES.map((comp, idx) => (
               <div key={comp.key}>
                 <label
                   htmlFor={`eval-${comp.key}`}
@@ -253,7 +248,7 @@ export function EvalModal({
                   rows={4}
                   maxLength={COMPETENCY_COMMENT_MAX}
                   className={TEXTAREA_CLS}
-                  value={comments[comp.key]}
+                  value={comments[comp.key] ?? ""}
                   onChange={(e) => setComment(comp.key, e.target.value)}
                   placeholder={`Evaluate ${card.employee_name}'s ${comp.label.toLowerCase()}…`}
                   disabled={readOnly}
@@ -261,12 +256,12 @@ export function EvalModal({
                 {!readOnly && (
                   <div
                     className={`mt-1 text-right text-xs ${
-                      comments[comp.key].length >= COMPETENCY_COMMENT_MAX
+                      (comments[comp.key]?.length ?? 0) >= COMPETENCY_COMMENT_MAX
                         ? "text-red-600"
                         : "text-text-muted"
                     }`}
                   >
-                    {comments[comp.key].length.toLocaleString()} /{" "}
+                    {(comments[comp.key]?.length ?? 0).toLocaleString()} /{" "}
                     {COMPETENCY_COMMENT_MAX.toLocaleString()}
                   </div>
                 )}
@@ -319,13 +314,7 @@ export function EvalModal({
               onClick={() => {
                 const payload: PMEvaluationDraftPayload = {
                   impact_statement: impactStatement,
-                  comment_task_execution: comments.task_execution,
-                  comment_ownership: comments.ownership,
-                  comment_project_management: comments.project_management,
-                  comment_client_deliverables: comments.client_deliverables,
-                  comment_communication: comments.communication,
-                  comment_mentoring: comments.mentoring,
-                  comment_competency_skills: comments.competency_skills,
+                  ...buildCommentPayload(comments),
                 };
                 if (performanceGroup !== "") {
                   payload.performance_group = performanceGroup;
@@ -350,13 +339,7 @@ export function EvalModal({
                 onSubmit({
                   performance_group: performanceGroup as PerformanceGroup,
                   impact_statement: impactStatement,
-                  comment_task_execution: comments.task_execution,
-                  comment_ownership: comments.ownership,
-                  comment_project_management: comments.project_management,
-                  comment_client_deliverables: comments.client_deliverables,
-                  comment_communication: comments.communication,
-                  comment_mentoring: comments.mentoring,
-                  comment_competency_skills: comments.competency_skills,
+                  ...buildCommentPayload(comments),
                 })
               }
               disabled={isSaving || isDraftSaving || !allFilled || isLoadingReview || !!fetchError}
