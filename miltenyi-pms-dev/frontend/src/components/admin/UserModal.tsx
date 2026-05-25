@@ -8,7 +8,14 @@ import type {
   DesignationBrief,
 } from "@/services/admin.service";
 import { UserCombobox } from "@/components/common/UserCombobox";
+import { IdCombobox } from "@/components/common/IdCombobox";
 import { useAuth } from "@/hooks/useAuth";
+import {
+  normalizeFullName,
+  isValidNameChars,
+  isValidEmailForRole,
+  emailDomainHintForRole,
+} from "@/utils/text";
 
 // Role choices in the dropdown — must match the backend Role enum exactly.
 // Labels are display-only; the value is what gets persisted.
@@ -101,6 +108,48 @@ export function UserModal({
 
   const set = (field: string, value: string) =>
     setForm((prev) => ({ ...prev, [field]: value }));
+
+  // Validity flags mirror the backend rules in admin_routes.py:
+  // _validate_name_chars + _validate_email_for_role. Computed every
+  // render so the inline error rows + the Save button's disabled
+  // state stay in sync with what the user has typed.
+  //
+  // Name: empty is treated as "not yet entered" — we show no error
+  // until they type something, but Save stays disabled (required *
+  // already signals it). When chars are bad we surface the message.
+  // Email: only validated on the create path, since the field is
+  // read-only when editing — but role changes during edit DO need
+  // the existing stored email to match the new role, which the
+  // backend re-checks. The UI surfaces a hint inline so HR doesn't
+  // get a surprise 400 when flipping a role across domains.
+  const nameTrimmed = form.full_name.trim();
+  const nameHasChars = nameTrimmed.length > 0;
+  const nameCharsValid = nameHasChars ? isValidNameChars(nameTrimmed) : true;
+  const showNameError = nameHasChars && !nameCharsValid;
+
+  const emailToCheck = isEditing ? editingUser!.email : form.email;
+  const emailDomainValid =
+    emailToCheck.length === 0
+      ? true
+      : isValidEmailForRole(emailToCheck, form.role);
+  const showEmailError = emailToCheck.length > 0 && !emailDomainValid;
+  const emailHint = emailDomainHintForRole(form.role);
+
+  // Snap the displayed name to canonical title-case once the user
+  // tabs away — matches the backend's normalization so what they see
+  // is what gets persisted. Skip when chars are invalid so we don't
+  // mangle an in-flight typo (the inline error already nudges them
+  // to fix it before blur-normalize would help).
+  const handleFullNameBlur = () => {
+    if (!nameHasChars || !nameCharsValid) return;
+    const canonical = normalizeFullName(form.full_name);
+    if (canonical !== form.full_name) {
+      set("full_name", canonical);
+    }
+  };
+
+  const canSave =
+    nameHasChars && nameCharsValid && emailDomainValid && !isSaving;
 
   const handleSubmit = async () => {
     if (isEditing) {
@@ -195,9 +244,15 @@ export function UserModal({
                     className={lockedInputCls}
                     value={form.full_name}
                     onChange={(e) => set("full_name", e.target.value)}
+                    onBlur={handleFullNameBlur}
                     placeholder="Jane Smith"
                     readOnly={isMiltenyiLocked}
                   />
+                  {showNameError && (
+                    <p className="mt-1 text-xs text-red-600">
+                      Name can only contain letters, spaces, and full stops.
+                    </p>
+                  )}
                 </div>
               </div>
             );
@@ -220,6 +275,12 @@ export function UserModal({
               <p className="mt-1 text-xs text-text-muted">
                 Email cannot be changed after creation.
               </p>
+            )}
+            {showEmailError && emailHint && (
+              <p className="mt-1 text-xs text-red-600">{emailHint}</p>
+            )}
+            {!showEmailError && !isEditing && emailHint && (
+              <p className="mt-1 text-xs text-text-muted">{emailHint}</p>
             )}
           </div>
 
@@ -283,37 +344,34 @@ export function UserModal({
               <label htmlFor="func" className={LABEL_CLS}>
                 Function
               </label>
-              <select
+              {/* Searchable picker — 8 GCC functions today; type-to-filter
+                  scales gracefully if HR_MyOrg ever adds more. */}
+              <IdCombobox
                 id="func"
-                className={INPUT_CLS}
-                value={form.function_id}
-                onChange={(e) => set("function_id", e.target.value)}
-              >
-                <option value="">— None —</option>
-                {functions.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
-                  </option>
-                ))}
-              </select>
+                options={functions}
+                value={form.function_id ? Number(form.function_id) : null}
+                onChange={(next) =>
+                  set("function_id", next == null ? "" : String(next))
+                }
+                placeholder="Search functions…"
+              />
             </div>
             <div>
               <label htmlFor="desig" className={LABEL_CLS}>
                 Designation
               </label>
-              <select
+              {/* Searchable picker — ~35 GCC designations across the
+                  4 career levels; the native <select> is unusable
+                  without type-to-filter at this size. */}
+              <IdCombobox
                 id="desig"
-                className={INPUT_CLS}
-                value={form.designation_id}
-                onChange={(e) => set("designation_id", e.target.value)}
-              >
-                <option value="">— None —</option>
-                {designations.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
-                  </option>
-                ))}
-              </select>
+                options={designations}
+                value={form.designation_id ? Number(form.designation_id) : null}
+                onChange={(next) =>
+                  set("designation_id", next == null ? "" : String(next))
+                }
+                placeholder="Search designations…"
+              />
             </div>
           </div>
 
@@ -368,8 +426,8 @@ export function UserModal({
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={isSaving}
-            className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
+            disabled={!canSave}
+            className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
           >
             {isSaving ? "Saving…" : isEditing ? "Save Changes" : "Add User"}
           </button>

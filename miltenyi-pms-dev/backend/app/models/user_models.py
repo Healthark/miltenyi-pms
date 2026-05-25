@@ -19,6 +19,15 @@ class Role(str, PyEnum):
                      self-reviews on goals (H1/H2) and annual reviews,
                      receives project reviews from PMs and annual reviews from Mentors
 
+    Email-domain rules (enforced in admin_routes._validate_email_for_role):
+      HR_MyOrg, Mentor                  → @healthark.ai
+      HR_Miltenyi, PM, Employee         → @miltenyi.com OR @external.miltenyi.com
+
+    The pairing is checked on user create AND on any role change (so HR
+    can't promote an @miltenyi.com Employee to Mentor without also fixing
+    the email — which is itself immutable, so role changes that cross the
+    domain boundary are effectively blocked).
+
     Stored as plain VARCHAR in the DB for portability and human-readable raw
     queries. The string value (not the Python name) is what hits the column.
     """
