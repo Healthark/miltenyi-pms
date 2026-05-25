@@ -5,6 +5,8 @@ import { StatusBadge } from "@/components/admin/StatusBadge";
 import { RoleBadge } from "@/components/admin/RoleBadge";
 import { ExportExcelButton } from "@/components/admin/ExportExcelButton";
 import { SortableHeader } from "@/components/SortableHeader";
+import { StringCombobox } from "@/components/common/StringCombobox";
+import { ClearFiltersButton } from "@/components/common/ClearFiltersButton";
 import { useAuth } from "@/hooks/useAuth";
 import {
   compareValues,
@@ -153,6 +155,28 @@ export function UsersTab({
   const { user: currentUser } = useAuth();
   const isViewerMiltenyiHR = currentUser?.role === "HR_Miltenyi";
 
+  // True when any filter (or the search box) is narrowing the result
+  // set. `statusFilter` defaults to "all" — same as every other filter
+  // — so the check is uniform.
+  const hasActiveFilters =
+    searchQuery.trim().length > 0 ||
+    roleFilter !== "all" ||
+    statusFilter !== "all" ||
+    functionFilter !== "all" ||
+    designationFilter !== "all" ||
+    mentorFilter !== "all" ||
+    pmFilter !== "all";
+
+  const clearFilters = () => {
+    onSearchChange("");
+    setRoleFilter("all");
+    setStatusFilter("all");
+    setFunctionFilter("all");
+    setDesignationFilter("all");
+    setMentorFilter("all");
+    setPmFilter("all");
+  };
+
   /** True if the current viewer is allowed to edit/deactivate this row.
    *  HR_MyOrg can touch any user; HR_Miltenyi cannot touch Mentor or HR_MyOrg rows. */
   const canMutateRow = (target: UserResponse): boolean => {
@@ -285,17 +309,15 @@ export function UsersTab({
             <label htmlFor="user-function-filter" className={FILTER_LABEL_CLS}>
               Function
             </label>
-            <select
+            <StringCombobox
               id="user-function-filter"
-              value={functionFilter}
-              onChange={(e) => setFunctionFilter(e.target.value)}
-              className={`${FILTER_SELECT_CLS} min-w-[140px]`}
-            >
-              <option value="all">All</option>
-              {availableFunctions.map((f) => (
-                <option key={f} value={f}>{f}</option>
-              ))}
-            </select>
+              options={availableFunctions}
+              // State uses "all" as the no-filter sentinel; the
+              // combobox uses "" — translate on both edges.
+              value={functionFilter === "all" ? "" : functionFilter}
+              onChange={(v) => setFunctionFilter(v === "" ? "all" : v)}
+              placeholder="All"
+            />
           </div>
         )}
         {availableDesignations.length > 0 && (
@@ -303,17 +325,13 @@ export function UsersTab({
             <label htmlFor="user-designation-filter" className={FILTER_LABEL_CLS}>
               Designation
             </label>
-            <select
+            <StringCombobox
               id="user-designation-filter"
-              value={designationFilter}
-              onChange={(e) => setDesignationFilter(e.target.value)}
-              className={`${FILTER_SELECT_CLS} min-w-[150px]`}
-            >
-              <option value="all">All</option>
-              {availableDesignations.map((d) => (
-                <option key={d} value={d}>{d}</option>
-              ))}
-            </select>
+              options={availableDesignations}
+              value={designationFilter === "all" ? "" : designationFilter}
+              onChange={(v) => setDesignationFilter(v === "" ? "all" : v)}
+              placeholder="All"
+            />
           </div>
         )}
         <div className="flex items-center gap-2">
@@ -329,7 +347,8 @@ export function UsersTab({
             ))}
           </select>
         </div>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
+          <ClearFiltersButton active={hasActiveFilters} onClear={clearFilters} />
           <ExportExcelButton kind="users" />
         </div>
       </div>

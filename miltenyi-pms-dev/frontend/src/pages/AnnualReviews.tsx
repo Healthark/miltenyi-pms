@@ -18,6 +18,10 @@ import { SelfReviewFormModal } from "@/components/reviews/SelfReviewFormModal";
 import { PerformanceRatingBadge } from "@/components/reviews/PerformanceRatingBadge";
 import { ReviewStatusBadge } from "@/components/reviews/ReviewStatusBadge";
 import { StringCombobox } from "@/components/common/StringCombobox";
+import { ClearFiltersButton } from "@/components/common/ClearFiltersButton";
+import { useOrgReferenceData } from "@/hooks/useOrgReferenceData";
+import { useOrgUsers } from "@/hooks/useOrgUsers";
+import { useAnnualReviewCycles } from "@/hooks/useAnnualReviewCycles";
 import { ExportExcelButton } from "@/components/admin/ExportExcelButton";
 import { SortableHeader } from "@/components/SortableHeader";
 import { type SortState } from "@/utils/sort";
@@ -532,27 +536,18 @@ function AllReviewsTab({
   // Only inline expansion remains local — filters AND sort moved up.
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
-  // Faceted-style dropdown options — derived from the LOADED reviews,
-  // which is the filtered universe (since the server already filtered).
-  // Trade-off: when a filter narrows the universe, OTHER dropdowns
-  // only show values present in that narrow set. Workaround: clear a
-  // dropdown to see its full option list refresh on the next fetch.
-  // A future "facets endpoint" could return all distinct values
-  // regardless of filters — out of scope for this PR (doc 26 Part 4).
-  const cycles = Array.from(
-    new Set(reviews.map((r) => r.cycle_name).filter(Boolean)),
-  ).sort((a, b) => b.localeCompare(a));
-  const employees = Array.from(
-    new Set(
-      reviews.map((r) => r.employee_name).filter((n): n is string => !!n),
-    ),
-  ).sort();
-  const functions = Array.from(
-    new Set(reviews.map((r) => r.function).filter((n): n is string => !!n)),
-  ).sort();
-  const designations = Array.from(
-    new Set(reviews.map((r) => r.designation).filter((n): n is string => !!n)),
-  ).sort();
+  // All filter dropdown options come from canonical org-wide sources,
+  // NOT from the LOADED (= server-filtered) `reviews`. Without that,
+  // picking any filter narrows the server response and the dropdown
+  // re-derives to only the selected value — trapping the user.
+  //
+  //   cycles                    -> useAnnualReviewCycles() (DB DISTINCT + active FY)
+  //   employees                 -> useOrgUsers() (admin /users, all active)
+  //   functions / designations  -> useOrgReferenceData() (admin refs)
+  const { functionNames: functions, designationNames: designations } =
+    useOrgReferenceData();
+  const { allUserNames: employees } = useOrgUsers();
+  const { cycles } = useAnnualReviewCycles();
 
   // `reviews` is the server-filtered + server-sorted universe (PR #43
   // for filters, PR #47 for sort). No client-side narrowing OR
@@ -608,25 +603,30 @@ function AllReviewsTab({
   // different remediation. Pre-PR-#43 the loaded array could only be
   // empty for the first reason; now the server can return zero rows
   // for any filter the user picks, so we name what happened.
+  //
+  // IMPORTANT: the empty state is rendered INSIDE the main layout (as
+  // a sibling of the filter toolbar), NOT as an early-return — so when
+  // a filter returns zero rows the user can still see the toolbar and
+  // clear / change their selection. Returning here would erase the
+  // toolbar and trap the user in the empty state.
   const hasActiveFilters = Object.values(filters).some(
     (v) => v !== undefined && v !== "",
   );
-  if (reviews.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border py-16 text-center bg-background/50">
-        <p className="font-display text-base font-medium text-text-main">
-          {hasActiveFilters
-            ? "No reviews match these filters"
-            : "No annual reviews recorded"}
-        </p>
-        <p className="mt-1 text-sm text-text-muted">
-          {hasActiveFilters
-            ? "Try clearing one or more filters above to broaden the result."
-            : "Reviews will appear here once employees submit self-reviews and mentors start evaluating."}
-        </p>
-      </div>
-    );
-  }
+  const isEmpty = reviews.length === 0;
+  const emptyStateNode = (
+    <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border py-16 text-center bg-background/50">
+      <p className="font-display text-base font-medium text-text-main">
+        {hasActiveFilters
+          ? "No reviews match these filters"
+          : "No annual reviews recorded"}
+      </p>
+      <p className="mt-1 text-sm text-text-muted">
+        {hasActiveFilters
+          ? "Try clearing one or more filters above to broaden the result."
+          : "Reviews will appear here once employees submit self-reviews and mentors start evaluating."}
+      </p>
+    </div>
+  );
 
   const labelCls =
     "text-[11px] font-bold uppercase tracking-wider text-text-muted";
@@ -698,19 +698,13 @@ function AllReviewsTab({
             <label htmlFor="all-rev-function" className={labelCls}>
               Function
             </label>
-            <select
+            <StringCombobox
               id="all-rev-function"
-              value={filters.function ?? "all"}
-              onChange={(e) => setFilter("function", e.target.value)}
-              className={`${selectCls} min-w-[130px]`}
-            >
-              <option value="all">All</option>
-              {functions.map((f) => (
-                <option key={f} value={f}>
-                  {f}
-                </option>
-              ))}
-            </select>
+              options={functions}
+              value={filters.function ?? ""}
+              onChange={(v) => setFilter("function", v)}
+              placeholder="All Functions"
+            />
           </div>
         )}
 
@@ -719,19 +713,13 @@ function AllReviewsTab({
             <label htmlFor="all-rev-designation" className={labelCls}>
               Designation
             </label>
-            <select
+            <StringCombobox
               id="all-rev-designation"
-              value={filters.designation ?? "all"}
-              onChange={(e) => setFilter("designation", e.target.value)}
-              className={`${selectCls} min-w-[150px]`}
-            >
-              <option value="all">All</option>
-              {designations.map((d) => (
-                <option key={d} value={d}>
-                  {d}
-                </option>
-              ))}
-            </select>
+              options={designations}
+              value={filters.designation ?? ""}
+              onChange={(v) => setFilter("designation", v)}
+              placeholder="All Designations"
+            />
           </div>
         )}
 
@@ -744,6 +732,10 @@ function AllReviewsTab({
               the filtered universe. */}
           {total} {total === 1 ? "match" : "matches"}
         </span>
+        <ClearFiltersButton
+          active={hasActiveFilters}
+          onClear={() => onFiltersChange({})}
+        />
        </div>
        <div className="shrink-0">
          <ExportExcelButton kind="annual-reviews" />
@@ -802,16 +794,13 @@ function AllReviewsTab({
           </div>
 
           {/* Body — either the no-matches message or the virtualized
-              scroll container. */}
-          {sorted.length === 0 ? (
-            <div className="px-5 py-10 text-center">
-              <p className="text-[13px] text-text-main font-medium">
-                No matching reviews
-              </p>
-              <p className="text-[11px] text-text-muted mt-0.5">
-                Try adjusting your filters or clearing the search.
-              </p>
-            </div>
+              scroll container. Empty state uses the same context-aware
+              copy as the org-empty case ("no reviews recorded" vs "no
+              reviews match these filters") because both render here
+              now — keeps the toolbar above visible so the user can
+              clear filters that produced zero rows. */}
+          {isEmpty ? (
+            <div className="px-5 py-10">{emptyStateNode}</div>
           ) : (
             <div
               ref={scrollContainerRef}

@@ -1,13 +1,15 @@
 /**
- * StringCombobox.tsx — type-to-filter single-select picker for a flat
- * list of strings.
+ * IdCombobox.tsx — type-to-filter single-select picker for a list of
+ * `{ id, name }` options. Used by UserModal for Function + Designation
+ * where the GCC seed now ships ~35 designations and a plain <select>
+ * is unwieldy.
  *
- * Mirrors the UX of `UserCombobox` (PM picker in ProjectModal) but
- * works with plain `string[]` options — used by filter toolbars where
- * the data isn't a user record. Vanilla React + Tailwind, no library.
+ * Mirrors the keyboard + click-outside behavior of `StringCombobox`
+ * (and PM/Secondary picker `UserCombobox`) but operates on numeric ids
+ * so the parent stays in `id` space without label-to-id reverse lookups.
  *
- * Selecting an empty value (via clear `X`) emits `""` so callers can
- * map that to "all" / "no filter" semantics.
+ * `null` value means "no selection" (the empty option). Clearing via
+ * the X button emits `null` so callers can treat that as "unassigned".
  */
 
 import {
@@ -20,42 +22,52 @@ import {
 import { ChevronDown, X } from "lucide-react";
 
 const INPUT_CLS =
-  "w-full rounded-lg border border-border bg-white py-1.5 pl-3 pr-8 text-[13px] text-text-main placeholder:text-text-muted outline-none focus:border-brand";
+  "w-full rounded-lg border border-border bg-white px-3 py-2 pr-8 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-brand";
 
-interface StringComboboxProps {
-  readonly id: string;
-  readonly options: readonly string[];
-  /** Empty string means "no selection". */
-  readonly value: string;
-  readonly onChange: (next: string) => void;
-  readonly placeholder?: string;
-  readonly minWidth?: string;
+export interface IdOption {
+  readonly id: number;
+  readonly name: string;
 }
 
-export function StringCombobox({
+interface IdComboboxProps {
+  readonly id: string;
+  readonly options: readonly IdOption[];
+  /** `null` means "no selection". */
+  readonly value: number | null;
+  readonly onChange: (id: number | null) => void;
+  readonly placeholder?: string;
+  /** Shown above the empty option when clicking through the dropdown
+   *  empty-state suggestions. Defaults to "— None —" to match the
+   *  original native <select> empty option label. */
+  readonly emptyLabel?: string;
+}
+
+export function IdCombobox({
   id,
   options,
   value,
   onChange,
   placeholder = "Type to search…",
-  minWidth = "180px",
-}: StringComboboxProps) {
+  emptyLabel = "— None —",
+}: IdComboboxProps) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState(value);
+  // The selected option's name (or "") is what the user sees in the
+  // input. Searching replaces this temporarily; closing reverts.
+  const selectedName =
+    value != null ? options.find((o) => o.id === value)?.name ?? "" : "";
+  const [query, setQuery] = useState(selectedName);
   const [activeIdx, setActiveIdx] = useState(0);
 
-  // Sync the displayed text with the bound `value` when (a) the parent
-  // changes it externally or (b) the dropdown transitions to closed
-  // (drops any uncommitted typing). React docs recommend doing the
-  // comparison during render instead of in a useEffect — the effect
-  // form would render → effect → setState → render again, while the
-  // during-render compare just renders once with the right value.
+  // Sync the displayed text with the bound value when either changes
+  // externally OR the dropdown closes (drops uncommitted typing).
+  // During-render compare instead of useEffect avoids the
+  // render→effect→setState→render second pass.
   const [lastSeen, setLastSeen] = useState({ value, open });
   if (lastSeen.value !== value || lastSeen.open !== open) {
     setLastSeen({ value, open });
-    if (!open) setQuery(value);
+    if (!open) setQuery(selectedName);
   }
 
   // Close on outside click.
@@ -76,20 +88,20 @@ export function StringCombobox({
     // selected value (i.e. user just reopened the dropdown without
     // typing). Without the second clause, reopening after a selection
     // narrows the list to only the selected entry because `query`
-    // equals the selected option string. The moment the user types
-    // anything different, the filter kicks in.
-    if (!q || q === value.trim().toLowerCase()) return options;
-    return options.filter((o) => o.toLowerCase().includes(q));
-  }, [options, query, value]);
+    // equals the selected name. The moment the user types anything
+    // different, the filter kicks in.
+    if (!q || q === selectedName.trim().toLowerCase()) return options;
+    return options.filter((o) => o.name.toLowerCase().includes(q));
+  }, [options, query, selectedName]);
 
-  const commit = (next: string) => {
-    onChange(next);
-    setQuery(next);
+  const commit = (opt: IdOption) => {
+    onChange(opt.id);
+    setQuery(opt.name);
     setOpen(false);
   };
 
   const clear = () => {
-    onChange("");
+    onChange(null);
     setQuery("");
     inputRef.current?.focus();
   };
@@ -98,9 +110,7 @@ export function StringCombobox({
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setOpen(true);
-      setActiveIdx((i) =>
-        Math.min(i + 1, Math.max(filtered.length - 1, 0)),
-      );
+      setActiveIdx((i) => Math.min(i + 1, Math.max(filtered.length - 1, 0)));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setActiveIdx((i) => Math.max(i - 1, 0));
@@ -111,12 +121,12 @@ export function StringCombobox({
       }
     } else if (e.key === "Escape") {
       setOpen(false);
-      setQuery(value);
+      setQuery(selectedName);
     }
   };
 
   return (
-    <div ref={wrapRef} className="relative" style={{ minWidth }}>
+    <div ref={wrapRef} className="relative">
       <input
         id={id}
         ref={inputRef}
@@ -137,12 +147,12 @@ export function StringCombobox({
           setOpen(true);
           setActiveIdx(0);
           // Empty input clears the bound value so the parent can drop
-          // the filter without the user having to click the X.
-          if (e.target.value === "") onChange("");
+          // the selection without the user having to click the X.
+          if (e.target.value === "") onChange(null);
         }}
         onKeyDown={handleKey}
       />
-      {value ? (
+      {value != null ? (
         <button
           type="button"
           onClick={clear}
@@ -158,18 +168,35 @@ export function StringCombobox({
         />
       )}
 
-      {open && filtered.length > 0 && (
+      {open && (filtered.length > 0 || value != null) && (
         <ul
           id={`${id}-listbox`}
           role="listbox"
           className="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-lg border border-border bg-white py-1 shadow-lg"
         >
+          {/* Clear-selection row at the top of the list — matches the
+              old <option value="">— None —</option> at the head of the
+              native select. */}
+          {value != null && (
+            <li
+              role="option"
+              aria-selected={false}
+              className="cursor-pointer truncate px-3 py-1.5 text-[13px] italic text-text-muted hover:bg-slate-50"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                clear();
+                setOpen(false);
+              }}
+            >
+              {emptyLabel}
+            </li>
+          )}
           {filtered.map((opt, idx) => {
             const isActive = idx === activeIdx;
-            const isSelected = opt === value;
+            const isSelected = opt.id === value;
             return (
               <li
-                key={opt}
+                key={opt.id}
                 role="option"
                 aria-selected={isSelected}
                 className={`cursor-pointer truncate px-3 py-1.5 text-[13px] ${
@@ -185,14 +212,14 @@ export function StringCombobox({
                   commit(opt);
                 }}
               >
-                {opt}
+                {opt.name}
               </li>
             );
           })}
         </ul>
       )}
 
-      {open && filtered.length === 0 && (
+      {open && filtered.length === 0 && value == null && (
         <div className="absolute z-50 mt-1 w-full rounded-lg border border-border bg-white px-3 py-2 text-[13px] text-text-muted shadow-lg">
           No matches.
         </div>

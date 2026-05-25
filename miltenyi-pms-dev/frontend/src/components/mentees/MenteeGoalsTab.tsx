@@ -21,6 +21,7 @@ import {
 } from "@/services/goal.service";
 import { getErrorMessage } from "@/utils/errors";
 import { formatFyYearSpan } from "@/utils/fy";
+import { ClearFiltersButton } from "@/components/common/ClearFiltersButton";
 import { isPostApproved } from "@/utils/goalStatus";
 import { useToast } from "@/hooks/useToast";
 import { useSnackbar } from "@/hooks/useSnackbar";
@@ -423,6 +424,18 @@ export function MenteeGoalsTab({ goals, menteeName, menteeId }: MenteeGoalsTabPr
               ))}
             </select>
           </div>
+          <ClearFiltersButton
+            active={
+              searchQuery.trim().length > 0 ||
+              statusFilter !== "all" ||
+              yearFilter !== "all"
+            }
+            onClear={() => {
+              setSearchQuery("");
+              setStatusFilter("all");
+              setYearFilter("all");
+            }}
+          />
         </div>
       </div>
 

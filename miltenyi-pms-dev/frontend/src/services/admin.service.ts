@@ -12,7 +12,13 @@ export interface FunctionBrief {
 export interface DesignationBrief {
   id: number;
   name: string;
+  /** Legacy hierarchy sort key — kept for back-compat with the existing
+   *  dropdown sort. New GCC career-level lookup uses `career_level`. */
   level: number;
+  /** GCC career band 1..4. Null on legacy / non-GCC designations. */
+  career_level: number | null;
+  /** Human label for the band ("Entry" / "Mid" / "Senior" / "Lead"). */
+  career_level_label: string | null;
 }
 
 export interface UserResponse {

@@ -21,6 +21,7 @@ import {
 } from "@/services/project-review.service";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
 import { PerformanceRatingBadge } from "@/components/reviews/PerformanceRatingBadge";
+import { ClearFiltersButton } from "@/components/common/ClearFiltersButton";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -352,6 +353,23 @@ export function ManagementTab() {
               <option value="pending">Pending / Not Started</option>
             </select>
           </div>
+
+          <ClearFiltersButton
+            // Cycle defaults to the org's active cycle (sticky). Count
+            // it as a user choice only when the user has navigated away
+            // from that default. Status defaults to "all".
+            active={
+              statusFilter !== "all" ||
+              (settings?.active_cycle_name !== undefined &&
+                selectedCycle !== settings.active_cycle_name)
+            }
+            onClear={() => {
+              setStatusFilter("all");
+              if (settings?.active_cycle_name) {
+                setSelectedCycle(settings.active_cycle_name);
+              }
+            }}
+          />
         </div>
 
         {/* Right-aligned summary chips — only when data is loaded. */}

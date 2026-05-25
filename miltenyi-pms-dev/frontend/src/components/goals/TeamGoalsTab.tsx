@@ -28,6 +28,7 @@ import { MentorReviewHalfChips } from "@/components/goals/MentorReviewHalfChips"
 import { BulkApproveModal } from "@/components/goals/BulkApproveModal";
 import { SortableHeader } from "@/components/SortableHeader";
 import { StringCombobox } from "@/components/common/StringCombobox";
+import { ClearFiltersButton } from "@/components/common/ClearFiltersButton";
 import { compareValues, type SortKind, type SortState, type SortValue } from "@/utils/sort";
 import { formatFyYearSpan } from "@/utils/fy";
 import { halfDisplayLabel, isPostApproved } from "@/utils/goalStatus";
@@ -166,8 +167,12 @@ interface TeamGoalsEmployeeGroup {
   owner_name: string;
   function_name: string | null;
   designation_name: string | null;
-  /** Latest goal's FY (highest fy_year) — drives the Year column. */
-  latest_fy_year: number | null;
+  /** The fiscal year this row's goals belong to. One group per
+   *  (user_id, fy_year) pair so a mentee with goals across multiple
+   *  FYs gets multiple adjacent rows instead of one row with
+   *  mixed-year contents. `null` is reserved for the edge case where
+   *  a goal predates cycle-name stamping. */
+  fy_year: number | null;
   goals: TeamGoal[];
 }
 
@@ -175,7 +180,7 @@ type TeamGoalsSortKey =
   | "owner_name"
   | "function_name"
   | "designation_name"
-  | "latest_fy_year"
+  | "fy_year"
   | "goal_count";
 
 const TEAM_GOALS_SORT_CONFIG: Record<
@@ -185,36 +190,57 @@ const TEAM_GOALS_SORT_CONFIG: Record<
   owner_name:       { kind: "alpha",   get: (g) => g.owner_name },
   function_name:    { kind: "alpha",   get: (g) => g.function_name },
   designation_name: { kind: "alpha",   get: (g) => g.designation_name },
-  latest_fy_year:   { kind: "numeric", get: (g) => g.latest_fy_year },
+  fy_year:          { kind: "numeric", get: (g) => g.fy_year },
   goal_count:       { kind: "numeric", get: (g) => g.goals.length },
 };
 
+/**
+ * Group goals into one row per (user_id, fy_year). A mentee with
+ * goals across multiple fiscal years appears as multiple rows in the
+ * mentor's queue — adjacent because they share owner_name, newest FY
+ * on top. Previously this keyed by user_id alone, which collapsed
+ * Bob's FY25-26 and FY26-27 goals into a single expansion under a
+ * misleadingly singular Year column.
+ */
 function buildTeamGoalsGroups(
   goals: readonly TeamGoal[],
 ): TeamGoalsEmployeeGroup[] {
-  const map = new Map<number, TeamGoalsEmployeeGroup>();
+  const map = new Map<string, TeamGoalsEmployeeGroup>();
   for (const g of goals) {
-    const existing = map.get(g.user_id);
+    const key = `${g.user_id}_${g.fy_year ?? "null"}`;
+    const existing = map.get(key);
     if (existing) {
       existing.goals.push(g);
     } else {
-      map.set(g.user_id, {
+      map.set(key, {
         user_id: g.user_id,
         owner_name: g.owner_name,
         function_name: g.owner_function_name,
         designation_name: g.owner_designation_name,
-        latest_fy_year: null,
+        fy_year: g.fy_year,
         goals: [g],
       });
     }
   }
-  // Newest FY first inside each mentee's drop-down so the latest goal reads
-  // at the top. The first entry's FY drives the per-mentee Year column.
+  // Inside a single (user, FY) bucket all goals share the FY, so
+  // ordering is just for the expansion list's reading flow. Newest
+  // created_at first.
   for (const group of map.values()) {
-    group.goals.sort((a, b) => (b.fy_year ?? 0) - (a.fy_year ?? 0));
-    group.latest_fy_year = group.goals[0]?.fy_year ?? null;
+    group.goals.sort(
+      (a, b) =>
+        new Date(b.created_at ?? 0).getTime() -
+        new Date(a.created_at ?? 0).getTime(),
+    );
   }
-  return Array.from(map.values());
+  // Final ordering: by owner_name (matches the existing primary sort
+  // — actual user-driven sort runs on the array later via
+  // `TEAM_GOALS_SORT_CONFIG`); within the same employee, newer FY on
+  // top so the active-cycle row floats above older history.
+  return Array.from(map.values()).sort((a, b) => {
+    const nameCmp = a.owner_name.localeCompare(b.owner_name);
+    if (nameCmp !== 0) return nameCmp;
+    return (b.fy_year ?? 0) - (a.fy_year ?? 0);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -249,8 +275,27 @@ export function TeamGoalsTab() {
   const [designationFilter, setDesignationFilter] = useState("all");
   // Empty string means "no mentee filter" (StringCombobox convention).
   const [menteeFilter, setMenteeFilter] = useState("");
+
+  const hasActiveFilters =
+    statusFilter !== "all" ||
+    yearFilter !== "all" ||
+    functionFilter !== "all" ||
+    designationFilter !== "all" ||
+    menteeFilter !== "";
+
+  const clearFilters = () => {
+    setStatusFilter("all");
+    setYearFilter("all");
+    setFunctionFilter("all");
+    setDesignationFilter("all");
+    setMenteeFilter("");
+  };
   const [sort, setSort] = useState<SortState<TeamGoalsSortKey> | null>(null);
-  const [expandedUserId, setExpandedUserId] = useState<number | null>(null);
+  // Expansion is keyed by the composite group identity (user_id,
+  // fy_year) because a mentee with goals across multiple FYs now
+  // shows up as multiple adjacent rows — keying by user_id alone
+  // would expand all of that mentee's rows together.
+  const [expandedGroupKey, setExpandedGroupKey] = useState<string | null>(null);
 
   // "Request Changes" modal state
   const [feedbackTarget, setFeedbackTarget] = useState<TeamGoal | null>(null);
@@ -588,13 +633,15 @@ export function TeamGoalsTab() {
         );
 
   // Derive the visible expanded row instead of resetting it via effect
-  // when filters change. If the user filtered the expanded mentee out
-  // of view, treat them as collapsed without mutating state — the
-  // stored id is restored automatically when the filter is cleared.
-  const visibleExpandedUserId =
-    expandedUserId !== null &&
-    sortedGroups.some((g) => g.user_id === expandedUserId)
-      ? expandedUserId
+  // when filters change. If the user filtered the expanded row out of
+  // view, treat it as collapsed without mutating state — the stored
+  // key is restored automatically when the filter is cleared.
+  const visibleExpandedGroupKey =
+    expandedGroupKey !== null &&
+    sortedGroups.some(
+      (g) => `${g.user_id}_${g.fy_year ?? "null"}` === expandedGroupKey,
+    )
+      ? expandedGroupKey
       : null;
 
   // ── Render ────────────────────────────────────────────────────────
@@ -668,19 +715,15 @@ export function TeamGoalsTab() {
           >
             Function
           </label>
-          <select
+          <StringCombobox
             id="team-function-filter"
-            value={functionFilter}
-            onChange={(e) => setFunctionFilter(e.target.value)}
-            className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand cursor-pointer min-w-[140px]"
-          >
-            <option value="all">All Functions</option>
-            {availableFunctions.map((f) => (
-              <option key={f} value={f}>
-                {f}
-              </option>
-            ))}
-          </select>
+            options={availableFunctions}
+            // State uses "all" as the no-filter sentinel; the combobox
+            // uses "" — translate on both edges.
+            value={functionFilter === "all" ? "" : functionFilter}
+            onChange={(v) => setFunctionFilter(v === "" ? "all" : v)}
+            placeholder="All Functions"
+          />
         </div>
         <div className="flex items-center gap-2">
           <label
@@ -689,19 +732,13 @@ export function TeamGoalsTab() {
           >
             Designation
           </label>
-          <select
+          <StringCombobox
             id="team-designation-filter"
-            value={designationFilter}
-            onChange={(e) => setDesignationFilter(e.target.value)}
-            className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand cursor-pointer min-w-[140px]"
-          >
-            <option value="all">All Designations</option>
-            {availableDesignations.map((d) => (
-              <option key={d} value={d}>
-                {d}
-              </option>
-            ))}
-          </select>
+            options={availableDesignations}
+            value={designationFilter === "all" ? "" : designationFilter}
+            onChange={(v) => setDesignationFilter(v === "" ? "all" : v)}
+            placeholder="All Designations"
+          />
         </div>
         <div className="flex items-center gap-2">
           <label
@@ -728,6 +765,8 @@ export function TeamGoalsTab() {
           {sortedGroups.length === 1 ? "mentee" : "mentees"} ·{" "}
           {filtered.length} of {goals.length} goals
         </span>
+        <div className="ml-auto flex items-center gap-2">
+        <ClearFiltersButton active={hasActiveFilters} onClear={clearFilters} />
         <button
           type="button"
           onClick={() => {
@@ -735,7 +774,7 @@ export function TeamGoalsTab() {
             setBulkOpen(true);
           }}
           disabled={pendingApprovalCount === 0}
-          className="ml-auto flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-1.5 text-[12px] font-medium text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-1.5 text-[12px] font-medium text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           title={
             pendingApprovalCount === 0
               ? "No goals are currently awaiting approval"
@@ -752,6 +791,7 @@ export function TeamGoalsTab() {
             </span>
           )}
         </button>
+        </div>
       </div>
 
       {/* Table */}
@@ -797,7 +837,7 @@ export function TeamGoalsTab() {
                 <th className="text-left px-4 py-2.5">
                   <SortableHeader
                     label="Year"
-                    columnKey="latest_fy_year"
+                    columnKey="fy_year"
                     sort={sort}
                     onSort={setSort}
                   />
@@ -814,16 +854,17 @@ export function TeamGoalsTab() {
             </thead>
             <tbody className="divide-y divide-border/50">
               {sortedGroups.map((group) => {
-                const isExpanded = visibleExpandedUserId === group.user_id;
+                const groupKey = `${group.user_id}_${group.fy_year ?? "null"}`;
+                const isExpanded = visibleExpandedGroupKey === groupKey;
                 const goalCount = group.goals.length;
                 return (
-                  <Fragment key={group.user_id}>
+                  <Fragment key={groupKey}>
                     <tr
                       className={`transition-colors cursor-pointer ${
                         isExpanded ? "bg-brand/5" : "hover:bg-slate-50/60"
                       }`}
                       onClick={() =>
-                        setExpandedUserId(isExpanded ? null : group.user_id)
+                        setExpandedGroupKey(isExpanded ? null : groupKey)
                       }
                     >
                       <td className="px-5 py-3 font-medium text-text-main">
@@ -844,9 +885,9 @@ export function TeamGoalsTab() {
                         {group.designation_name ?? "—"}
                       </td>
                       <td className="px-4 py-3">
-                        {group.latest_fy_year ? (
+                        {group.fy_year ? (
                           <span className="text-[12px] font-semibold text-text-muted bg-slate-100 px-1.5 py-0.5 rounded">
-                            {formatFyYearSpan(group.latest_fy_year)}
+                            {formatFyYearSpan(group.fy_year)}
                           </span>
                         ) : (
                           <span className="text-[12px] text-text-muted">—</span>

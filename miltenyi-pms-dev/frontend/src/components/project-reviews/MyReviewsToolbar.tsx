@@ -1,4 +1,5 @@
 import { LayoutGrid, Search, Table2 } from "lucide-react";
+import { ClearFiltersButton } from "@/components/common/ClearFiltersButton";
 
 type ViewMode = "grid" | "table";
 
@@ -122,6 +123,25 @@ export function MyReviewsToolbar({
             <option value="pending">Pending</option>
           </select>
         </div>
+        {/* Clear filters — visible only when at least one filter or the
+            search box is narrowing the result set. Resets every
+            controlled input back to its default in one click. */}
+        <ClearFiltersButton
+          active={
+            searchQuery.trim().length > 0 ||
+            selectedCycle !== "all" ||
+            projectFilter !== "all" ||
+            pmFilter !== "all" ||
+            statusFilter !== "all"
+          }
+          onClear={() => {
+            onSearchChange("");
+            onSelectedCycleChange("all");
+            onProjectFilterChange("all");
+            onPmFilterChange("all");
+            onStatusFilterChange("all");
+          }}
+        />
       </div>
     </div>
   );
