@@ -39,6 +39,11 @@ import {
 } from "@/services/annual-review.service";
 import { queryKeys } from "@/lib/queryKeys";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { useOrgReferenceData } from "@/hooks/useOrgReferenceData";
+import { useOrgUsers } from "@/hooks/useOrgUsers";
+import { useAnnualReviewCycles } from "@/hooks/useAnnualReviewCycles";
+import { StringCombobox } from "@/components/common/StringCombobox";
+import { ClearFiltersButton } from "@/components/common/ClearFiltersButton";
 import { patchRowsAcross } from "@/lib/optimistic";
 import { PerformanceRatingBadge } from "@/components/reviews/PerformanceRatingBadge";
 import { PerformanceRatingSelect } from "@/components/reviews/PerformanceRatingSelect";
@@ -46,6 +51,7 @@ import { ReviewStatusBadge } from "@/components/reviews/ReviewStatusBadge";
 import { getErrorMessage } from "@/utils/errors";
 import { useConfirm } from "@/hooks/useConfirm";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
+import { extractFyToken } from "@/utils/fy";
 
 type RatingValue = number | "";
 type StatusFilter = "all" | ReviewStatus;
@@ -75,6 +81,13 @@ const COLUMN_DEFS: Array<{ label: string; key: SortKey | null }> = [
   { label: "Mentor",             key: "mentor_name" },
   { label: "Function",           key: "function" },
   { label: "Designation",        key: "designation" },
+  // Cycle is non-sortable client-side. In multi-cycle mode the backend
+  // already orders by (employee_name asc, cycle_name desc) as the
+  // default + tiebreaker, so multi-FY rows for the same employee group
+  // together newest-first regardless of which other column the user
+  // sorts on. In single-cycle mode every row shares the same cycle, so
+  // a sort would be a no-op.
+  { label: "Cycle",              key: null },
   { label: "Status",             key: "status" },
   { label: "Self Review",        key: "self_performance_rating" },
   { label: "Mentor Review",      key: "mentor_performance_rating" },
@@ -94,15 +107,40 @@ const COLUMN_DEFS: Array<{ label: string; key: SortKey | null }> = [
 // that doesn't depend on a shared <table> context, and lets the header
 // stay perfectly aligned without us having to thread column widths
 // through a Context.
+// Columns (order matches the header + body):
+//   User · Email · Mentor · Function · Designation · Cycle · Status ·
+//   Self · Mentor · Management · Actions
+//
+// Function + Designation minimums were widened from 90/110 to 180/220
+// after the GCC framework rollout — names like "Clinical Trial
+// Management" (24 chars) and "Senior Regulatory Affairs Associate"
+// (35 chars) need real estate. Email got slimmed in the same pass
+// because the Miltenyi address pattern (bob@miltenyi.com) is short
+// and the column was over-allocated relative to its content. Cells
+// still use `truncate` + `title={...}` so the rare long edge cases
+// degrade to ellipsis with a hover tooltip rather than overflowing
+// the fixed-height row.
+//
+// Cycle (90px min) was added when multi-cycle mode landed. Bare FY
+// tokens like "FY26-27" / "FY25-26" fit comfortably in that width;
+// the rare longer legacy token degrades to truncate+title like the
+// other text columns.
+//
+// Actions (180px min) was bumped from the original 135px because the
+// View + Rate button pair (each ~66px) + 6px gap + 32px cell padding
+// needs ~170px to render without clipping. The body's 15px right-edge
+// clip (from overflow-x:hidden on the scroll container) eats into the
+// cell's right padding rather than the buttons themselves.
 const GRID_TEMPLATE_COLUMNS =
-  "minmax(140px, 1.5fr) minmax(170px, 1.8fr) minmax(110px, 1.2fr) minmax(90px, 1fr) minmax(110px, 1.1fr) minmax(140px, 1.3fr) minmax(70px, 0.7fr) minmax(70px, 0.7fr) minmax(90px, 1fr) minmax(135px, 1.2fr)";
+  "minmax(140px, 1.4fr) minmax(150px, 1.3fr) minmax(110px, 1fr) minmax(180px, 1.4fr) minmax(220px, 1.7fr) minmax(90px, 0.9fr) minmax(140px, 1.2fr) minmax(70px, 0.7fr) minmax(70px, 0.7fr) minmax(90px, 1fr) minmax(180px, 1.2fr)";
 
 // Sum of the GRID_TEMPLATE_COLUMNS minimums. Drives the table's
 // min-width so the outer horizontal-scroll wrapper keeps the header
 // and body grids aligned on narrow viewports — without it, the body's
 // implicit overflow-x (per the y-auto spec interaction) would scroll
 // independently of the header.
-const TABLE_MIN_WIDTH_PX = 1125;
+// 140 + 150 + 110 + 180 + 220 + 90 + 140 + 70 + 70 + 90 + 180 = 1440
+const TABLE_MIN_WIDTH_PX = 1440;
 
 // Fixed row height (in px) the virtualizer uses to size the scrollbar
 // thumb and decide which rows are in-window. py-3.5 (28px total) +
@@ -135,11 +173,17 @@ const STATUS_FILTER_OPTIONS: Array<{ value: StatusFilter; label: string }> = [
 
 export function ManagementReview() {
   const { settings } = useSystemSettings();
-  // Extract bare FY label ("H1 FY26" -> "FY26") for the page header.
-  const fyLabel = settings?.active_cycle_name
-    ? settings.active_cycle_name.split(" ").find((t) => t.startsWith("FY")) ??
-      settings.active_cycle_name
-    : null;
+  // Extract bare FY token ("H1 FY26-27" -> "FY26-27") — used both as
+  // the default for the Cycle filter dropdown AND as the header label
+  // when single-cycle mode is active.
+  const activeFyToken = settings?.active_cycle_name
+    ? extractFyToken(settings.active_cycle_name)
+    : "";
+  // Distinct cycle options for the Cycle dropdown. The hook merges the
+  // active FY token in even when no review row exists for it yet, so
+  // HR can always filter to "this year" while pre-population is in
+  // progress.
+  const { cycles: availableCycles } = useAnnualReviewCycles();
 
   const queryClient = useQueryClient();
   const confirm = useConfirm();
@@ -169,6 +213,26 @@ export function ManagementReview() {
       ([, v]) => v !== undefined && v !== "",
     ),
   ) as Record<string, string>;
+
+  // Cycle resolution. The user picks via the Cycle dropdown:
+  //   • Specific FY token (e.g. "FY26-27") → single-cycle mode
+  //   • "all" → multi-cycle mode (one row per (employee, cycle))
+  //   • Unset → default to the active cycle so first-load behaviour
+  //     matches the legacy page (HR lands on this year's calibration).
+  // The header label, the request param, and the "Not Started" status
+  // option's visibility all derive from this single value.
+  const cycleFilter = filters.cycle ?? activeFyToken;
+  const isMultiCycle = cycleFilter.toLowerCase() === "all";
+  const headerCycleLabel = isMultiCycle
+    ? "All Cycles"
+    : cycleFilter || null;
+  // Inject the resolved cycle into the request params. When activeFyToken
+  // is empty (settings still loading) we omit the param and let the
+  // backend default kick in — avoids sending `cycle=` (empty), which the
+  // backend would treat as "default" anyway but is uglier on the wire.
+  if (cycleFilter) {
+    filterParams.cycle = cycleFilter;
+  }
 
   // Sort state — moved up so the queryKey + queryFn (below) can read
   // it. Default to alphabetical ascending; client-side sort used to
@@ -368,31 +432,16 @@ export function ManagementReview() {
     return <ChevronDown className="h-3 w-3" aria-hidden="true" />;
   };
 
-  const availableFuncs = useMemo(
-    () =>
-      Array.from(
-        new Set(rows.map((r) => r.function).filter((d): d is string => !!d)),
-      ).sort((a, b) => a.localeCompare(b)),
-    [rows],
-  );
-
-  const availableDesignations = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          rows.map((r) => r.designation).filter((d): d is string => !!d),
-        ),
-      ).sort((a, b) => a.localeCompare(b)),
-    [rows],
-  );
-
-  const availableMentors = useMemo(
-    () =>
-      Array.from(
-        new Set(rows.map((r) => r.mentor_name).filter((m): m is string => !!m)),
-      ).sort((a, b) => a.localeCompare(b)),
-    [rows],
-  );
+  // All filter dropdown options come from canonical org-wide sources,
+  // NOT the currently-loaded (server-filtered) rows. Otherwise picking
+  // any filter narrows the server response and the dropdown re-derives
+  // to only the selected value — locking the user out of changing it.
+  //
+  //   functions / designations  -> useOrgReferenceData() (admin refs)
+  //   mentors                   -> useOrgUsers() (admin /users, role=Mentor)
+  const { functionNames: availableFuncs, designationNames: availableDesignations } =
+    useOrgReferenceData();
+  const { mentorNames: availableMentors } = useOrgUsers();
 
   // `rows` is the server-filtered universe (the queryKey reflects every
   // active filter dim). No client-side narrowing needed; sort stays
@@ -447,13 +496,17 @@ export function ManagementReview() {
     }
     const isOverwrite =
       editTarget.row.management_performance_rating != null;
+    // Stamp the FY in the confirmation copy — important in multi-cycle
+    // mode where HR may be calibrating a prior FY and an unlabelled
+    // dialog reads as if it applies to the current cycle.
+    const cycleLabel = editTarget.row.cycle_name ?? "this cycle";
     const ok = await confirm({
       title: isOverwrite
-        ? `Overwrite management rating for ${editTarget.row.employee_name}?`
-        : `Publish management rating for ${editTarget.row.employee_name}?`,
+        ? `Overwrite management rating for ${editTarget.row.employee_name} (${cycleLabel})?`
+        : `Publish management rating for ${editTarget.row.employee_name} (${cycleLabel})?`,
       message: isOverwrite
-        ? `Replace the existing management rating with ${editTarget.draft}/5. ${editTarget.row.employee_name} will see the updated rating immediately.`
-        : `Publish a management rating of ${editTarget.draft}/5 for ${editTarget.row.employee_name}. Once saved, ${editTarget.row.employee_name} will be able to see this rating in their own annual review.`,
+        ? `Replace ${editTarget.row.employee_name}'s ${cycleLabel} management rating with ${editTarget.draft}/5. They will see the updated rating immediately.`
+        : `Publish a ${cycleLabel} management rating of ${editTarget.draft}/5 for ${editTarget.row.employee_name}. Once saved, they will be able to see this rating in their own annual review.`,
       variant: isOverwrite ? "warning" : "default",
       confirmText: isOverwrite ? "Overwrite Rating" : "Publish Rating",
     });
@@ -474,14 +527,16 @@ export function ManagementReview() {
       <div>
         <h1 className="font-display text-xl font-semibold text-text-main">
           Management Review
-          {fyLabel && (
+          {headerCycleLabel && (
             <span className="ml-2 text-sm font-normal text-text-muted">
-              · {fyLabel}
+              · {headerCycleLabel}
             </span>
           )}
         </h1>
         <p className="mt-0.5 text-sm text-text-muted">
-          Calibrate management ratings across the org's annual reviews for the active cycle.
+          {isMultiCycle
+            ? "Calibrate management ratings across the org's annual reviews — every cycle, newest first."
+            : "Calibrate management ratings across the org's annual reviews for the selected cycle."}
         </p>
       </div>
 
@@ -522,19 +577,13 @@ export function ManagementReview() {
                   >
                     Function
                   </label>
-                  <select
+                  <StringCombobox
                     id="mgmt-review-func-filter"
-                    value={filters.function ?? "all"}
-                    onChange={(e) => setFilter("function", e.target.value)}
-                    className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand min-w-[140px] cursor-pointer"
-                  >
-                    <option value="all">All Functions</option>
-                    {availableFuncs.map((d) => (
-                      <option key={d} value={d}>
-                        {d}
-                      </option>
-                    ))}
-                  </select>
+                    options={availableFuncs}
+                    value={filters.function ?? ""}
+                    onChange={(v) => setFilter("function", v)}
+                    placeholder="All Functions"
+                  />
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -544,19 +593,13 @@ export function ManagementReview() {
                   >
                     Designation
                   </label>
-                  <select
+                  <StringCombobox
                     id="mgmt-review-desig-filter"
-                    value={filters.designation ?? "all"}
-                    onChange={(e) => setFilter("designation", e.target.value)}
-                    className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand min-w-[150px] cursor-pointer"
-                  >
-                    <option value="all">All Designations</option>
-                    {availableDesignations.map((d) => (
-                      <option key={d} value={d}>
-                        {d}
-                      </option>
-                    ))}
-                  </select>
+                    options={availableDesignations}
+                    value={filters.designation ?? ""}
+                    onChange={(v) => setFilter("designation", v)}
+                    placeholder="All Designations"
+                  />
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -583,6 +626,34 @@ export function ManagementReview() {
 
                 <div className="flex items-center gap-2">
                   <label
+                    htmlFor="mgmt-review-cycle-filter"
+                    className="text-[11px] font-bold uppercase tracking-wider text-text-muted"
+                  >
+                    Cycle
+                  </label>
+                  <select
+                    id="mgmt-review-cycle-filter"
+                    value={cycleFilter || "all"}
+                    // Direct setFilters here (not the shared setFilter
+                    // helper) because the helper inverts "all" → undefined,
+                    // and for the cycle dim "all" is a real value (the
+                    // multi-cycle mode), not "no filter applied." We do
+                    // still want undefined when the user clicks Clear
+                    // Filters — that path uses setFilters({}) below.
+                    onChange={(e) =>
+                      setFilters({ ...filters, cycle: e.target.value })
+                    }
+                    className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand min-w-[140px] cursor-pointer"
+                  >
+                    <option value="all">All Cycles</option>
+                    {availableCycles.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <label
                     htmlFor="mgmt-review-status-filter"
                     className="text-[11px] font-bold uppercase tracking-wider text-text-muted"
                   >
@@ -599,11 +670,24 @@ export function ManagementReview() {
                     }
                     className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand min-w-[170px] cursor-pointer"
                   >
-                    {STATUS_FILTER_OPTIONS.map((o) => (
+                    {STATUS_FILTER_OPTIONS.filter(
+                      // "Not Started" is meaningless in multi-cycle mode
+                      // because every row in that mode is an actual review
+                      // — the option is gone for a cleaner UX rather than
+                      // sending a filter the backend silently drops.
+                      (o) => !(isMultiCycle && o.value === "not_started"),
+                    ).map((o) => (
                       <option key={o.value} value={o.value}>{o.label}</option>
                     ))}
                   </select>
                 </div>
+                <ClearFiltersButton
+                  active={hasActiveFilters}
+                  onClear={() => {
+                    setSearchInput("");
+                    setFilters({});
+                  }}
+                />
               </div>
             </div>
 
@@ -628,7 +712,9 @@ export function ManagementReview() {
                 <p className="mt-1 text-sm text-text-muted">
                   {hasActiveFilters
                     ? "Try a different search term or adjust your filters."
-                    : "No active Employees in this cycle yet."}
+                    : isMultiCycle
+                      ? "No reviews exist in any cycle yet."
+                      : "No active Employees in this cycle yet."}
                 </p>
               </div>
             ) : (
@@ -712,7 +798,17 @@ export function ManagementReview() {
                   ref={scrollContainerRef}
                   role="rowgroup"
                   style={{ height: SCROLL_CONTAINER_HEIGHT_PX }}
-                  className="overflow-y-auto"
+                  // `overflow-x-hidden` here is load-bearing. Without it
+                  // CSS computes `overflow-x: auto` from the explicit
+                  // `overflow-y: auto` (paired-overflow rule), and the
+                  // body grows a second horizontal scrollbar — the
+                  // grid template's column MINIMUMS sum to exactly
+                  // TABLE_MIN_WIDTH_PX, so when the vertical scrollbar
+                  // appears it consumes ~15px and the grid overflows by
+                  // that amount. The OUTER wrapper above (overflow-x-
+                  // auto on the bordered card) is the single source of
+                  // horizontal scrolling; pinning it here defers to that.
+                  className="overflow-y-auto overflow-x-hidden"
                 >
                   <div
                     style={{
@@ -742,7 +838,16 @@ export function ManagementReview() {
                         <div
                           role="row"
                           aria-rowindex={virtualRow.index + 1}
-                          key={r.user_id}
+                          // Composite key — `user_id` alone collides in
+                          // multi-cycle mode where the same employee
+                          // appears once per cycle. `review_id` is
+                          // null for synthetic not-started rows so we
+                          // fall back to (user_id, cycle_name).
+                          key={
+                            r.review_id != null
+                              ? `r-${r.review_id}`
+                              : `ns-${r.user_id}-${r.cycle_name ?? "none"}`
+                          }
                           className="grid items-center border-b border-border transition-colors hover:bg-slate-50"
                           style={{
                             // Absolute positioning is how every virtual
@@ -759,20 +864,47 @@ export function ManagementReview() {
                             gridTemplateColumns: GRID_TEMPLATE_COLUMNS,
                           }}
                         >
-                          <div role="cell" className="px-5 font-medium text-text-main truncate">
+                          <div
+                            role="cell"
+                            className="px-5 font-medium text-text-main truncate"
+                            title={r.employee_name}
+                          >
                             {r.employee_name}
                           </div>
-                          <div role="cell" className="px-4 text-text-muted truncate">
+                          <div
+                            role="cell"
+                            className="px-4 text-text-muted truncate"
+                            title={r.employee_email ?? undefined}
+                          >
                             {r.employee_email ?? "—"}
                           </div>
-                          <div role="cell" className="px-4 text-text-muted truncate">
+                          <div
+                            role="cell"
+                            className="px-4 text-text-muted truncate"
+                            title={r.mentor_name ?? undefined}
+                          >
                             {r.mentor_name ?? "—"}
                           </div>
-                          <div role="cell" className="px-4 text-text-muted truncate">
+                          <div
+                            role="cell"
+                            className="px-4 text-text-muted truncate"
+                            title={r.function ?? undefined}
+                          >
                             {r.function ?? "—"}
                           </div>
-                          <div role="cell" className="px-4 text-text-muted truncate">
+                          <div
+                            role="cell"
+                            className="px-4 text-text-muted truncate"
+                            title={r.designation ?? undefined}
+                          >
                             {r.designation ?? "—"}
+                          </div>
+                          <div
+                            role="cell"
+                            className="px-4 text-text-muted truncate"
+                            title={r.cycle_name ?? undefined}
+                          >
+                            {r.cycle_name ?? "—"}
                           </div>
                           <div role="cell" className="px-4">
                             <ReviewStatusBadge status={r.status} />
@@ -891,6 +1023,7 @@ export function ManagementReview() {
                 </h3>
                 <p className="mt-0.5 text-xs text-text-muted">
                   {editTarget.row.employee_name} ·{" "}
+                  {editTarget.row.cycle_name ?? "—"} ·{" "}
                   {editTarget.row.function ?? "—"}
                 </p>
               </div>
