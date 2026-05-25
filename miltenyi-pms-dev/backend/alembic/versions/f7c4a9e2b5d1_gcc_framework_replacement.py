@@ -110,13 +110,13 @@ def upgrade() -> None:
     # local DB is being reseeded. No data preservation required.
     with op.batch_alter_table("role_expectations") as batch_op:
         # Drop the old unique index first so the FK / column drops don't
-        # trip over it during the batch recreate. The literal name in
-        # the live schema is "ix_role_exp_org_dept_desig" (a leftover
-        # from when `function_id` was called `department_id`); the
-        # model's declared name `ix_role_exp_org_func_desig` was never
-        # actually applied because the rename-departments migration
-        # didn't replace the index, only renamed the column.
-        batch_op.drop_index("ix_role_exp_org_dept_desig")
+        # trip over it during the batch recreate. The original index
+        # was created as "ix_role_exp_org_dept_desig" (full_schema_v2)
+        # and renamed to "ix_role_exp_org_func_desig" by the
+        # rename_departments_to_functions migration (ALTER INDEX
+        # RENAME), so the live name on every DB that ran the rename
+        # migration is the `_func_` form.
+        batch_op.drop_index("ix_role_exp_org_func_desig")
 
         for col in OLD_ROLE_EXPECTATION_COLUMNS:
             batch_op.drop_column(col)
