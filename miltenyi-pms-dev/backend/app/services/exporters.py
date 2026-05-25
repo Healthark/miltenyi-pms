@@ -499,13 +499,12 @@ def build_project_reviews_sheet(
             "FY",
             "Status",
             "Rating",
-            "Task Execution",
-            "Ownership",
-            "Project Management",
-            "Client Deliverables",
-            "Communication",
-            "Mentoring",
-            "Competency & Skills",
+            "Scope of Role",
+            "Key Responsibilities",
+            "Technical Competencies",
+            "Delivery Ownership",
+            "Regulatory & Compliance",
+            "Project & Resource Mgmt",
             "Impact Statement",
             "Secondary Evaluations",
             "Created At",
@@ -572,23 +571,22 @@ def build_project_reviews_sheet(
         ws.cell(row=row, column=9, value=fy_year)
         ws.cell(row=row, column=10, value=r.status)
         ws.cell(row=row, column=11, value=r.performance_group)
-        ws.cell(row=row, column=12, value=r.comment_task_execution or "")
-        ws.cell(row=row, column=13, value=r.comment_ownership or "")
-        ws.cell(row=row, column=14, value=r.comment_project_management or "")
-        ws.cell(row=row, column=15, value=r.comment_client_deliverables or "")
-        ws.cell(row=row, column=16, value=r.comment_communication or "")
-        ws.cell(row=row, column=17, value=r.comment_mentoring or "")
-        ws.cell(row=row, column=18, value=r.comment_competency_skills or "")
-        ws.cell(row=row, column=19, value=r.impact_statement or "")
-        ws.cell(row=row, column=20, value=secondary_cell)
+        ws.cell(row=row, column=12, value=r.comment_scope_of_role or "")
+        ws.cell(row=row, column=13, value=r.comment_key_responsibilities or "")
+        ws.cell(row=row, column=14, value=r.comment_technical_competencies or "")
+        ws.cell(row=row, column=15, value=r.comment_delivery_ownership or "")
+        ws.cell(row=row, column=16, value=r.comment_regulatory_compliance or "")
+        ws.cell(row=row, column=17, value=r.comment_project_resource_management or "")
+        ws.cell(row=row, column=18, value=r.impact_statement or "")
+        ws.cell(row=row, column=19, value=secondary_cell)
         ws.cell(
             row=row,
-            column=21,
+            column=20,
             value=r.created_at.replace(tzinfo=None) if r.created_at else None,
         )
         ws.cell(
             row=row,
-            column=22,
+            column=21,
             value=r.updated_at.replace(tzinfo=None) if r.updated_at else None,
         )
         row += 1

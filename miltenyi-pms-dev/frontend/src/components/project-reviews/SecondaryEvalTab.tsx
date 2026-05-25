@@ -24,6 +24,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/useToast";
 import { SortableHeader } from "@/components/SortableHeader";
 import { StringCombobox } from "@/components/common/StringCombobox";
+import { ClearFiltersButton } from "@/components/common/ClearFiltersButton";
 import { compareValues, type SortKind, type SortState, type SortValue } from "@/utils/sort";
 
 type ViewMode = "grid" | "table";
@@ -591,6 +592,21 @@ export function SecondaryEvalTab() {
               <option value="submitted">Submitted</option>
             </select>
           </div>
+
+          <ClearFiltersButton
+            active={
+              statusFilter !== "all" ||
+              cycleFilter !== "all" ||
+              employeeFilter !== "" ||
+              projectFilter !== ""
+            }
+            onClear={() => {
+              setStatusFilter("all");
+              setCycleFilter("all");
+              setEmployeeFilter("");
+              setProjectFilter("");
+            }}
+          />
         </div>
 
         <div className="flex items-center gap-1 rounded-lg border border-border bg-white p-0.5">

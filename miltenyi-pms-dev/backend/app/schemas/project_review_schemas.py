@@ -1,24 +1,26 @@
 """
-Project Review Schemas — Revised PM-Centric Evaluation.
+Project Review Schemas — PM-Centric Evaluation against the GCC framework.
 
-No self-review. The PM writes the evaluation directly.
+The PM writes the evaluation directly against the 6 GCC competency columns
+that also back the role-expectation reference data. One framework on both
+sides — exactly the column names line up between RoleExpectation.exp_*
+and ProjectReview.comment_*.
 
 Schema Map:
-    PMEvaluationSubmit       → PM fills 7 competency comments + performance group + impact
+    PMEvaluationSubmit       → PM fills 6 GCC competency comments + performance group + impact
     SecondaryEvalSubmit      → Secondary writes impact statement only
     ProjectReviewResponse    → Full review with PM evaluation + secondary feedback
     MyProjectCard            → Employee's view — project info + review status
     PMPendingReviewCard      → PM's queue — team members awaiting evaluation
     RoleExpectationResponse  → Reference data shown to PM during evaluation
 
-7 Competencies:
-    1. Task Execution & Problem Solving
-    2. Ownership & Accountability
-    3. Project Management and Risk Mitigation
-    4. Building Client-Ready Deliverables
-    5. Communication & Client/Stakeholder Management
-    6. Mentoring and Team Development
-    7. Competency and Skills
+6 GCC Competencies:
+    1. Scope of Role
+    2. Detailed Key Responsibilities
+    3. Core Technical Competencies
+    4. Delivery Ownership
+    5. Regulatory & Compliance Exposure
+    6. Project and Resource Management
 """
 
 from pydantic import BaseModel, Field, ConfigDict
@@ -37,17 +39,16 @@ from app.models.project_review_models import (
 class PMEvaluationSubmit(BaseModel):
     """
     PM fills this for each team member.
-    All 7 competency comments + performance group + impact required.
+    All 6 GCC competency comments + performance group + impact required.
     """
     performance_group: PerformanceGroup
     impact_statement: str = Field(..., min_length=1, max_length=5000)
-    comment_task_execution: str = Field(..., min_length=1, max_length=5000)
-    comment_ownership: str = Field(..., min_length=1, max_length=5000)
-    comment_project_management: str = Field(..., min_length=1, max_length=5000)
-    comment_client_deliverables: str = Field(..., min_length=1, max_length=5000)
-    comment_communication: str = Field(..., min_length=1, max_length=5000)
-    comment_mentoring: str = Field(..., min_length=1, max_length=5000)
-    comment_competency_skills: str = Field(..., min_length=1, max_length=5000)
+    comment_scope_of_role: str = Field(..., min_length=1, max_length=5000)
+    comment_key_responsibilities: str = Field(..., min_length=1, max_length=5000)
+    comment_technical_competencies: str = Field(..., min_length=1, max_length=5000)
+    comment_delivery_ownership: str = Field(..., min_length=1, max_length=5000)
+    comment_regulatory_compliance: str = Field(..., min_length=1, max_length=5000)
+    comment_project_resource_management: str = Field(..., min_length=1, max_length=5000)
 
 
 class PMEvaluationDraft(BaseModel):
@@ -55,13 +56,12 @@ class PMEvaluationDraft(BaseModel):
     can park work mid-thought and pick up later."""
     performance_group: Optional[PerformanceGroup] = None
     impact_statement: Optional[str] = Field(default=None, max_length=5000)
-    comment_task_execution: Optional[str] = Field(default=None, max_length=5000)
-    comment_ownership: Optional[str] = Field(default=None, max_length=5000)
-    comment_project_management: Optional[str] = Field(default=None, max_length=5000)
-    comment_client_deliverables: Optional[str] = Field(default=None, max_length=5000)
-    comment_communication: Optional[str] = Field(default=None, max_length=5000)
-    comment_mentoring: Optional[str] = Field(default=None, max_length=5000)
-    comment_competency_skills: Optional[str] = Field(default=None, max_length=5000)
+    comment_scope_of_role: Optional[str] = Field(default=None, max_length=5000)
+    comment_key_responsibilities: Optional[str] = Field(default=None, max_length=5000)
+    comment_technical_competencies: Optional[str] = Field(default=None, max_length=5000)
+    comment_delivery_ownership: Optional[str] = Field(default=None, max_length=5000)
+    comment_regulatory_compliance: Optional[str] = Field(default=None, max_length=5000)
+    comment_project_resource_management: Optional[str] = Field(default=None, max_length=5000)
 
 
 # =====================================================================
@@ -119,14 +119,13 @@ class ProjectReviewResponse(BaseModel):
     project_name: str
     project_code: str
 
-    # PM's 7 competency comments (null while pending)
-    comment_task_execution: Optional[str] = None
-    comment_ownership: Optional[str] = None
-    comment_project_management: Optional[str] = None
-    comment_client_deliverables: Optional[str] = None
-    comment_communication: Optional[str] = None
-    comment_mentoring: Optional[str] = None
-    comment_competency_skills: Optional[str] = None
+    # PM's 6 GCC competency comments (null while pending)
+    comment_scope_of_role: Optional[str] = None
+    comment_key_responsibilities: Optional[str] = None
+    comment_technical_competencies: Optional[str] = None
+    comment_delivery_ownership: Optional[str] = None
+    comment_regulatory_compliance: Optional[str] = None
+    comment_project_resource_management: Optional[str] = None
 
     # PM's summary
     performance_group: Optional[str] = None
@@ -190,21 +189,25 @@ class PMPendingReviewCard(BaseModel):
 
 class RoleExpectationResponse(BaseModel):
     """
-    Reference data shown to the PM while evaluating.
-    Contains expected behaviors per competency for a specific
-    function × designation combination.
+    Reference data shown to the PM while evaluating, and as a read-only
+    panel on the goal mentor-review form. One row per (function × career
+    level) — designations sharing a career level share one row.
+
+    `designation_names` lists every title that maps to this row, so the
+    frontend can match an employee being reviewed (it knows the user's
+    designation_name) without having to resolve career_level on its own.
     """
     id: int
     function_name: str
-    designation_name: str
-    exp_task_execution: Optional[str] = None
-    exp_ownership: Optional[str] = None
-    exp_project_management: Optional[str] = None
-    exp_client_deliverables: Optional[str] = None
-    exp_communication: Optional[str] = None
-    exp_mentoring: Optional[str] = None
-    exp_firm_growth: Optional[str] = None
-    exp_competency_skills: Optional[str] = None
+    career_level: int                      # 1..4
+    career_level_label: Optional[str] = None  # "Entry" / "Mid" / "Senior" / "Lead"
+    designation_names: list[str] = []      # all titles at this (function, career_level)
+    exp_scope_of_role: Optional[str] = None
+    exp_key_responsibilities: Optional[str] = None
+    exp_technical_competencies: Optional[str] = None
+    exp_delivery_ownership: Optional[str] = None
+    exp_regulatory_compliance: Optional[str] = None
+    exp_project_resource_management: Optional[str] = None
 
 
 # =====================================================================

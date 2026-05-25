@@ -49,13 +49,18 @@ class UserProfile(BaseModel):
 
 # Add this to the bottom of app/schemas/user_schemas.py
 class UserRoleExpectationResponse(BaseModel):
+    """The current user's GCC role expectation — resolved from
+    (function, designation.career_level). When no matching row exists,
+    the route still returns a payload with every exp_* field carrying
+    a 'not defined' placeholder string so the frontend never has to
+    null-check the panel."""
     function_name: str | None
     designation_name: str | None
-    exp_task_execution: str
-    exp_ownership: str
-    exp_project_management: str
-    exp_client_deliverables: str
-    exp_communication: str
-    exp_mentoring: str
-    exp_firm_growth: str
-    exp_competency_skills: str
+    career_level: int | None = None             # 1..4 or null
+    career_level_label: str | None = None       # "Entry" / "Mid" / "Senior" / "Lead"
+    exp_scope_of_role: str
+    exp_key_responsibilities: str
+    exp_technical_competencies: str
+    exp_delivery_ownership: str
+    exp_regulatory_compliance: str
+    exp_project_resource_management: str

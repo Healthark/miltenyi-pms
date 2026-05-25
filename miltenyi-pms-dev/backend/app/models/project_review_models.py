@@ -1,21 +1,23 @@
 """
-Project Review Models — Revised PM-Centric Evaluation.
+Project Review Models — PM-Centric Evaluation against the GCC framework.
 
-Completely restructured:
     - No self-review. Employee sees "Pending" until PM evaluates.
-    - PM's evaluation (7 competency comments + performance group + impact)
-      lives directly in the ProjectReview row.
+    - PM's evaluation (6 GCC competency comments + performance group +
+      impact) lives directly in the ProjectReview row.
     - ProjectReviewEvaluator is only used for Secondary impact statements.
-    - Status: pending → reviewed (no draft/submitted for self-review).
+    - Status: pending → draft → reviewed.
 
-7 Competencies:
-    1. Task Execution & Problem Solving
-    2. Ownership & Accountability
-    3. Project Management and Risk Mitigation
-    4. Building Client-Ready Deliverables
-    5. Communication & Client/Stakeholder Management
-    6. Mentoring and Team Development
-    7. Competency and Skills
+6 GCC competencies the PM writes against:
+    1. Scope of Role
+    2. Detailed Key Responsibilities
+    3. Core Technical Competencies
+    4. Delivery Ownership
+    5. Regulatory & Compliance Exposure
+    6. Project and Resource Management
+
+The same 6-column framework backs the RoleExpectation table that the
+PM sees as reference text while filling this out — there is exactly
+one framework on both sides.
 """
 
 from enum import Enum as PyEnum
@@ -72,14 +74,13 @@ class ProjectReview(Base):
 
     status = Column(String, default=ProjectReviewStatus.PENDING.value, nullable=False)
 
-    # ── PM's Evaluation (7 Competencies) ─────────────────────────────
-    comment_task_execution = Column(Text, nullable=True)
-    comment_ownership = Column(Text, nullable=True)
-    comment_project_management = Column(Text, nullable=True)
-    comment_client_deliverables = Column(Text, nullable=True)
-    comment_communication = Column(Text, nullable=True)
-    comment_mentoring = Column(Text, nullable=True)
-    comment_competency_skills = Column(Text, nullable=True)
+    # ── PM's Evaluation — 6 GCC competency comments ──────────────────
+    comment_scope_of_role = Column(Text, nullable=True)
+    comment_key_responsibilities = Column(Text, nullable=True)
+    comment_technical_competencies = Column(Text, nullable=True)
+    comment_delivery_ownership = Column(Text, nullable=True)
+    comment_regulatory_compliance = Column(Text, nullable=True)
+    comment_project_resource_management = Column(Text, nullable=True)
 
     # ── PM's Summary Fields ──────────────────────────────────────────
     performance_group = Column(String, nullable=True)

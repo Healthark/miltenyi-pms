@@ -3,14 +3,17 @@
  * ProjectReviewResponse, used by the Mentor's Team Reviews tab and
  * HR's All Reviews tab.
  *
- * The full review content (7 competency comments + impact statement +
+ * The full review content (6 GCC competency comments + impact statement +
  * secondary impact statements) already rides on the row payload, so
  * the modal doesn't fetch anything — it just renders.
  *
- * Rating visibility honours the org's `project_ratings_visible` flag
- * (settings-driven). When false, the rating row renders a "Hidden"
- * placeholder so the reader knows there is a rating they just can't
- * see.
+ * Rating visibility is a **parent decision** (passed via
+ * `projectRatingsVisible`). HR and Mentor surfaces always pass `true`
+ * because the org-wide `project_ratings_visible` settings flag is an
+ * Employee-facing gate, not an HR/Mentor one (HR set the rating; hiding
+ * it from them defeats the purpose). When false, the rating row renders
+ * a "Hidden" placeholder so the reader knows there is a rating they
+ * just can't see.
  */
 
 import { createPortal } from "react-dom";
@@ -23,49 +26,27 @@ import {
 } from "lucide-react";
 import type { ProjectReviewResponse } from "@/services/project-review.service";
 import { PerformanceRatingBadge } from "@/components/reviews/PerformanceRatingBadge";
-import { useSystemSettings } from "@/hooks/useSystemSettings";
-
-/** Each entry maps a backend field name → the display label shown in
- *  the modal. Order matters: it's the order PMs see in the eval form,
- *  so readers get the same reading flow. */
-const COMPETENCIES: ReadonlyArray<{
-  key: keyof Pick<
-    ProjectReviewResponse,
-    | "comment_task_execution"
-    | "comment_ownership"
-    | "comment_project_management"
-    | "comment_client_deliverables"
-    | "comment_communication"
-    | "comment_mentoring"
-    | "comment_competency_skills"
-  >;
-  label: string;
-}> = [
-  { key: "comment_task_execution",       label: "Task Execution & Problem Solving" },
-  { key: "comment_ownership",            label: "Ownership & Accountability" },
-  { key: "comment_project_management",   label: "Project Management & Risk Mitigation" },
-  { key: "comment_client_deliverables",  label: "Client-Ready Deliverables" },
-  { key: "comment_communication",        label: "Communication & Stakeholder Management" },
-  { key: "comment_mentoring",            label: "Mentoring & Team Development" },
-  { key: "comment_competency_skills",    label: "Competency & Skills" },
-];
+import { GCC_COMPETENCIES } from "@/constants/gccFramework";
 
 interface ProjectReviewDetailModalProps {
   readonly review: ProjectReviewResponse;
   readonly onClose: () => void;
+  /** Whether to render the performance rating. HR / Mentor pass `true`;
+   *  Employee-facing consumers should defer to the org's
+   *  `project_ratings_visible` setting. */
+  readonly projectRatingsVisible: boolean;
 }
 
 export function ProjectReviewDetailModal({
   review,
   onClose,
+  projectRatingsVisible,
 }: ProjectReviewDetailModalProps) {
-  const { settings } = useSystemSettings();
-  const projectRatingsVisible = settings?.project_ratings_visible ?? false;
 
   // Filter the competency entries to only the ones with content; if the
-  // PM left some blank we don't want eight empty headings in the modal.
-  const filledComps = COMPETENCIES.filter((c) => {
-    const v = review[c.key];
+  // PM left some blank we don't want empty headings in the modal.
+  const filledComps = GCC_COMPETENCIES.filter((c) => {
+    const v = review[c.commentKey];
     return typeof v === "string" && v.trim().length > 0;
   });
 
@@ -171,7 +152,7 @@ export function ProjectReviewDetailModal({
                       {c.label}
                     </p>
                     <p className="text-[12px] text-text-muted whitespace-pre-wrap leading-snug">
-                      {review[c.key]}
+                      {review[c.commentKey]}
                     </p>
                   </div>
                 ))}

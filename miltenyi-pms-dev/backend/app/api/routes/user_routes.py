@@ -93,57 +93,63 @@ def change_password(
 
     return {"message": "Password updated successfully."}
 
+_CAREER_LEVEL_LABELS = {1: "Entry", 2: "Mid", 3: "Senior", 4: "Lead"}
+_EXPECTATION_NOT_DEFINED = "Role expectation not defined"
+
+
 @router.get("/me/expectations", response_model=UserRoleExpectationResponse)
 def get_my_role_expectations(
     db: DbSession,
     current_user: CurrentUser,
 ):
     """
-    Return the role expectations (8 competencies) specific to the
-    current user's Function and Designation.
+    Return the GCC role expectations (6 columns) for the current user,
+    resolved by (function, designation.career_level). When the user has
+    no function / no designation / a designation without a career level,
+    or the (function, career_level) row hasn't been seeded yet, every
+    expectation field returns the same 'Role expectation not defined'
+    placeholder so the frontend can render the panel without null-checks.
     """
     func_name = current_user.function.name if current_user.function else "Unassigned"
-    desig_name = current_user.designation.name if current_user.designation else "Unassigned"
+    desig = current_user.designation
+    desig_name = desig.name if desig else "Unassigned"
+    career_level = desig.career_level if desig and desig.career_level is not None else None
+    career_level_label = _CAREER_LEVEL_LABELS.get(career_level) if career_level is not None else None
 
-    # Default fallback object
-    fallback_response = UserRoleExpectationResponse(
+    fallback = UserRoleExpectationResponse(
         function_name=func_name,
         designation_name=desig_name,
-        exp_task_execution="Role expectation not defined",
-        exp_ownership="Role expectation not defined",
-        exp_project_management="Role expectation not defined",
-        exp_client_deliverables="Role expectation not defined",
-        exp_communication="Role expectation not defined",
-        exp_mentoring="Role expectation not defined",
-        exp_firm_growth="Role expectation not defined",
-        exp_competency_skills="Role expectation not defined",
+        career_level=career_level,
+        career_level_label=career_level_label,
+        exp_scope_of_role=_EXPECTATION_NOT_DEFINED,
+        exp_key_responsibilities=_EXPECTATION_NOT_DEFINED,
+        exp_technical_competencies=_EXPECTATION_NOT_DEFINED,
+        exp_delivery_ownership=_EXPECTATION_NOT_DEFINED,
+        exp_regulatory_compliance=_EXPECTATION_NOT_DEFINED,
+        exp_project_resource_management=_EXPECTATION_NOT_DEFINED,
     )
 
-    # If the user doesn't have a function or designation, return fallbacks immediately
-    if not current_user.function_id or not current_user.designation_id:
-        return fallback_response
+    if not current_user.function_id or career_level is None:
+        return fallback
 
-    # Query the database for the specific expectations
     expectation = db.query(RoleExpectation).filter(
         RoleExpectation.org_id == current_user.org_id,
         RoleExpectation.function_id == current_user.function_id,
-        RoleExpectation.designation_id == current_user.designation_id,
+        RoleExpectation.career_level == career_level,
     ).first()
 
-    # If no specific expectations are mapped for this role, return fallbacks
     if not expectation:
-        return fallback_response
+        return fallback
 
-    # Return the mapped expectations
     return UserRoleExpectationResponse(
         function_name=func_name,
         designation_name=desig_name,
-        exp_task_execution=expectation.exp_task_execution or "Role expectation not defined",
-        exp_ownership=expectation.exp_ownership or "Role expectation not defined",
-        exp_project_management=expectation.exp_project_management or "Role expectation not defined",
-        exp_client_deliverables=expectation.exp_client_deliverables or "Role expectation not defined",
-        exp_communication=expectation.exp_communication or "Role expectation not defined",
-        exp_mentoring=expectation.exp_mentoring or "Role expectation not defined",
-        exp_firm_growth=expectation.exp_firm_growth or "Role expectation not defined",
-        exp_competency_skills=expectation.exp_competency_skills or "Role expectation not defined",
+        career_level=career_level,
+        career_level_label=career_level_label,
+        exp_scope_of_role=expectation.exp_scope_of_role or _EXPECTATION_NOT_DEFINED,
+        exp_key_responsibilities=expectation.exp_key_responsibilities or _EXPECTATION_NOT_DEFINED,
+        exp_technical_competencies=expectation.exp_technical_competencies or _EXPECTATION_NOT_DEFINED,
+        exp_delivery_ownership=expectation.exp_delivery_ownership or _EXPECTATION_NOT_DEFINED,
+        exp_regulatory_compliance=expectation.exp_regulatory_compliance or _EXPECTATION_NOT_DEFINED,
+        exp_project_resource_management=expectation.exp_project_resource_management or _EXPECTATION_NOT_DEFINED,
     )

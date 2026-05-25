@@ -23,10 +23,18 @@ class FunctionBrief(BaseModel):
 
 
 class DesignationBrief(BaseModel):
-    """Lightweight designation payload for <select> dropdowns."""
+    """Lightweight designation payload for <select> dropdowns.
+
+    `career_level` is the GCC band (1..4) the title sits in; `level`
+    remains as the legacy hierarchical sort key so existing dropdown
+    ordering doesn't shift while career_level isn't yet surfaced in the
+    UI.
+    """
     id: int
     name: str
     level: int
+    career_level: int | None = None
+    career_level_label: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

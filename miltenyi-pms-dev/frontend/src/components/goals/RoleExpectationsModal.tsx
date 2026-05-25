@@ -1,6 +1,6 @@
 /**
  * RoleExpectationsModal — read-only modal showing the current user's
- * role expectations across all eight competencies.
+ * GCC role expectations across all six competencies.
  *
  * Opened from a button on the Annual Goals → My Goals tab. Stays
  * dismiss-able via Esc / X / backdrop. The parent owns the open
@@ -12,24 +12,7 @@ import { createPortal } from "react-dom";
 import { BookOpen, X } from "lucide-react";
 import type { UserRoleExpectation } from "@/services/profile.service";
 import { useEffect } from "react";
-
-/** The eight competencies the Role Expectation row carries — all
- *  rendered in the modal. Keep ordering aligned with the project-review
- *  evaluation form so a reader who sees both surfaces (annual goals
- *  here, project reviews elsewhere) builds the same mental map. */
-const ROLE_EXP_FIELDS: {
-  expKey: keyof UserRoleExpectation;
-  label: string;
-}[] = [
-  { expKey: "exp_task_execution",      label: "Task Execution & Problem Solving" },
-  { expKey: "exp_ownership",           label: "Ownership & Accountability" },
-  { expKey: "exp_project_management",  label: "Project Management & Risk Mitigation" },
-  { expKey: "exp_client_deliverables", label: "Client-Ready Deliverables" },
-  { expKey: "exp_communication",       label: "Communication & Stakeholder Management" },
-  { expKey: "exp_mentoring",           label: "Mentoring & Team Development" },
-  { expKey: "exp_firm_growth",         label: "Firm Growth" },
-  { expKey: "exp_competency_skills",   label: "Competency & Skills" },
-];
+import { GCC_COMPETENCIES } from "@/constants/gccFramework";
 
 interface RoleExpectationsModalProps {
   readonly expectation: UserRoleExpectation;
@@ -99,9 +82,12 @@ export function RoleExpectationsModal({
             role's expectation is a multi-sentence paragraph. */}
         <div className="flex-1 overflow-y-auto px-6 py-5">
           <ol className="grid grid-cols-1 gap-x-6 gap-y-5 md:grid-cols-2">
-            {ROLE_EXP_FIELDS.map(({ expKey, label }, idx) => {
-              const text = expectation[expKey];
-              if (!text) return null;
+            {GCC_COMPETENCIES.map(({ expKey, label }, idx) => {
+              // UserRoleExpectation shares its exp_* field shape with
+              // the RoleExpectation type that backs GCC_COMPETENCIES, so
+              // we can index it with expKey directly.
+              const text = (expectation as Record<string, string | null | number | undefined>)[expKey];
+              if (!text || typeof text !== "string") return null;
               return (
                 <li
                   key={expKey}

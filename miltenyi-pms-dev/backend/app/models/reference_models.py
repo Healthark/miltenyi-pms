@@ -22,7 +22,17 @@ class Designation(Base):
     id = Column(Integer, primary_key=True, index=True)
     org_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
     name = Column(String, nullable=False)
-    level = Column(Integer, default=1) # For hierarchical sorting (1=Junior, 5=Partner)
+    level = Column(Integer, default=1)  # Legacy hierarchical sort key (1..5); kept for back-compat.
+
+    # GCC career-path mapping. Multiple designations (titles) can share the same
+    # career_level — e.g. both "Senior Regulatory Affairs Associate" and
+    # "Regulatory Affairs Specialist" sit at career_level=2 ("Mid"). The
+    # role_expectations table is keyed by (function_id, career_level), so this
+    # column is what links a user's designation to their expectations row.
+    # Nullable so legacy / non-GCC designations stay valid.
+    career_level = Column(Integer, nullable=True)            # 1..4 in the GCC framework
+    career_level_label = Column(String, nullable=True)       # "Entry" / "Mid" / "Senior" / "Lead"
+
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

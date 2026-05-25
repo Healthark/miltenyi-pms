@@ -3,9 +3,9 @@
  * mentee's self-review.
  *
  * Layout:
- *   Left rail    — scrollable list of all eight role-expectation cards
+ *   Left rail    — scrollable list of the 6 GCC role-expectation cards
  *                  scoped to the mentee's (goal owner's) function ×
- *                  designation. Always visible so the mentor can keep
+ *                  career_level. Always visible so the mentor can keep
  *                  the rubric in view while writing.
  *   Center panel — read-only display of the mentee's self-review paragraph.
  *   Right panel  — mentor fills a single paragraph (or views read-only
@@ -36,38 +36,15 @@ import {
 import { formatFyYearSpan } from "@/utils/fy";
 import { halfDisplayLabel } from "@/utils/goalStatus";
 import { getOwnerRole } from "@/utils/goalOwner";
+import { GCC_COMPETENCIES } from "@/constants/gccFramework";
 
 const TEXTAREA_CLS =
   "w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-brand resize-none";
 
 const MENTOR_REVIEW_MAX = 5000;
 
-/** Eight competencies shown in the left rail. Order matches the
- *  RoleExpectationsModal on My Goals so a reader who sees both surfaces
- *  builds the same mental map. */
-const ROLE_EXP_FIELDS: {
-  expKey: keyof Pick<
-    RoleExpectation,
-    | "exp_task_execution"
-    | "exp_ownership"
-    | "exp_project_management"
-    | "exp_client_deliverables"
-    | "exp_communication"
-    | "exp_mentoring"
-    | "exp_firm_growth"
-    | "exp_competency_skills"
-  >;
-  label: string;
-}[] = [
-  { expKey: "exp_task_execution",      label: "Task Execution & Problem Solving" },
-  { expKey: "exp_ownership",           label: "Ownership & Accountability" },
-  { expKey: "exp_project_management",  label: "Project Management & Risk Mitigation" },
-  { expKey: "exp_client_deliverables", label: "Client-Ready Deliverables" },
-  { expKey: "exp_communication",       label: "Communication & Stakeholder Management" },
-  { expKey: "exp_mentoring",           label: "Mentoring & Team Development" },
-  { expKey: "exp_firm_growth",         label: "Firm Growth" },
-  { expKey: "exp_competency_skills",   label: "Competency & Skills" },
-];
+// The 6 GCC competencies shown in the left rail come from the shared
+// `gccFramework` constant module — same order as every other surface.
 
 function cycleLabel(
   goal: Goal,
@@ -160,10 +137,13 @@ export function GoalMentorReviewModal({
   if (!goal || !cycleHalf) return null;
 
   const { func, desig } = getOwnerRole(goal);
+  // GCC role expectations are keyed by (function, career_level); one row
+  // covers every designation at the band. Match by function + the goal
+  // owner's designation appearing in the row's title list.
   const ownerExpectation: RoleExpectation | null =
     func && desig
       ? expectations.find(
-          (e) => e.function_name === func && e.designation_name === desig,
+          (e) => e.function_name === func && e.designation_names.includes(desig),
         ) ?? null
       : null;
 
@@ -236,12 +216,12 @@ export function GoalMentorReviewModal({
                   {ownerExpectation.function_name ?? "—"}
                   <span className="text-text-muted">
                     {" · "}
-                    {ownerExpectation.designation_name ?? "—"}
+                    {ownerExpectation.career_level_label ?? "—"}
                   </span>
                 </p>
               )}
               {ownerExpectation ? (
-                ROLE_EXP_FIELDS.map(({ expKey, label: fieldLabel }, idx) => {
+                GCC_COMPETENCIES.map(({ expKey, label: fieldLabel }, idx) => {
                   const text = ownerExpectation[expKey];
                   if (!text) return null;
                   return (
