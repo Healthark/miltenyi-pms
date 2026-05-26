@@ -9,26 +9,41 @@ so we get fresh observations.
 
 What this seeds (and only this):
     - The Miltenyi organization
-    - Reference data:
-        Functions    — R&D, Manufacturing, Commercial
-        Designations — Scientist (L1 Entry) / Senior Scientist (L2 Mid)
-                       / Team Lead (L3 Senior) / Director (L4 Lead)
-                       — each carries `career_level` so the GCC role-
-                       expectations lookup resolves.
+    - Reference data (Miltenyi GCC career-path, mirrored from seed.py via
+      the shared `seed_data.gcc` module):
+        Functions    — 8 GCC functions (Clinical Data Management,
+                       Biostatistics, Regulatory Affairs, Pharmacovigilance,
+                       Clinical Trial Management, Medical Writing,
+                       Clinical Trial Finance, Legal).
+        Designations — ~36 titles across 4 career levels (Entry / Mid /
+                       Senior / Lead). Each Designation carries
+                       `career_level` + `career_level_label` so the
+                       /me/expectations API can resolve a user's role
+                       expectations.
     - SystemSettings tuned for demo (all gates open, ratings visible)
     - 18 users:
         2  HR  — 1 Healthark (HR_MyOrg, Indian name) + 1 Miltenyi (HR_Miltenyi, German)
-        3  Mentors (Healthark, Indian names)
-        4  PMs    (Miltenyi, German names)
-        9  Employee  (Miltenyi domain, Indian names — 3 mentees per mentor)
-    - Role expectations: 3 functions × 4 career levels = 12 rows on
-      the GCC 6-column schema (exp_scope_of_role,
-      exp_key_responsibilities, exp_technical_competencies,
-      exp_delivery_ownership, exp_regulatory_compliance,
-      exp_project_resource_management). Keyed on (function,
-      career_level) — the gcc_framework_replacement migration
-      (f7c4a9e2b5d1) replaced the old per-designation FK + 8-column
-      PMS framework with this shape.
+        3  Mentors (Healthark, Indian names) — themed by function
+        4  PMs    (Miltenyi, German names) — assigned to the same
+                  functions as the Employees they will eventually review
+        9  Employee  (Miltenyi domain, Indian names — 3 mentees per
+                     mentor; clustered into 3 of the 8 GCC functions so
+                     each mentor's team sits in one function)
+    - Role expectations: 32 rows (8 functions × 4 career levels) imported
+      verbatim from `seed_data.gcc.GCC_ROLE_EXPECTATIONS`. Keyed on
+      (function, career_level) — the gcc_framework_replacement migration
+      (f7c4a9e2b5d1) replaced the old per-designation FK + 8-column PMS
+      framework with this shape.
+
+Functions with seeded users (3 of 8):
+    Regulatory Affairs        — Rahul's mentees + PMs Stefan + Brigitte
+    Pharmacovigilance         — Neha's mentees + PM Helena
+    Clinical Trial Management — Vikram's mentees + PM Markus
+
+The remaining 5 functions (Clinical Data Management, Biostatistics,
+Medical Writing, Clinical Trial Finance, Legal) appear in every
+dropdown but have no users assigned — stakeholders can add users to
+those functions as they explore the admin panel.
 
 Everything else is left empty so the stakeholders' first creates are
 their own. All passwords are `password123`. Run:
@@ -44,122 +59,14 @@ from app.models.user_models import User, Role
 from app.models.system_settings_models import SystemSettings, CycleType
 from app.models.role_expectation_models import RoleExpectation
 
-
-# Per-(function × career_level) prose for the GCC role-expectations
-# framework. Six content columns parallel the model (exp_scope_of_role
-# / exp_key_responsibilities / exp_technical_competencies /
-# exp_delivery_ownership / exp_regulatory_compliance /
-# exp_project_resource_management).
-#
-# Keyed on integer career_level (1=Entry, 2=Mid, 3=Senior, 4=Lead),
-# NOT designation name, because RoleExpectation rows are keyed on
-# (function_id, career_level) after the GCC migration (f7c4a9e2b5d1).
-# Multiple Designations at the same band would point at the same row;
-# in this seed we have one Designation per band so it's a clean 1:1.
-EXPECTATIONS: dict[str, dict[int, dict[str, str]]] = {
-    "R&D": {
-        1: {  # Scientist — Entry
-            "exp_scope_of_role": "Entry-level scientist supporting bench experiments and analytical assays under senior guidance.",
-            "exp_key_responsibilities": "Runs assigned wet-lab and analytical tasks, maintains lab notebooks, performs data entry validation, and supports protocol execution.",
-            "exp_technical_competencies": "Foundational wet-lab technique, basic instrument operation, accurate data capture in ELN, adherence to GLP standards.",
-            "exp_delivery_ownership": "Accountable for accuracy and timeliness of own experimental tasks and the cleanliness of submitted data.",
-            "exp_regulatory_compliance": "Follows GLP / SOP requirements as trained; flags deviations to a senior scientist without delay.",
-            "exp_project_resource_management": "Manages own time across assigned experiments; tracks consumable usage and orders within budget guidance.",
-        },
-        2: {  # Senior Scientist — Mid
-            "exp_scope_of_role": "Independently designs and executes moderately complex experiments; owns workstreams within a project.",
-            "exp_key_responsibilities": "Plans experimental design, troubleshoots assays, authors method documents, and reviews data from junior scientists.",
-            "exp_technical_competencies": "SME in one platform or assay class; growing breadth across adjacent technologies; statistical interpretation of results.",
-            "exp_delivery_ownership": "Owns delivery of one or more workstreams end-to-end; signs off own data and reviews datasets from juniors.",
-            "exp_regulatory_compliance": "Maintains GLP rigor across the workstream; authors CAPA documentation for deviations they own.",
-            "exp_project_resource_management": "Plans experiment timelines, manages reagent supply, and coordinates with cross-functional partners on dependencies.",
-        },
-        3: {  # Team Lead — Senior
-            "exp_scope_of_role": "Leads scientific direction and protocol design for the team; balances rigor with delivery timelines.",
-            "exp_key_responsibilities": "Sets team-level experimental strategy, reviews and signs off regulatory-grade deliverables, manages stakeholder communication.",
-            "exp_technical_competencies": "Recognised expert in the team's platform area; mentors emerging SMEs and shapes technical direction.",
-            "exp_delivery_ownership": "Accountable for team-level project outcomes, milestone delivery, and quality of regulatory-grade outputs.",
-            "exp_regulatory_compliance": "Owns regulatory readiness for the team's outputs; final reviewer on submission-ready documents.",
-            "exp_project_resource_management": "Owns project plan, milestones, budget, headcount, and stakeholder governance across the team's portfolio.",
-        },
-        4: {  # Director — Lead
-            "exp_scope_of_role": "Sets R&D portfolio strategy and capability roadmap across multiple teams.",
-            "exp_key_responsibilities": "Defines therapeutic-area focus, owns build-vs-buy decisions on platforms, and represents R&D in leadership reviews.",
-            "exp_technical_competencies": "Strategic technical depth across multiple platforms; external thought leadership in the field.",
-            "exp_delivery_ownership": "Accountable for portfolio outcomes — programs delivered, capability uplift, and team retention.",
-            "exp_regulatory_compliance": "Owns the R&D function's regulatory posture; engages with health authorities on key submissions.",
-            "exp_project_resource_management": "Owns multi-team budget, capital decisions, and senior hiring across the function.",
-        },
-    },
-    "Manufacturing": {
-        1: {  # Scientist — Entry
-            "exp_scope_of_role": "Entry-level production / QC operator running routine GMP tasks under shift supervision.",
-            "exp_key_responsibilities": "Performs routine production and QC tasks, completes batch records, and raises deviations promptly.",
-            "exp_technical_competencies": "Foundational aseptic technique, cleanroom protocols, basic instrument operation, batch record accuracy.",
-            "exp_delivery_ownership": "Accountable for shift-level task completion and documentation integrity on assigned process steps.",
-            "exp_regulatory_compliance": "Strict adherence to GMP / SOPs; escalates deviations to shift supervisor without delay.",
-            "exp_project_resource_management": "Manages own shift workload; tracks consumable usage and reports inventory needs.",
-        },
-        2: {  # Senior Scientist — Mid
-            "exp_scope_of_role": "Owns process improvements and root-cause analysis across one or more product lines.",
-            "exp_key_responsibilities": "Drives a workstream across product lines, runs production planning, and authors validation / CAPA documentation.",
-            "exp_technical_competencies": "Deep expertise in one production platform; cross-functional coordination with R&D on tech-transfer.",
-            "exp_delivery_ownership": "Owns workstream-level KPIs (throughput, yield, deviation rate) and the quality of validation documentation.",
-            "exp_regulatory_compliance": "Authors and reviews validation reports; co-leads CAPA closure with QA.",
-            "exp_project_resource_management": "Coordinates with R&D on tech-transfer and runs production planning across shifts.",
-        },
-        3: {  # Team Lead — Senior
-            "exp_scope_of_role": "Sets manufacturing strategy for the line and owns regulatory readiness.",
-            "exp_key_responsibilities": "Owns line-level KPIs, leads cross-functional production reviews, signs off audit-ready documentation.",
-            "exp_technical_competencies": "Recognised authority on the line's platforms; sets technical and SOP standards for the team.",
-            "exp_delivery_ownership": "Accountable for line-level throughput, yield, and deviation rate; final sign-off on validation and CAPA.",
-            "exp_regulatory_compliance": "Owns regulatory and customer-facing communications for the line; readiness for audits.",
-            "exp_project_resource_management": "Owns multi-site programs end-to-end with budget accountability and headcount planning.",
-        },
-        4: {  # Director — Lead
-            "exp_scope_of_role": "Sets manufacturing strategy across sites and product lines.",
-            "exp_key_responsibilities": "Defines capacity strategy, owns capital investment decisions, and represents Mfg in leadership reviews.",
-            "exp_technical_competencies": "Strategic depth across platforms and modalities; external benchmarking on operational excellence.",
-            "exp_delivery_ownership": "Accountable for site-level financial performance, regulatory posture, and capability uplift.",
-            "exp_regulatory_compliance": "Owns the Mfg function's regulatory posture; engages with health authorities on inspection findings.",
-            "exp_project_resource_management": "Owns multi-site budget, capital decisions, and senior hiring across the function.",
-        },
-    },
-    "Commercial": {
-        1: {  # Scientist — Entry
-            "exp_scope_of_role": "Entry-level commercial associate supporting market analysis and customer onboarding.",
-            "exp_key_responsibilities": "Maintains opportunity trackers, supports pitch material creation, runs CRM hygiene.",
-            "exp_technical_competencies": "Foundational commercial systems, CRM proficiency, product fundamentals; growing customer-call confidence.",
-            "exp_delivery_ownership": "Accountable for accuracy of tracker data and timeliness of customer-ready collateral.",
-            "exp_regulatory_compliance": "Adheres to internal compliance policies on customer communications and data handling.",
-            "exp_project_resource_management": "Manages own task list across accounts and reporting cadences.",
-        },
-        2: {  # Senior Scientist — Mid
-            "exp_scope_of_role": "Independently scopes and runs customer engagements across one region or segment.",
-            "exp_key_responsibilities": "Owns regional pipeline, drives launch readiness across stakeholders, crafts strategy briefs.",
-            "exp_technical_competencies": "SME in a product line or therapeutic area; growing strategic breadth.",
-            "exp_delivery_ownership": "Owns regional quota and pipeline accountability; sign-off on pitch material in their region.",
-            "exp_regulatory_compliance": "Ensures commercial activities comply with promotion and pricing policies.",
-            "exp_project_resource_management": "Manages a portfolio of accounts and coordinates cross-functional resources for major opportunities.",
-        },
-        3: {  # Team Lead — Senior
-            "exp_scope_of_role": "Sets commercial strategy across multiple regions and product lines.",
-            "exp_key_responsibilities": "Owns regional pipeline, revenue, and customer satisfaction; leads launch programs end-to-end.",
-            "exp_technical_competencies": "Recognised authority on the region or segment; sets commercial playbooks for the team.",
-            "exp_delivery_ownership": "Accountable for regional revenue, customer satisfaction, and team performance against quotas.",
-            "exp_regulatory_compliance": "Owns enforcement of commercial compliance policies across the team; final reviewer on enterprise proposals.",
-            "exp_project_resource_management": "Owns launch programs end-to-end with cross-functional governance and budget responsibility.",
-        },
-        4: {  # Director — Lead
-            "exp_scope_of_role": "Sets global go-to-market strategy across business units.",
-            "exp_key_responsibilities": "Defines therapeutic-area positioning, owns major customer relationships, leads commercial transformation.",
-            "exp_technical_competencies": "Strategic depth on global commercial models; external thought leadership in the field.",
-            "exp_delivery_ownership": "Accountable for global commercial performance, brand strategy, and channel build.",
-            "exp_regulatory_compliance": "Owns the Commercial function's regulatory and compliance posture across markets.",
-            "exp_project_resource_management": "Owns global commercial budget, talent strategy, and major customer relationships.",
-        },
-    },
-}
+# Shared GCC career-path content (functions, designations, role-expectation
+# prose). Same source as seed.py — edits to the framework happen in
+# seed_data/gcc.py and propagate to both seeds.
+from seed_data.gcc import (
+    LEVEL_LABEL,
+    GCC_DESIGNATIONS,
+    GCC_ROLE_EXPECTATIONS,
+)
 
 
 def seed_test_database() -> None:
@@ -189,41 +96,59 @@ def seed_test_database() -> None:
             print("  [~] Organization 'Miltenyi' already exists; reusing.")
 
         # ============================================================ #
-        # 2. FUNCTIONS & DESIGNATIONS                                   #
+        # 2. FUNCTIONS & DESIGNATIONS (GCC career-path)                 #
         # ============================================================ #
+        # 8 GCC functions × 4 career levels. Multiple titles at a
+        # single band (e.g. "Senior Regulatory Affairs Associate" +
+        # "Regulatory Affairs Specialist" both at RA L2) each become
+        # their own Designation row but share the same RoleExpectation.
         if db.query(Function).filter(Function.org_id == miltenyi.id).count() == 0:
-            # Designations carry both `level` (legacy 1..4 sort key kept
-            # for back-compat) and `career_level` / `career_level_label`
-            # (the GCC band that RoleExpectation rows are keyed on). The
-            # /me/expectations API resolves expectations via
-            # designation.career_level — without these set, the panel
-            # falls back to "Role expectation not defined".
-            db.add_all([
-                Function(org_id=miltenyi.id, name="R&D"),
-                Function(org_id=miltenyi.id, name="Manufacturing"),
-                Function(org_id=miltenyi.id, name="Commercial"),
-                Designation(org_id=miltenyi.id, name="Scientist",
-                            level=1, career_level=1, career_level_label="Entry"),
-                Designation(org_id=miltenyi.id, name="Senior Scientist",
-                            level=2, career_level=2, career_level_label="Mid"),
-                Designation(org_id=miltenyi.id, name="Team Lead",
-                            level=3, career_level=3, career_level_label="Senior"),
-                Designation(org_id=miltenyi.id, name="Director",
-                            level=4, career_level=4, career_level_label="Lead"),
-            ])
+            gcc_function_names = sorted({fname for fname, _, _ in GCC_DESIGNATIONS})
+            for fname in gcc_function_names:
+                db.add(Function(org_id=miltenyi.id, name=fname))
+            db.flush()
+
+            for _, lvl, titles in GCC_DESIGNATIONS:
+                for title in titles:
+                    db.add(Designation(
+                        org_id=miltenyi.id,
+                        name=title,
+                        level=lvl,                       # legacy sort, matches band for now
+                        career_level=lvl,
+                        career_level_label=LEVEL_LABEL[lvl],
+                    ))
             db.commit()
-            print("  [+] Functions & Designations")
+            print(f"  [+] {len(gcc_function_names)} GCC Functions and "
+                  f"{sum(len(t) for _, _, t in GCC_DESIGNATIONS)} Designations")
         else:
             print("  [~] Reference data already exists; reusing.")
 
-        func_rnd = db.query(Function).filter_by(org_id=miltenyi.id, name="R&D").first()
-        func_mfg = db.query(Function).filter_by(org_id=miltenyi.id, name="Manufacturing").first()
-        func_com = db.query(Function).filter_by(org_id=miltenyi.id, name="Commercial").first()
+        # ── Resolve handles for the functions / designations we'll use ──
+        def _fn(name: str) -> Function:
+            return db.query(Function).filter_by(org_id=miltenyi.id, name=name).first()
 
-        d_sci  = db.query(Designation).filter_by(org_id=miltenyi.id, name="Scientist").first()
-        d_sr   = db.query(Designation).filter_by(org_id=miltenyi.id, name="Senior Scientist").first()
-        d_lead = db.query(Designation).filter_by(org_id=miltenyi.id, name="Team Lead").first()
-        d_dir  = db.query(Designation).filter_by(org_id=miltenyi.id, name="Director").first()
+        def _desig(name: str) -> Designation:
+            return db.query(Designation).filter_by(org_id=miltenyi.id, name=name).first()
+
+        # The three functions where the demo cast lives (the other 5
+        # functions are seeded with empty user assignments).
+        func_ra  = _fn("Regulatory Affairs")
+        func_pv  = _fn("Pharmacovigilance")
+        func_ctm = _fn("Clinical Trial Management")
+
+        # Designations the demo users get. RA + PV + CTM titles only;
+        # the other functions' titles are in the DB but unused here.
+        d_ra_assoc       = _desig("Regulatory Affairs Associate")          # L1
+        d_ra_assoc_sr    = _desig("Senior Regulatory Affairs Associate")   # L2
+        d_ra_lead        = _desig("Regulatory Affairs Lead")               # L4
+
+        d_pv_assoc       = _desig("Pharmacovigilance Associate")           # L1
+        d_pv_analyst     = _desig("Pharmacovigilance Analyst")             # L2
+        d_pv_lead        = _desig("Pharmacovigilance Lead")                # L4
+
+        d_ctm_assoc      = _desig("Clinical Trial Associate")              # L1
+        d_ctm_mgr        = _desig("Clinical Trial Manager")                # L2
+        d_ctm_lead       = _desig("Lead - Clinical Trial Manager")         # L4
 
         # ============================================================ #
         # 3. USERS                                                      #
@@ -246,13 +171,17 @@ def seed_test_database() -> None:
             db.refresh(u)
             return u
 
+        # HR + Mentors are framework-external (no function / designation
+        # — they don't sit in a GCC band). Matches seed.py's HR + Mentor
+        # rows exactly.
+
         # ── HR · Healthark (full super-admin) ────────────────────────
         aanya = _ensure_user(
             "aanya.sharma@healthark.ai",
             employee_code="HRK-T01", full_name="Aanya Sharma",
             phone="+91 98000 10001",
             role=Role.HR_MYORG.value,
-            function_id=None, designation_id=d_dir.id,
+            function_id=None, designation_id=None,
         )
 
         # ── HR · Miltenyi (limited admin) ────────────────────────────
@@ -261,132 +190,139 @@ def seed_test_database() -> None:
             employee_code="MIL-T-HR-01", full_name="Werner Fischer",
             phone="+49 30 1234 9001",
             role=Role.HR_MILTENYI.value,
-            function_id=None, designation_id=d_dir.id,
+            function_id=None, designation_id=None,
         )
 
-        # ── Mentors (Healthark, Indian names) ────────────────────────
+        # ── Mentors (Healthark, Indian names; framework-external) ────
+        # Each mentor is themed to one GCC function so their 3 mentees
+        # below land in the same function — stakeholders see a coherent
+        # team-per-mentor view in the Mentees tab.
         rahul = _ensure_user(
             "rahul.verma@healthark.ai",
             employee_code="HRK-T-M01", full_name="Rahul Verma",
             phone="+91 98000 10010",
             role=Role.MENTOR.value,
-            function_id=None, designation_id=d_dir.id,
+            function_id=None, designation_id=None,
         )
         neha = _ensure_user(
             "neha.kapoor@healthark.ai",
             employee_code="HRK-T-M02", full_name="Neha Kapoor",
             phone="+91 98000 10011",
             role=Role.MENTOR.value,
-            function_id=None, designation_id=d_dir.id,
+            function_id=None, designation_id=None,
         )
         vikram = _ensure_user(
             "vikram.iyer@healthark.ai",
             employee_code="HRK-T-M03", full_name="Vikram Iyer",
             phone="+91 98000 10012",
             role=Role.MENTOR.value,
-            function_id=None, designation_id=d_dir.id,
+            function_id=None, designation_id=None,
         )
 
-        # ── PMs (Miltenyi, non-Indian names) ─────────────────────────
+        # ── PMs (Miltenyi, German names) — sit in the same GCC ──────
+        # functions as their team's mentees so the PM's review queue
+        # has actual content.
         stefan = _ensure_user(
             "stefan@miltenyi.com",
             employee_code="MIL-T-PM-01", full_name="Stefan Bauer",
             phone="+49 30 1234 1101",
             role=Role.PM.value,
-            function_id=func_rnd.id, designation_id=d_lead.id,
+            function_id=func_ra.id, designation_id=d_ra_lead.id,
         )
         helena = _ensure_user(
             "helena@miltenyi.com",
             employee_code="MIL-T-PM-02", full_name="Helena Vogel",
             phone="+49 30 1234 1102",
             role=Role.PM.value,
-            function_id=func_mfg.id, designation_id=d_lead.id,
+            function_id=func_pv.id, designation_id=d_pv_lead.id,
         )
         markus = _ensure_user(
             "markus@miltenyi.com",
             employee_code="MIL-T-PM-03", full_name="Markus Krause",
             phone="+49 30 1234 1103",
             role=Role.PM.value,
-            function_id=func_com.id, designation_id=d_lead.id,
+            function_id=func_ctm.id, designation_id=d_ctm_lead.id,
         )
         brigitte = _ensure_user(
             "brigitte@miltenyi.com",
             employee_code="MIL-T-PM-04", full_name="Brigitte Hoffmann",
             phone="+49 30 1234 1104",
             role=Role.PM.value,
-            function_id=func_rnd.id, designation_id=d_lead.id,
+            function_id=func_ra.id, designation_id=d_ra_lead.id,
         )
 
-        # ── Employee (Miltenyi domain, Indian names; 3 mentees per mentor) ──
-        # Rahul's mentees — R&D
+        # ── Employees (Miltenyi domain, Indian names) ────────────────
+        # 3 mentees per mentor, all sitting in their mentor's function.
+
+        # Rahul's mentees → Regulatory Affairs
         _ensure_user(
             "aarav.patel@miltenyi.com",
             employee_code="MIL-T-S-01", full_name="Aarav Patel",
             phone="+91 98000 10101",
             role=Role.EMPLOYEE.value, mentor_id=rahul.id,
-            function_id=func_rnd.id, designation_id=d_sci.id,
+            function_id=func_ra.id, designation_id=d_ra_assoc.id,
         )
         _ensure_user(
             "diya.mehta@miltenyi.com",
             employee_code="MIL-T-S-02", full_name="Diya Mehta",
             phone="+91 98000 10102",
             role=Role.EMPLOYEE.value, mentor_id=rahul.id,
-            function_id=func_rnd.id, designation_id=d_sr.id,
+            function_id=func_ra.id, designation_id=d_ra_assoc_sr.id,
         )
         _ensure_user(
             "kabir.singh@miltenyi.com",
             employee_code="MIL-T-S-03", full_name="Kabir Singh",
             phone="+91 98000 10103",
             role=Role.EMPLOYEE.value, mentor_id=rahul.id,
-            function_id=func_rnd.id, designation_id=d_sci.id,
+            function_id=func_ra.id, designation_id=d_ra_assoc.id,
         )
 
-        # Neha's mentees — Manufacturing
+        # Neha's mentees → Pharmacovigilance
         _ensure_user(
             "ishaan.joshi@miltenyi.com",
             employee_code="MIL-T-S-04", full_name="Ishaan Joshi",
             phone="+91 98000 10104",
             role=Role.EMPLOYEE.value, mentor_id=neha.id,
-            function_id=func_mfg.id, designation_id=d_sr.id,
+            function_id=func_pv.id, designation_id=d_pv_analyst.id,
         )
         _ensure_user(
             "saanvi.reddy@miltenyi.com",
             employee_code="MIL-T-S-05", full_name="Saanvi Reddy",
             phone="+91 98000 10105",
             role=Role.EMPLOYEE.value, mentor_id=neha.id,
-            function_id=func_mfg.id, designation_id=d_sci.id,
+            function_id=func_pv.id, designation_id=d_pv_assoc.id,
         )
         _ensure_user(
             "ayaan.khan@miltenyi.com",
             employee_code="MIL-T-S-06", full_name="Ayaan Khan",
             phone="+91 98000 10106",
             role=Role.EMPLOYEE.value, mentor_id=neha.id,
-            function_id=func_mfg.id, designation_id=d_sci.id,
+            function_id=func_pv.id, designation_id=d_pv_assoc.id,
         )
 
-        # Vikram's mentees — Commercial
+        # Vikram's mentees → Clinical Trial Management
         _ensure_user(
             "riya.nair@miltenyi.com",
             employee_code="MIL-T-S-07", full_name="Riya Nair",
             phone="+91 98000 10107",
             role=Role.EMPLOYEE.value, mentor_id=vikram.id,
-            function_id=func_com.id, designation_id=d_sr.id,
+            function_id=func_ctm.id, designation_id=d_ctm_mgr.id,
         )
         _ensure_user(
             "arjun.gupta@miltenyi.com",
             employee_code="MIL-T-S-08", full_name="Arjun Gupta",
             phone="+91 98000 10108",
             role=Role.EMPLOYEE.value, mentor_id=vikram.id,
-            function_id=func_com.id, designation_id=d_sci.id,
+            function_id=func_ctm.id, designation_id=d_ctm_assoc.id,
         )
         _ensure_user(
             "myra.desai@miltenyi.com",
             employee_code="MIL-T-S-09", full_name="Myra Desai",
             phone="+91 98000 10109",
             role=Role.EMPLOYEE.value, mentor_id=vikram.id,
-            function_id=func_com.id, designation_id=d_sci.id,
+            function_id=func_ctm.id, designation_id=d_ctm_assoc.id,
         )
-        print("  [+] Users (HR×2, Mentors×3, PMs×4, Employee×9)")
+        print("  [+] Users (HR×2, Mentors×3, PMs×4, Employee×9 across 3 of 8 GCC functions)")
 
         # ============================================================ #
         # 4. SYSTEM SETTINGS                                            #
@@ -420,30 +356,29 @@ def seed_test_database() -> None:
         # ============================================================ #
         # 5. ROLE EXPECTATIONS                                          #
         # ============================================================ #
-        # Reference text PMs see while writing project review comments,
-        # and the Role Expectations panel each user sees on their own
-        # profile. Rows are keyed on (function_id, career_level) — the
-        # GCC migration replaced the old per-designation FK. Each
-        # Designation's career_level is what links a user's title to
-        # the matching expectations row.
+        # 32 GCC rows (8 functions × 4 career levels) imported verbatim
+        # from seed_data.gcc.GCC_ROLE_EXPECTATIONS. Keyed on
+        # (function_id, career_level) — the GCC migration replaced the
+        # old per-designation FK. Each Designation's career_level is
+        # what links a user's title to the matching expectations row,
+        # so multiple titles at one band point at one expectations row.
         #
         # Re-runs are no-ops because of the count() guard.
         if db.query(RoleExpectation).filter(RoleExpectation.org_id == miltenyi.id).count() == 0:
             inserted = 0
-            for func_name, by_level in EXPECTATIONS.items():
+            for (func_name, career_level), fields in GCC_ROLE_EXPECTATIONS.items():
                 fn = db.query(Function).filter_by(org_id=miltenyi.id, name=func_name).first()
                 if not fn:
                     continue
-                for career_level, comp in by_level.items():
-                    db.add(RoleExpectation(
-                        org_id=miltenyi.id,
-                        function_id=fn.id,
-                        career_level=career_level,
-                        **comp,
-                    ))
-                    inserted += 1
+                db.add(RoleExpectation(
+                    org_id=miltenyi.id,
+                    function_id=fn.id,
+                    career_level=career_level,
+                    **fields,
+                ))
+                inserted += 1
             db.commit()
-            print(f"  [+] Role Expectations: {inserted} rows (3 functions × 4 career levels)")
+            print(f"  [+] Role Expectations: {inserted} rows (8 functions × 4 career levels)")
         else:
             print("  [~] Role expectations already exist; reusing.")
 
@@ -458,18 +393,23 @@ def seed_test_database() -> None:
         print("    Healthark : aanya.sharma@healthark.ai     Aanya Sharma     (HR_MyOrg / super-admin)")
         print("    Miltenyi  : werner@miltenyi.com           Werner Fischer   (HR_Miltenyi / limited)")
         print("\n  Mentors (Healthark)")
-        print("    rahul.verma@healthark.ai     Rahul Verma     (mentors Aarav, Diya, Kabir)")
-        print("    neha.kapoor@healthark.ai     Neha Kapoor     (mentors Ishaan, Saanvi, Ayaan)")
-        print("    vikram.iyer@healthark.ai     Vikram Iyer     (mentors Riya, Arjun, Myra)")
+        print("    rahul.verma@healthark.ai     Rahul Verma     (mentors Aarav, Diya, Kabir — Regulatory Affairs)")
+        print("    neha.kapoor@healthark.ai     Neha Kapoor     (mentors Ishaan, Saanvi, Ayaan — Pharmacovigilance)")
+        print("    vikram.iyer@healthark.ai     Vikram Iyer     (mentors Riya, Arjun, Myra — Clinical Trial Mgmt)")
         print("\n  PMs (Miltenyi)")
-        print("    stefan@miltenyi.com          Stefan Bauer    (R&D)")
-        print("    helena@miltenyi.com          Helena Vogel    (Manufacturing)")
-        print("    markus@miltenyi.com          Markus Krause   (Commercial)")
-        print("    brigitte@miltenyi.com        Brigitte Hoffmann (R&D)")
-        print("\n  Employee (Miltenyi domain, Healthark mentees)")
-        print("    R&D          : aarav.patel@,    diya.mehta@,    kabir.singh@miltenyi.com")
-        print("    Manufacturing: ishaan.joshi@,   saanvi.reddy@,  ayaan.khan@miltenyi.com")
-        print("    Commercial   : riya.nair@,      arjun.gupta@,   myra.desai@miltenyi.com")
+        print("    stefan@miltenyi.com          Stefan Bauer    (Regulatory Affairs)")
+        print("    brigitte@miltenyi.com        Brigitte Hoffmann (Regulatory Affairs)")
+        print("    helena@miltenyi.com          Helena Vogel    (Pharmacovigilance)")
+        print("    markus@miltenyi.com          Markus Krause   (Clinical Trial Management)")
+        print("\n  Employees (Miltenyi domain, Healthark mentees)")
+        print("    Regulatory Affairs        : aarav.patel@,    diya.mehta@,    kabir.singh@miltenyi.com")
+        print("    Pharmacovigilance         : ishaan.joshi@,   saanvi.reddy@,  ayaan.khan@miltenyi.com")
+        print("    Clinical Trial Management : riya.nair@,      arjun.gupta@,   myra.desai@miltenyi.com")
+        print()
+        print("  Other 5 GCC functions (Clinical Data Management, Biostatistics,")
+        print("  Medical Writing, Clinical Trial Finance, Legal) are seeded with")
+        print("  designations + expectations but no users — stakeholders add users")
+        print("  to them while exploring the admin panel.")
         print()
         print("  No projects, goals, or reviews seeded — stakeholders create those.")
         print()
