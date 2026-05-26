@@ -9,15 +9,26 @@ so we get fresh observations.
 
 What this seeds (and only this):
     - The Miltenyi organization
-    - Reference data: Functions (R&D, Manufacturing, Commercial)
-                      Designations (Scientist, Senior Scientist, Team Lead, Director)
+    - Reference data:
+        Functions    — R&D, Manufacturing, Commercial
+        Designations — Scientist (L1 Entry) / Senior Scientist (L2 Mid)
+                       / Team Lead (L3 Senior) / Director (L4 Lead)
+                       — each carries `career_level` so the GCC role-
+                       expectations lookup resolves.
     - SystemSettings tuned for demo (all gates open, ratings visible)
     - 18 users:
         2  HR  — 1 Healthark (HR_MyOrg, Indian name) + 1 Miltenyi (HR_Miltenyi, German)
         3  Mentors (Healthark, Indian names)
         4  PMs    (Miltenyi, German names)
         9  Employee  (Miltenyi domain, Indian names — 3 mentees per mentor)
-    - Role expectations for every (function × designation) combination
+    - Role expectations: 3 functions × 4 career levels = 12 rows on
+      the GCC 6-column schema (exp_scope_of_role,
+      exp_key_responsibilities, exp_technical_competencies,
+      exp_delivery_ownership, exp_regulatory_compliance,
+      exp_project_resource_management). Keyed on (function,
+      career_level) — the gcc_framework_replacement migration
+      (f7c4a9e2b5d1) replaced the old per-designation FK + 8-column
+      PMS framework with this shape.
 
 Everything else is left empty so the stakeholders' first creates are
 their own. All passwords are `password123`. Run:
@@ -34,104 +45,118 @@ from app.models.system_settings_models import SystemSettings, CycleType
 from app.models.role_expectation_models import RoleExpectation
 
 
-# Same per-(function × designation) prose as the full dev seed so the PM
-# evaluation modal has reference text to render. Stakeholders see the
-# competencies but the evaluations themselves are theirs to author.
-EXPECTATIONS: dict[str, dict[str, dict[str, str]]] = {
+# Per-(function × career_level) prose for the GCC role-expectations
+# framework. Six content columns parallel the model (exp_scope_of_role
+# / exp_key_responsibilities / exp_technical_competencies /
+# exp_delivery_ownership / exp_regulatory_compliance /
+# exp_project_resource_management).
+#
+# Keyed on integer career_level (1=Entry, 2=Mid, 3=Senior, 4=Lead),
+# NOT designation name, because RoleExpectation rows are keyed on
+# (function_id, career_level) after the GCC migration (f7c4a9e2b5d1).
+# Multiple Designations at the same band would point at the same row;
+# in this seed we have one Designation per band so it's a clean 1:1.
+EXPECTATIONS: dict[str, dict[int, dict[str, str]]] = {
     "R&D": {
-        "Scientist": {
-            "exp_task_execution": "Executes assigned bench / analytical tasks reliably with guidance from senior scientists.",
-            "exp_ownership": "Owns small experimental modules end-to-end; flags blockers early.",
-            "exp_project_management": "Tracks experiments in lab notebooks and meets agreed timelines.",
-            "exp_client_deliverables": "Produces clean datasets and well-documented protocols.",
-            "exp_communication": "Clear written summaries; growing comfort presenting in team meetings.",
-            "exp_mentoring": "Supports onboarding of new lab joiners on instruments and SOPs.",
-            "exp_firm_growth": "Participates in internal seminars and lab safety initiatives.",
-            "exp_competency_skills": "Building proficiency in core wet-lab and analytical assay techniques.",
+        1: {  # Scientist — Entry
+            "exp_scope_of_role": "Entry-level scientist supporting bench experiments and analytical assays under senior guidance.",
+            "exp_key_responsibilities": "Runs assigned wet-lab and analytical tasks, maintains lab notebooks, performs data entry validation, and supports protocol execution.",
+            "exp_technical_competencies": "Foundational wet-lab technique, basic instrument operation, accurate data capture in ELN, adherence to GLP standards.",
+            "exp_delivery_ownership": "Accountable for accuracy and timeliness of own experimental tasks and the cleanliness of submitted data.",
+            "exp_regulatory_compliance": "Follows GLP / SOP requirements as trained; flags deviations to a senior scientist without delay.",
+            "exp_project_resource_management": "Manages own time across assigned experiments; tracks consumable usage and orders within budget guidance.",
         },
-        "Senior Scientist": {
-            "exp_task_execution": "Designs and runs moderately complex experiments independently; troubleshoots assays.",
-            "exp_ownership": "Owns workstreams across a project and partners cross-functionally.",
-            "exp_project_management": "Plans experiment timelines, manages reagent supply, tracks risks.",
-            "exp_client_deliverables": "Authors method documents and study reports to GMP-friendly standards.",
-            "exp_communication": "Leads internal reviews and presents data confidently to senior stakeholders.",
-            "exp_mentoring": "Mentors junior scientists on experimental design and data interpretation.",
-            "exp_firm_growth": "Contributes to internal best-practice docs; helps interview new scientists.",
-            "exp_competency_skills": "SME in one platform / assay; expanding into adjacent technologies.",
+        2: {  # Senior Scientist — Mid
+            "exp_scope_of_role": "Independently designs and executes moderately complex experiments; owns workstreams within a project.",
+            "exp_key_responsibilities": "Plans experimental design, troubleshoots assays, authors method documents, and reviews data from junior scientists.",
+            "exp_technical_competencies": "SME in one platform or assay class; growing breadth across adjacent technologies; statistical interpretation of results.",
+            "exp_delivery_ownership": "Owns delivery of one or more workstreams end-to-end; signs off own data and reviews datasets from juniors.",
+            "exp_regulatory_compliance": "Maintains GLP rigor across the workstream; authors CAPA documentation for deviations they own.",
+            "exp_project_resource_management": "Plans experiment timelines, manages reagent supply, and coordinates with cross-functional partners on dependencies.",
         },
-        "Team Lead": {
-            "exp_task_execution": "Leads scientific direction and protocol design across the team.",
-            "exp_ownership": "Accountable for project outcomes; balances rigor with delivery timelines.",
-            "exp_project_management": "Owns project plan, milestones, budget, and stakeholder communication.",
-            "exp_client_deliverables": "Reviews and signs off on regulatory-grade deliverables.",
-            "exp_communication": "Represents the team to leadership and external partners.",
-            "exp_mentoring": "Coaches scientists through career growth and structured feedback.",
-            "exp_firm_growth": "Drives R&D capability uplift; identifies process improvements.",
-            "exp_competency_skills": "Recognised expert in the team's platform area; mentors emerging SMEs.",
+        3: {  # Team Lead — Senior
+            "exp_scope_of_role": "Leads scientific direction and protocol design for the team; balances rigor with delivery timelines.",
+            "exp_key_responsibilities": "Sets team-level experimental strategy, reviews and signs off regulatory-grade deliverables, manages stakeholder communication.",
+            "exp_technical_competencies": "Recognised expert in the team's platform area; mentors emerging SMEs and shapes technical direction.",
+            "exp_delivery_ownership": "Accountable for team-level project outcomes, milestone delivery, and quality of regulatory-grade outputs.",
+            "exp_regulatory_compliance": "Owns regulatory readiness for the team's outputs; final reviewer on submission-ready documents.",
+            "exp_project_resource_management": "Owns project plan, milestones, budget, headcount, and stakeholder governance across the team's portfolio.",
+        },
+        4: {  # Director — Lead
+            "exp_scope_of_role": "Sets R&D portfolio strategy and capability roadmap across multiple teams.",
+            "exp_key_responsibilities": "Defines therapeutic-area focus, owns build-vs-buy decisions on platforms, and represents R&D in leadership reviews.",
+            "exp_technical_competencies": "Strategic technical depth across multiple platforms; external thought leadership in the field.",
+            "exp_delivery_ownership": "Accountable for portfolio outcomes — programs delivered, capability uplift, and team retention.",
+            "exp_regulatory_compliance": "Owns the R&D function's regulatory posture; engages with health authorities on key submissions.",
+            "exp_project_resource_management": "Owns multi-team budget, capital decisions, and senior hiring across the function.",
         },
     },
     "Manufacturing": {
-        "Scientist": {
-            "exp_task_execution": "Performs routine production / QC tasks reliably; raises deviations promptly.",
-            "exp_ownership": "Owns assigned process steps and documentation accuracy.",
-            "exp_project_management": "Adheres to production schedules and escalates risks early.",
-            "exp_client_deliverables": "Produces clean batch records and SOP-compliant documentation.",
-            "exp_communication": "Clear shift hand-offs and accurate written status updates.",
-            "exp_mentoring": "Onboards new operators on cleanroom protocols.",
-            "exp_firm_growth": "Participates in continuous-improvement (Kaizen) sessions.",
-            "exp_competency_skills": "Building proficiency on key production instruments and aseptic technique.",
+        1: {  # Scientist — Entry
+            "exp_scope_of_role": "Entry-level production / QC operator running routine GMP tasks under shift supervision.",
+            "exp_key_responsibilities": "Performs routine production and QC tasks, completes batch records, and raises deviations promptly.",
+            "exp_technical_competencies": "Foundational aseptic technique, cleanroom protocols, basic instrument operation, batch record accuracy.",
+            "exp_delivery_ownership": "Accountable for shift-level task completion and documentation integrity on assigned process steps.",
+            "exp_regulatory_compliance": "Strict adherence to GMP / SOPs; escalates deviations to shift supervisor without delay.",
+            "exp_project_resource_management": "Manages own shift workload; tracks consumable usage and reports inventory needs.",
         },
-        "Senior Scientist": {
-            "exp_task_execution": "Owns process improvements and root-cause analysis on deviations.",
-            "exp_ownership": "Drives a workstream across one or more product lines.",
-            "exp_project_management": "Coordinates with R&D on tech-transfer and runs production planning.",
-            "exp_client_deliverables": "Authors validation reports and CAPA documentation.",
-            "exp_communication": "Leads cross-functional production review meetings.",
-            "exp_mentoring": "Mentors junior staff on GMP and analytical methods.",
-            "exp_firm_growth": "Drives at least one continuous-improvement initiative per year.",
-            "exp_competency_skills": "Deep expertise in one production platform; growing breadth.",
+        2: {  # Senior Scientist — Mid
+            "exp_scope_of_role": "Owns process improvements and root-cause analysis across one or more product lines.",
+            "exp_key_responsibilities": "Drives a workstream across product lines, runs production planning, and authors validation / CAPA documentation.",
+            "exp_technical_competencies": "Deep expertise in one production platform; cross-functional coordination with R&D on tech-transfer.",
+            "exp_delivery_ownership": "Owns workstream-level KPIs (throughput, yield, deviation rate) and the quality of validation documentation.",
+            "exp_regulatory_compliance": "Authors and reviews validation reports; co-leads CAPA closure with QA.",
+            "exp_project_resource_management": "Coordinates with R&D on tech-transfer and runs production planning across shifts.",
         },
-        "Team Lead": {
-            "exp_task_execution": "Sets manufacturing strategy and ensures regulatory readiness.",
-            "exp_ownership": "Owns line-level KPIs (throughput, yield, deviation rate).",
-            "exp_project_management": "Owns multi-site programs end-to-end with budget accountability.",
-            "exp_client_deliverables": "Final sign-off on validation, CAPA, and audit-ready documentation.",
-            "exp_communication": "Owns regulatory and customer-facing communications for the line.",
-            "exp_mentoring": "Coaches the team on technical depth, GMP rigor, and career growth.",
-            "exp_firm_growth": "Champions operational excellence; owns hiring plans for the line.",
-            "exp_competency_skills": "Recognised authority on the line's platforms; sets technical standards.",
+        3: {  # Team Lead — Senior
+            "exp_scope_of_role": "Sets manufacturing strategy for the line and owns regulatory readiness.",
+            "exp_key_responsibilities": "Owns line-level KPIs, leads cross-functional production reviews, signs off audit-ready documentation.",
+            "exp_technical_competencies": "Recognised authority on the line's platforms; sets technical and SOP standards for the team.",
+            "exp_delivery_ownership": "Accountable for line-level throughput, yield, and deviation rate; final sign-off on validation and CAPA.",
+            "exp_regulatory_compliance": "Owns regulatory and customer-facing communications for the line; readiness for audits.",
+            "exp_project_resource_management": "Owns multi-site programs end-to-end with budget accountability and headcount planning.",
+        },
+        4: {  # Director — Lead
+            "exp_scope_of_role": "Sets manufacturing strategy across sites and product lines.",
+            "exp_key_responsibilities": "Defines capacity strategy, owns capital investment decisions, and represents Mfg in leadership reviews.",
+            "exp_technical_competencies": "Strategic depth across platforms and modalities; external benchmarking on operational excellence.",
+            "exp_delivery_ownership": "Accountable for site-level financial performance, regulatory posture, and capability uplift.",
+            "exp_regulatory_compliance": "Owns the Mfg function's regulatory posture; engages with health authorities on inspection findings.",
+            "exp_project_resource_management": "Owns multi-site budget, capital decisions, and senior hiring across the function.",
         },
     },
     "Commercial": {
-        "Scientist": {
-            "exp_task_execution": "Supports market analysis, customer onboarding, and tracker maintenance.",
-            "exp_ownership": "Owns assigned tasks within accounts / regions reliably.",
-            "exp_project_management": "Maintains opportunity trackers and meets reporting cadences.",
-            "exp_client_deliverables": "Produces clean pitch decks and customer-ready collateral with guidance.",
-            "exp_communication": "Clear written customer summaries; growing confidence on calls.",
-            "exp_mentoring": "Helps onboard new commercial joiners on tools and processes.",
-            "exp_firm_growth": "Participates in customer events and knowledge-sharing.",
-            "exp_competency_skills": "Building proficiency in commercial systems, CRM, and product fundamentals.",
+        1: {  # Scientist — Entry
+            "exp_scope_of_role": "Entry-level commercial associate supporting market analysis and customer onboarding.",
+            "exp_key_responsibilities": "Maintains opportunity trackers, supports pitch material creation, runs CRM hygiene.",
+            "exp_technical_competencies": "Foundational commercial systems, CRM proficiency, product fundamentals; growing customer-call confidence.",
+            "exp_delivery_ownership": "Accountable for accuracy of tracker data and timeliness of customer-ready collateral.",
+            "exp_regulatory_compliance": "Adheres to internal compliance policies on customer communications and data handling.",
+            "exp_project_resource_management": "Manages own task list across accounts and reporting cadences.",
         },
-        "Senior Scientist": {
-            "exp_task_execution": "Independently scopes and runs customer engagements end-to-end.",
-            "exp_ownership": "Owns one region / segment with quota and pipeline accountability.",
-            "exp_project_management": "Drives launch readiness across stakeholders (R&D, Mfg, Marketing).",
-            "exp_client_deliverables": "Crafts compelling pitch material and strategy briefs.",
-            "exp_communication": "Leads customer pitches and senior internal reviews.",
-            "exp_mentoring": "Mentors junior commercial staff on customer skills.",
-            "exp_firm_growth": "Owns at least one launch or commercial initiative per year.",
-            "exp_competency_skills": "SME in a product line or therapeutic area; growing strategic breadth.",
+        2: {  # Senior Scientist — Mid
+            "exp_scope_of_role": "Independently scopes and runs customer engagements across one region or segment.",
+            "exp_key_responsibilities": "Owns regional pipeline, drives launch readiness across stakeholders, crafts strategy briefs.",
+            "exp_technical_competencies": "SME in a product line or therapeutic area; growing strategic breadth.",
+            "exp_delivery_ownership": "Owns regional quota and pipeline accountability; sign-off on pitch material in their region.",
+            "exp_regulatory_compliance": "Ensures commercial activities comply with promotion and pricing policies.",
+            "exp_project_resource_management": "Manages a portfolio of accounts and coordinates cross-functional resources for major opportunities.",
         },
-        "Team Lead": {
-            "exp_task_execution": "Sets commercial strategy across multiple regions / product lines.",
-            "exp_ownership": "Accountable for regional pipeline, revenue, and customer satisfaction.",
-            "exp_project_management": "Owns launch programs end-to-end with cross-functional governance.",
-            "exp_client_deliverables": "Final sign-off on enterprise customer proposals and strategy decks.",
-            "exp_communication": "Owns C-level customer relationships and internal leadership reviews.",
-            "exp_mentoring": "Coaches the team on customer skills, deal craft, and career growth.",
-            "exp_firm_growth": "Drives go-to-market evolution; owns hiring + retention.",
-            "exp_competency_skills": "Recognised authority on the region / segment; sets commercial playbooks.",
+        3: {  # Team Lead — Senior
+            "exp_scope_of_role": "Sets commercial strategy across multiple regions and product lines.",
+            "exp_key_responsibilities": "Owns regional pipeline, revenue, and customer satisfaction; leads launch programs end-to-end.",
+            "exp_technical_competencies": "Recognised authority on the region or segment; sets commercial playbooks for the team.",
+            "exp_delivery_ownership": "Accountable for regional revenue, customer satisfaction, and team performance against quotas.",
+            "exp_regulatory_compliance": "Owns enforcement of commercial compliance policies across the team; final reviewer on enterprise proposals.",
+            "exp_project_resource_management": "Owns launch programs end-to-end with cross-functional governance and budget responsibility.",
+        },
+        4: {  # Director — Lead
+            "exp_scope_of_role": "Sets global go-to-market strategy across business units.",
+            "exp_key_responsibilities": "Defines therapeutic-area positioning, owns major customer relationships, leads commercial transformation.",
+            "exp_technical_competencies": "Strategic depth on global commercial models; external thought leadership in the field.",
+            "exp_delivery_ownership": "Accountable for global commercial performance, brand strategy, and channel build.",
+            "exp_regulatory_compliance": "Owns the Commercial function's regulatory and compliance posture across markets.",
+            "exp_project_resource_management": "Owns global commercial budget, talent strategy, and major customer relationships.",
         },
     },
 }
@@ -167,14 +192,24 @@ def seed_test_database() -> None:
         # 2. FUNCTIONS & DESIGNATIONS                                   #
         # ============================================================ #
         if db.query(Function).filter(Function.org_id == miltenyi.id).count() == 0:
+            # Designations carry both `level` (legacy 1..4 sort key kept
+            # for back-compat) and `career_level` / `career_level_label`
+            # (the GCC band that RoleExpectation rows are keyed on). The
+            # /me/expectations API resolves expectations via
+            # designation.career_level — without these set, the panel
+            # falls back to "Role expectation not defined".
             db.add_all([
                 Function(org_id=miltenyi.id, name="R&D"),
                 Function(org_id=miltenyi.id, name="Manufacturing"),
                 Function(org_id=miltenyi.id, name="Commercial"),
-                Designation(org_id=miltenyi.id, name="Scientist",        level=1),
-                Designation(org_id=miltenyi.id, name="Senior Scientist", level=2),
-                Designation(org_id=miltenyi.id, name="Team Lead",        level=3),
-                Designation(org_id=miltenyi.id, name="Director",         level=4),
+                Designation(org_id=miltenyi.id, name="Scientist",
+                            level=1, career_level=1, career_level_label="Entry"),
+                Designation(org_id=miltenyi.id, name="Senior Scientist",
+                            level=2, career_level=2, career_level_label="Mid"),
+                Designation(org_id=miltenyi.id, name="Team Lead",
+                            level=3, career_level=3, career_level_label="Senior"),
+                Designation(org_id=miltenyi.id, name="Director",
+                            level=4, career_level=4, career_level_label="Lead"),
             ])
             db.commit()
             print("  [+] Functions & Designations")
@@ -385,27 +420,30 @@ def seed_test_database() -> None:
         # ============================================================ #
         # 5. ROLE EXPECTATIONS                                          #
         # ============================================================ #
-        # Reference text PMs see while writing project review comments.
+        # Reference text PMs see while writing project review comments,
+        # and the Role Expectations panel each user sees on their own
+        # profile. Rows are keyed on (function_id, career_level) — the
+        # GCC migration replaced the old per-designation FK. Each
+        # Designation's career_level is what links a user's title to
+        # the matching expectations row.
+        #
         # Re-runs are no-ops because of the count() guard.
         if db.query(RoleExpectation).filter(RoleExpectation.org_id == miltenyi.id).count() == 0:
             inserted = 0
-            for func_name, by_desig in EXPECTATIONS.items():
+            for func_name, by_level in EXPECTATIONS.items():
                 fn = db.query(Function).filter_by(org_id=miltenyi.id, name=func_name).first()
                 if not fn:
                     continue
-                for desig_name, comp in by_desig.items():
-                    desig = db.query(Designation).filter_by(org_id=miltenyi.id, name=desig_name).first()
-                    if not desig:
-                        continue
+                for career_level, comp in by_level.items():
                     db.add(RoleExpectation(
                         org_id=miltenyi.id,
                         function_id=fn.id,
-                        designation_id=desig.id,
+                        career_level=career_level,
                         **comp,
                     ))
                     inserted += 1
             db.commit()
-            print(f"  [+] Role Expectations: {inserted} rows")
+            print(f"  [+] Role Expectations: {inserted} rows (3 functions × 4 career levels)")
         else:
             print("  [~] Role expectations already exist; reusing.")
 
