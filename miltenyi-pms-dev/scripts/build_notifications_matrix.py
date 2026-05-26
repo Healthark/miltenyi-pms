@@ -53,87 +53,104 @@ Row = tuple[str, str, str]  # (decision, current_behavior, assumption)
 GOAL_NOTIFICATIONS: list[Row] = [
     # Open policy
     (
-        "Should goal-related notifications fire on in-app, email, or both?",
-        "Today: in-app fires on every event; email opt-in per-event (only "
-        "mentor-assignment notifications fire email). The bell shows the "
-        "in-app list; emails go via the SMTP relay when configured.",
-        "In-app for all events. Email only on workflow-blocking events "
-        "(goal submitted for approval, changes requested) so mentors and "
-        "employees aren't waiting for someone who hasn't opened the app.",
+        "Should goal-related notifications appear in the app bell, by "
+        "email, or both?",
+        "Today the bell always shows a new alert when something happens "
+        "with a goal. Emails only go out for a few specific events (like "
+        "mentor assignment changes and the welcome email). Goal events "
+        "themselves are bell-only.",
+        "Keep the bell for every event. Add email only for the events "
+        "that block someone's work — when an employee submits a goal "
+        "that needs the mentor's approval, or when the mentor sends it "
+        "back for changes.",
     ),
     (
-        "Do users need an opt-out / unsubscribe from goal emails?",
-        "Today: no unsubscribe UI. SMTP simply doesn't fire if not "
-        "configured org-wide. A user cannot mute individual categories.",
-        "Add a per-user 'email me about my goals' toggle in Profile. "
-        "In-app stays on always (it's a read-only feed, no spam pressure).",
+        "Should users be able to turn off goal-related emails?",
+        "There is no off-switch today. If the company has email turned "
+        "on at the system level, every goal email goes to everyone who "
+        "is supposed to receive one.",
+        "Add an 'email me about my goals' toggle in each user's Profile "
+        "page. Bell notifications stay on for everyone — they're a quiet "
+        "feed inside the app, not spam.",
     ),
     (
-        "Should HR see a goal-events digest separately from individual "
-        "alerts?",
-        "Today: HR doesn't get individual goal alerts (Mentor handles the "
-        "approval). The HR dashboard's stalled-goals widget is the only "
-        "HR-side surface tracking goal lifecycle.",
-        "Keep HR out of per-event alerts. Optional: weekly summary "
-        "showing approval velocity + stalled count (future scope).",
+        "Should HR get a separate summary of goal activity, or only be "
+        "alerted on big events?",
+        "Today HR doesn't get any per-event alert about goals. They see "
+        "a 'stalled goals' card on the dashboard that flags goals "
+        "waiting too long for the mentor's approval.",
+        "Keep HR out of per-event alerts (avoids noise). Optional: a "
+        "weekly summary email showing approval velocity and the stalled "
+        "count, if HR finds that useful.",
     ),
-    # Per-event audit — every notify() call site in goal_routes.py
+    # Per-event rows
     (
-        "Event: Employee submits goal for mentor approval",
-        "In-app: ✓  /  Email: ✗  /  Recipient: assigned mentor  /  "
-        "Message: '{Employee name} submitted a goal for your approval.'",
-        "Keep in-app. Add email (workflow-blocking — mentor needs to act).",
-    ),
-    (
-        "Event: Mentor approves a single goal",
-        "In-app: ✓  /  Email: ✗  /  Recipient: goal owner  /  "
-        "Message: 'Your goal was approved.'",
-        "Keep in-app. Email optional (good news, can wait for app visit).",
+        "When an employee submits a goal for approval, who should be "
+        "told and how?",
+        "The mentor sees a bell notification: 'Bob Builder submitted a "
+        "goal for your approval.' No email is sent.",
+        "Keep the bell. Add email — this blocks the workflow until the "
+        "mentor acts on it.",
     ),
     (
-        "Event: Mentor requests changes on a goal",
-        "In-app: ✓  /  Email: ✗  /  Recipient: goal owner  /  "
-        "Message: includes mentor's feedback inline.",
-        "Keep in-app + add email (workflow-blocking — employee needs to "
-        "revise and resubmit).",
+        "When a mentor approves a single goal, how should the employee "
+        "be told?",
+        "The employee sees a bell notification: 'Your goal was "
+        "approved.' No email.",
+        "Keep the bell. Email is optional — this is good news that can "
+        "wait for the employee to open the app.",
     ),
     (
-        "Event: Mentor bulk-approves goals",
-        "In-app: ✓ (one per goal)  /  Email: ✗  /  Recipient: "
-        "each goal owner  /  Message: 'Your goal was approved.'",
-        "Keep in-app. Bulk-approve fires N notifications; consider "
-        "collapsing into one summary per recipient ('3 of your goals "
-        "were approved').",
+        "When a mentor sends a goal back for revisions, how should the "
+        "employee be told?",
+        "The employee sees a bell notification that includes the "
+        "mentor's feedback. No email.",
+        "Keep the bell. Add email — the employee needs to revise and "
+        "resubmit, so this blocks their next step.",
     ),
     (
-        "Event: Mentor notifies employee inline (free-text via Notify "
-        "button on goal detail)",
-        "In-app: ✓  /  Email: ✗  /  Recipient: goal owner  /  "
-        "Message: mentor-typed text.",
-        "Keep in-app. Add email opt-in so the mentor can choose to send "
-        "the typed note as an email too.",
+        "When a mentor approves several goals at once (bulk approve), "
+        "should each owner get a separate notification per goal?",
+        "Today every goal owner gets a separate bell alert for each of "
+        "their goals that was approved — so one employee can see "
+        "multiple alerts in a row.",
+        "Roll up multiple approvals from the same mentor into a single "
+        "summary: '3 of your goals were approved' instead of 3 separate "
+        "alerts.",
     ),
     (
-        "Event: Employee submits H1 / H2 self-review on a goal",
-        "In-app: ✓  /  Email: ✗  /  Recipient: assigned mentor  /  "
-        "Message: '{Employee name} submitted a {H1|H2} self-review.'",
-        "Keep in-app. Email optional — the mentor's review queue surfaces "
-        "this when they next open the app.",
+        "When a mentor uses the 'Notify' button on a goal to send a "
+        "free-text message, how should it be delivered?",
+        "The employee sees a bell notification with whatever the mentor "
+        "typed. No email.",
+        "Keep the bell. Add an option for the mentor to also send the "
+        "message as an email when they want to.",
     ),
     (
-        "Event: Mentor submits their H1 / H2 review on an employee's goal",
-        "In-app: ✓  /  Email: ✗  /  Recipient: goal owner  /  "
-        "Message: 'Your mentor submitted their {H1|H2} review.'",
-        "Keep in-app. No email — the H1/H2 review is read-only feedback, "
-        "not workflow-blocking for the employee.",
+        "When an employee submits their H1 or H2 self-review on a goal, "
+        "who should be told?",
+        "The mentor sees a bell notification: 'Bob Builder submitted an "
+        "H1 self-review.' No email.",
+        "Keep the bell. Email is optional — the mentor's review queue "
+        "shows this when they next open the app.",
     ),
     (
-        "POTENTIAL: Stalled-goal nudge (auto-remind mentor when a goal has "
-        "been PENDING_APPROVAL for >N days)",
-        "Today: HR sees a stalled-goals chase list on the dashboard but "
-        "the mentor receives no auto-reminder.",
-        "Add a daily cron at 9am org-tz that pushes one in-app + email "
-        "to mentors with goals stalled ≥7 days. Configurable threshold.",
+        "When a mentor submits their H1 or H2 review on an employee's "
+        "goal, how should the employee be told?",
+        "The employee sees a bell notification: 'Your mentor submitted "
+        "their H1 review.' No email.",
+        "Keep the bell. No email needed — this is read-only feedback "
+        "for the employee, not something they need to act on right away.",
+    ),
+    (
+        "POTENTIAL: Should the system automatically remind mentors "
+        "about goals that have been waiting for their approval too long?",
+        "Today HR sees a 'stalled goals' chase list on the dashboard. "
+        "Mentors get no automatic reminder; they have to open the app "
+        "and look.",
+        "Add an automatic daily reminder (bell + email) to mentors with "
+        "any goals waiting 7+ days for their approval. The day threshold "
+        "should be configurable.",
     ),
 ]
 
@@ -141,56 +158,63 @@ GOAL_NOTIFICATIONS: list[Row] = [
 ANNUAL_REVIEW_NOTIFICATIONS: list[Row] = [
     # Open policy
     (
-        "Should annual-review events fire to multiple recipients (mentor "
-        "+ HR_MyOrg) or just the direct owner?",
-        "Today: each event has exactly one recipient (the mentor on "
-        "submission, the employee on completion). HR_MyOrg sees the "
-        "calibration grid but receives no per-event alert.",
-        "Keep single-recipient default. Optional 'HR copy' org setting "
-        "for events that transition status (self-submitted, mentor-eval "
-        "done, management rating published).",
+        "When something happens with an annual review, should multiple "
+        "people be notified (e.g. mentor + HR), or just the one person "
+        "directly involved?",
+        "Today each event has exactly one recipient. The mentor is told "
+        "when the employee submits their self-appraisal; the employee is "
+        "told when the mentor finishes their evaluation. HR is not "
+        "alerted per event — they see the calibration grid in the app.",
+        "Keep the single-recipient default. Add an optional company-wide "
+        "setting that gives HR a copy whenever a review changes state "
+        "(self-appraisal submitted, mentor evaluation done, final "
+        "rating published).",
     ),
     (
-        "Should the employee be notified when HR sets / overwrites the "
-        "Management rating?",
-        "Today: yes — in-app fires with 'Your final rating is now "
-        "available' (first publish) or 'Your final rating was updated' "
-        "(recalibration). A same-value re-save stays silent.",
-        "Keep this. The per-row final_rating_enabled gate + the org-wide "
-        "annual_review_final_rating_visible flag still control whether "
-        "the employee can actually see the number.",
+        "Should the employee be told when HR publishes or updates their "
+        "final 'management' rating?",
+        "Yes — today the employee sees a bell notification: 'Your final "
+        "rating is now available' on first publish, or 'Your final "
+        "rating was updated' if HR changes it later. If HR re-saves the "
+        "same value, no notification fires.",
+        "Keep this. Whether the employee can actually see the rating "
+        "number itself is governed by separate visibility settings — "
+        "that's not changed by this notification policy.",
     ),
     (
-        "Should HR be notified when every mentor has finished evaluations "
-        "for a cycle (so they can begin calibration)?",
-        "Today: no — HR has to check the calibration grid manually.",
-        "Add a daily check: when 100% of active employees' reviews are "
-        "in PENDING_MANAGEMENT state for the active FY, fire a one-time "
-        "in-app + email to HR_MyOrg 'Calibration ready: all mentor "
-        "evaluations are in.'",
+        "Should HR be told when every mentor in the company has finished "
+        "their evaluations, so they know calibration can begin?",
+        "Today HR has to check the calibration grid manually to see if "
+        "everyone has filed.",
+        "Add a one-time bell + email to HR when all employee reviews "
+        "have reached the 'pending management' stage: 'Calibration "
+        "ready — every mentor has filed their evaluation.'",
     ),
-    # Per-event audit
+    # Per-event rows
     (
-        "Event: Employee submits annual self-appraisal",
-        "In-app: ✓  /  Email: ✗  /  Recipient: assigned mentor  /  "
-        "Message: '{Employee name} submitted their {FY26-27} self-"
-        "appraisal.'",
-        "Keep in-app + add email (year-end workflow — mentors need to "
-        "be reminded to start their evaluations).",
-    ),
-    (
-        "Event: Mentor submits annual evaluation",
-        "In-app: ✓  /  Email: ✗  /  Recipient: employee  /  "
-        "Message: 'Your mentor submitted their evaluation for {FY26-27}.'",
-        "Keep in-app + add email (year-end milestone for the employee).",
+        "When an employee submits their annual self-appraisal, who "
+        "should be told and how?",
+        "The mentor sees a bell notification: 'Bob Builder submitted "
+        "their FY26-27 self-appraisal.' No email.",
+        "Keep the bell. Add email — the annual review is a once-a-year "
+        "event; mentors should be nudged out of the app to start their "
+        "own evaluation.",
     ),
     (
-        "Event: HR_MyOrg publishes / updates the Management rating",
-        "In-app: ✓  /  Email: ✗  /  Recipient: employee  /  "
-        "Message: 'Your final rating is now available' OR 'Your final "
-        "rating was updated.'",
-        "Keep in-app + add email. This is the final compensation-adjacent "
-        "event for the year and warrants a notification outside the app.",
+        "When a mentor submits their annual evaluation of an employee, "
+        "how should the employee be told?",
+        "The employee sees a bell notification: 'Your mentor submitted "
+        "their evaluation for FY26-27.' No email.",
+        "Keep the bell. Add email — it's a year-end milestone the "
+        "employee should know about.",
+    ),
+    (
+        "When HR publishes or updates an employee's final rating, how "
+        "should the employee be told?",
+        "The employee sees a bell notification only. No email.",
+        "Keep the bell. Add email — this is the year-end "
+        "compensation-adjacent event; it warrants a notification "
+        "outside the app.",
     ),
 ]
 
@@ -198,81 +222,86 @@ ANNUAL_REVIEW_NOTIFICATIONS: list[Row] = [
 PROJECT_REVIEW_NOTIFICATIONS: list[Row] = [
     # Open policy
     (
-        "Should PMs be auto-reminded as the cycle close approaches?",
-        "Today: no reminders. The PM sees their queue in the app and "
-        "must remember to file. HR sees a project-review completion card "
-        "on the dashboard funnel.",
-        "Add a cron-based reminder N days before cycle close (default 7) "
-        "to PMs with any PENDING reviews on their team. In-app + email.",
+        "Should PMs be automatically reminded as the review cycle close "
+        "approaches?",
+        "No reminders today. The PM sees their pending-reviews queue in "
+        "the app and has to remember to file. HR sees a completion "
+        "card on the dashboard but doesn't actively nudge PMs.",
+        "Add an automatic reminder (bell + email) sent 7 days before the "
+        "cycle closes, to any PM with reviews still pending.",
     ),
     (
-        "When the project assignment ends mid-cycle, should we notify the "
-        "PM that the review window is shortened?",
-        "Today: no auto-message. The assignment end-date silently "
-        "shortens the PM's window on that team-member.",
-        "Add an in-app alert to the PM: '{Employee} rolled off {Project}; "
-        "complete their {cycle} review by FY end or skip.' Email "
-        "optional.",
+        "When an employee rolls off a project mid-cycle, should the PM "
+        "be told their review window for that employee has shortened?",
+        "No automatic message today. The assignment end-date silently "
+        "shortens the PM's window without any heads-up.",
+        "Add a bell alert to the PM: 'Bob rolled off ProjectX; complete "
+        "his Q2 review by year-end or skip it.' Email is optional.",
     ),
     (
-        "Should the secondary evaluator be alerted independently when the "
-        "PM submits their primary review?",
-        "Today: yes — the secondary gets an in-app ping when the PM "
-        "submits, prompting them to add the impact statement.",
-        "Keep in-app. Add email opt-in for secondaries who don't open "
-        "the app daily.",
+        "Should the secondary evaluator be told when the PM submits "
+        "their primary review, prompting them to add their impact "
+        "statement?",
+        "Yes — today the secondary gets a bell notification when the "
+        "PM submits. No email.",
+        "Keep the bell. Add an email option for secondaries who don't "
+        "open the app daily.",
     ),
-    # Per-event audit
+    # Per-event rows
     (
-        "Event: PM submits a project review",
-        "In-app: ✓  /  Email: ✗  /  Recipient: the employee being "
-        "reviewed  /  Message: 'Your PM submitted a project review for "
-        "{project name}.'",
-        "Keep in-app + add email (review visibility is important for the "
-        "reviewee — keep them informed).",
-    ),
-    (
-        "Event: Secondary evaluator adds impact statement",
-        "In-app: ✓  /  Email: ✗  /  Recipient: the employee being "
-        "reviewed  /  Message: 'A secondary evaluator added impact on "
-        "your {project name} review.'",
-        "Keep in-app. Email optional.",
+        "When a PM submits a project review for one of their team "
+        "members, how should the employee be told?",
+        "The employee sees a bell notification: 'Your PM submitted a "
+        "project review for ProjectX.' No email.",
+        "Keep the bell. Add email — the employee should know that "
+        "feedback has been filed about their work on the project.",
     ),
     (
-        "Event: PM EDITS a previously-submitted project review (status "
-        "transitions back to draft → reviewed)",
-        "In-app: ✓  /  Email: ✗  /  Recipient: the employee being "
-        "reviewed  /  Message: 'Your PM updated their project review for "
-        "{project name}.'",
-        "Keep in-app. Email only if material rating change (1+ step on "
-        "the 1–5 scale). Avoids edit-thrash spam.",
+        "When a secondary evaluator adds their impact statement, how "
+        "should the employee be told?",
+        "The employee sees a bell notification: 'A secondary evaluator "
+        "added impact on your ProjectX review.' No email.",
+        "Keep the bell. Email is optional.",
     ),
     (
-        "Event: Project assigned with a secondary evaluator",
-        "In-app: ✓  /  Email: ✗  /  Recipient: secondary  /  "
-        "Message: assignment + project name.",
-        "Keep in-app + add email (the secondary needs to know they're "
-        "on a new project; they likely don't poll the app for this).",
+        "When a PM goes back and edits a project review they already "
+        "submitted, how should the employee be told?",
+        "The employee sees a bell notification: 'Your PM updated their "
+        "project review for ProjectX.' No email.",
+        "Keep the bell. Send an email only if the rating actually "
+        "changed by a step or more on the 1–5 scale — otherwise minor "
+        "edits would spam the employee's inbox.",
     ),
     (
-        "Event: Project's secondary evaluator changed",
-        "Today: notify both old (\"you have been removed\") and new "
-        "(\"you have been assigned\") secondaries. In-app only.",
-        "Keep in-app + add email to the NEW secondary (so they know "
-        "they're now on the hook).",
+        "When a project is created with a secondary evaluator, how "
+        "should that person be told?",
+        "The secondary sees a bell notification with the project name. "
+        "No email.",
+        "Keep the bell. Add email — the secondary needs to know "
+        "they're on a new project; they likely don't poll the app to "
+        "find out.",
     ),
     (
-        "Event: Project marked complete",
-        "In-app: ✓  /  Email: ✗  /  Recipients: PM + all "
-        "assigned employees + secondary (via notify_many).  /  "
-        "Message: 'Project {name} has been marked complete.'",
-        "Keep in-app for everyone. Email opt-in.",
+        "When a project's secondary evaluator is reassigned, who should "
+        "be told and how?",
+        "The old secondary gets a bell notification ('You have been "
+        "removed'), and the new secondary gets one ('You have been "
+        "assigned'). Bell only — no email.",
+        "Keep the bell for both. Add email to the NEW secondary so "
+        "they know they're on the hook.",
     ),
     (
-        "Event: Project member assignment ended (rolled off mid-project)",
-        "In-app: ✓  /  Email: ✗  /  Recipient: the rolled-off "
-        "employee + their PM  /  Message: assignment ended date.",
-        "Keep in-app. Email optional.",
+        "When a project is marked complete, who should be told?",
+        "Bell notification to: the PM, every assigned employee, the "
+        "secondary. No email.",
+        "Keep the bell for everyone. Email is opt-in.",
+    ),
+    (
+        "When someone is rolled off a project mid-stream, who should "
+        "be told?",
+        "Bell notification to the person who rolled off and to their "
+        "PM, showing the end date. No email.",
+        "Keep the bell. Email is optional.",
     ),
 ]
 
@@ -280,178 +309,187 @@ PROJECT_REVIEW_NOTIFICATIONS: list[Row] = [
 ADMIN_ACCOUNT_NOTIFICATIONS: list[Row] = [
     # Open policy
     (
-        "When HR_Miltenyi creates a user, should HR_MyOrg be informed "
-        "(audit trail)?",
-        "Today: no. The audit is in the User row's created_at + the "
-        "creating user's ID isn't recorded as a column.",
-        "Optional in-app digest to HR_MyOrg: 'N users created today by "
-        "{HR_Miltenyi name}.' Daily cron. Not per-event.",
+        "When HR Miltenyi creates a new user account, should HR MyOrg "
+        "be told about it for audit purposes?",
+        "No today. The new user account is recorded with its creation "
+        "timestamp, but HR MyOrg is not actively notified.",
+        "Optional daily summary email to HR MyOrg: 'N new users were "
+        "created today by [HR Miltenyi name].' Not per-event.",
     ),
     (
-        "Should a deactivated user receive any notification (the JWT is "
-        "already blocked)?",
-        "Today: no — the notify() service short-circuits writes to "
-        "deactivated recipients (PR #60). The deactivated user cannot "
-        "log in to see anything anyway.",
-        "Keep current behavior. If HR reactivates the user, fire a "
-        "'welcome back' in-app + email (already implemented).",
+        "Should a deactivated user receive any notification (knowing "
+        "they can't log in anyway)?",
+        "No. The system blocks any new notifications from being sent "
+        "to a deactivated account, since the user can't log in to read "
+        "them.",
+        "Keep this. If HR later reactivates the user, a 'welcome back' "
+        "notification fires automatically (already implemented).",
     ),
     (
-        "Should the user's manager / mentor be notified when their direct "
-        "report's profile changes (function / designation / etc.)?",
-        "Today: no. Only mentor-assignment changes fire a notification.",
-        "Skip for now — too chatty if a function/designation change "
-        "fires N notifications per mentee under the same mentor.",
+        "Should an employee's mentor be told when the employee's "
+        "profile changes (function, designation, etc.)?",
+        "No. Only mentor-assignment changes themselves fire a "
+        "notification — the rest of the profile is silent.",
+        "Skip for now. Mentors with many mentees would get a flood of "
+        "alerts every time HR updates a function or designation.",
     ),
-    # Per-event audit
+    # Per-event rows
     (
-        "Event: New user account created by HR",
-        "In-app: ✓  /  Email: ✓  (welcome email with temp "
-        "password)  /  Recipient: the new user  /  In-app message: "
-        "'Welcome to PMS — your account is ready.'",
+        "When HR creates a new user account, how should the new user "
+        "be told?",
+        "The new user gets a welcome email with their temporary "
+        "password, plus a bell notification on first login: 'Welcome to "
+        "PMS — your account is ready.'",
         "Keep both. Critical onboarding event.",
     ),
     (
-        "Event: User's mentor assigned / reassigned / unassigned",
-        "In-app: ✓  /  Email: ✓  /  Recipients: the mentee + "
-        "the new mentor (if any)  /  Message: includes new mentor name "
-        "or unassignment notice.",
-        "Keep both. Mentor relationship is foundational — user "
-        "needs to know who reviews their work.",
+        "When an employee's mentor is assigned, changed, or removed, "
+        "who should be told?",
+        "Both the employee and the new mentor (if any) get a bell "
+        "notification and an email describing the change.",
+        "Keep both. The mentor relationship is foundational — the "
+        "employee needs to know who reviews their work.",
     ),
     (
-        "Event: User account reactivated",
-        "In-app: ✓  /  Email: ✓  /  Recipient: the reactivated "
-        "user  /  Message: 'Your account has been reactivated. You can "
-        "sign in again.'",
+        "When HR reactivates a previously deactivated user, how should "
+        "the user be told?",
+        "Bell notification + email: 'Your account has been reactivated. "
+        "You can sign in again.'",
         "Keep both.",
     ),
     (
-        "Event: Password reset requested",
-        "Email: ✓ (reset link, 15-min expiry)  /  In-app: ✗ "
-        "(user is logged out)  /  Recipient: requesting user.",
-        "Keep email-only. The user is locked out of the app when this "
-        "fires; in-app is unreachable.",
+        "When a user requests a password reset, how is the reset link "
+        "delivered?",
+        "Email only (the reset link is valid for 15 minutes). No bell "
+        "notification — the user is locked out of the app at that "
+        "moment.",
+        "Keep email-only. The user can't see the bell when they're "
+        "locked out.",
     ),
     (
-        "Event: Password changed (self-service)",
-        "Today: no notification on success. The user clicks Change "
-        "Password and the modal closes.",
-        "Add a confirmation email (security: alerts the user if the "
-        "change wasn't them). In-app banner on next login.",
+        "When a user successfully changes their own password, should "
+        "they get a confirmation?",
+        "Today there's no notification on success. The Change Password "
+        "modal just closes.",
+        "Add a confirmation email — protects the user if someone else "
+        "made the change. Optionally also a short on-screen banner on "
+        "next login.",
     ),
     (
-        "Event: must_change_password flag set by HR (forced reset)",
-        "Today: in-app banner gates the app on next login. No email.",
-        "Add an email so the user knows to expect the gate on next "
-        "login: 'Your password was reset by HR. You'll be asked to "
-        "choose a new one when you sign in.'",
+        "When HR forces a user to change their password on next login, "
+        "should the user be told in advance?",
+        "On their next login the user sees an on-screen banner that "
+        "gates the app until they pick a new password. No email is "
+        "sent beforehand.",
+        "Add an email when HR triggers this: 'Your password was reset "
+        "by HR. You'll be asked to choose a new one when you sign in.'",
     ),
 ]
 
 # ── Sheet 5: Cross-cutting Policy ────────────────────────────────────
 CROSS_CUTTING_POLICY: list[Row] = [
     (
-        "Channel split: which categories of notification go to which "
-        "channel by default?",
-        "Today: every notify() call writes in-app. Email is opt-in per "
-        "call (currently only mentor-assignment + welcome + password-"
-        "reset + reactivation fire email).",
-        "Default matrix:\n"
-        "  • Workflow-blocking (approval requested, changes "
-        "requested) → in-app + email\n"
-        "  • Status updates (your review submitted) → in-app "
-        "+ email opt-in\n"
-        "  • Read-only feedback (your H1 review is in) → "
-        "in-app only\n"
-        "  • Security events (password reset, login from new "
-        "device) → email mandatory",
+        "By default, which kinds of events should go where — bell, "
+        "email, or both?",
+        "Today every event writes to the bell. Emails are opt-in per "
+        "event — currently only mentor-assignment changes, the welcome "
+        "email, password reset, and reactivation send email.",
+        "Default policy:\n"
+        "  • Workflow-blocking events (approval requested, changes "
+        "requested) → bell + email\n"
+        "  • Status updates (your review was submitted) → bell + "
+        "email opt-in\n"
+        "  • Read-only feedback (your H1 review is in) → bell only\n"
+        "  • Security events (password reset, login from a new "
+        "device) → email always",
     ),
     (
-        "Email digest cadence: should low-priority notifications be "
-        "batched into a daily / weekly digest?",
-        "Today: every email is fire-and-forget at event time. No digest.",
-        "Add an opt-in 'send me a daily digest at 9am' switch in Profile "
-        "for non-blocking categories. Workflow-blocking emails fire "
-        "immediately regardless.",
+        "Should low-priority emails be batched into a daily or weekly "
+        "digest?",
+        "Every email fires the moment its event happens. There's no "
+        "digest today.",
+        "Add an opt-in 'send me a daily digest at 9am' switch in "
+        "Profile, covering non-blocking events. Workflow-blocking "
+        "emails still fire immediately, regardless of digest setting.",
     ),
     (
-        "Per-user notification preferences: where do they live?",
-        "Today: no per-user preferences. Notifications fire to everyone.",
-        "Add a Profile → Notifications tab with toggles per "
+        "Where do users manage their own notification preferences?",
+        "Today there's no preferences screen. Everyone gets the same "
+        "notifications.",
+        "Add a Profile → Notifications page with on/off toggles per "
         "category (Goals / Annual Reviews / Project Reviews / Admin) "
-        "and per channel (in-app on/off, email on/off, digest "
-        "frequency).",
+        "and per channel (bell on/off, email on/off, digest frequency).",
     ),
     (
-        "Should HR be able to bcc themselves on every notification "
-        "(observation mode)?",
-        "Today: no. HR's only audit surface is the Notification table "
-        "directly (no UI).",
-        "Skip. Future: a 'Notification audit log' admin page that lists "
-        "every fired notification across the org with filters.",
+        "Should HR be able to BCC themselves on every notification "
+        "(observation / audit mode)?",
+        "No. HR has no way to see what notifications have been sent "
+        "across the company.",
+        "Skip for now. Future: a Notification Audit Log page in Admin "
+        "that lists every notification sent across the company, with "
+        "filters by category, recipient, and date.",
     ),
     (
-        "Unsubscribe links in emails — required for compliance / nicety?",
-        "Today: emails don't include unsubscribe footers.",
-        "Add a one-click 'manage email preferences' link footer that "
-        "deep-links to Profile → Notifications. Not a hard "
-        "unsubscribe — keeps security emails mandatory.",
+        "Should emails include an unsubscribe link in the footer?",
+        "Today's emails don't have any unsubscribe footer.",
+        "Add a 'manage email preferences' link in the footer that takes "
+        "the user to Profile → Notifications. Not a hard unsubscribe — "
+        "security emails (like password reset) always go out.",
     ),
     (
-        "Quiet hours: should emails respect a per-user quiet window "
-        "(e.g. don't email between 8pm and 7am org-tz)?",
-        "Today: emails fire immediately regardless of time.",
-        "Add quiet hours to the per-user preferences in Profile. "
-        "In-app notifications still fire (user reads on their schedule). "
+        "Should emails respect a per-user quiet window (e.g. don't email "
+        "between 8pm and 7am local time)?",
+        "Today emails fire immediately, regardless of time of day.",
+        "Add quiet hours to the per-user preferences page. Bell "
+        "notifications still fire (the user reads them when they want). "
         "Security emails ignore quiet hours.",
     ),
     (
-        "POTENTIAL: Slack / MS Teams integration",
-        "Today: not implemented.",
-        "Future scope. Bind a Slack webhook to the user's profile; "
-        "notify() learns a 'slack' channel alongside in-app/email. "
-        "Most value for mentor approval queues + HR reminders.",
+        "POTENTIAL: Should the system integrate with Slack or Microsoft "
+        "Teams?",
+        "Not implemented today.",
+        "Future scope. Highest value for mentor approval queues and HR "
+        "reminders — those are the people most likely to live in "
+        "Slack/Teams during the workday.",
     ),
     (
-        "POTENTIAL: Mobile push (PWA / native app)",
-        "Today: not implemented. The app is web-only.",
-        "Future scope. Lower priority — emails cover most cases "
-        "until a mobile presence is justified by usage.",
+        "POTENTIAL: Should the system support mobile push notifications "
+        "(mobile app or browser push)?",
+        "Not implemented today. The app is web-only.",
+        "Future scope. Lower priority — email covers most cases until "
+        "there's a mobile presence to justify the build.",
     ),
     (
-        "POTENTIAL: SMS for security-critical events (password reset, "
-        "account locked)",
-        "Today: not implemented. Email is the only out-of-app channel.",
-        "Future scope. Tradeoff: SMS cost + carrier reliability "
-        "vs. email's reach. Email + TOTP / passkeys may be enough.",
+        "POTENTIAL: Should the system send SMS for security-critical "
+        "events (password reset, account locked)?",
+        "Not implemented today. Email is the only out-of-app channel.",
+        "Future scope. Trade-off: SMS cost and carrier reliability vs. "
+        "email's reach. Email plus two-factor / passkeys may be enough.",
     ),
     (
-        "How long are in-app notifications retained in the bell?",
-        "Today: every notification persists forever in the Notification "
-        "table. The bell shows the most recent 20 (notification_routes."
-        "get_topbar_summary limit=20).",
-        "Auto-archive read notifications older than 90 days "
-        "(soft-delete on the table, kept for audit). Unread "
-        "notifications never auto-archive.",
+        "How long should bell notifications be kept?",
+        "Every notification is kept forever in the database. The bell "
+        "shows the most recent 20.",
+        "Auto-archive read notifications older than 90 days — they're "
+        "still kept for audit, just not shown in the bell anymore. "
+        "Unread notifications never auto-archive.",
     ),
     (
-        "When a sender is deactivated, do their historical notifications "
-        "stay visible to recipients?",
-        "Today: yes. The notify() writer short-circuits NEW writes to "
-        "deactivated recipients, but existing rows from a now-"
-        "deactivated sender remain in recipients' bells. Documented as "
-        "intentional in notification_routes.get_topbar_summary.",
-        "Keep current behavior. The notification represents a real "
-        "past event; erasing it would erase audit history.",
+        "If someone is deactivated, should their past notifications "
+        "stay visible in other users' bells?",
+        "Yes. New notifications can no longer be sent to deactivated "
+        "users, but old notifications written BY a now-deactivated "
+        "person stay in the recipients' bells.",
+        "Keep this. The notification records a real past event — "
+        "erasing it would erase history.",
     ),
     (
-        "Notification audit / observability: where does HR see what fired?",
-        "Today: HR has no UI to inspect the Notification table. They can "
-        "only see what each user sees by logging in as them (not "
-        "possible).",
-        "Add an HR-only Notifications Audit page (Admin Panel) that "
-        "filters notifications by module / recipient / date range. "
+        "Where should HR go to see what notifications have been sent "
+        "across the company?",
+        "Today HR has no way to see this. They can only see what each "
+        "user sees by logging in as them — which they can't do.",
+        "Add an HR-only Notifications Audit page (in Admin Panel) that "
+        "filters notifications by category, recipient, and date range. "
         "Read-only — no editing.",
     ),
 ]
