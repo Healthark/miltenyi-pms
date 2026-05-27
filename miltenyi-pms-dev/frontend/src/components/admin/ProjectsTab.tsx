@@ -12,12 +12,12 @@
 
 import {
   useState,
-  useEffect,
   useCallback,
   useImperativeHandle,
   useMemo,
   type Ref,
 } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Search, Pencil, Trash2, Users, FolderOpen,
   CheckCircle2, RotateCcw,
@@ -26,11 +26,13 @@ import {
   projectService,
   type ProjectResponse,
 } from "@/services/project.service";
-import { adminService, type UserResponse } from "@/services/admin.service";
+import { adminService } from "@/services/admin.service";
+import { queryKeys } from "@/lib/queryKeys";
 import { getErrorMessage } from "@/utils/errors";
 import { ProjectModal } from "@/components/admin/ProjectModal";
 import { ExportExcelButton } from "@/components/admin/ExportExcelButton";
 import { ClearFiltersButton } from "@/components/common/ClearFiltersButton";
+import { StringCombobox } from "@/components/common/StringCombobox";
 import { useToast } from "@/hooks/useToast";
 import { useSnackbar } from "@/hooks/useSnackbar";
 import { useConfirm } from "@/hooks/useConfirm";
@@ -91,9 +93,6 @@ interface ProjectsTabProps {
 }
 
 export function ProjectsTab({ ref }: ProjectsTabProps = {}) {
-  const [projects, setProjects] = useState<ProjectResponse[]>([]);
-  const [users, setUsers] = useState<UserResponse[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [editingProjectId, setEditingProjectId] = useState<number | null>(null);
@@ -105,29 +104,93 @@ export function ProjectsTab({ ref }: ProjectsTabProps = {}) {
   const toast = useToast();
   const snackbar = useSnackbar();
   const confirm = useConfirm();
+  const queryClient = useQueryClient();
 
-  // Always fetch with include_completed=true so toggling the filter
-  // doesn't require a re-fetch. Client-side filter does the rest.
-  const loadData = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const [projectsData, usersData] = await Promise.all([
-        projectService.listProjects(true),
-        adminService.getUsers(),
-      ]);
-      setProjects(projectsData);
-      setUsers(usersData.filter((u) => !u.is_deleted));
-    } catch {
-      // stays empty
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  // ── Queries ─────────────────────────────────────────────────────────
+  // Both lists are cached under shared keys so mutations from anywhere
+  // in the app (PM/filter dropdowns, ProjectModal save, UsersTab edits)
+  // invalidate them via the namespace `.all` accessor.
+  //
+  // Projects: shared with `useOrgProjectNames` (used by All Reviews
+  // tab Project filter dropdowns) — single fetch covers both surfaces.
+  // include_completed=true is always passed so toggling the Status
+  // filter is purely client-side, no re-fetch.
+  const projectsQuery = useQuery({
+    queryKey: queryKeys.projects.list(),
+    queryFn: () => projectService.listProjects(true),
+  });
+  const projects = useMemo(
+    () => projectsQuery.data ?? [],
+    [projectsQuery.data],
+  );
 
-  useEffect(() => {
-    void loadData();
-  }, [loadData]);
+  // Users: shared with the AdminPanel parent + UsersTab. Filtering
+  // out deleted users locally keeps the ProjectModal's PM/member
+  // picker from offering deactivated accounts without losing the
+  // cache-share — UsersTab still gets the full list including
+  // deleted rows for its Status filter.
+  const usersQuery = useQuery({
+    queryKey: queryKeys.admin.users(),
+    queryFn: () => adminService.getUsers(),
+  });
+  const users = useMemo(
+    () => (usersQuery.data ?? []).filter((u) => !u.is_deleted),
+    [usersQuery.data],
+  );
 
+  const isLoading = projectsQuery.isPending || usersQuery.isPending;
+
+  // Single helper because all three project-side mutations share the
+  // same invalidation scope (every consumer of the project list).
+  const invalidateProjectsScope = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.projects.all });
+  }, [queryClient]);
+
+  // ── Mutations ───────────────────────────────────────────────────────
+  // All three follow the same shape: server call → optimistic-friendly
+  // cache patch in onSuccess → broadcast invalidation in onSettled.
+  // We patch in onSuccess rather than onMutate because the server
+  // response is the source of truth (markComplete / reopen return
+  // updated rows with derived fields like member_count). Delete is the
+  // exception — we splice out the row optimistically inside onSuccess
+  // for the same instant-feedback effect.
+  const deleteMutation = useMutation({
+    mutationFn: (projectId: number) => projectService.deleteProject(projectId),
+    onSuccess: (_, projectId) => {
+      queryClient.setQueryData<ProjectResponse[]>(
+        queryKeys.projects.list(),
+        (prev) => prev?.filter((p) => p.id !== projectId),
+      );
+    },
+    onError: (err) => snackbar.error(getErrorMessage(err)),
+    onSettled: invalidateProjectsScope,
+  });
+
+  const markCompleteMutation = useMutation({
+    mutationFn: (projectId: number) => projectService.markComplete(projectId),
+    onSuccess: (updated) => {
+      queryClient.setQueryData<ProjectResponse[]>(
+        queryKeys.projects.list(),
+        (prev) => prev?.map((p) => (p.id === updated.id ? updated : p)),
+      );
+    },
+    onError: (err) => snackbar.error(getErrorMessage(err)),
+    onSettled: invalidateProjectsScope,
+  });
+
+  const reopenMutation = useMutation({
+    mutationFn: (projectId: number) => projectService.reopen(projectId),
+    onSuccess: (updated) => {
+      queryClient.setQueryData<ProjectResponse[]>(
+        queryKeys.projects.list(),
+        (prev) => prev?.map((p) => (p.id === updated.id ? updated : p)),
+      );
+    },
+    onError: (err) => snackbar.error(getErrorMessage(err)),
+    onSettled: invalidateProjectsScope,
+  });
+
+  // ── Action handlers (thin wrappers — confirm + mutate + toast) ──────
   const handleDelete = async (project: ProjectResponse) => {
     const ok = await confirm({
       title: "Delete project?",
@@ -136,14 +199,9 @@ export function ProjectsTab({ ref }: ProjectsTabProps = {}) {
       confirmText: "Delete",
     });
     if (!ok) return;
-
-    try {
-      await projectService.deleteProject(project.id);
-      setProjects((prev) => prev.filter((p) => p.id !== project.id));
-      toast.success(`"${project.name}" deleted.`);
-    } catch (err: unknown) {
-      snackbar.error(getErrorMessage(err));
-    }
+    deleteMutation.mutate(project.id, {
+      onSuccess: () => toast.success(`"${project.name}" deleted.`),
+    });
   };
 
   const handleMarkComplete = async (project: ProjectResponse) => {
@@ -160,14 +218,10 @@ export function ProjectsTab({ ref }: ProjectsTabProps = {}) {
       confirmText: "Mark Complete",
     });
     if (!ok) return;
-
-    try {
-      const updated = await projectService.markComplete(project.id);
-      setProjects((prev) => prev.map((p) => (p.id === project.id ? updated : p)));
-      toast.success(`"${project.name}" marked as completed.`);
-    } catch (err: unknown) {
-      snackbar.error(getErrorMessage(err));
-    }
+    markCompleteMutation.mutate(project.id, {
+      onSuccess: () =>
+        toast.success(`"${project.name}" marked as completed.`),
+    });
   };
 
   const handleReopen = async (project: ProjectResponse) => {
@@ -180,14 +234,9 @@ export function ProjectsTab({ ref }: ProjectsTabProps = {}) {
       confirmText: "Re-open",
     });
     if (!ok) return;
-
-    try {
-      const updated = await projectService.reopen(project.id);
-      setProjects((prev) => prev.map((p) => (p.id === project.id ? updated : p)));
-      toast.success(`"${project.name}" re-opened.`);
-    } catch (err: unknown) {
-      snackbar.error(getErrorMessage(err));
-    }
+    reopenMutation.mutate(project.id, {
+      onSuccess: () => toast.success(`"${project.name}" re-opened.`),
+    });
   };
 
   const openCreate = useCallback(() => {
@@ -207,9 +256,12 @@ export function ProjectsTab({ ref }: ProjectsTabProps = {}) {
     setEditingProjectId(null);
   };
 
+  // Modal save invalidates the projects key — the modal itself owns
+  // the create/edit PATCH, so we don't know the new/updated row shape
+  // here. Broadcast invalidation refetches the full list.
   const handleModalSave = () => {
     handleModalClose();
-    void loadData();
+    invalidateProjectsScope();
   };
 
   const availableYears = useMemo(
@@ -304,19 +356,16 @@ export function ProjectsTab({ ref }: ProjectsTabProps = {}) {
           <label htmlFor="project-pm-filter" className={FILTER_LABEL_CLS}>
             PM
           </label>
-          <select
+          <StringCombobox
             id="project-pm-filter"
-            value={pmFilter}
-            onChange={(e) => setPmFilter(e.target.value)}
-            className={`${FILTER_SELECT_CLS} min-w-[160px]`}
-          >
-            <option value="all">All PMs</option>
-            {availablePms.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
+            options={availablePms}
+            // State uses "all" as the no-filter sentinel; combobox
+            // uses "" — translate on both edges (matches the pattern
+            // used by UsersTab's Mentor/PM filters).
+            value={pmFilter === "all" ? "" : pmFilter}
+            onChange={(v) => setPmFilter(v === "" ? "all" : v)}
+            placeholder="All PMs"
+          />
         </div>
         <div className="flex items-center gap-2">
           <label htmlFor="project-status-filter" className={FILTER_LABEL_CLS}>

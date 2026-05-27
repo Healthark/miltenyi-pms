@@ -35,15 +35,37 @@ interface ProjectReviewCompletionCardProps {
   /** Null while the parent's fetch is in flight. */
   readonly data: ProjectReviewCompletion | null;
   readonly viewAllHref?: string;
+  /**
+   * Optional full cycle_name (e.g. "H1 FY26-27") to deep-link the
+   * "View all" target to. Project reviews are cycle-scoped on the
+   * destination page (one row per (employee, project, cycle)) while
+   * this card is FY-scoped — aggregating across all cycles in the FY.
+   * Passing the active cycle name resolves the mismatch by landing
+   * HR on a coherent single-cycle view. HrDashboard provides this
+   * from `settings.active_cycle_name`; omitting it falls back to the
+   * destination's own active-cycle default.
+   */
+  readonly cycleHint?: string | null;
 }
 
 export function ProjectReviewCompletionCard({
   data,
   viewAllHref = "/project-reviews",
+  cycleHint,
 }: ProjectReviewCompletionCardProps) {
   const isLoading = data === null;
   const fyLabel =
     data?.fy_year != null ? formatFyYearSpan(data.fy_year) : null;
+  // Deep-link to the matching cycle on /project-reviews when the
+  // parent supplied one. Without the hint we'd either pass an FY
+  // token (which doesn't match any actual cycle_name and would zero
+  // out the destination's list) or pass nothing (destination falls
+  // back to the active cycle silently). Either way is currently
+  // identical when HR is on the active FY — explicit is better
+  // because it survives if the destination's default ever changes.
+  const finalViewAllHref = cycleHint
+    ? `${viewAllHref}?cycle=${encodeURIComponent(cycleHint)}`
+    : viewAllHref;
   const completionPercent =
     data && data.total > 0 ? Math.round((data.reviewed / data.total) * 100) : 0;
   const hasData = !isLoading && data != null && data.total > 0;
@@ -66,7 +88,7 @@ export function ProjectReviewCompletionCard({
           </div>
         </div>
         <Link
-          to={viewAllHref}
+          to={finalViewAllHref}
           className="text-[12px] font-medium text-brand hover:underline whitespace-nowrap"
         >
           View all →

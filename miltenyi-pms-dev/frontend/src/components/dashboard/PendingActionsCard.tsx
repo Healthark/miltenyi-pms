@@ -25,24 +25,38 @@ import { Link } from "react-router-dom";
 import type { MissingAnnualReviewsSummary } from "@/services/dashboard.service";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
 import type { SystemSettingsResponse } from "@/services/system-settings.service";
+import { fyStartYearToToken } from "@/utils/fy";
 
 const INLINE_LIMIT = 3;
 const SETTINGS_HREF = "/admin?tab=settings";
 
 interface PendingActionsCardProps {
   readonly missingReviews: MissingAnnualReviewsSummary | null;
-  readonly missingReviewsHref?: string;
+  /** Destination for the footer "View All Reviews" CTA and the per-row
+   *  draft deep links. AnnualReviews owns the draft bucket — its Status
+   *  dropdown has Draft / Pending Mentor / Pending Management / Completed
+   *  (but no `not_started`, which is why Not Started rows go elsewhere
+   *  via `notStartedHref` below). */
+  readonly draftsHref?: string;
+  /** Destination for the per-row Not Started deep links. AnnualReviews
+   *  doesn't expose a `not_started` filter option — the bucket lives
+   *  on /management-review (its StatusFilter includes it). HR clicking
+   *  a Not Started name should jump straight to that employee's row in
+   *  Management Review, pre-filtered to the matching cycle. */
+  readonly notStartedHref?: string;
 }
 
 export function PendingActionsCard({
   missingReviews,
-  missingReviewsHref = "/annual-reviews",
+  draftsHref = "/annual-reviews",
+  notStartedHref = "/management-review",
 }: PendingActionsCardProps) {
   return (
     <article className="flex h-full flex-col gap-5 rounded-xl border border-border bg-surface p-5 shadow-sm">
       <MissingReviewsSection
         data={missingReviews}
-        viewAllHref={missingReviewsHref}
+        draftsHref={draftsHref}
+        notStartedHref={notStartedHref}
       />
       <PausedSettingsSection />
     </article>
@@ -61,15 +75,23 @@ const SECTION_PANEL =
 
 function MissingReviewsSection({
   data,
-  viewAllHref,
+  draftsHref,
+  notStartedHref,
 }: {
   readonly data: MissingAnnualReviewsSummary | null;
-  readonly viewAllHref: string;
+  readonly draftsHref: string;
+  readonly notStartedHref: string;
 }) {
   const isLoading = data === null;
   const notStartedCount = data?.count ?? 0;
   const draftCount = data?.draft_count ?? 0;
   const isAllClear = !isLoading && notStartedCount === 0 && draftCount === 0;
+  // Cycle token derived from the FY this summary represents — used
+  // to scope the Not Started deep links to the matching ManagementReview
+  // cycle. Without this, the destination silently falls back to its
+  // own active-cycle default, which is wrong when the dashboard picker
+  // is on a non-active FY.
+  const cycleToken = data?.fy_year != null ? fyStartYearToToken(data.fy_year) : null;
 
   return (
     <section className={SECTION_PANEL}>
@@ -131,6 +153,17 @@ function MissingReviewsSection({
                 function_name: u.function_name,
                 designation_name: u.designation_name,
                 mentor_name: u.mentor_name,
+                // Not Started rows deep-link to ManagementReview
+                // (which has the `not_started` status bucket —
+                // AnnualReviews does not) pre-filtered to this
+                // employee + the matching cycle. The destination's
+                // URL reader unpacks `?cycle=&status=&employee=` on
+                // mount and seeds its filters.
+                href: buildNotStartedHref(
+                  notStartedHref,
+                  u.full_name,
+                  cycleToken,
+                ),
               }))}
             />
           )}
@@ -146,12 +179,14 @@ function MissingReviewsSection({
                 function_name: u.function_name,
                 designation_name: u.designation_name,
                 mentor_name: u.mentor_name,
-                // Draft rows deep-link to the All Reviews page so HR
-                // can read what the employee has saved and decide
-                // whether to nudge them. We pass a `status_filter`
-                // query param the AnnualReviews page can pick up to
-                // pre-filter the All Reviews tab.
-                href: `${viewAllHref}?status_filter=draft`,
+                // Draft rows deep-link to AnnualReviews with the
+                // status pre-filtered to "draft" (and the matching
+                // FY cycle when known). The query param key matches
+                // what the AnnualReviews URL reader expects (`status`,
+                // `cycle`) — earlier code passed `status_filter`,
+                // which silently no-op'd because the page never read
+                // that key.
+                href: buildDraftHref(draftsHref, cycleToken),
               }))}
             />
           )}
@@ -159,7 +194,7 @@ function MissingReviewsSection({
       )}
 
       <Link
-        to={viewAllHref}
+        to={draftsHref}
         className="block w-full rounded-lg bg-brand-light py-2 text-center text-[12px] font-semibold text-brand transition-colors hover:bg-brand hover:text-white"
       >
         View All Reviews
@@ -345,6 +380,39 @@ function PausedSettingsSection() {
       </Link>
     </section>
   );
+}
+
+// ── Deep-link builders ────────────────────────────────────────────────
+
+/**
+ * Build the per-row Not Started deep link for ManagementReview.
+ * Always appends `status=not_started`; conditionally appends the
+ * cycle token (so the destination doesn't fall back to its own
+ * active-cycle default when HR is on a non-active FY) and the
+ * employee name (which ManagementReview's URL reader feeds into
+ * its search box).
+ */
+function buildNotStartedHref(
+  base: string,
+  employeeName: string,
+  cycleToken: string | null,
+): string {
+  const params = new URLSearchParams({ status: "not_started" });
+  if (cycleToken) params.set("cycle", cycleToken);
+  if (employeeName) params.set("employee", employeeName);
+  return `${base}?${params.toString()}`;
+}
+
+/**
+ * Build the per-row draft deep link for AnnualReviews. Mirrors the
+ * Not Started builder shape; cycle scoping is optional because the
+ * destination already defaults to the active FY when no cycle is in
+ * the URL.
+ */
+function buildDraftHref(base: string, cycleToken: string | null): string {
+  const params = new URLSearchParams({ status: "draft" });
+  if (cycleToken) params.set("cycle", cycleToken);
+  return `${base}?${params.toString()}`;
 }
 
 // ── Shared building blocks ────────────────────────────────────────────

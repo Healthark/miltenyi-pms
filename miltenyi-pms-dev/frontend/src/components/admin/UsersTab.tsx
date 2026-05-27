@@ -1,5 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { Search, Pencil, UserX, UserCheck } from "lucide-react";
+import { setOrDeleteParam, searchParamsChanged } from "@/utils/searchParams";
 import type { UserResponse } from "@/services/admin.service";
 import { StatusBadge } from "@/components/admin/StatusBadge";
 import { RoleBadge } from "@/components/admin/RoleBadge";
@@ -37,6 +40,54 @@ type UsersSortKey =
 
 type RoleFilter = "all" | "HR_MyOrg" | "HR_Miltenyi" | "Mentor" | "PM" | "Employee";
 type StatusFilter = "all" | "active" | "inactive";
+
+// ── Virtualised-table layout constants ────────────────────────────────
+// Shared 9-column CSS Grid template — applies to BOTH the header row
+// and every body row so columns stay perfectly aligned (no <table>
+// magic doing the alignment for us). Widths are tuned so the densest
+// columns (Employee, Email) get the most room while badge/icon columns
+// stay narrow. `minmax(Npx, Mfr)` lets each cell shrink to its minimum
+// before flexing — important because the table sits inside a horizontal
+// scroll wrapper on narrow viewports.
+const USERS_GRID_TEMPLATE_COLUMNS =
+  "minmax(180px, 1.4fr) " +    // Employee (name + employee_code)
+  "minmax(180px, 1.6fr) " +    // Email
+  "minmax(110px, 0.8fr) " +    // Role
+  "minmax(130px, 1.1fr) " +    // Function
+  "minmax(130px, 1.1fr) " +    // Designation
+  "minmax(150px, 1.2fr) " +    // Mentor / Project Manager
+  "minmax(110px, 0.9fr) " +    // Phone
+  "minmax(90px, 0.7fr) " +     // Status
+  "minmax(110px, 0.8fr)";      // Actions
+
+// Sum of the minimums above + breathing room. Drives the outer wrapper's
+// min-width so the wrapper's horizontal scroll engages BEFORE any
+// inner div overflows. Mirrors the pattern in AnnualGoals / ManagementReview.
+const USERS_TABLE_MIN_WIDTH_PX = 1290;
+
+// Rows are uniform height (text-sm + py-3.5 padding + two stacked
+// lines in the Employee cell). No measureElement needed because no
+// expansion / variable content. ~58px observed in dev.
+const USERS_ROW_HEIGHT_PX = 58;
+
+// Body scroll viewport. Picked so ~10 rows are visible without
+// scrolling on a typical desktop — same heuristic as AnnualGoals.
+const USERS_SCROLL_HEIGHT_PX = 600;
+
+// Standard overscan for uniform-height rows. Higher than AnnualGoals
+// (which uses 4 because expanded rows are tall and re-render cost is
+// real) — here every row is small and cheap, so a larger window keeps
+// scroll smooth on slower devices.
+const USERS_OVERSCAN = 8;
+
+/** Mentor-filter sentinel meaning "rows whose mentor_id is NULL".
+ *  Distinct from "all" (no filter) so HR can specifically find
+ *  unmentored Employees — a frequent setup-time chase. Uses the
+ *  literal display label as the wire value so it can sit directly
+ *  inside StringCombobox's flat string[] options (no wrapper / value-
+ *  vs-label mapping needed). Parentheses + leading space make
+ *  collision with a real full_name impossible. */
+const NO_MENTOR_SENTINEL = "(No mentor)";
 
 const ROLE_OPTIONS: { value: RoleFilter; label: string }[] = [
   { value: "all", label: "All Roles" },
@@ -96,7 +147,11 @@ export function UsersTab({
 }: UsersTabProps) {
   const [sort, setSort] = useState<SortState<UsersSortKey> | null>(null);
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  // Default Status to "active" — HR almost always wants the live
+  // roster first; deactivated rows are a less-frequent audit need
+  // (mirrors ProjectsTab's status=active default). HR can still
+  // click "All" or "Inactive" to broaden.
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
   const [functionFilter, setFunctionFilter] = useState<string>("all");
   const [designationFilter, setDesignationFilter] = useState<string>("all");
   const [mentorFilter, setMentorFilter] = useState<string>("all");
@@ -104,6 +159,61 @@ export function UsersTab({
   // replaced with Project Manager for them, so the relation filter
   // beside it tracks PM names instead.
   const [pmFilter, setPmFilter] = useState<string>("all");
+
+  // Read deep-link params on first mount and seed the filters. Today's
+  // known senders: HeadcountCard legend rows could deep-link to
+  // /admin?tab=users&role=Mentor (future); generic ?status=…&role=…
+  // covers anything else. Ref guard fires once per mount; user edits
+  // afterwards are preserved.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const usersTabDefaultedRef = useRef(false);
+  useEffect(() => {
+    if (usersTabDefaultedRef.current) return;
+    const urlRole = searchParams.get("role");
+    const urlStatus = searchParams.get("status");
+    // `?mentor=` accepts a literal full_name OR the `(No mentor)`
+    // sentinel meaning unmentored. MentorCoverageCard's "View all"
+    // uses this to land HR directly on the unmentored-Employee list.
+    const urlMentor = searchParams.get("mentor");
+    const urlPm = searchParams.get("pm");
+    const urlFunction = searchParams.get("function");
+    const urlDesignation = searchParams.get("designation");
+    if (urlRole) setRoleFilter(urlRole as RoleFilter);
+    if (urlStatus) setStatusFilter(urlStatus as StatusFilter);
+    if (urlMentor) setMentorFilter(urlMentor);
+    if (urlPm) setPmFilter(urlPm);
+    if (urlFunction) setFunctionFilter(urlFunction);
+    if (urlDesignation) setDesignationFilter(urlDesignation);
+    usersTabDefaultedRef.current = true;
+  }, [searchParams]);
+
+  // Write-back: mirror UsersTab filter state to URL so refresh +
+  // share-link preserves the view. Preserves `?tab=` and any other
+  // unrelated AdminPanel-level params (we only set/delete the keys
+  // this component owns). Gated on the reader ref so first render's
+  // defaults can't clobber URL params before they're consumed.
+  useEffect(() => {
+    if (!usersTabDefaultedRef.current) return;
+    const next = new URLSearchParams(searchParams);
+    setOrDeleteParam(next, "role", roleFilter);
+    setOrDeleteParam(next, "status", statusFilter);
+    setOrDeleteParam(next, "function", functionFilter);
+    setOrDeleteParam(next, "designation", designationFilter);
+    setOrDeleteParam(next, "mentor", mentorFilter);
+    setOrDeleteParam(next, "pm", pmFilter);
+    if (searchParamsChanged(searchParams, next)) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [
+    roleFilter,
+    statusFilter,
+    functionFilter,
+    designationFilter,
+    mentorFilter,
+    pmFilter,
+    searchParams,
+    setSearchParams,
+  ]);
 
   // Dropdown options derived from the loaded users so we never show
   // a function/designation that has no row to match.
@@ -205,10 +315,16 @@ export function UsersTab({
       if (functionFilter !== "all" && u.function?.name !== functionFilter) return false;
       if (designationFilter !== "all" && u.designation?.name !== designationFilter) return false;
       if (mentorFilter !== "all") {
-        const mentorName = u.mentor_id
-          ? users.find((m) => m.id === u.mentor_id)?.full_name
-          : null;
-        if (mentorName !== mentorFilter) return false;
+        // "(No mentor)" sentinel: pass only rows whose mentor_id is
+        // NULL. Other values match against the resolved mentor name.
+        if (mentorFilter === NO_MENTOR_SENTINEL) {
+          if (u.mentor_id !== null) return false;
+        } else {
+          const mentorName = u.mentor_id
+            ? users.find((m) => m.id === u.mentor_id)?.full_name
+            : null;
+          if (mentorName !== mentorFilter) return false;
+        }
       }
       if (pmFilter !== "all") {
         // Row passes when its PM set contains the selected name.
@@ -232,6 +348,21 @@ export function UsersTab({
         : ROLE_OPTIONS,
     [isViewerMiltenyiHR],
   );
+
+  // ── Virtualisation ───────────────────────────────────────────────────
+  // Uniform-height rows (no expansion / variable content) so we can
+  // use a constant estimateSize and skip measureElement entirely.
+  // Stable item key by user.id keeps any future re-render cycles from
+  // re-mounting rows that didn't actually move.
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual's useVirtualizer returns non-memoisable functions; React Compiler logs a benign skip here.
+  const rowVirtualizer = useVirtualizer({
+    count: visibleUsers.length,
+    getScrollElement: () => scrollContainerRef.current,
+    estimateSize: () => USERS_ROW_HEIGHT_PX,
+    overscan: USERS_OVERSCAN,
+    getItemKey: (index) => visibleUsers[index].id,
+  });
 
   return (
     <div className="p-5 flex flex-col gap-4">
@@ -273,17 +404,21 @@ export function UsersTab({
             <label htmlFor="user-mentor-filter" className={FILTER_LABEL_CLS}>
               Mentor
             </label>
-            <select
+            <StringCombobox
               id="user-mentor-filter"
-              value={mentorFilter}
-              onChange={(e) => setMentorFilter(e.target.value)}
-              className={`${FILTER_SELECT_CLS} min-w-[150px]`}
-            >
-              <option value="all">All Mentors</option>
-              {availableMentors.map((m) => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
+              // Prepend the "(No mentor)" sentinel as the first option
+              // so HR can pick it directly via type-to-filter (typing
+              // "no" narrows to it). Sentinel value === display label
+              // — no value/label split needed because parens + space
+              // guarantee no collision with a real full_name.
+              options={[NO_MENTOR_SENTINEL, ...availableMentors]}
+              // State uses "all" as the no-filter sentinel; combobox
+              // uses "" — translate on both edges (matches the
+              // Function/Designation pattern below).
+              value={mentorFilter === "all" ? "" : mentorFilter}
+              onChange={(v) => setMentorFilter(v === "" ? "all" : v)}
+              placeholder="All Mentors"
+            />
           </div>
         )}
         {isViewerMiltenyiHR && availableProjectManagers.length > 0 && (
@@ -291,17 +426,13 @@ export function UsersTab({
             <label htmlFor="user-pm-filter" className={FILTER_LABEL_CLS}>
               Project Manager
             </label>
-            <select
+            <StringCombobox
               id="user-pm-filter"
-              value={pmFilter}
-              onChange={(e) => setPmFilter(e.target.value)}
-              className={`${FILTER_SELECT_CLS} min-w-[150px]`}
-            >
-              <option value="all">All Project Managers</option>
-              {availableProjectManagers.map((m) => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
+              options={availableProjectManagers}
+              value={pmFilter === "all" ? "" : pmFilter}
+              onChange={(v) => setPmFilter(v === "" ? "all" : v)}
+              placeholder="All Project Managers"
+            />
           </div>
         )}
         {availableFunctions.length > 0 && (
@@ -353,32 +484,51 @@ export function UsersTab({
         </div>
       </div>
 
-      {/* Table */}
+      {/* Virtualised user list. Replaces a vanilla <table> so we can
+          render only the rows in the current scroll window — cheap
+          today (<200 users) but prevents O(n) DOM growth as the org
+          grows. The outer wrapper handles horizontal scroll on narrow
+          viewports; the inner ref'd div handles vertical scroll +
+          virtualisation. Header sits OUTSIDE the scroll container so
+          it remains visible as the body scrolls. CSS Grid template is
+          shared between header + body rows so columns align without
+          <table> magic. */}
       {isLoading ? (
         <div className="flex items-center justify-center py-16 text-sm text-text-muted">
           Loading users…
         </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-border">
-          <table className="w-full min-w-max text-sm">
-            <thead>
-              <tr className="border-b border-border bg-slate-50 text-left">
-                <th className="px-5 py-3">
+          <div
+            role="table"
+            aria-label="Users"
+            aria-rowcount={visibleUsers.length}
+            className="text-sm"
+            style={{ minWidth: USERS_TABLE_MIN_WIDTH_PX }}
+          >
+            {/* Header — non-virtualised, sits above the scroll viewport. */}
+            <div role="rowgroup" className="bg-slate-50 border-b border-border">
+              <div
+                role="row"
+                className="grid items-center text-left"
+                style={{ gridTemplateColumns: USERS_GRID_TEMPLATE_COLUMNS }}
+              >
+                <div role="columnheader" className="px-5 py-3">
                   <SortableHeader label="Employee" columnKey="full_name" sort={sort} onSort={setSort} />
-                </th>
-                <th className="px-5 py-3">
+                </div>
+                <div role="columnheader" className="px-5 py-3">
                   <SortableHeader label="Email" columnKey="email" sort={sort} onSort={setSort} />
-                </th>
-                <th className="px-5 py-3">
+                </div>
+                <div role="columnheader" className="px-5 py-3">
                   <SortableHeader label="Role" columnKey="role" sort={sort} onSort={setSort} />
-                </th>
-                <th className="px-5 py-3">
+                </div>
+                <div role="columnheader" className="px-5 py-3">
                   <SortableHeader label="Function" columnKey="function_name" sort={sort} onSort={setSort} />
-                </th>
-                <th className="px-5 py-3">
+                </div>
+                <div role="columnheader" className="px-5 py-3">
                   <SortableHeader label="Designation" columnKey="designation_name" sort={sort} onSort={setSort} />
-                </th>
-                <th className="px-5 py-3">
+                </div>
+                <div role="columnheader" className="px-5 py-3">
                   {isViewerMiltenyiHR ? (
                     <SortableHeader
                       label="Project Manager"
@@ -394,119 +544,151 @@ export function UsersTab({
                       onSort={setSort}
                     />
                   )}
-                </th>
-                <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-text-muted">
+                </div>
+                <div
+                  role="columnheader"
+                  className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-text-muted"
+                >
                   Phone
-                </th>
-                <th className="px-5 py-3">
+                </div>
+                <div role="columnheader" className="px-5 py-3">
                   <SortableHeader label="Status" columnKey="status" sort={sort} onSort={setSort} />
-                </th>
-                <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-text-muted">
+                </div>
+                <div
+                  role="columnheader"
+                  className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-text-muted"
+                >
                   Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {visibleUsers.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={9}
-                    className="px-5 py-10 text-center text-text-muted"
-                  >
-                    No users match your filters.
-                  </td>
-                </tr>
-              ) : (
-                visibleUsers.map((user) => {
-                  const mutable = canMutateRow(user);
-                  return (
-                    <tr
-                      key={user.id}
-                      className={`transition-colors hover:bg-slate-50 ${user.is_deleted ? "opacity-60" : ""}`}
-                    >
-                      <td className="px-5 py-3.5">
-                        <div className="font-medium text-text-main">
-                          {user.full_name}
+                </div>
+              </div>
+            </div>
+
+            {/* Body — virtualised. Empty-state replaces the entire
+                scroll container (no rows = nothing to virtualise). */}
+            {visibleUsers.length === 0 ? (
+              <div className="px-5 py-10 text-center text-text-muted">
+                No users match your filters.
+              </div>
+            ) : (
+              <div
+                ref={scrollContainerRef}
+                role="rowgroup"
+                style={{ height: USERS_SCROLL_HEIGHT_PX }}
+                className="overflow-y-auto"
+              >
+                <div
+                  style={{
+                    height: rowVirtualizer.getTotalSize(),
+                    position: "relative",
+                    width: "100%",
+                  }}
+                >
+                  {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                    const user = visibleUsers[virtualRow.index];
+                    const mutable = canMutateRow(user);
+                    return (
+                      <div
+                        key={user.id}
+                        role="row"
+                        aria-rowindex={virtualRow.index + 1}
+                        data-index={virtualRow.index}
+                        className={`grid items-center border-b border-border/70 transition-colors hover:bg-slate-50 ${
+                          user.is_deleted ? "opacity-60" : ""
+                        }`}
+                        style={{
+                          position: "absolute",
+                          top: 0,
+                          left: 0,
+                          width: "100%",
+                          height: USERS_ROW_HEIGHT_PX,
+                          transform: `translateY(${virtualRow.start}px)`,
+                          gridTemplateColumns: USERS_GRID_TEMPLATE_COLUMNS,
+                        }}
+                      >
+                        <div role="cell" className="px-5">
+                          <div className="font-medium text-text-main truncate">
+                            {user.full_name}
+                          </div>
+                          <div className="text-xs text-text-muted truncate">
+                            {user.employee_code}
+                          </div>
                         </div>
-                        <div className="text-xs text-text-muted">
-                          {user.employee_code}
+                        <div role="cell" className="px-5 text-text-muted truncate">
+                          {user.email}
                         </div>
-                      </td>
-                      <td className="px-5 py-3.5 text-text-muted">
-                        {user.email}
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <RoleBadge role={user.role} />
-                      </td>
-                      <td className="px-5 py-3.5 text-text-muted">
-                        {user.function?.name ?? "—"}
-                      </td>
-                      <td className="px-5 py-3.5 text-text-muted">
-                        {user.designation?.name ?? "—"}
-                      </td>
-                      <td className="px-5 py-3.5 text-text-muted">
-                        {isViewerMiltenyiHR
-                          ? user.project_manager_names.length > 0
-                            ? user.project_manager_names.join(", ")
-                            : "—"
-                          : users.find((u) => u.id === user.mentor_id)
-                              ?.full_name ?? "—"}
-                      </td>
-                      <td className="px-5 py-3.5 text-text-muted">
-                        {user.phone ?? "—"}
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <StatusBadge isDeleted={user.is_deleted} />
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <div className="flex items-center gap-2">
-                          {mutable ? (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => onEdit(user)}
-                                title="Edit user"
-                                className="rounded-md p-1.5 text-text-muted hover:bg-brand-light hover:text-brand transition-colors"
+                        <div role="cell" className="px-5">
+                          <RoleBadge role={user.role} />
+                        </div>
+                        <div role="cell" className="px-5 text-text-muted truncate">
+                          {user.function?.name ?? "—"}
+                        </div>
+                        <div role="cell" className="px-5 text-text-muted truncate">
+                          {user.designation?.name ?? "—"}
+                        </div>
+                        <div role="cell" className="px-5 text-text-muted truncate">
+                          {isViewerMiltenyiHR
+                            ? user.project_manager_names.length > 0
+                              ? user.project_manager_names.join(", ")
+                              : "—"
+                            : users.find((u) => u.id === user.mentor_id)
+                                ?.full_name ?? "—"}
+                        </div>
+                        <div role="cell" className="px-5 text-text-muted truncate">
+                          {user.phone ?? "—"}
+                        </div>
+                        <div role="cell" className="px-5">
+                          <StatusBadge isDeleted={user.is_deleted} />
+                        </div>
+                        <div role="cell" className="px-5">
+                          <div className="flex items-center gap-2">
+                            {mutable ? (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => onEdit(user)}
+                                  title="Edit user"
+                                  className="rounded-md p-1.5 text-text-muted hover:bg-brand-light hover:text-brand transition-colors"
+                                >
+                                  <Pencil className="h-4 w-4" aria-hidden="true" />
+                                </button>
+                                {!user.is_deleted && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onDeactivate(user)}
+                                    title="Deactivate user"
+                                    className="rounded-md p-1.5 text-text-muted hover:bg-red-50 hover:text-red-600 transition-colors"
+                                  >
+                                    <UserX className="h-4 w-4" aria-hidden="true" />
+                                  </button>
+                                )}
+                                {user.is_deleted && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onReactivate(user)}
+                                    title="Reactivate user"
+                                    className="rounded-md p-1.5 text-text-muted hover:bg-green-50 hover:text-green-600 transition-colors"
+                                  >
+                                    <UserCheck className="h-4 w-4" aria-hidden="true" />
+                                  </button>
+                                )}
+                              </>
+                            ) : (
+                              <span
+                                title="Only Healthark HR can edit Mentor or Healthark HR users."
+                                className="text-xs italic text-text-muted"
                               >
-                                <Pencil className="h-4 w-4" aria-hidden="true" />
-                              </button>
-                              {!user.is_deleted && (
-                                <button
-                                  type="button"
-                                  onClick={() => onDeactivate(user)}
-                                  title="Deactivate user"
-                                  className="rounded-md p-1.5 text-text-muted hover:bg-red-50 hover:text-red-600 transition-colors"
-                                >
-                                  <UserX className="h-4 w-4" aria-hidden="true" />
-                                </button>
-                              )}
-                              {user.is_deleted && (
-                                <button
-                                  type="button"
-                                  onClick={() => onReactivate(user)}
-                                  title="Reactivate user"
-                                  className="rounded-md p-1.5 text-text-muted hover:bg-green-50 hover:text-green-600 transition-colors"
-                                >
-                                  <UserCheck className="h-4 w-4" aria-hidden="true" />
-                                </button>
-                              )}
-                            </>
-                          ) : (
-                            <span
-                              title="Only Healthark HR can edit Mentor or Healthark HR users."
-                              className="text-xs italic text-text-muted"
-                            >
-                              View-only
-                            </span>
-                          )}
+                                View-only
+                              </span>
+                            )}
+                          </div>
                         </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

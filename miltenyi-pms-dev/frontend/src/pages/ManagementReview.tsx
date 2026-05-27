@@ -11,7 +11,8 @@
  * submitted. View and Edit affordances are gated per stage.
  */
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   useInfiniteQuery,
   useMutation,
@@ -52,6 +53,7 @@ import { getErrorMessage } from "@/utils/errors";
 import { useConfirm } from "@/hooks/useConfirm";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
 import { extractFyToken } from "@/utils/fy";
+import { setOrDeleteParam, searchParamsChanged } from "@/utils/searchParams";
 
 type RatingValue = number | "";
 type StatusFilter = "all" | ReviewStatus;
@@ -168,8 +170,11 @@ const STATUS_FILTER_OPTIONS: Array<{ value: StatusFilter; label: string }> = [
 ];
 
 // STATUS_SORT_WEIGHT used to drive lifecycle-progression ordering on
-// the client-side sort. Server-side sort (PR #48, doc 31) orders
-// AnnualReview.status lexically. Documented in doc 31 Part 3.
+// the client-side sort. Server-side sort (PR #48, doc 31) now applies
+// the same lifecycle weighting via a CASE WHEN expression in
+// `_STATUS_LIFECYCLE_ORDER` — Not Started → Draft → Pending Mentor →
+// Pending Management → Completed. No further client-side reordering
+// is needed; the rows arrive in lifecycle order.
 
 export function ManagementReview() {
   const { settings } = useSystemSettings();
@@ -197,6 +202,77 @@ export function ManagementReview() {
   // queryKey via `requestParams` below.
   const [filters, setFilters] = useState<CalibrationFilters>({});
   const [searchInput, setSearchInput] = useState("");
+
+  // Read dashboard / cross-page deep-link params on first mount and
+  // seed the filters so HR lands where the source page said they
+  // would. Today's known deep-links:
+  //   • PendingActionsCard Not-Started rows →
+  //       /management-review?cycle=FY26-27&status=not_started
+  //       (+ optional &employee=Name for per-row jump)
+  //   • Future dashboard cards may write ?cycle=…&status=…
+  // URL params take precedence over the active-cycle default that
+  // already lives below (cycleFilter ?? activeFyToken). Ref guard
+  // fires once per mount; user edits afterwards are preserved.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const managementDefaultedRef = useRef(false);
+  useEffect(() => {
+    if (managementDefaultedRef.current) return;
+    const urlCycle = searchParams.get("cycle");
+    const urlStatus = searchParams.get("status");
+    const urlEmployee = searchParams.get("employee");
+    const urlFunction = searchParams.get("function");
+    const urlDesignation = searchParams.get("designation");
+    const urlMentor = searchParams.get("mentor");
+    if (
+      !urlCycle &&
+      !urlStatus &&
+      !urlEmployee &&
+      !urlFunction &&
+      !urlDesignation &&
+      !urlMentor
+    ) {
+      // No deep-link params; let the existing active-cycle default
+      // handle it. Flip the ref so we don't keep re-checking.
+      managementDefaultedRef.current = true;
+      return;
+    }
+    setFilters((prev) => ({
+      ...prev,
+      ...(urlCycle ? { cycle: urlCycle } : {}),
+      ...(urlStatus
+        ? { status: urlStatus as CalibrationFilters["status"] }
+        : {}),
+      ...(urlFunction ? { function: urlFunction } : {}),
+      ...(urlDesignation ? { designation: urlDesignation } : {}),
+      ...(urlMentor ? { mentor: urlMentor } : {}),
+    }));
+    if (urlEmployee) {
+      setSearchInput(urlEmployee);
+    }
+    managementDefaultedRef.current = true;
+  }, [searchParams]);
+
+  // Write-back: mirror Management Review filter state to URL so
+  // refresh + share-link preserves the view. Uses `searchInput`
+  // (not the debounced version) for the employee param so the URL
+  // stays in sync with what HR actually typed — share-links carry
+  // the user's intent, not the debounced cache key. Gated on the
+  // reader ref so first render's empty state can't clobber URL.
+  useEffect(() => {
+    if (!managementDefaultedRef.current) return;
+    const next = new URLSearchParams(searchParams);
+    setOrDeleteParam(next, "cycle", filters.cycle);
+    setOrDeleteParam(next, "status", filters.status);
+    setOrDeleteParam(next, "function", filters.function);
+    setOrDeleteParam(next, "designation", filters.designation);
+    setOrDeleteParam(next, "mentor", filters.mentor);
+    setOrDeleteParam(next, "employee", searchInput);
+    if (searchParamsChanged(searchParams, next)) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [filters, searchInput, searchParams, setSearchParams]);
+
+
   // 300ms is the standard "just enough to feel reactive without
   // request spam" window. See useDebouncedValue + doc 29 Part 4.
   const debouncedSearch = useDebouncedValue(searchInput, 300);
@@ -448,9 +524,10 @@ export function ManagementReview() {
   // client-side, applied directly to `rows`. See doc 29 for why we
   // skip the local filter loop and what it means for the sort.
   // `rows` is already server-sorted per the active `sortKey` + `sortDir`
-  // (PR #48, doc 31). The previous lifecycle-weighted Status sort
-  // (Not Started → Completed) is now lexical on the server — see doc
-  // 31 Part 3 for the deliberate behaviour shift.
+  // (PR #48, doc 31). Status sort uses the same lifecycle weighting
+  // the old client-side sort applied — Not Started → Draft → Pending
+  // Mentor → Pending Management → Completed — implemented as a CASE
+  // WHEN expression in the backend's `_STATUS_LIFECYCLE_ORDER`.
   const visibleRows = rows;
 
   // Empty-state branching: empty `rows` can now mean either "org has
@@ -609,19 +686,20 @@ export function ManagementReview() {
                   >
                     Mentor
                   </label>
-                  <select
+                  <StringCombobox
                     id="mgmt-review-mentor-filter"
-                    value={filters.mentor ?? "all"}
-                    onChange={(e) => setFilter("mentor", e.target.value)}
-                    className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand min-w-[160px] cursor-pointer"
-                  >
-                    <option value="all">All Mentors</option>
-                    {availableMentors.map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
-                    ))}
-                  </select>
+                    // Sentinel "(No mentor)" prepended to the option
+                    // list. Backend recognises the literal and
+                    // translates it to User.mentor_id IS NULL
+                    // (bypassing the INNER mentor join that would
+                    // otherwise drop these rows). Display label ==
+                    // wire value, so it slots into the combobox's
+                    // flat string list without a value/label split.
+                    options={["(No mentor)", ...availableMentors]}
+                    value={filters.mentor ?? ""}
+                    onChange={(v) => setFilter("mentor", v)}
+                    placeholder="All Mentors"
+                  />
                 </div>
 
                 <div className="flex items-center gap-2">

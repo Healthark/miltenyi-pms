@@ -1,4 +1,5 @@
-import { useCallback, useRef, useState, Fragment } from "react";
+import { useCallback, useEffect, useRef, useState, Fragment } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   useInfiniteQuery,
   useMutation,
@@ -32,6 +33,7 @@ import { useToast } from "@/hooks/useToast";
 import { useSnackbar } from "@/hooks/useSnackbar";
 import { useConfirm } from "@/hooks/useConfirm";
 import { getErrorMessage } from "@/utils/errors";
+import { setOrDeleteParam, searchParamsChanged } from "@/utils/searchParams";
 import { AnnualGoalCard } from "@/components/goals/AnnualGoalCard";
 import { GoalFormModal } from "@/components/goals/GoalFormModal";
 import { GoalSelfReviewModal } from "@/components/goals/GoalSelfReviewModal";
@@ -49,7 +51,7 @@ import { useGoalYears } from "@/hooks/useGoalYears";
 import { ExportExcelButton } from "@/components/admin/ExportExcelButton";
 import { SortableHeader } from "@/components/SortableHeader";
 import { compareValues, type SortKind, type SortState, type SortValue } from "@/utils/sort";
-import { formatFyYearSpan } from "@/utils/fy";
+import { formatFyYearSpan, fyTokenToStartYear } from "@/utils/fy";
 import {
   profileService,
   type UserRoleExpectation,
@@ -330,6 +332,60 @@ export function AnnualGoals() {
   const [allGoalsSort, setAllGoalsSort] = useState<
     SortState<AllGoalsSortKey> | null
   >(null);
+
+  // First time we know the org's active cycle, pre-fill the Year +
+  // Status filters on the All Goals tab. HR almost always lands here
+  // to triage the CURRENT year ("show me what's pending approval
+  // right now"), so defaulting to "All Years" forces them to narrow
+  // every session.
+  //
+  // URL search params take precedence so dashboard deep-links (e.g.
+  // /annual-goals?fy=2026&status=pending_approval from a funnel card's
+  // View-all link) land pre-filtered.
+  //
+  // Ref guard fires once per mount; later user edits to the filters
+  // are preserved across re-renders / settings refetches.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const allGoalsYearDefaultedRef = useRef(false);
+  useEffect(() => {
+    if (allGoalsYearDefaultedRef.current) return;
+    if (!settings?.active_cycle_name) return;
+
+    const urlFy = searchParams.get("fy");
+    const urlStatus = searchParams.get("status");
+
+    const updates: Partial<AllGoalsFilters> = {};
+    if (urlFy) {
+      const parsed = Number(urlFy);
+      if (!Number.isNaN(parsed)) updates.fy_year = parsed;
+    } else {
+      const activeFy = fyTokenToStartYear(settings.active_cycle_name);
+      if (activeFy !== null) updates.fy_year = activeFy;
+    }
+    if (urlStatus) updates.approval_status = urlStatus;
+
+    if (Object.keys(updates).length > 0) {
+      setAllGoalsFilters((prev) => ({ ...prev, ...updates }));
+    }
+    allGoalsYearDefaultedRef.current = true;
+  }, [settings?.active_cycle_name, searchParams]);
+
+  // Write-back: mirror the current All-Goals filter state to URL so
+  // refresh + share-link preserves the view. Gated on the same ref
+  // the reader uses (so the first render's empty state doesn't
+  // clobber URL params before the reader has seeded state). `replace`
+  // so the browser history doesn't accumulate one entry per keystroke
+  // on the (still-debounced) filter inputs. The string-equality short
+  // circuit prevents redundant React Router navigations.
+  useEffect(() => {
+    if (!allGoalsYearDefaultedRef.current) return;
+    const next = new URLSearchParams(searchParams);
+    setOrDeleteParam(next, "fy", allGoalsFilters.fy_year);
+    setOrDeleteParam(next, "status", allGoalsFilters.approval_status);
+    if (searchParamsChanged(searchParams, next)) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [allGoalsFilters, searchParams, setSearchParams]);
   // Strip empty / undefined values so cache keys and request payloads
   // collapse to a clean shape — see doc 26 Part 2's "empty-filters trap".
   const allGoalsFilterParams: Record<string, string | number> =
@@ -1211,6 +1267,17 @@ function AllGoalsTab({
     getScrollElement: () => scrollContainerRef.current,
     estimateSize: () => ALL_GOALS_ESTIMATE_ROW_PX,
     overscan: ALL_GOALS_OVERSCAN,
+    // Key the measurement cache by stable group identity (same key we
+    // use for the row's React `key`). Without this, the cache uses the
+    // array index — so when the user changes a filter or sort, the
+    // index → group mapping shifts but a previously-expanded group's
+    // cached "tall" height ends up applied to a different group at the
+    // same index, producing a visible gap or overlap. With getItemKey
+    // the cached height follows the group across reorderings.
+    getItemKey: (index) => {
+      const g = sortedGroups[index];
+      return `${g.user_id}_${g.fy_year ?? "null"}`;
+    },
   });
 
   if (isLoading) {
@@ -1317,6 +1384,39 @@ function AllGoalsTab({
                 {formatFyYearSpan(y)}
               </option>
             ))}
+          </select>
+        </div>
+        <div className="flex items-center gap-2">
+          <label
+            htmlFor="all-goals-status"
+            className="text-[11px] font-bold uppercase tracking-wider text-text-muted"
+          >
+            Status
+          </label>
+          <select
+            id="all-goals-status"
+            value={filters.approval_status ?? "all"}
+            onChange={(e) => setFilter("approval_status", e.target.value)}
+            className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand cursor-pointer min-w-[200px]"
+          >
+            {/* Draft is intentionally omitted — the All Goals view hides
+                draft mentee work. "Approved" is the broad bucket that
+                expands server-side to APPROVED + every h1/h2 reviewed
+                state (see backend POST_APPROVAL_STATES). The four H1/H2
+                options below let HR drill into a specific review stage;
+                they overlap with "Approved" by design — "Approved" is
+                the umbrella, the H1/H2 entries are the slices. Q1..Q4
+                states exist in the enum for legacy back-compat (goal
+                reviews are half-yearly only now) and are not exposed
+                here. */}
+            <option value="all">All Statuses</option>
+            <option value="pending_approval">Pending Approval</option>
+            <option value="changes_requested">Changes Requested</option>
+            <option value="approved">Approved (any stage)</option>
+            <option value="h1_self_reviewed">H1 Self Reviewed</option>
+            <option value="h1_mentor_reviewed">H1 Mentor Reviewed</option>
+            <option value="h2_self_reviewed">H2 Self Reviewed</option>
+            <option value="h2_mentor_reviewed">H2 Mentor Reviewed</option>
           </select>
         </div>
         <div className="flex items-center gap-2">

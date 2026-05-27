@@ -1,4 +1,5 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   useInfiniteQuery,
   useMutation,
@@ -22,6 +23,7 @@ import { ClearFiltersButton } from "@/components/common/ClearFiltersButton";
 import { useOrgReferenceData } from "@/hooks/useOrgReferenceData";
 import { useOrgUsers } from "@/hooks/useOrgUsers";
 import { useAnnualReviewCycles } from "@/hooks/useAnnualReviewCycles";
+import { setOrDeleteParam, searchParamsChanged } from "@/utils/searchParams";
 import { ExportExcelButton } from "@/components/admin/ExportExcelButton";
 import { SortableHeader } from "@/components/SortableHeader";
 import { type SortState } from "@/utils/sort";
@@ -136,6 +138,68 @@ export function AnnualReviews() {
   const [allReviewsFilters, setAllReviewsFilters] = useState<AllReviewsFilters>(
     {},
   );
+
+  // First time we know the active cycle, pre-fill the Cycle filter on
+  // the All Reviews tab. HR almost always lands here to triage the
+  // CURRENT FY (e.g. via the dashboard's "View all" link on the annual
+  // review funnel), so defaulting to "All" forces them to narrow every
+  // session.
+  //
+  // URL search params take precedence so dashboard deep-links (e.g.
+  // /annual-reviews?cycle=FY26-27&status=pending_mentor from a funnel
+  // card) land pre-filtered. Ref guard fires once per mount; later
+  // user edits to the filters are preserved.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const allReviewsDefaultedRef = useRef(false);
+  useEffect(() => {
+    if (allReviewsDefaultedRef.current) return;
+    if (!settings?.active_cycle_name) return;
+
+    const urlCycle = searchParams.get("cycle");
+    const urlStatus = searchParams.get("status");
+    const urlFunction = searchParams.get("function");
+    const urlDesignation = searchParams.get("designation");
+    const urlEmployee = searchParams.get("employee");
+
+    const updates: Partial<AllReviewsFilters> = {};
+    if (urlCycle) {
+      updates.cycle = urlCycle;
+    } else {
+      // Annual reviews are tagged with the bare FY token ("FY26-27");
+      // active_cycle_name can carry a half/quarter prefix. extractFyToken
+      // strips that so the filter matches actual stored cycle_names.
+      const fyToken = extractFyToken(settings.active_cycle_name);
+      if (fyToken) updates.cycle = fyToken;
+    }
+    if (urlStatus) updates.status = urlStatus as AllReviewsFilters["status"];
+    if (urlFunction) updates.function = urlFunction;
+    if (urlDesignation) updates.designation = urlDesignation;
+    if (urlEmployee) updates.employee = urlEmployee;
+
+    if (Object.keys(updates).length > 0) {
+      setAllReviewsFilters((prev) => ({ ...prev, ...updates }));
+    }
+    allReviewsDefaultedRef.current = true;
+  }, [settings?.active_cycle_name, searchParams]);
+
+  // Write-back: mirror All-Reviews filter state to URL so refresh /
+  // share-link preserves the view. Gated on the same ref the reader
+  // uses (first render's empty state never overwrites URL params
+  // before the reader has seeded state from them). `replace: true`
+  // keeps the browser history a single entry per page visit.
+  useEffect(() => {
+    if (!allReviewsDefaultedRef.current) return;
+    const next = new URLSearchParams(searchParams);
+    setOrDeleteParam(next, "cycle", allReviewsFilters.cycle);
+    setOrDeleteParam(next, "status", allReviewsFilters.status);
+    setOrDeleteParam(next, "function", allReviewsFilters.function);
+    setOrDeleteParam(next, "designation", allReviewsFilters.designation);
+    setOrDeleteParam(next, "employee", allReviewsFilters.employee);
+    if (searchParamsChanged(searchParams, next)) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [allReviewsFilters, searchParams, setSearchParams]);
+
   // Sort state. `null` means "default ordering" (cycle_name DESC,
   // created_at DESC) — the backend takes over when sort is unset.
   // Translated to `sort_by` + `sort_dir` strings for the wire format.

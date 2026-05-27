@@ -33,7 +33,7 @@ Security Layers:
 
 from typing import List, Literal, Optional
 from fastapi import APIRouter, HTTPException, Query, status
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, case, or_
 from sqlalchemy.orm import aliased, joinedload
 
 from app.api.dependencies import DbSession, CurrentUser
@@ -92,18 +92,44 @@ _ALL_REVIEWS_SORT_COLUMNS = {
 
 
 # ── Sort column map for GET /annual-reviews/calibration (PR #48, doc 31)
+# Lifecycle-progression weight for the Status sort. HR's mental model
+# of "ascending by status" is "newest stage first" — Not Started rows
+# above Draft above Pending Mentor above Pending Management above
+# Completed (rows that have moved deepest into the cycle sink last).
+# Lexical ordering scrambles that — "completed" sits between
+# "changes_requested" and "draft" alphabetically — so the column reads
+# as random when HR uses it to triage stalled rows. The CASE WHEN
+# expression lets the database apply the same lifecycle order the old
+# client-side sort did (doc 31 Part 3) without a Python re-sort pass.
+#
+# `AnnualReview.status IS NULL` is the "not_started" synthesized state —
+# the calibration query OUTER JOINs AnnualReview, so users without a
+# row in the selected cycle land here. Promoting NULL to weight 0
+# keeps Not Started visually above every active stage when HR ascends
+# by Status (matching the column's left-to-right lifecycle reading).
+#
+# Unknown status values fall through to weight 99 so any future status
+# value is automatically sorted last instead of silently breaking the
+# query.
+_STATUS_LIFECYCLE_ORDER = case(
+    (AnnualReview.status.is_(None), 0),
+    (AnnualReview.status == ReviewStatus.DRAFT.value, 1),
+    (AnnualReview.status == ReviewStatus.PENDING_MENTOR.value, 2),
+    (AnnualReview.status == ReviewStatus.PENDING_MANAGEMENT.value, 3),
+    (AnnualReview.status == ReviewStatus.COMPLETED.value, 4),
+    else_=99,
+)
+
 # Mirrors the frontend's `SortKey` literal-union in ManagementReview.tsx.
-# Status sorts lexically here — the frontend's lifecycle-weight ordering
-# (Not Started → Completed) was a CLIENT-side concern and doesn't carry
-# over. Most users sorting by status want the same group together
-# anyway, which lexical ordering achieves. Documented in doc 31 Part 3.
+# Status uses the lifecycle-weight ordering above (Not Started →
+# Completed). Documented in doc 31 Part 3.
 _CALIBRATION_SORT_COLUMNS = {
     "employee_name": User.full_name,
     "employee_email": User.email,
     "mentor_name": _CalibrationMentor.full_name,
     "function": Function.name,
     "designation": Designation.name,
-    "status": AnnualReview.status,
+    "status": _STATUS_LIFECYCLE_ORDER,
     "self_performance_rating": AnnualReview.self_performance_rating,
     "mentor_performance_rating": AnnualReview.mentor_performance_rating,
     "management_performance_rating": AnnualReview.management_performance_rating,
@@ -1193,7 +1219,16 @@ def get_calibration_grid(
             "relationship). The frontend's `mentor_name` column prefers "
             "the snapshotted review.mentor_id when a review exists — the "
             "two diverge if a mentor changed mid-cycle. Documented in "
-            "doc 29 Part 3."
+            "doc 29 Part 3.\n"
+            "\n"
+            "Sentinel value `(No mentor)` matches users with no mentor "
+            "(User.mentor_id IS NULL). HR uses this to chase unmentored "
+            "employees during onboarding/cleanup. The sentinel literal "
+            "is also the display label on the frontend — picked so it "
+            "can sit inside a StringCombobox's flat option list without "
+            "a value/label split (parens + leading space guarantee no "
+            "collision with a real full_name). Bypasses the mentor join "
+            "entirely so unmentored rows are not excluded."
         ),
     ),
     status_: Optional[str] = Query(
@@ -1313,7 +1348,19 @@ def get_calibration_grid(
     )
     needs_function_join = bool(function_) or sort_by == "function"
     needs_designation_join = bool(designation) or sort_by == "designation"
-    needs_mentor_join = bool(mentor) or sort_by == "mentor_name"
+    # `(No mentor)` filter wants rows where User.mentor_id IS NULL —
+    # the mentor join is INNER, so joining would drop exactly the rows
+    # we want to keep. Skip the join unconditionally when the sentinel
+    # is active, and add the NULL predicate below instead. If the
+    # caller also asked to sort by mentor_name, that's degenerate (all
+    # rows have NULL mentor) — silently fall back to employee_name so
+    # the one-bucket list is still alphabetical.
+    filter_no_mentor = mentor == "(No mentor)"
+    if filter_no_mentor and sort_by == "mentor_name":
+        sort_by = "employee_name"
+    needs_mentor_join = (
+        bool(mentor) and not filter_no_mentor
+    ) or sort_by == "mentor_name"
 
     if multi_cycle:
         # ── Multi-cycle path — paginate AnnualReview rows ─────────────
@@ -1348,6 +1395,9 @@ def get_calibration_grid(
             )
             if mentor:
                 base_q = base_q.filter(_CalibrationMentor.full_name == mentor)
+        elif filter_no_mentor:
+            # No join needed — just exclude users who have any mentor.
+            base_q = base_q.filter(User.mentor_id.is_(None))
 
         if status_ and status_ != ReviewStatus.NOT_STARTED.value:
             base_q = base_q.filter(AnnualReview.status == status_)
@@ -1497,6 +1547,9 @@ def get_calibration_grid(
         )
         if mentor:
             base_q = base_q.filter(_CalibrationMentor.full_name == mentor)
+    elif filter_no_mentor:
+        # Single-cycle mode mirror of the multi-cycle branch above.
+        base_q = base_q.filter(User.mentor_id.is_(None))
     if needs_review_join:
         base_q = base_q.outerjoin(
             AnnualReview,

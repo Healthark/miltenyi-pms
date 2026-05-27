@@ -29,7 +29,12 @@ interface MentorCoverageCardProps {
 
 export function MentorCoverageCard({
   data,
-  viewAllHref = "/admin",
+  // Default deep-links to the Users tab pre-filtered to unmentored
+  // Employees — the primary action the card surfaces. UsersTab reads
+  // `?tab=`, `?role=`, and `?mentor=` on mount; the sentinel literal
+  // is "(No mentor)" — encoded as `%28No+mentor%29`. Landing pre-
+  // filtered saves HR three clicks vs the bare `/admin` link.
+  viewAllHref = `/admin?tab=users&role=Employee&mentor=${encodeURIComponent("(No mentor)")}`,
 }: MentorCoverageCardProps) {
   const isLoading = data === null;
 
