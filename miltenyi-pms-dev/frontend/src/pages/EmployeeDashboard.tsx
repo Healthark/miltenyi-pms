@@ -38,6 +38,11 @@ import { MyMentorWidget } from "@/components/dashboard/MyMentorWidget";
 export function EmployeeDashboard() {
   const { user } = useAuth();
   const snackbar = useSnackbar();
+  // PM-specific gating. Drives the Goals/Annual-Review row visibility
+  // below — both surface concepts (goals, annual self-review) that
+  // the role model explicitly excludes for PMs (see
+  // backend/app/models/user_models.py Role enum docstring).
+  const isPM = user?.role === "PM";
 
   // useQuery replaces the useEffect + useState ceremony:
   //   - The cache is keyed by ['dashboard', 'summary'], so MentorDashboard
@@ -109,17 +114,25 @@ export function EmployeeDashboard() {
         )}
       </div>
 
-      {/* Row 3: Annual Goals (funnel + completion) | Annual Review */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        {summary ? <GoalsWidget summary={summary} /> : <CardSkeleton />}
-        {summary ? (
-          <MyAnnualReviewWidget summary={summary} />
-        ) : (
-          <CardSkeleton />
-        )}
-      </div>
+      {/* Row 3: Annual Goals (funnel + completion) | Annual Review.
+          Hidden for PMs — per the Role enum docstring (user_models.py)
+          PMs have no goals and are never rated, so both cards would
+          render as empty zero-state boxes. The role's primary surface
+          is ActionItemsWidget below (their pending review queue). */}
+      {!isPM && (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          {summary ? <GoalsWidget summary={summary} /> : <CardSkeleton />}
+          {summary ? (
+            <MyAnnualReviewWidget summary={summary} />
+          ) : (
+            <CardSkeleton />
+          )}
+        </div>
+      )}
 
-      {/* Row 4: full-width Action Items — the personal queue */}
+      {/* Row 4: full-width Action Items — the personal queue. For PMs
+          this is the dashboard's primary content (pending project
+          reviews to write). */}
       {summary ? <ActionItemsWidget summary={summary} /> : <CardSkeleton />}
     </div>
   );

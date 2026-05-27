@@ -29,12 +29,16 @@ interface MentorCoverageCardProps {
 
 export function MentorCoverageCard({
   data,
-  // Default deep-links to the Users tab pre-filtered to unmentored
-  // Employees — the primary action the card surfaces. UsersTab reads
-  // `?tab=`, `?role=`, and `?mentor=` on mount; the sentinel literal
-  // is "(No mentor)" — encoded as `%28No+mentor%29`. Landing pre-
-  // filtered saves HR three clicks vs the bare `/admin` link.
-  viewAllHref = `/admin?tab=users&role=Employee&mentor=${encodeURIComponent("(No mentor)")}`,
+  // Default deep-links to the Users tab pre-filtered to role=Employee
+  // — the universe the Mentor Coverage card is talking about. HR lands
+  // on the full Employee roster (active by default via UsersTab's
+  // `status=active` default) and can narrow further from there using
+  // the page's own filters. Earlier this link also pinned the
+  // "(No mentor)" mentor sentinel, but that pre-narrowed the
+  // destination to only unmentored rows — confusing for the common
+  // case where HR clicks "View all" expecting the broader population
+  // the card was summarising, not just the chase list.
+  viewAllHref = "/admin?tab=users&role=Employee",
 }: MentorCoverageCardProps) {
   const isLoading = data === null;
 

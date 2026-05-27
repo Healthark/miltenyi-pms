@@ -606,11 +606,23 @@ function AllReviewsTab({
   // re-derives to only the selected value — trapping the user.
   //
   //   cycles                    -> useAnnualReviewCycles() (DB DISTINCT + active FY)
-  //   employees                 -> useOrgUsers() (admin /users, all active)
+  //   employees                 -> useOrgUsers() (admin /users, role=Employee)
   //   functions / designations  -> useOrgReferenceData() (admin refs)
   const { functionNames: functions, designationNames: designations } =
     useOrgReferenceData();
-  const { allUserNames: employees } = useOrgUsers();
+  // Annual reviews exist only for role="Employee" — Mentors aren't
+  // reviewed, PMs are never rated (Role enum docstring). Sourcing the
+  // Employee combobox from `employeeNames` keeps the dropdown's
+  // universe aligned with the reviews universe so selecting a name
+  // always has a chance of returning rows. Earlier this used
+  // `allUserNames`, which included Mentor/PM/HR names that could
+  // never yield results when picked.
+  //
+  // Trade-off: a user promoted Employee → Mentor since their review
+  // was written disappears from the dropdown but their historical
+  // reviews still appear in the unfiltered list (reviews are keyed
+  // by user_id, not by current role).
+  const { employeeNames: employees } = useOrgUsers();
   const { cycles } = useAnnualReviewCycles();
 
   // `reviews` is the server-filtered + server-sorted universe (PR #43

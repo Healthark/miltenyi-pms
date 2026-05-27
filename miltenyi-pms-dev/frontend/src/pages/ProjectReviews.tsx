@@ -138,7 +138,23 @@ export function ProjectReviews() {
   // Gated on `isHR` because /admin/users and /projects?include_completed
   // both require admin role on the backend — Employee/PM/Mentor would
   // hit 403s if the queries fired for them.
-  const { mentorNames: hrMentorNames, pmNames: hrPmNames, allUserNames: hrEmployeeNames } =
+  // Employee combobox is sourced from `employeeNames` (role="Employee"
+  // only), not the full org user list. Project reviews are only ever
+  // written for Employees (ProjectModal limits members to that role),
+  // so the dropdown should mirror the universe of names that can
+  // actually appear in the result set. Earlier we used `allUserNames`
+  // here — which surfaced Mentor / HR / PM names in the picker that
+  // would always yield zero matches when selected, leaving HR with a
+  // confusing empty result and no hint why.
+  //
+  // Caveat documented for completeness: a user promoted from Employee
+  // → Mentor since their review was written disappears from this
+  // dropdown but their historical reviews remain in the result list
+  // (reviews are keyed by user_id, not by current role). HR can still
+  // find those rows by reading the Employee column or by clearing the
+  // filter. If this becomes a real friction point we can move to a
+  // backend "reviewable users" endpoint that includes promoted users.
+  const { mentorNames: hrMentorNames, pmNames: hrPmNames, employeeNames: hrEmployeeNames } =
     useOrgUsers(isHR);
   const { cycles: hrCycleTokens } = useProjectReviewCycles(isHR);
   const { projectNames: hrProjectNames } = useOrgProjectNames(isHR);
@@ -932,17 +948,18 @@ function ReadOnlyReviewsList({
                     <label htmlFor="ro-pm-filter" className={filterLabelCls}>
                       PM
                     </label>
-                    <select
+                    {/* StringCombobox so this filter behaves like its
+                        siblings (Employee, Project) on the same row.
+                        Empty string is the no-filter sentinel; the
+                        underlying setFilter handles the translation
+                        back to the AllProjectReviewsFilters shape. */}
+                    <StringCombobox
                       id="ro-pm-filter"
-                      value={activeFilters.pm ?? "all"}
-                      onChange={(e) => setFilter("pm", e.target.value)}
-                      className={`${filterSelectCls} min-w-[140px]`}
-                    >
-                      <option value="all">All</option>
-                      {pms.map((n) => (
-                        <option key={n} value={n}>{n}</option>
-                      ))}
-                    </select>
+                      options={pms}
+                      value={activeFilters.pm ?? ""}
+                      onChange={(v) => setFilter("pm", v)}
+                      placeholder="All PMs"
+                    />
                   </div>
                 )}
                 <div className="flex items-center gap-2">

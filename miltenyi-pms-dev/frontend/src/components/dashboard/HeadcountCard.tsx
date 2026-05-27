@@ -35,19 +35,36 @@ const ROLE_LABELS = {
   hr: "HR",
 } as const;
 
+// Mapping from donut-segment key to the UsersTab role-filter wire
+// value. UsersTab's RoleFilter type accepts single literal roles
+// ("Employee" / "Mentor" / "PM" / "HR_MyOrg" / "HR_Miltenyi") — the
+// "hr" donut bucket aggregates two roles, so a single deep-link can't
+// represent it. We leave that one as plain text rather than picking
+// one HR flavor over the other; the bucket usually holds 1-2 rows so
+// the cost of "View all → filter manually" is small.
+const ROLE_FILTER_VALUE: Record<RoleKey, string | null> = {
+  employee: "Employee",
+  mentor: "Mentor",
+  pm: "PM",
+  hr: null,
+};
+
 type RoleKey = keyof typeof ROLE_COLORS;
 const ROLE_ORDER: readonly RoleKey[] = ["employee", "mentor", "pm", "hr"];
 
 interface HeadcountCardProps {
   /** Null while the parent's fetch is in flight. */
   readonly data: HeadcountSummary | null;
-  /** Where "View all →" navigates. Defaults to /admin (Users tab). */
+  /** Where "View all →" navigates. Defaults to /admin?tab=users so
+   *  the destination opens on the Users tab specifically rather than
+   *  whichever tab AdminPanel last fell through to. The legend rows
+   *  build their own per-role URLs from this base. */
   readonly viewAllHref?: string;
 }
 
 export function HeadcountCard({
   data,
-  viewAllHref = "/admin",
+  viewAllHref = "/admin?tab=users",
 }: HeadcountCardProps) {
   const isLoading = data === null;
 
@@ -72,14 +89,24 @@ export function HeadcountCard({
       </div>
 
       {/* Body */}
-      {isLoading ? <SkeletonBody /> : <LoadedBody data={data} />}
+      {isLoading ? (
+        <SkeletonBody />
+      ) : (
+        <LoadedBody data={data} viewAllHref={viewAllHref} />
+      )}
     </article>
   );
 }
 
 // ── Internal pieces ───────────────────────────────────────────────────
 
-function LoadedBody({ data }: { readonly data: HeadcountSummary }) {
+function LoadedBody({
+  data,
+  viewAllHref,
+}: {
+  readonly data: HeadcountSummary;
+  readonly viewAllHref: string;
+}) {
   const total = data.total_active;
 
   // Only show buckets that have at least one user. Empty buckets
@@ -94,24 +121,60 @@ function LoadedBody({ data }: { readonly data: HeadcountSummary }) {
     color: ROLE_COLORS[key],
   }));
 
+  // Per-legend href: if the bucket corresponds to a single role-filter
+  // value, append &role=<Role> to the base /admin?tab=users URL so the
+  // destination opens with that role pre-selected. HR is two roles in
+  // one bucket, so we skip it (renders as plain text). Built once per
+  // render rather than inline so legend JSX stays readable.
+  const hrefForRole = (key: RoleKey): string | undefined => {
+    const filterValue = ROLE_FILTER_VALUE[key];
+    if (!filterValue) return undefined;
+    return `${viewAllHref}${viewAllHref.includes("?") ? "&" : "?"}role=${filterValue}`;
+  };
+
   return (
     <>
       <div className="flex items-center gap-2">
         {/* Left: vertical legend matching the row's donut cards. */}
         <ul className="flex-1 space-y-2 text-[13px]">
-          {visibleRoles.map((key) => (
-            <li key={key} className="flex items-center gap-2">
+          {visibleRoles.map((key) => {
+            const href = hrefForRole(key);
+            const dot = (
               <span
                 className="h-2 w-2 shrink-0 rounded-full"
                 style={{ backgroundColor: ROLE_COLORS[key] }}
                 aria-hidden="true"
               />
+            );
+            const count = (
               <span className="font-semibold text-text-main tabular-nums">
                 {data.by_role[key]}
               </span>
+            );
+            const label = (
               <span className="text-text-muted">{ROLE_LABELS[key]}</span>
-            </li>
-          ))}
+            );
+            return (
+              <li key={key}>
+                {href ? (
+                  <Link
+                    to={href}
+                    className="flex items-center gap-2 rounded -mx-1 px-1 py-0.5 hover:bg-brand-light/40 transition-colors"
+                  >
+                    {dot}
+                    {count}
+                    {label}
+                  </Link>
+                ) : (
+                  <div className="flex items-center gap-2 px-1 py-0.5">
+                    {dot}
+                    {count}
+                    {label}
+                  </div>
+                )}
+              </li>
+            );
+          })}
         </ul>
         {/* Right: donut showing role distribution. Center reads as a
             raw total so it complements the legend rather than
