@@ -29,6 +29,11 @@ interface NotificationDropdownProps {
   readonly anchorRect: DOMRect;
   readonly onClose: () => void;
   readonly onMarkAllRead: () => Promise<void>;
+  /** Mark a single direct user-notification as read. Wrapped by the
+   *  parent so the call optimistically removes the row from the local
+   *  list and the bell badge tick decreases without waiting for the
+   *  next `/summary` poll. Receives the notification id. */
+  readonly onMarkRead: (id: number) => Promise<void>;
   /** Current authenticated user — needed to compute the per-role
    *  Announcement copy and the cycle-rolled-over message. Null while
    *  auth resolves; the Announcements tab simply renders empty. */
@@ -80,6 +85,7 @@ export function NotificationDropdown({
   anchorRect,
   onClose,
   onMarkAllRead,
+  onMarkRead,
   user,
   settings,
   onRefreshSession,
@@ -168,6 +174,7 @@ export function NotificationDropdown({
           notifications={notifications}
           userNotifications={userNotifications}
           onClose={onClose}
+          onMarkRead={onMarkRead}
         />
       ) : (
         <AnnouncementsBody announcements={announcements} />
@@ -221,10 +228,12 @@ function NotificationsBody({
   notifications,
   userNotifications,
   onClose,
+  onMarkRead,
 }: {
   readonly notifications: NotificationItem[];
   readonly userNotifications: UserNotificationItem[];
   readonly onClose: () => void;
+  readonly onMarkRead: (id: number) => Promise<void>;
 }) {
   if (notifications.length === 0 && userNotifications.length === 0) {
     return (
@@ -238,6 +247,9 @@ function NotificationsBody({
   return (
     <ul className="divide-y divide-border max-h-80 overflow-y-auto">
       {notifications.map((n) => {
+        // Computed alerts (live counts off the goals table). Intentionally
+        // not dismissible — they vanish on their own when goal state
+        // changes. Rendered as plain rows with no × affordance.
         const { icon: Icon, iconClass, bgClass } = SEVERITY_STYLES[n.severity];
         return (
           <li
@@ -250,29 +262,62 @@ function NotificationsBody({
         );
       })}
       {userNotifications.map((n) => {
+        // Direct user notifications (rows from the notifications table).
+        // Two affordances per row:
+        //   1. Click the message itself → mark-read + navigate + close
+        //   2. Click the × button on the right → mark-read only, stay open
+        //
+        // The × is rendered as a sibling of the <a>, NOT inside it, so
+        // clicking it doesn't fall through to the navigation link. We
+        // still stopPropagation on the × handler to belt-and-braces guard
+        // against any future wrapping change.
         const Icon = (n.module && MODULE_ICONS[n.module]) || BellDot;
-        const row = (
-          <li
-            className={`flex items-start gap-3 px-4 py-3 ${n.is_read ? "bg-white" : "bg-blue-50"}`}
-          >
+        const handleNavigate = () => {
+          void onMarkRead(n.id);
+          onClose();
+        };
+        const handleDismiss = (e: React.MouseEvent) => {
+          e.preventDefault();
+          e.stopPropagation();
+          void onMarkRead(n.id);
+        };
+        const messageContent = (
+          <>
             <Icon
-              className={`h-4 w-4 mt-0.5 shrink-0 ${n.is_read ? "text-text-muted" : "text-blue-500"}`}
+              className="h-4 w-4 mt-0.5 shrink-0 text-blue-500"
               aria-hidden="true"
             />
             <p className="text-sm text-text-main">{n.message}</p>
-          </li>
+          </>
         );
-        return n.entity_url ? (
-          <a
+        return (
+          <li
             key={n.id}
-            href={n.entity_url}
-            onClick={onClose}
-            className="block hover:bg-slate-50"
+            className="flex items-start gap-2 px-4 py-3 bg-blue-50 hover:bg-blue-100/60 transition-colors"
           >
-            {row}
-          </a>
-        ) : (
-          <div key={n.id}>{row}</div>
+            {n.entity_url ? (
+              <a
+                href={n.entity_url}
+                onClick={handleNavigate}
+                className="flex-1 flex items-start gap-3 min-w-0 no-underline"
+              >
+                {messageContent}
+              </a>
+            ) : (
+              <div className="flex-1 flex items-start gap-3 min-w-0">
+                {messageContent}
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={handleDismiss}
+              aria-label="Dismiss notification"
+              title="Mark as read"
+              className="rounded-md p-1 text-text-muted hover:bg-slate-200 hover:text-text-main shrink-0 self-start"
+            >
+              <X className="h-3.5 w-3.5" aria-hidden="true" />
+            </button>
+          </li>
         );
       })}
     </ul>

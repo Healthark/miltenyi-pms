@@ -49,22 +49,45 @@ export function Topbar() {
 
   const handleMarkAllRead = useCallback(async () => {
     await notificationService.markAllRead();
-    // Optimistically clear unread badge; update local state
+    // Optimistically empty the list — the next /summary fetch would
+    // already return [] since the backend now filters out is_read=True
+    // rows, so we just match that contract immediately for instant
+    // feedback. Bell badge ticks down with it.
+    setSummary((prev) =>
+      prev ? { ...prev, user_notifications: [] } : prev,
+    );
+  }, []);
+
+  const handleMarkRead = useCallback(async (id: number) => {
+    // Optimistic remove FIRST so the row disappears with no flicker,
+    // then fire the server call. If the call fails the row would need
+    // to be re-added — but the only realistic failure is a 404 (row
+    // already gone), which is fine to ignore since the optimistic
+    // result matches the resolved state anyway.
     setSummary((prev) =>
       prev
         ? {
             ...prev,
-            user_notifications: prev.user_notifications.map((n) => ({
-              ...n,
-              is_read: true,
-            })),
+            user_notifications: prev.user_notifications.filter(
+              (n) => n.id !== id,
+            ),
           }
         : prev,
     );
+    try {
+      await notificationService.markRead(id);
+    } catch {
+      // Idempotent endpoint — a failure here doesn't justify revert
+      // because the row is most likely just already-read or
+      // already-gone. Leaving the optimistic remove in place keeps
+      // the bell aligned with the user's intent.
+    }
   }, []);
 
-  const unreadUserCount =
-    summary?.user_notifications.filter((n) => !n.is_read).length ?? 0;
+  // Every row in `user_notifications` is unread by contract — the
+  // backend's /summary endpoint filters out is_read=True rows server-
+  // side. So a plain .length is the unread count.
+  const unreadUserCount = summary?.user_notifications.length ?? 0;
   // Bell dot now reflects three sources: system-computed notifications,
   // unread user notifications, AND active announcements (org-wide gate
   // flags + cycle-rolled-over message). Announcements behave as a
@@ -149,6 +172,7 @@ export function Topbar() {
           anchorRect={anchorRect}
           onClose={handleClose}
           onMarkAllRead={handleMarkAllRead}
+          onMarkRead={handleMarkRead}
           user={user}
           settings={settings ?? null}
           onRefreshSession={refreshSession}

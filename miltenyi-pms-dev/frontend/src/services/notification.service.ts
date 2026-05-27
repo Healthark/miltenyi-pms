@@ -33,4 +33,12 @@ export const notificationService = {
   markAllRead: async (): Promise<void> => {
     await apiClient.post("/notifications/mark-all-read", {});
   },
+
+  /** Mark one specific notification as read. Idempotent on the backend
+   *  (already-read rows just return 204 without touching the DB). The
+   *  bell's next /summary fetch will exclude this row since reads are
+   *  filtered server-side now. */
+  markRead: async (id: number): Promise<void> => {
+    await apiClient.post(`/notifications/${id}/mark-read`, {});
+  },
 };
