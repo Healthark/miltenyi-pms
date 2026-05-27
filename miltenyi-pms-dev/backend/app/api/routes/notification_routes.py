@@ -21,7 +21,7 @@ Security Layers Applied:
 
 from datetime import date
 from sqlalchemy import func
-from fastapi import APIRouter, status
+from fastapi import APIRouter, HTTPException, status
 
 from app.api.dependencies import DbSession, CurrentUser
 from app.models.system_settings_models import SystemSettings
@@ -122,6 +122,11 @@ def get_topbar_summary(
 
     # ── Direct User Notifications (polymorphic across modules) ──────
     #
+    # Only UNREAD rows are returned. Once a notification is marked read
+    # (per-row via /{id}/mark-read, or bulk via /mark-all-read) it stays
+    # in the DB for audit but is hidden from the bell. This matches the
+    # inbox mental model: read == handled == out of view.
+    #
     # We intentionally do NOT filter on `Notification.sender_id`'s
     # is_deleted status. The notification record is a historical
     # event ("your goal was approved on date X"); the fact the sender
@@ -136,6 +141,7 @@ def get_topbar_summary(
         .filter(
             Notification.recipient_id == current_user.id,
             Notification.org_id == current_user.org_id,
+            Notification.is_read == False,  # noqa: E712
         )
         .order_by(Notification.created_at.desc())
         .limit(20)
@@ -175,4 +181,42 @@ def mark_all_notifications_read(
         Notification.is_read == False,  # noqa: E712
     ).update({"is_read": True})
     db.commit()
+    return None
+
+
+@router.post("/{notification_id}/mark-read", status_code=status.HTTP_204_NO_CONTENT)
+def mark_single_notification_read(
+    notification_id: int,
+    db: DbSession,
+    current_user: CurrentUser,
+):
+    """Mark one specific notification as read.
+
+    Scoped to the current user's own notifications — returns 404 if the
+    row exists but belongs to someone else, or if it doesn't exist at
+    all. The org_id filter is belt-and-braces against any future
+    cross-tenant leakage; the recipient_id filter is the security gate
+    that matters (users can only mark their own bell entries read, not
+    someone else's).
+
+    No-op (still 204) if the row is already read — idempotent so the
+    frontend can fire-and-forget without checking current state first.
+    """
+    row = (
+        db.query(Notification)
+        .filter(
+            Notification.id == notification_id,
+            Notification.recipient_id == current_user.id,
+            Notification.org_id == current_user.org_id,
+        )
+        .first()
+    )
+    if not row:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Notification not found.",
+        )
+    if not row.is_read:
+        row.is_read = True
+        db.commit()
     return None

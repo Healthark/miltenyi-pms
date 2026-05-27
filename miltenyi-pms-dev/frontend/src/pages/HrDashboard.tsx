@@ -28,6 +28,7 @@ import { ProjectReviewCompletionCard } from "@/components/dashboard/ProjectRevie
 import { PendingActionsCard } from "@/components/dashboard/PendingActionsCard";
 import { ActiveCycleWidget } from "@/components/dashboard/ActiveCycleWidget";
 import { ActiveCyclesCard } from "@/components/dashboard/ActiveCyclesCard";
+import { MentorCoverageCard } from "@/components/dashboard/MentorCoverageCard";
 
 export function HrDashboard() {
   const { user } = useAuth();
@@ -146,6 +147,7 @@ export function HrDashboard() {
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <ProjectReviewCompletionCard
               data={summary?.project_review_completion ?? null}
+              cycleHint={activeCycleName ?? null}
             />
             <HeadcountCard data={summary?.headcount ?? null} />
           </div>
@@ -192,7 +194,12 @@ export function HrDashboard() {
 
       {/* Mentor pairing health snapshot — full-width row of its own
           since it isn't FY-scoped and doesn't pair narratively with
-          the summary grid above. */}
+          the summary grid above. HR_MyOrg only — Miltenyi HR doesn't
+          own mentor assignments (no Mentor/Employee relationship on
+          their side of the org). */}
+      {!isMiltenyiHR && (
+        <MentorCoverageCard data={summary?.mentor_coverage ?? null} />
+      )}
     </div>
   );
 }

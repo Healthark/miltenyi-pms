@@ -432,6 +432,11 @@ class _AllGoalsFilters:
     # Goal-level
     fy_year: Optional[int] = None
     mentor: Optional[str] = None
+    # ApprovalStatus enum value, or the special "approved" sentinel
+    # which expands to POST_APPROVAL_STATES on the server (so HR's
+    # "Approved" filter shows APPROVED + every h1/h2/q1..q4 reviewed
+    # row, not just the bare APPROVED state).
+    approval_status: Optional[str] = None
     # User-level
     employee: Optional[str] = None
     function_name: Optional[str] = None
@@ -488,6 +493,17 @@ def _apply_goal_level_filters(query, filters: _AllGoalsFilters):
         query = query.join(
             ManagerAlias, ManagerAlias.id == Goal.manager_id
         ).filter(ManagerAlias.full_name == filters.mentor)
+    if filters.approval_status:
+        # "approved" expands to the whole post-approval segment (APPROVED
+        # itself plus every h1 / h2 / q1..q4 self / mentor reviewed
+        # state). Any other value is a direct equality match on the
+        # ApprovalStatus enum. Draft is never reachable here because the
+        # outer query already filters DRAFT out — HR's All Goals tab
+        # intentionally hides draft mentee work.
+        if filters.approval_status == ApprovalStatus.APPROVED.value:
+            query = query.filter(Goal.approval_status.in_(POST_APPROVAL_STATES))
+        else:
+            query = query.filter(Goal.approval_status == filters.approval_status)
     return query
 
 
@@ -541,6 +557,17 @@ def list_all_goals(
     designation: Optional[str] = Query(
         None,
         description="Exact match on the goal owner's Designation name.",
+    ),
+    approval_status: Optional[str] = Query(
+        None,
+        description=(
+            "ApprovalStatus enum value (e.g. 'pending_approval', "
+            "'changes_requested') for direct equality, OR the special "
+            "value 'approved' which expands to the post-approval segment "
+            "(APPROVED + all h1/h2/q1..q4 reviewed states). "
+            "'draft' is rejected — HR's All Goals view never surfaces "
+            "draft mentee work."
+        ),
     ),
     # ── Server-side sort (PR #48, doc 31) ─────────────────────────────
     # Sort the USER list (the parent pagination axis). Derived columns
@@ -613,6 +640,7 @@ def list_all_goals(
     filters = _AllGoalsFilters(
         fy_year=fy_year,
         mentor=mentor,
+        approval_status=approval_status,
         employee=employee,
         function_name=function_,
         designation_name=designation,

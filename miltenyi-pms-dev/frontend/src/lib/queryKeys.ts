@@ -167,6 +167,23 @@ export const queryKeys = {
     current: () => [...queryKeys.systemSettings.all, "current"] as const,
   },
 
+  // ── Project rows (admin's project list) ────────────────────────────
+  // The HR-only project catalog (distinct from project REVIEWS below,
+  // which are per-(employee, project, cycle) evaluations). Currently
+  // consumed by AdminPanel's Projects tab + the `useOrgProjectNames`
+  // hook (which feeds Project filter dropdowns on the All Reviews
+  // pages). Listing always passes `include_completed=true` — the
+  // status filter happens client-side, so a single cache entry covers
+  // both Active and All views without per-filter re-fetches.
+  projects: {
+    all: ["projects"] as const,
+    /** Full project list (active + completed). Mutations on individual
+     *  projects (create / edit / delete / mark-complete / reopen) should
+     *  invalidate `projects.all` so the AdminPanel grid and every
+     *  PM/filter dropdown across the app refresh in lock-step. */
+    list: () => [...queryKeys.projects.all, "list", "include_completed"] as const,
+  },
+
   // ── Project review rows ────────────────────────────────────────────
   // The five page-level reads on /project-reviews. The PM and secondary
   // mutation flows live in child tabs (PrimaryEvaluationTab,

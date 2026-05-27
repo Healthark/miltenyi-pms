@@ -14,22 +14,22 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { projectService } from "@/services/project.service";
-
-// Local query key — no shared `queryKeys.projects` namespace today.
-// If a broader projects-cache effort lands later, this should move to
-// `frontend/src/lib/queryKeys.ts` and be invalidated by project
-// mutations.
-const ORG_PROJECT_NAMES_QUERY_KEY = ["projects", "all", "include_completed"] as const;
+import { queryKeys } from "@/lib/queryKeys";
 
 /**
  * @param enabled  Gate the underlying fetch. Defaults to true. Pass
  *                 `enabled={isHR}` from shared components mounted in
  *                 non-HR contexts so the query doesn't fire when the
  *                 data isn't going to be consumed.
+ *
+ * Shares the `queryKeys.projects.list()` cache entry with
+ * `ProjectsTab` — meaning AdminPanel creates/edits/deletes broadcast
+ * via `queryKeys.projects.all` and this hook re-renders with the
+ * fresh list automatically (no manual refetch needed).
  */
 export function useOrgProjectNames(enabled: boolean = true) {
   const projectsQuery = useQuery({
-    queryKey: ORG_PROJECT_NAMES_QUERY_KEY,
+    queryKey: queryKeys.projects.list(),
     queryFn: () => projectService.listProjects(true),
     enabled,
   });

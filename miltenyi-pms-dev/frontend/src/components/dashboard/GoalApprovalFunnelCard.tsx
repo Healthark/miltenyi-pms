@@ -46,6 +46,16 @@ export function GoalApprovalFunnelCard({
   const isLoading = data === null;
   const fyLabel =
     data?.fy_year != null ? formatFyYearSpan(data.fy_year) : null;
+  // Append the FY as an `?fy=` query param so the destination lands
+  // pre-filtered on the same FY the dashboard picker is showing.
+  // AnnualGoals' All Goals tab reads `?fy=` as an integer (matches its
+  // `fy_year: number` filter shape — see its URL-reader useEffect).
+  // Without this, HR re-picks the year on /annual-goals, defeating
+  // the card's call-to-action.
+  const finalViewAllHref =
+    data?.fy_year != null
+      ? `${viewAllHref}?fy=${data.fy_year}`
+      : viewAllHref;
   const approvalPercent =
     data && data.total > 0 ? Math.round((data.approved / data.total) * 100) : 0;
   const hasData = !isLoading && data != null && data.total > 0;
@@ -68,7 +78,7 @@ export function GoalApprovalFunnelCard({
           </div>
         </div>
         <Link
-          to={viewAllHref}
+          to={finalViewAllHref}
           className="text-[12px] font-medium text-brand hover:underline whitespace-nowrap"
         >
           View all →

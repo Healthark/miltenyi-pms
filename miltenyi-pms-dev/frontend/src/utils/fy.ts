@@ -52,6 +52,22 @@ export function formatFyYearSpan(year: number): string {
 }
 
 /**
+ * Resolve a 4-digit fiscal start year to the bare token form used as a
+ * cycle filter value on annual reviews + management review pages.
+ *   2026 → "FY26-27"
+ *   1999 → "FY99-00"
+ * Inverse of `fyTokenToStartYear`. Used by dashboard cards to build
+ * deep-link URLs like `/annual-reviews?cycle=FY26-27` so the
+ * destination page can drop the value straight into its cycle filter
+ * without further parsing.
+ */
+export function fyStartYearToToken(year: number): string {
+  const yy = (year % 100).toString().padStart(2, "0");
+  const next = ((year + 1) % 100).toString().padStart(2, "0");
+  return `FY${yy}-${next}`;
+}
+
+/**
  * Resolve a cycle/FY token to the 4-digit fiscal start year so it can be
  * compared against `Goal.fy_year` (which is stored as a number).
  *   "FY26-27"   → 2026

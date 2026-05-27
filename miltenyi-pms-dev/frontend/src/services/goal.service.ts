@@ -390,6 +390,12 @@ export interface AllGoalsFilters {
   function?: string;
   /** Exact match on the goal owner's Designation name. */
   designation?: string;
+  /** ApprovalStatus enum value for direct equality match
+   *  ("pending_approval", "changes_requested"), OR the special token
+   *  "approved" which expands server-side to the entire post-approval
+   *  segment (APPROVED + h1/h2/q1..q4 reviewed states). Draft is never
+   *  accepted — HR's All Goals tab hides draft mentee work. */
+  approval_status?: string;
 }
 
 /** Sort columns accepted by GET /goals/all (PR #48, doc 31).

@@ -18,7 +18,8 @@
  * picks between Skeleton / Empty / Grid / Table.
  */
 
-import { useMemo, useRef, useState, Fragment } from "react";
+import { useEffect, useMemo, useRef, useState, Fragment } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
@@ -219,6 +220,43 @@ export function ProjectReviews() {
   const [allReviewsSort, setAllReviewsSort] = useState<
     SortState<ReadOnlySortKey> | null
   >(null);
+
+  // First time we know the active cycle, pre-fill the Cycle filter
+  // on the All Reviews tab. HR almost always wants the current cycle
+  // ("which reviews are pending in Q1 FY26-27 right now") — defaulting
+  // to "All" forces them to narrow every session.
+  //
+  // URL search params take precedence so dashboard deep-links (e.g.
+  // /project-reviews?cycle=Q1+FY26-27&status=pending from the funnel
+  // card) land pre-filtered. Ref guard fires once per mount; later
+  // user edits to the filters are preserved.
+  const [searchParams] = useSearchParams();
+  const allReviewsDefaultedRef = useRef(false);
+  useEffect(() => {
+    if (allReviewsDefaultedRef.current) return;
+    if (!settings?.active_cycle_name) return;
+
+    const urlCycle = searchParams.get("cycle");
+    const urlStatus = searchParams.get("status");
+
+    const updates: Partial<AllProjectReviewsFilters> = {};
+    if (urlCycle) {
+      updates.cycle = urlCycle;
+    } else {
+      // Project reviews are tagged with the full cycle string
+      // ("Q1 FY26-27"); active_cycle_name is the same shape so no
+      // token extraction needed (unlike annual reviews).
+      updates.cycle = settings.active_cycle_name;
+    }
+    if (urlStatus) {
+      updates.status = urlStatus as AllProjectReviewsFilters["status"];
+    }
+
+    if (Object.keys(updates).length > 0) {
+      setAllReviewsFilters((prev) => ({ ...prev, ...updates }));
+    }
+    allReviewsDefaultedRef.current = true;
+  }, [settings?.active_cycle_name, searchParams]);
   // Strip empty / undefined values so cache keys for "no filter X" and
   // "filter X = '' " collapse to the same entry. See doc 26 Part 2's
   // "empty-filters trap" for the rationale.
