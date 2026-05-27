@@ -110,7 +110,11 @@ export function ActionItemsWidget({ summary }: ActionItemsWidgetProps) {
       key: "project_reviews",
       label: `Project review${project_reviews_pending === 1 ? "" : "s"} to write`,
       count: project_reviews_pending,
-      to: "/project-reviews",
+      // Deep-link with the matching status filter so the count the
+      // user clicked on the dashboard ("3 to write") maps to exactly
+      // those 3 rows on the destination, not the full cycle queue.
+      // PM Primary tab + Secondary tab both read `?status=` on mount.
+      to: "/project-reviews?status=pending",
       icon: ClipboardCheck,
       tone: "warning",
     });

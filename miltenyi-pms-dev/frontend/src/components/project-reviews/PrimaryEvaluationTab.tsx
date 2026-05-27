@@ -8,7 +8,8 @@
  * Secondary impact statements live in their own tab (`SecondaryEvalTab`).
  */
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/queryKeys";
 import {
@@ -29,6 +30,8 @@ import { compareValues, type SortKind, type SortState, type SortValue } from "@/
 import { EvalModal } from "@/components/project-reviews/EvalModal";
 import { PerformanceRatingBadge } from "@/components/reviews/PerformanceRatingBadge";
 import { ClearFiltersButton } from "@/components/common/ClearFiltersButton";
+import { StringCombobox } from "@/components/common/StringCombobox";
+import { setOrDeleteParam, searchParamsChanged } from "@/utils/searchParams";
 
 // ── Constants ───────────────────────────────────────────────────────
 
@@ -162,7 +165,12 @@ export function PrimaryEvaluationTab() {
 
   const [viewMode, setViewMode] = useState<ViewMode>("table");
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  // Status default is "pending" — answers the PM's most common
+  // question ("what do I owe?") without forcing them to narrow on
+  // first paint. Mirrors the same "show live work first" default
+  // pattern applied elsewhere (UsersTab status=active, AnnualGoals
+  // current-FY default).
+  const [statusFilter, setStatusFilter] = useState<string>("pending");
   const [funcFilter, setFuncFilter] = useState<string>("all");
   const [projectFilter, setProjectFilter] = useState<string>("all");
   const [employeeFilter, setEmployeeFilter] = useState<string>("all");
@@ -174,6 +182,71 @@ export function PrimaryEvaluationTab() {
     setCycleFilter(activeCycle);
   }
   const [sort, setSort] = useState<SortState<EvalSortKey> | null>(null);
+
+  // ── URL state ──────────────────────────────────────────────────────
+  // Read deep-link params on first mount and seed filter state. Today's
+  // senders:
+  //   • ActionItemsWidget "Project reviews to write" → ?status=pending
+  //   • Future: dashboard cards may carry ?cycle= / ?project=.
+  // Write-back mirrors the current filter selection to URL so refresh
+  // and share-link preserve the view. Both effects gated on the same
+  // ref so the first render's empty/default state can't clobber URL
+  // params before the reader has had a chance to seed state.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const filtersDefaultedRef = useRef(false);
+  useEffect(() => {
+    if (filtersDefaultedRef.current) return;
+    const urlStatus = searchParams.get("status");
+    const urlCycle = searchParams.get("cycle");
+    const urlFunc = searchParams.get("function");
+    const urlProject = searchParams.get("project");
+    const urlEmployee = searchParams.get("employee");
+    if (urlStatus) setStatusFilter(urlStatus);
+    if (urlCycle) setCycleFilter(urlCycle);
+    if (urlFunc) setFuncFilter(urlFunc);
+    if (urlProject) setProjectFilter(urlProject);
+    if (urlEmployee) setEmployeeFilter(urlEmployee);
+    filtersDefaultedRef.current = true;
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (!filtersDefaultedRef.current) return;
+    const next = new URLSearchParams(searchParams);
+    // Status: "pending" is the page default (not a missing-key
+    // sentinel), and "all" is a real broadening choice the PM
+    // explicitly picked. So we can't use setOrDeleteParam's standard
+    // semantics here — we want the URL to be present whenever the
+    // PM has deviated from the default, including when they chose
+    // "all". Delete only when state matches the default.
+    if (statusFilter && statusFilter !== "pending") {
+      next.set("status", statusFilter);
+    } else {
+      next.delete("status");
+    }
+    // Cycle: only persist when it differs from the active-cycle default
+    // so the URL stays clean for the common case (PM is on the current
+    // cycle — that's the page's natural state, no need to encode it).
+    setOrDeleteParam(
+      next,
+      "cycle",
+      cycleFilter === activeCycle ? undefined : cycleFilter,
+    );
+    setOrDeleteParam(next, "function", funcFilter);
+    setOrDeleteParam(next, "project", projectFilter);
+    setOrDeleteParam(next, "employee", employeeFilter);
+    if (searchParamsChanged(searchParams, next)) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [
+    statusFilter,
+    cycleFilter,
+    funcFilter,
+    projectFilter,
+    employeeFilter,
+    activeCycle,
+    searchParams,
+    setSearchParams,
+  ]);
 
   // Modal state
   const [evalTarget, setEvalTarget] = useState<PrimaryEvalRow | null>(null);
@@ -272,8 +345,17 @@ export function PrimaryEvaluationTab() {
     has_draft_content: !!c.has_draft_content,
   }));
 
-  const availableFuncs = Array.from(new Set(rows.map((r) => r.function_name).filter(Boolean) as string[]));
-  const availableEmployees = Array.from(new Set(rows.map((r) => r.employee_name)));
+  // Filter dropdown sources. Functions / Employees are now sorted
+  // alphabetically because they feed StringCombobox below — a sorted
+  // option list reads more naturally when the user is type-narrowing.
+  // Projects was already sorted; cycles stay in insertion order so the
+  // newest cycle stays at the top of the dropdown.
+  const availableFuncs = Array.from(
+    new Set(rows.map((r) => r.function_name).filter(Boolean) as string[]),
+  ).sort();
+  const availableEmployees = Array.from(
+    new Set(rows.map((r) => r.employee_name)),
+  ).sort();
   const availableCycles = Array.from(new Set(rows.map((r) => r.cycle).filter((c): c is string => !!c)));
   const availableProjects = Array.from(new Set(rows.map((r) => r.project_name))).sort();
 
@@ -415,41 +497,57 @@ export function PrimaryEvaluationTab() {
               <option value="done">Completed</option>
             </select>
           </div>
+          {/* Function / Project / Employee are the high-cardinality
+              filters — a PM on multiple projects can have 20-40+
+              employees across several functions. Migrated to
+              StringCombobox so the PM can type-narrow ("eng" finds
+              Engineering / Engineering Manager / etc.) instead of
+              scrolling. State uses "all" as the no-filter sentinel;
+              combobox uses "" — translate on both edges. Cycle +
+              Status stay plain selects (small enumerated lists). */}
           {availableFuncs.length > 0 && (
             <div className="flex items-center gap-2">
               <label className="text-[11px] font-bold uppercase tracking-wider text-text-muted">Function</label>
-              <select value={funcFilter} onChange={(e) => setFuncFilter(e.target.value)}
-                className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand min-w-[110px] cursor-pointer">
-                <option value="all">All Functions</option>
-                {availableFuncs.map((d) => <option key={d} value={d}>{d}</option>)}
-              </select>
+              <StringCombobox
+                id="pm-eval-func-filter"
+                options={availableFuncs}
+                value={funcFilter === "all" ? "" : funcFilter}
+                onChange={(v) => setFuncFilter(v === "" ? "all" : v)}
+                placeholder="All Functions"
+              />
             </div>
           )}
           {availableProjects.length > 0 && (
             <div className="flex items-center gap-2">
               <label className="text-[11px] font-bold uppercase tracking-wider text-text-muted">Project</label>
-              <select value={projectFilter} onChange={(e) => setProjectFilter(e.target.value)}
-                className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand min-w-[160px] cursor-pointer">
-                <option value="all">All Projects</option>
-                {availableProjects.map((p) => <option key={p} value={p}>{p}</option>)}
-              </select>
+              <StringCombobox
+                id="pm-eval-project-filter"
+                options={availableProjects}
+                value={projectFilter === "all" ? "" : projectFilter}
+                onChange={(v) => setProjectFilter(v === "" ? "all" : v)}
+                placeholder="All Projects"
+              />
             </div>
           )}
           <div className="flex items-center gap-2">
             <label className="text-[11px] font-bold uppercase tracking-wider text-text-muted">Employee</label>
-            <select value={employeeFilter} onChange={(e) => setEmployeeFilter(e.target.value)}
-              className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand min-w-[130px] cursor-pointer">
-              <option value="all">All</option>
-              {availableEmployees.map((e) => <option key={e} value={e}>{e}</option>)}
-            </select>
+            <StringCombobox
+              id="pm-eval-employee-filter"
+              options={availableEmployees}
+              value={employeeFilter === "all" ? "" : employeeFilter}
+              onChange={(v) => setEmployeeFilter(v === "" ? "all" : v)}
+              placeholder="All Employees"
+            />
           </div>
           <ClearFiltersButton
-            // Cycle has a sticky default of the current active cycle —
-            // so "cycle is something other than active" counts as a
-            // user choice worth offering to reset.
+            // Defaults the PM page settles into: status=pending +
+            // cycle=active. Both count as "no filter applied" because
+            // they're the natural entry-point state ("what do I owe
+            // for this cycle?"). The button activates only when the
+            // PM has deviated from one of those.
             active={
               searchQuery.trim().length > 0 ||
-              statusFilter !== "all" ||
+              statusFilter !== "pending" ||
               funcFilter !== "all" ||
               projectFilter !== "all" ||
               employeeFilter !== "all" ||
@@ -457,7 +555,7 @@ export function PrimaryEvaluationTab() {
             }
             onClear={() => {
               setSearchQuery("");
-              setStatusFilter("all");
+              setStatusFilter("pending");
               setFuncFilter("all");
               setProjectFilter("all");
               setEmployeeFilter("all");
