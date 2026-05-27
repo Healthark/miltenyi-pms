@@ -11,12 +11,15 @@
  */
 
 import {
+  useEffect,
+  useRef,
   useState,
   useCallback,
   useImperativeHandle,
   useMemo,
   type Ref,
 } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Search, Pencil, Trash2, Users, FolderOpen,
@@ -33,6 +36,7 @@ import { ProjectModal } from "@/components/admin/ProjectModal";
 import { ExportExcelButton } from "@/components/admin/ExportExcelButton";
 import { ClearFiltersButton } from "@/components/common/ClearFiltersButton";
 import { StringCombobox } from "@/components/common/StringCombobox";
+import { setOrDeleteParam, searchParamsChanged } from "@/utils/searchParams";
 import { useToast } from "@/hooks/useToast";
 import { useSnackbar } from "@/hooks/useSnackbar";
 import { useConfirm } from "@/hooks/useConfirm";
@@ -99,7 +103,50 @@ export function ProjectsTab({ ref }: ProjectsTabProps = {}) {
   const [sort, setSort] = useState<SortState<ProjectsSortKey> | null>(null);
   const [yearFilter, setYearFilter] = useState<string>("all");
   const [pmFilter, setPmFilter] = useState<string>("all");
+  // Status default "active" — HR almost always wants the live roster
+  // first (mirrors UsersTab's default). Completed projects are an
+  // audit subset accessed via the dropdown.
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
+
+  // ── URL state ──────────────────────────────────────────────────────
+  // Mirrors UsersTab's pattern (which lives in the same panel): read
+  // deep-link params on first mount, then mirror filter changes to URL
+  // so refresh + share-link preserve the view. Gated by a one-shot ref
+  // so the writer doesn't clobber URL params before the reader has
+  // seeded state from them. Preserves `?tab=` and any other Admin-
+  // level params (we only touch the keys this tab owns).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const projectsTabDefaultedRef = useRef(false);
+  useEffect(() => {
+    if (projectsTabDefaultedRef.current) return;
+    const urlYear = searchParams.get("year");
+    const urlPm = searchParams.get("pm");
+    const urlStatus = searchParams.get("status");
+    if (urlYear) setYearFilter(urlYear);
+    if (urlPm) setPmFilter(urlPm);
+    if (urlStatus) setStatusFilter(urlStatus as StatusFilter);
+    projectsTabDefaultedRef.current = true;
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (!projectsTabDefaultedRef.current) return;
+    const next = new URLSearchParams(searchParams);
+    setOrDeleteParam(next, "year", yearFilter);
+    setOrDeleteParam(next, "pm", pmFilter);
+    // Status: "active" is the page default; "all"/"completed" are real
+    // user choices we DO want in the URL. The shared helper would
+    // delete on "all" (same sentinel UsersTab/etc. use), but here
+    // "all" means "include completed" — a real broadening. Delete only
+    // when status matches the default.
+    if (statusFilter && statusFilter !== "active") {
+      next.set("status", statusFilter);
+    } else {
+      next.delete("status");
+    }
+    if (searchParamsChanged(searchParams, next)) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [yearFilter, pmFilter, statusFilter, searchParams, setSearchParams]);
 
   const toast = useToast();
   const snackbar = useSnackbar();
@@ -306,7 +353,16 @@ export function ProjectsTab({ ref }: ProjectsTabProps = {}) {
           : null;
         if (year !== yearFilter) return false;
       }
-      if (pmFilter !== "all" && p.pm_name !== pmFilter) return false;
+      // PM filter: "(No PM)" sentinel matches rows where pm_name is
+      // null/empty — HR uses this during cleanup to find unassigned
+      // projects. Otherwise exact-match against the selected name.
+      if (pmFilter !== "all") {
+        if (pmFilter === "(No PM)") {
+          if (p.pm_name) return false;
+        } else {
+          if (p.pm_name !== pmFilter) return false;
+        }
+      }
       return true;
     });
     if (!sort) return filtered;
@@ -358,7 +414,14 @@ export function ProjectsTab({ ref }: ProjectsTabProps = {}) {
           </label>
           <StringCombobox
             id="project-pm-filter"
-            options={availablePms}
+            // "(No PM)" sentinel prepended so HR can find unassigned
+            // projects via type-to-filter ("no " narrows to it).
+            // Display label is the wire value — parens + leading space
+            // guarantee no collision with a real full_name. Filter
+            // logic above short-circuits to `p.pm_name == null` for
+            // this sentinel. Mirrors the "(No mentor)" pattern in
+            // UsersTab + ManagementReview.
+            options={["(No PM)", ...availablePms]}
             // State uses "all" as the no-filter sentinel; combobox
             // uses "" — translate on both edges (matches the pattern
             // used by UsersTab's Mentor/PM filters).

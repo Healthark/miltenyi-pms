@@ -66,6 +66,26 @@ export function ProjectReviewCompletionCard({
   const finalViewAllHref = cycleHint
     ? `${viewAllHref}?cycle=${encodeURIComponent(cycleHint)}`
     : viewAllHref;
+
+  // Per-legend deep-link builder. Each legend bucket becomes a click
+  // target that pre-filters the destination by the segment's status
+  // — HR sees "8 Pending" on the donut and one click jumps them to
+  // exactly those 8 reviews instead of the unfiltered all-reviews
+  // dump. ProjectReviews' All Reviews tab status filter has only two
+  // values: "pending" | "reviewed". Draft rows live inside the
+  // "pending" bucket on the destination (drafts are an artifact of
+  // in-progress PM evaluations, not a separate status column), so we
+  // map draft → pending to avoid landing HR on an empty filter.
+  // Returns undefined for the empty-data state so LegendItem renders
+  // as plain text instead of a dead link.
+  const hasAnySegment = data != null && data.total > 0;
+  const buildLegendHref = (status: "pending" | "draft" | "reviewed"): string | undefined => {
+    if (!hasAnySegment) return undefined;
+    const params = new URLSearchParams();
+    if (cycleHint) params.set("cycle", cycleHint);
+    params.set("status", status === "draft" ? "pending" : status);
+    return `${viewAllHref}?${params.toString()}`;
+  };
   const completionPercent =
     data && data.total > 0 ? Math.round((data.reviewed / data.total) * 100) : 0;
   const hasData = !isLoading && data != null && data.total > 0;
@@ -108,16 +128,19 @@ export function ProjectReviewCompletionCard({
                 dotColor={SEGMENT_COLORS.pending}
                 count={data.pending}
                 label="Pending"
+                href={buildLegendHref("pending")}
               />
               <LegendItem
                 dotColor={SEGMENT_COLORS.draft}
                 count={data.draft}
                 label="Draft"
+                href={buildLegendHref("draft")}
               />
               <LegendItem
                 dotColor={SEGMENT_COLORS.reviewed}
                 count={data.reviewed}
                 label="Reviewed"
+                href={buildLegendHref("reviewed")}
               />
             </ul>
             <DonutChart
@@ -176,13 +199,19 @@ function LegendItem({
   dotColor,
   count,
   label,
+  href,
 }: {
   readonly dotColor: string;
   readonly count: number;
   readonly label: string;
+  /** When provided, the row becomes a clickable deep-link to the
+   *  destination page pre-filtered to this segment's status. Hover
+   *  reveals the brand-tinted underline so HR knows the row is
+   *  actionable; without href the row stays plain text. */
+  readonly href?: string;
 }) {
-  return (
-    <li className="flex items-center gap-2">
+  const content = (
+    <>
       <span
         className="h-2 w-2 shrink-0 rounded-full"
         style={{ backgroundColor: dotColor }}
@@ -192,6 +221,20 @@ function LegendItem({
         {count}
       </span>
       <span className="text-text-muted">{label}</span>
+    </>
+  );
+  return (
+    <li>
+      {href ? (
+        <Link
+          to={href}
+          className="flex items-center gap-2 rounded -mx-1 px-1 py-0.5 hover:bg-brand-light/40 transition-colors"
+        >
+          {content}
+        </Link>
+      ) : (
+        <div className="flex items-center gap-2 px-1 py-0.5">{content}</div>
+      )}
     </li>
   );
 }
