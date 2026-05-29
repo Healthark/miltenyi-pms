@@ -1,7 +1,7 @@
 /**
  * HrDashboard — org-wide rollups for HR_MyOrg and HR_Miltenyi.
  *
- * Owns the page shell: greeting, FY picker, widget grid, and the
+ * Owns the page shell: greeting, Cycle picker, widget grid, and the
  * single batched fetch to /dashboard/hr-summary. Widgets are passed
  * either the typed data or `null` for their own skeleton — there is
  * no global page spinner; each card renders its own loading state in
@@ -96,7 +96,12 @@ export function HrDashboard() {
 
   return (
     <div className="space-y-6">
-      {/* Header: greeting + FY picker */}
+      {/* Header: greeting + cycle picker (selects which FY's data
+          the dashboard cards render). The label says "Cycle" — HR's
+          everyday language for the selectable unit — even though the
+          underlying value is a fiscal start year. The internal id
+          (`hr-dashboard-fy`) stays for back-compat with anything
+          referencing the element via querySelector. */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="font-display text-xl font-semibold text-text-main">
@@ -111,7 +116,7 @@ export function HrDashboard() {
             htmlFor="hr-dashboard-fy"
             className="text-[11px] font-bold uppercase tracking-wider text-text-muted"
           >
-            FY
+            Cycle
           </label>
           <select
             id="hr-dashboard-fy"

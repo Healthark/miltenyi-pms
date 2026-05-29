@@ -1365,6 +1365,32 @@ function AllGoalsTab({
             placeholder="All Designations"
           />
         </div>
+        {/* Toolbar follows the project-wide
+            Identity → Category → Relation → Time → State order so
+            the filter widgets sit in the same logical slots across
+            all admin-accessible pages. Mentor (Relation) precedes
+            Year (Time) and Status (State). */}
+        <div className="flex items-center gap-2">
+          <label
+            htmlFor="all-goals-mentor"
+            className="text-[11px] font-bold uppercase tracking-wider text-text-muted"
+          >
+            Mentor
+          </label>
+          <select
+            id="all-goals-mentor"
+            value={filters.mentor ?? "all"}
+            onChange={(e) => setFilter("mentor", e.target.value)}
+            className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand cursor-pointer min-w-[140px]"
+          >
+            <option value="all">All Mentors</option>
+            {mentors.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+        </div>
         <div className="flex items-center gap-2">
           <label
             htmlFor="all-goals-year"
@@ -1417,27 +1443,6 @@ function AllGoalsTab({
             <option value="h1_mentor_reviewed">H1 Mentor Reviewed</option>
             <option value="h2_self_reviewed">H2 Self Reviewed</option>
             <option value="h2_mentor_reviewed">H2 Mentor Reviewed</option>
-          </select>
-        </div>
-        <div className="flex items-center gap-2">
-          <label
-            htmlFor="all-goals-mentor"
-            className="text-[11px] font-bold uppercase tracking-wider text-text-muted"
-          >
-            Mentor
-          </label>
-          <select
-            id="all-goals-mentor"
-            value={filters.mentor ?? "all"}
-            onChange={(e) => setFilter("mentor", e.target.value)}
-            className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand cursor-pointer min-w-[140px]"
-          >
-            <option value="all">All Mentors</option>
-            {mentors.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
           </select>
         </div>
         <span className="text-xs text-text-muted">

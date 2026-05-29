@@ -390,24 +390,11 @@ export function ProjectsTab({ ref }: ProjectsTabProps = {}) {
             aria-label="Search projects"
           />
         </div>
-        <div className="flex items-center gap-2">
-          <label htmlFor="project-year-filter" className={FILTER_LABEL_CLS}>
-            Start Year
-          </label>
-          <select
-            id="project-year-filter"
-            value={yearFilter}
-            onChange={(e) => setYearFilter(e.target.value)}
-            className={`${FILTER_SELECT_CLS} min-w-[120px]`}
-          >
-            <option value="all">All Years</option>
-            {availableYears.map((y) => (
-              <option key={y} value={String(y)}>
-                {y}
-              </option>
-            ))}
-          </select>
-        </div>
+        {/* Toolbar follows the project-wide
+            Identity → Category → Relation → Time → State order so
+            the filter widgets sit in the same logical slots across
+            all admin-accessible pages. PM (Relation) precedes Start
+            Year (Time) and Status (State). */}
         <div className="flex items-center gap-2">
           <label htmlFor="project-pm-filter" className={FILTER_LABEL_CLS}>
             PM
@@ -429,6 +416,24 @@ export function ProjectsTab({ ref }: ProjectsTabProps = {}) {
             onChange={(v) => setPmFilter(v === "" ? "all" : v)}
             placeholder="All PMs"
           />
+        </div>
+        <div className="flex items-center gap-2">
+          <label htmlFor="project-year-filter" className={FILTER_LABEL_CLS}>
+            Start Year
+          </label>
+          <select
+            id="project-year-filter"
+            value={yearFilter}
+            onChange={(e) => setYearFilter(e.target.value)}
+            className={`${FILTER_SELECT_CLS} min-w-[120px]`}
+          >
+            <option value="all">All Years</option>
+            {availableYears.map((y) => (
+              <option key={y} value={String(y)}>
+                {y}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="flex items-center gap-2">
           <label htmlFor="project-status-filter" className={FILTER_LABEL_CLS}>
