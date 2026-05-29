@@ -45,6 +45,7 @@ from app.models.project_review_models import (
     ProjectReviewStatus,
     EvaluatorStatus,
 )
+from app.models.project_models import Project
 from app.core.cycle_utils import extract_fy_label, extract_fy_year
 from app.core.user_filters import active_user_ids_query
 from app.schemas.dashboard_schemas import (
@@ -172,12 +173,25 @@ def get_dashboard_summary(
     # ── Project Reviews where caller is an evaluator ─────────────────
     # Primary: caller is the project's PM. Status sits at PENDING (cycle just
     # opened) or DRAFT (PM saved partial work) until they submit → REVIEWED.
+    #
+    # We JOIN to Project and filter by `Project.pm_id` rather than the
+    # tempting-but-wrong `ProjectReview.reviewer_id`. `reviewer_id` is
+    # the column the system stamps when the PM SAVES or SUBMITTS the
+    # row — it is NULL on every freshly-pending row (which is exactly
+    # what we want to count). Filtering on `reviewer_id == current_user.id`
+    # excluded every pending-but-untouched row and made the widget
+    # falsely declare "all caught up" while the /pm-queue endpoint
+    # (which correctly uses `Project.pm_id`) showed 4+ pending cards.
+    # Excluding deleted/completed projects mirrors the queue endpoint's
+    # behaviour at project_review_routes.py:625-634.
     project_reviews_pending_primary: int = (
         db.query(func.count(ProjectReview.id))
+        .join(Project, Project.id == ProjectReview.project_id)
         .filter(
             ProjectReview.org_id == current_user.org_id,
-            ProjectReview.reviewer_id == current_user.id,
+            Project.pm_id == current_user.id,
             ProjectReview.is_deleted == False,  # noqa: E712
+            Project.is_deleted == False,  # noqa: E712
             ProjectReview.status.in_(
                 [ProjectReviewStatus.PENDING.value, ProjectReviewStatus.DRAFT.value]
             ),

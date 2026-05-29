@@ -24,8 +24,16 @@ import { formatFyLabel } from "@/utils/fy";
  * MentorDashboard still consumes it for its two-up cycle row.
  */
 
+/** Which sub-blocks to render. The order in the array also drives
+ *  the left-to-right rendering order on screen. */
+export type ActiveCycleBlock = "fy" | "goal" | "project";
+
 interface ActiveCyclesCardProps {
   readonly activeCycle: string | null;
+  /** Which blocks to render. Defaults to all three (HR_MyOrg's full
+   *  view). HR_Miltenyi passes `["fy", "project"]` since they don't
+   *  own annual goal reviews. Order also drives visual order. */
+  readonly blocks?: readonly ActiveCycleBlock[];
 }
 
 /** Derive the goal-review half from the active cycle string.
@@ -50,48 +58,91 @@ function deriveGoalReviewCycle(activeCycle: string): string {
   return activeCycle;
 }
 
-export function ActiveCyclesCard({ activeCycle }: ActiveCyclesCardProps) {
-  // Fiscal Year: human-formatted span ("FY 2026-27") via the same
-  // helper every FY surface uses. Falls back to extracting just the
-  // FY token when format fails.
-  const fyValue = activeCycle ? formatFyLabel(activeCycle) : null;
-  // Goal Review Cycle: always H1/H2 + FY.
-  const goalReviewValue = activeCycle
-    ? deriveGoalReviewCycle(activeCycle)
-    : null;
-  // Project Review Cycle: raw active cycle string as configured.
-  const projectReviewValue = activeCycle;
+const DEFAULT_BLOCKS: readonly ActiveCycleBlock[] = ["fy", "goal", "project"];
+
+/** Static config per block kind so the rendering loop stays small.
+ *  Each entry pairs its icon + label + tagline. The `value` function
+ *  is computed per render against the active cycle string. */
+const BLOCK_CONFIG: Record<
+  ActiveCycleBlock,
+  {
+    readonly icon: typeof CalendarDays;
+    readonly label: string;
+    readonly tagline: string;
+    readonly resolveValue: (activeCycle: string) => string;
+  }
+> = {
+  fy: {
+    icon: CalendarRange,
+    label: "Fiscal Year",
+    tagline: "The org's current fiscal year span.",
+    resolveValue: (c) => formatFyLabel(c),
+  },
+  goal: {
+    icon: Target,
+    label: "Goal Review Cycle",
+    tagline: "H1 / H2 window goal reviews are tagged to.",
+    resolveValue: deriveGoalReviewCycle,
+  },
+  project: {
+    icon: CalendarDays,
+    label: "Project Review Cycle",
+    tagline: "All new project reviews are tagged to this period.",
+    resolveValue: (c) => c,
+  },
+};
+
+/** Tailwind doesn't pick up arbitrary `grid-cols-${n}` strings from
+ *  string interpolation — the class names need to appear literally in
+ *  the source for the static analyser. Map block-count → class. */
+const GRID_COLS_CLASS: Record<number, string> = {
+  1: "sm:grid-cols-1",
+  2: "sm:grid-cols-2",
+  3: "sm:grid-cols-3",
+};
+
+export function ActiveCyclesCard({
+  activeCycle,
+  blocks = DEFAULT_BLOCKS,
+}: ActiveCyclesCardProps) {
+  const colsClass = GRID_COLS_CLASS[blocks.length] ?? "sm:grid-cols-3";
 
   return (
-    <article className="rounded-xl border border-border bg-surface p-5 shadow-sm flex flex-col gap-4 h-full">
-      {/* Body — three cycle blocks side-by-side with a thin vertical
+    <article className="rounded-xl border border-border bg-surface p-5 shadow-sm flex flex-col gap-4 h-full justify-center">
+      {/* `justify-center` centers the cycle blocks vertically inside
+          the card so when the parent grid stretches it to match a
+          taller neighbour (PendingActionsCard on HR_MyOrg's grid;
+          ActionItemsWidget on the PM dashboard), the empty space
+          distributes evenly top + bottom rather than dumping a
+          large gap at the bottom. With no stretch the card sizes to
+          content and this is a no-op. */}
+      {/* Body — N cycle blocks side-by-side with a thin vertical
           divider between them on sm+ screens. Stacks on the smallest
           viewports so values stay readable.
-          Order is Fiscal Year → Goal Review → Project Review (broad
-          time anchor first, then the more specific cycle windows). */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-0 sm:divide-x sm:divide-border">
-        <CycleBlock
-          icon={CalendarRange}
-          label="Fiscal Year"
-          value={fyValue}
-          tagline="The org's current fiscal year span."
-        />
-        <div className="sm:pl-4">
-          <CycleBlock
-            icon={Target}
-            label="Goal Review Cycle"
-            value={goalReviewValue}
-            tagline="H1 / H2 window goal reviews are tagged to."
-          />
-        </div>
-        <div className="sm:pl-4">
-          <CycleBlock
-            icon={CalendarDays}
-            label="Project Review Cycle"
-            value={projectReviewValue}
-            tagline="All new project reviews are tagged to this period."
-          />
-        </div>
+          Default order (HR_MyOrg): Fiscal Year → Goal Review →
+          Project Review (broad time anchor first, then the more
+          specific cycle windows). HR_Miltenyi passes
+          `["fy", "project"]` — same broad-to-specific reading. */}
+      <div
+        className={`grid grid-cols-1 ${colsClass} gap-4 sm:gap-0 sm:divide-x sm:divide-border`}
+      >
+        {blocks.map((kind, idx) => {
+          const config = BLOCK_CONFIG[kind];
+          const value = activeCycle ? config.resolveValue(activeCycle) : null;
+          // First block has no left padding (no preceding divider);
+          // subsequent blocks get sm:pl-4 to sit cleanly against the
+          // divider line.
+          return (
+            <div key={kind} className={idx === 0 ? "" : "sm:pl-4"}>
+              <CycleBlock
+                icon={config.icon}
+                label={config.label}
+                value={value}
+                tagline={config.tagline}
+              />
+            </div>
+          );
+        })}
       </div>
     </article>
   );

@@ -63,6 +63,7 @@ import { TableExpandedRow } from "@/components/project-reviews/TableExpandedRow"
 import { ProjectReviewDetailModal } from "@/components/project-reviews/ProjectReviewDetailModal";
 import { MyReviewsToolbar } from "@/components/project-reviews/MyReviewsToolbar";
 import { CycleReviewsLegendButton } from "@/components/reviews/CycleReviewsLegendButton";
+import { setOrDeleteParam, searchParamsChanged } from "@/utils/searchParams";
 import {
   GridSkeleton,
   TableSkeleton,
@@ -280,9 +281,14 @@ export function ProjectReviews() {
   //
   // Ref guard fires once per mount; later user edits to the filters
   // are preserved.
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  // HR All-Reviews tab reader. Gated on `isHR` so an Employee
+  // landing here (My Reviews tab) doesn't seed allReviewsFilters
+  // from URL — there's a separate Employee reader below targeting
+  // selectedCycle / statusFilter / projectFilter / pmFilter.
   const allReviewsDefaultedRef = useRef(false);
   useEffect(() => {
+    if (!isHR) return;
     if (allReviewsDefaultedRef.current) return;
     if (!settings?.active_cycle_name) return;
 
@@ -324,7 +330,62 @@ export function ProjectReviews() {
       setAllReviewsFilters((prev) => ({ ...prev, ...updates }));
     }
     allReviewsDefaultedRef.current = true;
-  }, [settings?.active_cycle_name, searchParams]);
+  }, [isHR, settings?.active_cycle_name, searchParams]);
+
+  // Employee My-Reviews tab URL reader + writer. Mirrors the
+  // selectedCycle / statusFilter / projectFilter / pmFilter state to
+  // URL so refresh + share-link preserves the view, AND honours
+  // dashboard deep-links from ActionItemsWidget
+  // ("/project-reviews?status=pending") which previously landed the
+  // Employee on an unfiltered view because no reader existed for
+  // their filter state. Search query is intentionally NOT URL-synced
+  // (typing-into-URL is jarring; debouncing happens server-side
+  // anyway).
+  const myReviewsDefaultedRef = useRef(false);
+  useEffect(() => {
+    if (!isEmployee) return;
+    if (myReviewsDefaultedRef.current) return;
+    const urlStatus = searchParams.get("status");
+    const urlCycle = searchParams.get("cycle");
+    const urlProject = searchParams.get("project");
+    const urlPm = searchParams.get("pm");
+    if (urlStatus) setStatusFilter(urlStatus);
+    if (urlCycle) setSelectedCycle(urlCycle);
+    if (urlProject) setProjectFilter(urlProject);
+    if (urlPm) setPmFilter(urlPm);
+    myReviewsDefaultedRef.current = true;
+  }, [isEmployee, searchParams]);
+
+  useEffect(() => {
+    if (!isEmployee) return;
+    if (!myReviewsDefaultedRef.current) return;
+    const next = new URLSearchParams(searchParams);
+    setOrDeleteParam(next, "status", statusFilter);
+    // Cycle is sticky-defaulted to the org's active cycle (lazy init
+    // above) — don't echo the default into the URL so it stays clean
+    // for the common case (Employee is on the active cycle). Only
+    // mirror the value when it deviates from the active cycle.
+    const activeCycle = settings?.active_cycle_name ?? "";
+    setOrDeleteParam(
+      next,
+      "cycle",
+      selectedCycle === activeCycle ? undefined : selectedCycle,
+    );
+    setOrDeleteParam(next, "project", projectFilter);
+    setOrDeleteParam(next, "pm", pmFilter);
+    if (searchParamsChanged(searchParams, next)) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [
+    isEmployee,
+    statusFilter,
+    selectedCycle,
+    projectFilter,
+    pmFilter,
+    settings?.active_cycle_name,
+    searchParams,
+    setSearchParams,
+  ]);
   // Strip empty / undefined values so cache keys for "no filter X" and
   // "filter X = '' " collapse to the same entry. See doc 26 Part 2's
   // "empty-filters trap" for the rationale.

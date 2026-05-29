@@ -94,46 +94,73 @@ export function EmployeeDashboard() {
         </p>
       </div>
 
-      {/* Row 1: My Mentor (left) | Active Cycles (right). Both
-          half-width on md+, stacked on mobile. My Mentor only
-          renders for users with a mentor on file (CEO / founders
-          skip it). When no mentor, Active Cycles spans the full row
-          so it doesn't sit half-empty. */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        {user?.has_mentor === true && (
-          <MyMentorWidget profile={profile ?? null} />
-        )}
-        {summary ? (
-          <div
-            className={user?.has_mentor === true ? "" : "md:col-span-2"}
-          >
-            <ActiveCyclesCard activeCycle={summary.active_cycle} />
-          </div>
-        ) : (
-          <CardSkeleton />
-        )}
-      </div>
-
-      {/* Row 3: Annual Goals (funnel + completion) | Annual Review.
-          Hidden for PMs — per the Role enum docstring (user_models.py)
-          PMs have no goals and are never rated, so both cards would
-          render as empty zero-state boxes. The role's primary surface
-          is ActionItemsWidget below (their pending review queue). */}
-      {!isPM && (
+      {isPM ? (
+        /* PM layout — streamlined single row, two columns.
+           Active Cycles (FY + Project Review Cycle) on the left,
+           Action Items (their pending project reviews) on the
+           right. Goals + Annual Review rows aren't rendered for
+           PMs (Role enum: no goals, never rated), so collapsing
+           the cycle + action-items pair into one row instead of
+           two stacked full-width cards reads denser without
+           losing anything. MyMentorWidget isn't rendered for the
+           PM case — PMs typically don't have a mentor in this
+           product; the rare PM-with-mentor can read mentor info
+           on /profile. */
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          {summary ? <GoalsWidget summary={summary} /> : <CardSkeleton />}
           {summary ? (
-            <MyAnnualReviewWidget summary={summary} />
+            <ActiveCyclesCard
+              activeCycle={summary.active_cycle}
+              blocks={["fy", "project"]}
+            />
+          ) : (
+            <CardSkeleton />
+          )}
+          {summary ? (
+            <ActionItemsWidget summary={summary} />
           ) : (
             <CardSkeleton />
           )}
         </div>
-      )}
+      ) : (
+        <>
+          {/* Row 1: My Mentor (left) | Active Cycles (right). Both
+              half-width on md+, stacked on mobile. My Mentor only
+              renders for users with a mentor on file (CEO / founders
+              skip it). When no mentor, Active Cycles spans the full
+              row so it doesn't sit half-empty. */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {user?.has_mentor === true && (
+              <MyMentorWidget profile={profile ?? null} />
+            )}
+            {summary ? (
+              <div
+                className={user?.has_mentor === true ? "" : "md:col-span-2"}
+              >
+                <ActiveCyclesCard activeCycle={summary.active_cycle} />
+              </div>
+            ) : (
+              <CardSkeleton />
+            )}
+          </div>
 
-      {/* Row 4: full-width Action Items — the personal queue. For PMs
-          this is the dashboard's primary content (pending project
-          reviews to write). */}
-      {summary ? <ActionItemsWidget summary={summary} /> : <CardSkeleton />}
+          {/* Row 3: Annual Goals (funnel + completion) | Annual Review. */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {summary ? <GoalsWidget summary={summary} /> : <CardSkeleton />}
+            {summary ? (
+              <MyAnnualReviewWidget summary={summary} />
+            ) : (
+              <CardSkeleton />
+            )}
+          </div>
+
+          {/* Row 4: full-width Action Items — the personal queue. */}
+          {summary ? (
+            <ActionItemsWidget summary={summary} />
+          ) : (
+            <CardSkeleton />
+          )}
+        </>
+      )}
     </div>
   );
 }
