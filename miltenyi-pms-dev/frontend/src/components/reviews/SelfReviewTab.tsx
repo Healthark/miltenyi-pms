@@ -12,7 +12,8 @@
  * caller's current mentor (fetched once via profileService).
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   Eye, LayoutGrid, Loader2, Lock, Pencil, Plus, Search, Table2, UserCircle,
   ClipboardCheck,
@@ -27,6 +28,7 @@ import { SortableHeader } from "@/components/SortableHeader";
 import { compareValues, type SortKind, type SortState, type SortValue } from "@/utils/sort";
 import { extractFyToken, formatFyLabel } from "@/utils/fy";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
+import { setOrDeleteParam, searchParamsChanged } from "@/utils/searchParams";
 
 // ── Display model ────────────────────────────────────────────────────
 //
@@ -303,6 +305,32 @@ export function SelfReviewTab({
   const [statusFilter, setStatusFilter] = useState<DisplayStatus | "all">("all");
   const [sort, setSort] = useState<SortState<SortKey> | null>(null);
   const [viewTarget, setViewTarget] = useState<AnnualReview | null>(null);
+
+  // URL state — mirrors statusFilter (→ ?status=) + yearFilter
+  // (→ ?fy=) so refresh + share-link preserves the view. searchQuery
+  // is deliberately NOT URL-synced (typing-into-URL is jarring on
+  // every keystroke). Reader fires once per mount; later user edits
+  // are preserved across re-renders.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const selfReviewDefaultedRef = useRef(false);
+  useEffect(() => {
+    if (selfReviewDefaultedRef.current) return;
+    const urlStatus = searchParams.get("status");
+    const urlFy = searchParams.get("fy");
+    if (urlStatus) setStatusFilter(urlStatus as DisplayStatus | "all");
+    if (urlFy) setYearFilter(urlFy);
+    selfReviewDefaultedRef.current = true;
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (!selfReviewDefaultedRef.current) return;
+    const next = new URLSearchParams(searchParams);
+    setOrDeleteParam(next, "status", statusFilter);
+    setOrDeleteParam(next, "fy", yearFilter);
+    if (searchParamsChanged(searchParams, next)) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [statusFilter, yearFilter, searchParams, setSearchParams]);
 
   // Fetch the caller's profile once so we know the current mentor name
   // for the synthetic current-FY row. The historical rows already carry

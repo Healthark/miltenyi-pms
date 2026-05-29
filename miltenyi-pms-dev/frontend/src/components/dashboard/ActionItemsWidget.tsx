@@ -99,7 +99,9 @@ export function ActionItemsWidget({ summary }: ActionItemsWidgetProps) {
       key: "changes_requested",
       label: `Goal${changes_requested_goals === 1 ? "" : "s"} need revision`,
       count: changes_requested_goals,
-      to: "/annual-goals",
+      // Deep-link to the exact subset the count refers to. AnnualGoals
+      // My Goals tab reads ?status= on mount and seeds approvalFilter.
+      to: "/annual-goals?status=changes_requested",
       icon: AlertTriangle,
       tone: "blocking",
     });
@@ -139,7 +141,9 @@ export function ActionItemsWidget({ summary }: ActionItemsWidgetProps) {
       key: "draft_goals",
       label: `Goal draft${draft_goals === 1 ? "" : "s"} to submit`,
       count: draft_goals,
-      to: "/annual-goals",
+      // Same pattern as changes_requested above — narrow the
+      // destination by ?status= so the count maps to exact rows.
+      to: "/annual-goals?status=draft",
       icon: FileEdit,
       tone: "info",
     });

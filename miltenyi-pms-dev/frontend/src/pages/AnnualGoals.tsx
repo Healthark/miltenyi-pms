@@ -346,8 +346,13 @@ export function AnnualGoals() {
   // Ref guard fires once per mount; later user edits to the filters
   // are preserved across re-renders / settings refetches.
   const [searchParams, setSearchParams] = useSearchParams();
+  // HR All-Goals tab reader. Gated on `isHRMyOrg` so the Employee
+  // landing here (My Goals tab) doesn't accidentally seed
+  // allGoalsFilters from URL — there's a separate Employee reader
+  // below that targets approvalFilter + yearFilter.
   const allGoalsYearDefaultedRef = useRef(false);
   useEffect(() => {
+    if (!isHRMyOrg) return;
     if (allGoalsYearDefaultedRef.current) return;
     if (!settings?.active_cycle_name) return;
 
@@ -368,16 +373,18 @@ export function AnnualGoals() {
       setAllGoalsFilters((prev) => ({ ...prev, ...updates }));
     }
     allGoalsYearDefaultedRef.current = true;
-  }, [settings?.active_cycle_name, searchParams]);
+  }, [isHRMyOrg, settings?.active_cycle_name, searchParams]);
 
-  // Write-back: mirror the current All-Goals filter state to URL so
-  // refresh + share-link preserves the view. Gated on the same ref
-  // the reader uses (so the first render's empty state doesn't
-  // clobber URL params before the reader has seeded state). `replace`
-  // so the browser history doesn't accumulate one entry per keystroke
-  // on the (still-debounced) filter inputs. The string-equality short
-  // circuit prevents redundant React Router navigations.
+  // HR write-back: mirror the current All-Goals filter state to URL
+  // so refresh + share-link preserves the view. Gated on the same
+  // ref the reader uses (so the first render's empty state doesn't
+  // clobber URL params before the reader has seeded state) + on
+  // isHRMyOrg so Employee landing here doesn't clear the URL.
+  // `replace` so the browser history doesn't accumulate one entry
+  // per keystroke. The string-equality short circuit prevents
+  // redundant React Router navigations.
   useEffect(() => {
+    if (!isHRMyOrg) return;
     if (!allGoalsYearDefaultedRef.current) return;
     const next = new URLSearchParams(searchParams);
     setOrDeleteParam(next, "fy", allGoalsFilters.fy_year);
@@ -385,7 +392,46 @@ export function AnnualGoals() {
     if (searchParamsChanged(searchParams, next)) {
       setSearchParams(next, { replace: true });
     }
-  }, [allGoalsFilters, searchParams, setSearchParams]);
+  }, [isHRMyOrg, allGoalsFilters, searchParams, setSearchParams]);
+
+  // Employee My-Goals tab URL reader + writer. Mirrors approvalFilter
+  // (-> ?status=) + yearFilter (-> ?fy=) so refresh + share-link
+  // preserves filter state, and dashboard deep-links from
+  // ActionItemsWidget ("?status=changes_requested" /
+  // "?status=draft") seed the right subset on first paint.
+  // Search query is intentionally NOT URL-synced — typing-into-URL
+  // would be jarring at every keystroke and the search is debounced
+  // already on the data side; refresh forfeits the in-progress
+  // query, which is acceptable.
+  const myGoalsDefaultedRef = useRef(false);
+  useEffect(() => {
+    if (!isEmployee) return;
+    if (myGoalsDefaultedRef.current) return;
+    const urlStatus = searchParams.get("status");
+    const urlFy = searchParams.get("fy");
+    if (urlStatus) setApprovalFilter(urlStatus as ApprovalFilter);
+    // yearFilter is a string in this component ("all" / "2026"); the
+    // URL value is also a string so no parsing needed.
+    if (urlFy) setYearFilter(urlFy);
+    myGoalsDefaultedRef.current = true;
+  }, [isEmployee, searchParams]);
+
+  useEffect(() => {
+    if (!isEmployee) return;
+    if (!myGoalsDefaultedRef.current) return;
+    const next = new URLSearchParams(searchParams);
+    setOrDeleteParam(next, "status", approvalFilter);
+    setOrDeleteParam(next, "fy", yearFilter);
+    if (searchParamsChanged(searchParams, next)) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [
+    isEmployee,
+    approvalFilter,
+    yearFilter,
+    searchParams,
+    setSearchParams,
+  ]);
   // Strip empty / undefined values so cache keys and request payloads
   // collapse to a clean shape — see doc 26 Part 2's "empty-filters trap".
   const allGoalsFilterParams: Record<string, string | number> =
