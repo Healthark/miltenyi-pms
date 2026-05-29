@@ -85,8 +85,13 @@ export function MenteeGoalFunnelCard({ mentees }: MenteeGoalFunnelCardProps) {
             Mentee Goal Approvals
           </h3>
         </div>
+        {/* Deep-link with status=pending_approval — the card's primary
+            surfaced count is "awaiting your approval". Without the
+            status param, Mentor lands on the unfiltered Team Goals
+            tab and has to re-narrow themselves. TeamGoalsTab reads
+            ?status= on mount and seeds its filter accordingly. */}
         <Link
-          to="/annual-goals"
+          to="/annual-goals?status=pending_approval"
           className="text-[12px] font-medium text-brand hover:underline whitespace-nowrap"
         >
           View all →

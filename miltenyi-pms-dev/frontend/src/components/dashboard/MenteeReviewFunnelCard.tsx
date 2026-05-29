@@ -100,8 +100,13 @@ export function MenteeReviewFunnelCard({
             Mentee Annual Reviews
           </h3>
         </div>
+        {/* Deep-link with status=pending_mentor — the card's primary
+            actionable count is "awaiting your evaluation". Without
+            it, Mentor lands on the unfiltered Team Reviews tab and
+            has to re-narrow. TeamReviewTab reads ?status= on mount
+            and seeds its filter accordingly. */}
         <Link
-          to="/annual-reviews"
+          to="/annual-reviews?status=pending_mentor"
           className="text-[12px] font-medium text-brand hover:underline whitespace-nowrap"
         >
           View all →
