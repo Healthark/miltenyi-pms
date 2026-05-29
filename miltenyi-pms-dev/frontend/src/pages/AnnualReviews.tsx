@@ -713,6 +713,12 @@ function AllReviewsTab({
     <div className="flex flex-col gap-4">
       <div className="flex items-start justify-between gap-4">
        <div className="flex items-center gap-4 flex-wrap flex-1 min-w-0">
+        {/* Toolbar follows the project-wide
+            Identity → Category → Relation → Time → State order so
+            the filter widgets sit in the same logical slots across
+            all admin-accessible pages. Function + Designation
+            (Category) precede Cycle (Time) and Status (State). */}
+
         {/* Employee filter — typeable combobox styled like the PM picker
             in ProjectModal. Typing narrows the suggestion list; clicking
             an option commits the filter. Click the X to clear. */}
@@ -728,6 +734,36 @@ function AllReviewsTab({
             placeholder="Type a name…"
           />
         </div>
+
+        {functions.length > 0 && (
+          <div className="flex items-center gap-2">
+            <label htmlFor="all-rev-function" className={labelCls}>
+              Function
+            </label>
+            <StringCombobox
+              id="all-rev-function"
+              options={functions}
+              value={filters.function ?? ""}
+              onChange={(v) => setFilter("function", v)}
+              placeholder="All Functions"
+            />
+          </div>
+        )}
+
+        {designations.length > 0 && (
+          <div className="flex items-center gap-2">
+            <label htmlFor="all-rev-designation" className={labelCls}>
+              Designation
+            </label>
+            <StringCombobox
+              id="all-rev-designation"
+              options={designations}
+              value={filters.designation ?? ""}
+              onChange={(v) => setFilter("designation", v)}
+              placeholder="All Designations"
+            />
+          </div>
+        )}
 
         <div className="flex items-center gap-2">
           <label htmlFor="all-rev-cycle" className={labelCls}>
@@ -768,36 +804,6 @@ function AllReviewsTab({
             ))}
           </select>
         </div>
-
-        {functions.length > 0 && (
-          <div className="flex items-center gap-2">
-            <label htmlFor="all-rev-function" className={labelCls}>
-              Function
-            </label>
-            <StringCombobox
-              id="all-rev-function"
-              options={functions}
-              value={filters.function ?? ""}
-              onChange={(v) => setFilter("function", v)}
-              placeholder="All Functions"
-            />
-          </div>
-        )}
-
-        {designations.length > 0 && (
-          <div className="flex items-center gap-2">
-            <label htmlFor="all-rev-designation" className={labelCls}>
-              Designation
-            </label>
-            <StringCombobox
-              id="all-rev-designation"
-              options={designations}
-              value={filters.designation ?? ""}
-              onChange={(v) => setFilter("designation", v)}
-              placeholder="All Designations"
-            />
-          </div>
-        )}
 
         <span className="text-xs text-text-muted">
           {/* `total` is the server's count of rows matching the active

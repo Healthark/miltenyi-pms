@@ -91,8 +91,14 @@ const COLUMN_DEFS: Array<{ label: string; key: SortKey | null }> = [
   // a sort would be a no-op.
   { label: "Cycle",              key: null },
   { label: "Status",             key: "status" },
-  { label: "Self Review",        key: "self_performance_rating" },
-  { label: "Mentor Review",      key: "mentor_performance_rating" },
+  // Column shows just the rating badge (per-row narrative lives
+  // inside the Rate / View modal under the section labelled "Self
+  // Review" / "Mentor Review"). The column header reads "Rating" to
+  // describe what's actually rendered in the cell — keeps the three
+  // rating columns consistent (Self Rating / Mentor Rating /
+  // Management Rating).
+  { label: "Self Rating",        key: "self_performance_rating" },
+  { label: "Mentor Rating",      key: "mentor_performance_rating" },
   { label: "Management Rating",  key: "management_performance_rating" },
   { label: "Actions",            key: null },
 ];

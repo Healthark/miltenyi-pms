@@ -382,59 +382,17 @@ export function UsersTab({
             aria-label="Search users"
           />
         </div>
-        <div className="flex items-center gap-2">
-          <label htmlFor="user-role-filter" className={FILTER_LABEL_CLS}>Role</label>
-          <select
-            id="user-role-filter"
-            value={roleFilter}
-            onChange={(e) => setRoleFilter(e.target.value as RoleFilter)}
-            className={`${FILTER_SELECT_CLS} min-w-[140px]`}
-          >
-            {visibleRoleOptions.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
-        </div>
-        {/* Relation filter: HR_MyOrg picks a Mentor; HR_Miltenyi picks
-            a Project Manager. Same dropdown slot, different relationship
-            and different name source. The other filter's state stays
-            on "all" (it's not rendered for the off-side role anyway). */}
-        {!isViewerMiltenyiHR && availableMentors.length > 0 && (
-          <div className="flex items-center gap-2">
-            <label htmlFor="user-mentor-filter" className={FILTER_LABEL_CLS}>
-              Mentor
-            </label>
-            <StringCombobox
-              id="user-mentor-filter"
-              // Prepend the "(No mentor)" sentinel as the first option
-              // so HR can pick it directly via type-to-filter (typing
-              // "no" narrows to it). Sentinel value === display label
-              // — no value/label split needed because parens + space
-              // guarantee no collision with a real full_name.
-              options={[NO_MENTOR_SENTINEL, ...availableMentors]}
-              // State uses "all" as the no-filter sentinel; combobox
-              // uses "" — translate on both edges (matches the
-              // Function/Designation pattern below).
-              value={mentorFilter === "all" ? "" : mentorFilter}
-              onChange={(v) => setMentorFilter(v === "" ? "all" : v)}
-              placeholder="All Mentors"
-            />
-          </div>
-        )}
-        {isViewerMiltenyiHR && availableProjectManagers.length > 0 && (
-          <div className="flex items-center gap-2">
-            <label htmlFor="user-pm-filter" className={FILTER_LABEL_CLS}>
-              Project Manager
-            </label>
-            <StringCombobox
-              id="user-pm-filter"
-              options={availableProjectManagers}
-              value={pmFilter === "all" ? "" : pmFilter}
-              onChange={(v) => setPmFilter(v === "" ? "all" : v)}
-              placeholder="All Project Managers"
-            />
-          </div>
-        )}
+        {/* UsersTab-specific toolbar order:
+              Search · Function · Designation · Mentor/PM · Role · Status
+            Most admin-accessible pages put Role-style categories
+            directly after Search (next to Identity), but on the
+            Users surface HR usually scans by Function/Designation
+            first and only narrows by Role late in the flow — Role
+            therefore sits next to Status (both narrow the row count
+            in similar ways). Function/Designation stay as the
+            primary Category narrowing; Mentor/PM is the Relation
+            dimension; Status is the rightmost narrowing before
+            actions, consistent with the rest of the app. */}
         {availableFunctions.length > 0 && (
           <div className="flex items-center gap-2">
             <label htmlFor="user-function-filter" className={FILTER_LABEL_CLS}>
@@ -465,6 +423,59 @@ export function UsersTab({
             />
           </div>
         )}
+        {/* Relation filter: HR_MyOrg picks a Mentor; HR_Miltenyi picks
+            a Project Manager. Same dropdown slot, different relationship
+            and different name source. The other filter's state stays
+            on "all" (it's not rendered for the off-side role anyway). */}
+        {!isViewerMiltenyiHR && availableMentors.length > 0 && (
+          <div className="flex items-center gap-2">
+            <label htmlFor="user-mentor-filter" className={FILTER_LABEL_CLS}>
+              Mentor
+            </label>
+            <StringCombobox
+              id="user-mentor-filter"
+              // Prepend the "(No mentor)" sentinel as the first option
+              // so HR can pick it directly via type-to-filter (typing
+              // "no" narrows to it). Sentinel value === display label
+              // — no value/label split needed because parens + space
+              // guarantee no collision with a real full_name.
+              options={[NO_MENTOR_SENTINEL, ...availableMentors]}
+              // State uses "all" as the no-filter sentinel; combobox
+              // uses "" — translate on both edges (matches the
+              // Function/Designation pattern above).
+              value={mentorFilter === "all" ? "" : mentorFilter}
+              onChange={(v) => setMentorFilter(v === "" ? "all" : v)}
+              placeholder="All Mentors"
+            />
+          </div>
+        )}
+        {isViewerMiltenyiHR && availableProjectManagers.length > 0 && (
+          <div className="flex items-center gap-2">
+            <label htmlFor="user-pm-filter" className={FILTER_LABEL_CLS}>
+              Project Manager
+            </label>
+            <StringCombobox
+              id="user-pm-filter"
+              options={availableProjectManagers}
+              value={pmFilter === "all" ? "" : pmFilter}
+              onChange={(v) => setPmFilter(v === "" ? "all" : v)}
+              placeholder="All Project Managers"
+            />
+          </div>
+        )}
+        <div className="flex items-center gap-2">
+          <label htmlFor="user-role-filter" className={FILTER_LABEL_CLS}>Role</label>
+          <select
+            id="user-role-filter"
+            value={roleFilter}
+            onChange={(e) => setRoleFilter(e.target.value as RoleFilter)}
+            className={`${FILTER_SELECT_CLS} min-w-[140px]`}
+          >
+            {visibleRoleOptions.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
         <div className="flex items-center gap-2">
           <label htmlFor="user-status-filter" className={FILTER_LABEL_CLS}>Status</label>
           <select
