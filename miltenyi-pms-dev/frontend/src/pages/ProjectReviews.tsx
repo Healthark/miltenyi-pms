@@ -26,7 +26,6 @@ import {
   Briefcase,
   CheckCircle2,
   Clock,
-  Eye,
   Lock,
   Search,
   ChevronDown,
@@ -42,6 +41,19 @@ import {
 import { queryKeys } from "@/lib/queryKeys";
 import { useAuth } from "@/hooks/useAuth";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
+import type { CycleType } from "@/services/system-settings.service";
+import {
+  extractCyclePeriod,
+  fyStartYearToToken,
+  fyTokenToStartYear,
+  formatFyYearSpan,
+} from "@/utils/fy";
+import {
+  groupProjectReviews,
+  type CycleSlot,
+  type GroupedReviewRow,
+} from "@/utils/groupProjectReviews";
+import { CycleReviewChip } from "@/components/reviews/CycleReviewChip";
 import { PrimaryEvaluationTab } from "@/components/project-reviews/PrimaryEvaluationTab";
 import { SecondaryEvalTab } from "@/components/project-reviews/SecondaryEvalTab";
 import { PerformanceRatingBadge } from "@/components/reviews/PerformanceRatingBadge";
@@ -50,6 +62,7 @@ import { ReviewDetailPanel } from "@/components/project-reviews/ReviewDetailPane
 import { TableExpandedRow } from "@/components/project-reviews/TableExpandedRow";
 import { ProjectReviewDetailModal } from "@/components/project-reviews/ProjectReviewDetailModal";
 import { MyReviewsToolbar } from "@/components/project-reviews/MyReviewsToolbar";
+import { CycleReviewsLegendButton } from "@/components/reviews/CycleReviewsLegendButton";
 import {
   GridSkeleton,
   TableSkeleton,
@@ -93,24 +106,35 @@ const MY_REVIEWS_SORT_CONFIG: Record<
 };
 
 // Read-only review list (Mentor's mentees + HR's all-reviews) sort config.
+// Operates on GROUPED rows (one per employee, project, FY) — not flat
+// review rows. The previously-supported cycle / status /
+// performance_group sort keys are dropped because each group spans
+// multiple cycles and would need an aggregation choice (latest cycle?
+// max rating? completion %?) that isn't a single value. If HR wants to
+// see "rows with at least one pending" they use the Status filter; if
+// they want "best-rated employees" we'd add an explicit "Latest Rating"
+// or "Avg Rating" derived column later.
 type ReadOnlySortKey =
   | "employee_name"
   | "project_name"
   | "pm_name"
-  | "cycle"
-  | "status"
-  | "performance_group";
+  | "fy_year"
+  | "progress";
 
 const READ_ONLY_SORT_CONFIG: Record<
   ReadOnlySortKey,
-  { kind: SortKind; get: (r: ProjectReviewResponse) => SortValue }
+  { kind: SortKind; get: (r: GroupedReviewRow) => SortValue }
 > = {
-  employee_name:     { kind: "alpha",   get: (r) => r.employee_name },
-  project_name:      { kind: "alpha",   get: (r) => r.project_name },
-  pm_name:           { kind: "alpha",   get: (r) => r.pm_name ?? r.reviewer_name },
-  cycle:             { kind: "cycle",   get: (r) => r.cycle },
-  status:            { kind: "alpha",   get: (r) => r.status },
-  performance_group: { kind: "numeric", get: (r) => r.performance_group },
+  employee_name: { kind: "alpha",   get: (r) => r.employee_name },
+  project_name:  { kind: "alpha",   get: (r) => r.project_name },
+  pm_name:       { kind: "alpha",   get: (r) => r.pm_name },
+  fy_year:       { kind: "numeric", get: (r) => r.fy_year },
+  // Completion ratio — most-complete first when sorted desc. Avoids
+  // a divide-by-zero edge case by handling empty slots explicitly.
+  progress:      {
+    kind: "numeric",
+    get: (r) => (r.totalSlots === 0 ? 0 : r.reviewedCount / r.totalSlots),
+  },
 };
 
 const cardKey = (c: MyProjectCard) => `${c.project_id}-${c.cycle}`;
@@ -233,39 +257,67 @@ export function ProjectReviews() {
   const ALL_REVIEWS_PAGE_SIZE = 50;
   const [allReviewsFilters, setAllReviewsFilters] =
     useState<AllProjectReviewsFilters>({});
-  const [allReviewsSort, setAllReviewsSort] = useState<
-    SortState<ReadOnlySortKey> | null
-  >(null);
+  // Sort state was moved into ReadOnlyReviewsList itself — the new
+  // grouped view's sort keys (employee_name / project_name / pm_name /
+  // fy_year / progress) don't map cleanly to a backend ORDER BY
+  // column, so sort is client-side over the grouped rows. See the
+  // comment on `ReadOnlyReviewsList`'s sort declaration for the
+  // rationale.
 
-  // First time we know the active cycle, pre-fill the Cycle filter
-  // on the All Reviews tab. HR almost always wants the current cycle
-  // ("which reviews are pending in Q1 FY26-27 right now") — defaulting
-  // to "All" forces them to narrow every session.
+  // First time we know the active cycle, pre-fill the Year + Period
+  // filters on the All Reviews tab. HR almost always wants the
+  // current cycle ("which reviews are pending in Q1 FY26-27 right
+  // now") — defaulting both to "All" forces them to narrow every
+  // session.
   //
-  // URL search params take precedence so dashboard deep-links (e.g.
-  // /project-reviews?cycle=Q1+FY26-27&status=pending from the funnel
-  // card) land pre-filtered. Ref guard fires once per mount; later
-  // user edits to the filters are preserved.
+  // The Cycle dropdown was split into Year + Period (a single combined
+  // dropdown grew long once multiple FYs accumulated). Reader honours
+  // three URL shapes in priority order:
+  //   1. `?fy_year=` and/or `?period=`     — native two-param shape
+  //   2. `?cycle=H1 FY26-27`               — legacy shape (back-compat
+  //      with dashboard deep-links). Parsed into fy_year + period.
+  //   3. Nothing                           — default both from settings.
+  //
+  // Ref guard fires once per mount; later user edits to the filters
+  // are preserved.
   const [searchParams] = useSearchParams();
   const allReviewsDefaultedRef = useRef(false);
   useEffect(() => {
     if (allReviewsDefaultedRef.current) return;
     if (!settings?.active_cycle_name) return;
 
+    const urlFyYear = searchParams.get("fy_year");
     const urlCycle = searchParams.get("cycle");
-    const urlStatus = searchParams.get("status");
+    // `?period=` is intentionally NOT read anymore — see the Period
+    // filter removal note below the parser branches.
+    // `?status=` is intentionally NOT read anymore — the per-review
+    // Status filter was replaced by a group-level Progress filter
+    // when the table moved to grouped rows. Legacy dashboard
+    // deep-links of the form `/project-reviews?cycle=...&status=
+    // pending` still narrow by cycle correctly; the status part is
+    // a silent no-op rather than applying a hidden server filter
+    // that the UI no longer exposes.
 
     const updates: Partial<AllProjectReviewsFilters> = {};
-    if (urlCycle) {
-      updates.cycle = urlCycle;
+    // Period is no longer surfaced as a filter in the grouped view —
+    // chip column position aligns same-period chips across rows so a
+    // narrowing dropdown adds no value. We deliberately DON'T set
+    // `period` on filter state here, even when legacy URLs supply
+    // it: doing so would tell the backend to narrow review rows by
+    // period, which would then make the chip cadence misrepresent
+    // reality (e.g. a fetched-only-H1 response would render an
+    // "upcoming H2" chip even when H2 reviews exist in the DB).
+    if (urlFyYear) {
+      const parsed = Number(urlFyYear);
+      if (!Number.isNaN(parsed)) updates.fy_year = parsed;
+    } else if (urlCycle) {
+      // Legacy: ?cycle=H1 FY26-27 → take the FY portion only.
+      const parsedYear = fyTokenToStartYear(urlCycle);
+      if (parsedYear !== null) updates.fy_year = parsedYear;
     } else {
-      // Project reviews are tagged with the full cycle string
-      // ("Q1 FY26-27"); active_cycle_name is the same shape so no
-      // token extraction needed (unlike annual reviews).
-      updates.cycle = settings.active_cycle_name;
-    }
-    if (urlStatus) {
-      updates.status = urlStatus as AllProjectReviewsFilters["status"];
+      // No URL override → default Year to the active FY.
+      const activeYear = fyTokenToStartYear(settings.active_cycle_name);
+      if (activeYear !== null) updates.fy_year = activeYear;
     }
 
     if (Object.keys(updates).length > 0) {
@@ -276,18 +328,40 @@ export function ProjectReviews() {
   // Strip empty / undefined values so cache keys for "no filter X" and
   // "filter X = '' " collapse to the same entry. See doc 26 Part 2's
   // "empty-filters trap" for the rationale.
-  const allReviewsFilterParams: Record<string, string> = Object.fromEntries(
-    Object.entries(allReviewsFilters).filter(
-      ([, v]) => v !== undefined && v !== "",
-    ),
-  ) as Record<string, string>;
-  // Merge sort into request params (doc 30 Part 1).
-  const allReviewsRequestParams: Record<string, string> = {
-    ...allReviewsFilterParams,
-    ...(allReviewsSort
-      ? { sort_by: allReviewsSort.key, sort_dir: allReviewsSort.direction }
-      : {}),
-  };
+  //
+  // Year + Period composition: when both are set the pair describes a
+  // single composite cycle ("H1 FY26-27") — collapse to the exact
+  // `cycle` param so the backend hits its direct equality index
+  // instead of running two LIKE filters. Only one of the three (cycle
+  // OR fy_year/period) is ever sent on the wire; the cache key stays
+  // structurally identical for equivalent selections (= no duplicate
+  // cache entries from picking the same cycle two different ways).
+  const allReviewsFilterParams: Record<string, string> = (() => {
+    const composed: Record<string, string | number | undefined> = {
+      ...allReviewsFilters,
+    };
+    if (
+      !composed.cycle &&
+      composed.fy_year !== undefined &&
+      composed.period
+    ) {
+      composed.cycle = `${composed.period} ${fyStartYearToToken(
+        composed.fy_year as number,
+      )}`;
+      composed.fy_year = undefined;
+      composed.period = undefined;
+    }
+    return Object.fromEntries(
+      Object.entries(composed)
+        .filter(([, v]) => v !== undefined && v !== "")
+        .map(([k, v]) => [k, String(v)]),
+    ) as Record<string, string>;
+  })();
+  // Sort dimension is no longer wired through to the server — the
+  // grouped view's sort keys don't have a single ProjectReview
+  // column they could map onto. Request params == filter params.
+  const allReviewsRequestParams: Record<string, string> =
+    allReviewsFilterParams;
   const allReviewsQuery = useInfiniteQuery({
     queryKey: queryKeys.projectReviews.org(allReviewsRequestParams),
     queryFn: ({ pageParam }) =>
@@ -565,6 +639,16 @@ export function ProjectReviews() {
               employeeColumnLabel="Mentee"
               emptyTitle="No mentee project reviews yet"
               emptySubtitle="Reviews will appear here once your mentees are assigned to a project and the PM has started evaluating."
+              // Default Cycle to the active cycle so Mentor lands on
+              // "this cycle's mentee reviews" rather than the
+              // multi-cycle history dump. HR's controlled-mode branch
+              // achieves the same via its `filters` prop; the Mentor
+              // consumer goes through the uncontrolled defaultCycle.
+              defaultCycle={settings?.active_cycle_name}
+              // Grouping needs the cadence to know how many chip
+              // slots to render for current/future FYs.
+              cycleType={settings?.cycle_type ?? null}
+              activeCycle={settings?.active_cycle_name ?? null}
             />
           )}
 
@@ -580,17 +664,14 @@ export function ProjectReviews() {
                 employeeColumnLabel="Employee"
                 emptyTitle="No project reviews recorded"
                 emptySubtitle="Reviews will appear here once PMs start evaluating their teams."
-                // Server-side filter mode (PR #45, doc 28) + sort
-                // mode (PR #48, doc 31). Passing these triggers the
-                // controlled code paths in ReadOnlyReviewsList; the
-                // Mentor consumer below continues to use local state.
+                // Server-side filter mode (PR #45, doc 28). Sort is
+                // now client-side over grouped rows; no server-sort
+                // wiring needed here.
                 filters={allReviewsFilters}
                 onFiltersChange={setAllReviewsFilters}
                 serverTotal={allReviewsTotal}
-                sort={allReviewsSort}
-                onSortChange={setAllReviewsSort}
                 // Canonical filter options — keeps the dropdowns stable
-                // across filter changes. Mentor consumer below omits
+                // across filter changes. Mentor consumer above omits
                 // this prop and falls back to the derive-from-reviews
                 // behavior (correct there because its `reviews` is the
                 // full unfiltered mentee roster).
@@ -600,6 +681,8 @@ export function ProjectReviews() {
                   pms: hrPmNames,
                   employees: hrEmployeeNames,
                 }}
+                cycleType={settings?.cycle_type ?? null}
+                activeCycle={settings?.active_cycle_name ?? null}
               />
 
               {/* Load More — outside ReadOnlyReviewsList because that
@@ -637,22 +720,35 @@ export function ProjectReviews() {
 
 // ── Read-only review list (Mentor + HR) ────────────────────────────
 
-// Shared CSS Grid layout for the 7-column virtualized read-only review
-// list. `minmax(floor, weight)` keeps narrow columns readable and lets
-// wide ones expand to fill space.
+// Shared CSS Grid layout for the 6-column virtualized read-only
+// review list. Each row represents one (employee, project, FY) group;
+// the Cycle Reviews cell holds a strip of chips encoding per-cycle
+// state. The old per-cycle Status / Rating / Actions / Cycle columns
+// collapsed into that single cell — chips are clickable so a separate
+// Actions column became redundant.
 //
-// Column shape:
-//   1. Project (name + code — two visible lines, widest)
-//   2. Employee/Mentee (medium)
-//   3. PM (medium)
-//   4. Cycle (badge)
-//   5. Status (badge with icon)
-//   6. Rating (badge or Lock indicator)
-//   7. Actions (View button or "Awaiting PM" italic text)
+// Column shape (HR + Mentor — both consumers share this template):
+//   1. Employee / Mentee — single-line name, anchors the row
+//   2. Project           — single-line project name
+//   3. Project Code      — monospace project slug (e.g. ALPHA-001)
+//   4. PM                — medium
+//   5. Year              — FY span (e.g. "FY 2026-27")
+//   6. Cycle Reviews     — "X of N reviewed" + chip strip
+//
+// Project Code was previously stacked under the project name in a
+// single cell — splitting gives it column-level alignment so HR can
+// scan codes vertically and gives the Project cell more horizontal
+// room for long names. The fr weight on Project is intentionally
+// the largest because project names dominate this table's truncation
+// budget — codes are short, PM names are first-last, FY is fixed.
+// Cycle Reviews holds only 2-4 small chips + a short fraction line,
+// so its fr is kept modest (1.5fr) — letting it stay at 2+fr would
+// leave dead cell space on the right while Project clips. The 220px
+// minimum on Cycle Reviews still guarantees 4 chips fit without
+// wrapping at narrow viewports.
 const READ_ONLY_GRID_TEMPLATE_COLUMNS =
-  "minmax(220px, 2.2fr) minmax(140px, 1.4fr) minmax(140px, 1.4fr) " +
-  "minmax(100px, 1fr) minmax(120px, 1.1fr) minmax(120px, 1.1fr) " +
-  "minmax(100px, 0.9fr)";
+  "minmax(160px, 1.3fr) minmax(220px, 2.6fr) minmax(110px, 0.9fr) " +
+  "minmax(160px, 1.3fr) minmax(120px, 0.9fr) minmax(220px, 1.5fr)";
 
 // Sum of the READ_ONLY_GRID_TEMPLATE_COLUMNS minimums plus a little
 // breathing room. Drives the table's min-width so the outer horizontal-
@@ -660,7 +756,8 @@ const READ_ONLY_GRID_TEMPLATE_COLUMNS =
 // CSS pairing for overflow-y: auto) does — otherwise the body scrolls
 // horizontally on its own and the header stays put. Mirrors the same
 // fix in ManagementReview.tsx.
-const READ_ONLY_TABLE_MIN_WIDTH_PX = 1000;
+// 6-column total: 160 + 220 + 110 + 160 + 120 + 220 = 990 + ~50 breathing.
+const READ_ONLY_TABLE_MIN_WIDTH_PX = 1040;
 
 // Starting guess for the collapsed row height (project cell's 2-line
 // content + py-3 padding ≈ 60-64px). measureElement corrects after
@@ -688,9 +785,10 @@ function ReadOnlyReviewsList({
   filters,
   onFiltersChange,
   serverTotal,
-  sort: controlledSort,
-  onSortChange,
   filterOptionsOverride,
+  defaultCycle,
+  cycleType,
+  activeCycle,
 }: {
   readonly isLoading: boolean;
   readonly reviews: ProjectReviewResponse[];
@@ -698,6 +796,22 @@ function ReadOnlyReviewsList({
   readonly employeeColumnLabel: string;
   readonly emptyTitle: string;
   readonly emptySubtitle: string;
+  /** Initial Cycle value for the uncontrolled-mode (Mentor) consumer.
+   *  Passing the active cycle name as the default lands Mentor on
+   *  "this cycle's mentee reviews" instead of the multi-cycle dump.
+   *  Ignored in controlled mode — HR drives Cycle via the `filters`
+   *  prop directly. */
+  readonly defaultCycle?: string;
+  /** Org cadence (`half_yearly` / `quarterly` / `annual`). Drives how
+   *  many chip slots each row renders for the current/future FY — see
+   *  `groupProjectReviews` for the full slot-derivation rules. Past
+   *  FYs always render only the existing rows, so this prop is
+   *  effectively a hint for the active FY's expected shape. */
+  readonly cycleType: CycleType | null;
+  /** Org's active cycle name (e.g. "Q3 FY26-27"). Used by the chip
+   *  state derivation to distinguish "awaiting PM" (active cycle, no
+   *  row yet — chase target) from "upcoming" (future cycle). */
+  readonly activeCycle: string | null;
   /** Controlled-mode filter state. Pass together with
    *  `onFiltersChange` (HR consumer, PR #45 / doc 28). When BOTH are
    *  omitted the component falls back to local state (Mentor consumer
@@ -712,12 +826,15 @@ function ReadOnlyReviewsList({
    *  (matching what Load More pages through) instead of the loaded
    *  array length. */
   readonly serverTotal?: number;
-  /** Controlled-mode sort state (PR #48, doc 31). Pass together with
-   *  `onSortChange`. When both omitted, falls back to local state
-   *  (Mentor consumer's client-side sort). */
-  readonly sort?: SortState<ReadOnlySortKey> | null;
-  /** Setter for the controlled-mode sort. */
-  readonly onSortChange?: (next: SortState<ReadOnlySortKey> | null) => void;
+  // Sort is now client-side only — operates on GROUPED rows, not flat
+  // review rows. The server's cycle-desc default still influences the
+  // order reviews arrive in (which affects which group is first if
+  // sort=null), but the user-driven sort lives inside this component.
+  // The previously-controlled `sort` + `onSortChange` props were
+  // removed because the new sort keys (employee_name, project_name,
+  // pm_name, fy_year, progress) don't map cleanly to backend ORDER BY
+  // — there's no single ProjectReview column that represents a
+  // group's progress, and grouping breaks any per-row sort anyway.
   /** Canonical filter option lists. Pass from the HR consumer (where
    *  `reviews` is server-filtered) so dropdown options don't shrink
    *  to just the selected value as filters narrow the data. Each
@@ -738,8 +855,30 @@ function ReadOnlyReviewsList({
   // local-state path keeps the existing UI conventions; the
   // controlled-mode `filters` object uses `undefined` for "no filter
   // applied" (matching the pattern from docs 26 + 27).
+  // Initialize the uncontrolled-mode filter state with the default
+  // cycle's year + period when supplied. Mentor lands on "this
+  // cycle's mentee reviews" instead of a multi-cycle dump on first
+  // paint. Lazy init so the value is captured once at mount;
+  // subsequent changes to `defaultCycle` (rare — settings refetch)
+  // don't clobber the user's own filter picks afterwards.
+  //
+  // We seed `fy_year` + `period` (not `cycle`) so the two new
+  // dropdowns paint with the default selected and the user can
+  // independently change one without losing the other. The request-
+  // params builder upstream collapses the pair back to `cycle` when
+  // both are set, so the wire format is unchanged.
   const [localFilters, setLocalFilters] = useState<AllProjectReviewsFilters>(
-    {},
+    () => {
+      if (!defaultCycle) return {};
+      const init: AllProjectReviewsFilters = {};
+      const y = fyTokenToStartYear(defaultCycle);
+      // `period` is deliberately not seeded — see the URL reader's
+      // note above. Setting it would narrow the backend response and
+      // make the chip cadence misrepresent reality (an "upcoming H2"
+      // would render even when H2 review rows exist in the DB).
+      if (y !== null) init.fy_year = y;
+      return init;
+    },
   );
   const isControlled = filters !== undefined && onFiltersChange !== undefined;
   const activeFilters: AllProjectReviewsFilters = filters ?? localFilters;
@@ -748,20 +887,55 @@ function ReadOnlyReviewsList({
   // narrative to show. In controlled mode this means "server-filtered
   // and at least one dim is non-empty"; in uncontrolled mode it means
   // "user has narrowed via the local dropdowns".
-  const hasActiveFilters = Object.values(activeFilters).some(
-    (v) => v !== undefined && v !== "",
-  );
-  // Sort: same dual-mode pattern. Controlled when both `controlledSort`
-  // and `onSortChange` are supplied (HR / server-side); otherwise
-  // local state drives the legacy client-side sort (Mentor consumer).
-  const [localSort, setLocalSort] = useState<
-    SortState<ReadOnlySortKey> | null
-  >(null);
-  const isSortControlled =
-    controlledSort !== undefined && onSortChange !== undefined;
-  const sort: SortState<ReadOnlySortKey> | null =
-    controlledSort ?? localSort;
-  const setSort = onSortChange ?? setLocalSort;
+  //
+  // Uncontrolled mode skips the default Year + Period pair derived
+  // from `defaultCycle` so the Clear Filters button doesn't activate
+  // on first paint just because the Mentor's cycle pin is set.
+  const defaultYear = defaultCycle ? fyTokenToStartYear(defaultCycle) : null;
+  // Sort is now purely client-side and operates on the GROUPED rows
+  // (see `groupedRows` below). The previous controlled-sort path was
+  // dropped — none of the new sort keys map cleanly to a single
+  // ProjectReview column, so server-side ORDER BY can't represent
+  // them. Switching to local state simplifies the API (the parent no
+  // longer needs to plumb sort state through) and keeps the cache
+  // key stable across sort changes (filter changes still trigger
+  // fresh fetches; sort doesn't).
+  const [sort, setSort] = useState<SortState<ReadOnlySortKey> | null>(null);
+
+  // Progress filter — a group-level narrowing that replaces the old
+  // per-review Status filter (Pending PM / Reviewed). Status didn't
+  // translate cleanly to the grouped view because a single group can
+  // hold multiple statuses (one per chip). Progress is purely
+  // derived from the chip strip:
+  //   - complete     → every slot is reviewed
+  //   - in_progress  → at least one reviewed, at least one not
+  //   - not_started  → zero reviewed
+  // Lives in component-local state because it's derived from grouped
+  // data which is itself a render-time computation. Adding it to the
+  // server-side filter set would break the grouping (the server
+  // returns flat rows; "progress" only exists after we group them).
+  //
+  // Declared BEFORE hasActiveFilters so the latter can reference it
+  // — `const` declarations have a temporal dead zone, so the original
+  // order (progressFilter below hasActiveFilters) threw a runtime
+  // ReferenceError on first paint.
+  const [progressFilter, setProgressFilter] = useState<
+    "all" | "complete" | "in_progress" | "not_started"
+  >("all");
+  const hasActiveFilters =
+    progressFilter !== "all" ||
+    Object.entries(activeFilters).some(([key, value]) => {
+      if (value === undefined || value === "") return false;
+      if (isControlled) return true;
+      if (key === "cycle" && value === defaultCycle) return false;
+      if (key === "fy_year" && value === defaultYear) return false;
+      // `period` shouldn't be set in uncontrolled mode anymore (we
+      // stopped seeding it from defaultCycle), but defensive: if it
+      // somehow appears in activeFilters, don't flag it as "active"
+      // since the user has no way to see/clear it via the UI.
+      if (key === "period") return false;
+      return true;
+    });
   // Read-only modal target. Mentors and HR both need a way to read the
   // PM's competency comments + impact statement, not just the rating —
   // setting this opens the detail modal in place.
@@ -781,6 +955,21 @@ function ReadOnlyReviewsList({
           ).sort((a, b) => b.localeCompare(a)),
     [reviews, filterOptionsOverride?.cycles],
   );
+
+  // Year list derived from `cycles` for the Year dropdown — scales
+  // linearly with FY count (typically 1-5 entries) and stays short
+  // even as historical FYs accumulate. The Period dropdown was
+  // dropped when the table moved to grouped rows (chips encode the
+  // period directly via column position), so we no longer derive a
+  // separate periods array.
+  const cycleYears = useMemo(() => {
+    const years = new Set<number>();
+    for (const c of cycles) {
+      const y = fyTokenToStartYear(c);
+      if (y !== null) years.add(y);
+    }
+    return Array.from(years).sort((a, b) => b - a);
+  }, [cycles]);
   const projects = useMemo(
     () =>
       filterOptionsOverride?.projects
@@ -820,7 +1009,23 @@ function ReadOnlyReviewsList({
     // filtering.
     if (isControlled) return reviews;
     return reviews.filter((r) => {
-      if (activeFilters.cycle && r.cycle !== activeFilters.cycle) return false;
+      // Cycle composition mirrors the server-side path in the
+      // controlled branch: exact `cycle` wins; otherwise fy_year +
+      // period each narrow independently. Lets the Year + Period
+      // dropdowns behave identically for Mentor's uncontrolled
+      // mode as they do for HR's controlled mode.
+      if (activeFilters.cycle) {
+        if (r.cycle !== activeFilters.cycle) return false;
+      } else {
+        if (activeFilters.fy_year !== undefined) {
+          const rowYear = r.cycle ? fyTokenToStartYear(r.cycle) : null;
+          if (rowYear !== activeFilters.fy_year) return false;
+        }
+        if (activeFilters.period) {
+          const rowPeriod = r.cycle ? extractCyclePeriod(r.cycle) : null;
+          if (rowPeriod !== activeFilters.period) return false;
+        }
+      }
       if (activeFilters.project && r.project_name !== activeFilters.project) return false;
       if (
         activeFilters.pm &&
@@ -834,28 +1039,73 @@ function ReadOnlyReviewsList({
     });
   }, [reviews, activeFilters, isControlled]);
 
-  const sorted = useMemo(() => {
-    // In controlled mode, server already ordered; passthrough.
-    if (isSortControlled) return filtered;
-    if (!sort) return filtered;
-    return filtered.slice().sort((a, b) => {
+  // Group the filtered review rows into (employee, project, FY) rows
+  // so the table displays one row per relationship + FY instead of
+  // one row per individual review (which stacked 4 lines per person
+  // for quarterly orgs). The chip strip inside each row carries the
+  // per-cycle state. Grouping is memoised on `filtered` because it's
+  // an O(n) bucket pass.
+  const groupedRows = useMemo(
+    () => groupProjectReviews(filtered, cycleType, activeCycle),
+    [filtered, cycleType, activeCycle],
+  );
+
+  // Sort applies to the GROUPED rows. Defaults: when no explicit sort
+  // is set, fall through to the deterministic order from
+  // `groupProjectReviews` (employee asc, then FY desc).
+  const sortedGroups = useMemo(() => {
+    if (!sort) return groupedRows;
+    return groupedRows.slice().sort((a, b) => {
       const { kind, get } = READ_ONLY_SORT_CONFIG[sort.key];
       return compareValues(get(a), get(b), kind, sort.direction);
     });
-  }, [filtered, sort, isSortControlled]);
+  }, [groupedRows, sort]);
+
+  // Apply the Progress filter AFTER sort so toggling Progress doesn't
+  // re-trigger the sort comparator. Reads `reviewedCount` /
+  // `totalSlots` already computed during grouping — O(N) pass.
+  const visibleGroups = useMemo(() => {
+    if (progressFilter === "all") return sortedGroups;
+    return sortedGroups.filter((g) => {
+      if (g.totalSlots === 0) return false;
+      if (progressFilter === "complete") return g.reviewedCount === g.totalSlots;
+      if (progressFilter === "not_started") return g.reviewedCount === 0;
+      // in_progress: at least one reviewed, at least one not
+      return g.reviewedCount > 0 && g.reviewedCount < g.totalSlots;
+    });
+  }, [sortedGroups, progressFilter]);
+
+  // Count of actual review ROWS backing the currently-visible groups.
+  // Sum of slots that have a real `review` object — excludes
+  // upcoming/awaiting placeholders (those don't correspond to a DB
+  // row). Used by the toolbar counter so the displayed total updates
+  // with both server-side filters AND the client-side Progress
+  // filter. Without this the counter staid stuck on `serverTotal`
+  // — which only reflects the server filter set.
+  const visibleReviewCount = useMemo(
+    () =>
+      visibleGroups.reduce(
+        (sum, g) => sum + g.slots.filter((s) => s.review !== null).length,
+        0,
+      ),
+    [visibleGroups],
+  );
 
   // Variable-height virtualizer (same template as PR #16 / doc #16).
-  // We use measureElement here primarily for the long-project-name
-  // edge case where the cell wraps to two display lines. The rest of
-  // the row is fixed-height; ResizeObserver fires once per row and
-  // the virtualizer caches that height for the row's lifetime.
+  // Project cell can wrap to two lines on long names; the rest of
+  // the row stays compact. `getItemKey` keys the measurement cache
+  // by group identity (not array index) so the cached row height
+  // follows a group across re-sorts / filter changes — same pattern
+  // we use on the AnnualGoals All Goals tab to avoid post-filter
+  // gap artifacts.
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual's useVirtualizer returns non-memoisable functions; React Compiler logs a benign skip here.
   const rowVirtualizer = useVirtualizer({
-    count: sorted.length,
+    count: visibleGroups.length,
     getScrollElement: () => scrollContainerRef.current,
     estimateSize: () => READ_ONLY_ESTIMATE_ROW_PX,
     overscan: READ_ONLY_OVERSCAN,
+    getItemKey: (index) => visibleGroups[index].key,
   });
 
   if (isLoading) {
@@ -962,54 +1212,140 @@ function ReadOnlyReviewsList({
                     />
                   </div>
                 )}
+                {/* Year + Period replace the single Cycle dropdown.
+                    The flat list of (period × FY) cycles grew long
+                    once multiple FYs accumulated — a single dropdown
+                    forced HR to scan 8-10+ rows to pick "H1 of last
+                    year". Splitting maps to the two cognitive steps
+                    HR already takes (year first, then period) and
+                    keeps each dropdown short forever. */}
+                {cycleYears.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <label htmlFor="ro-fy-filter" className={filterLabelCls}>
+                      Year
+                    </label>
+                    <select
+                      id="ro-fy-filter"
+                      value={
+                        activeFilters.fy_year !== undefined
+                          ? String(activeFilters.fy_year)
+                          : "all"
+                      }
+                      onChange={(e) => {
+                        // Clearing the cycle override is important
+                        // because once both Year + Period are picked,
+                        // the request-params builder collapses them
+                        // to `cycle` — leaving a stale `cycle` in
+                        // state would shadow the new Year selection
+                        // on subsequent picks.
+                        const next: AllProjectReviewsFilters = { ...activeFilters };
+                        next.cycle = undefined;
+                        next.fy_year =
+                          e.target.value === "all"
+                            ? undefined
+                            : Number(e.target.value);
+                        setActiveFilters(next);
+                      }}
+                      className={`${filterSelectCls} min-w-[120px]`}
+                    >
+                      <option value="all">All Years</option>
+                      {cycleYears.map((y) => (
+                        <option key={y} value={String(y)}>
+                          {formatFyYearSpan(y)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                {/* Period filter was dropped when the table moved to
+                    grouped rows — chip-column position already aligns
+                    same-period chips across rows (Q3 always sits 3rd
+                    from the left), so a "narrow to H1" dropdown didn't
+                    add narrowing power. The chip-cell legend conveys
+                    state directly. Year still narrows row count; the
+                    period dim/highlight UI is gone with the dropdown. */}
+                {/* Progress filter — replaces the legacy Status
+                    dropdown (Pending PM / Reviewed). Status's
+                    per-review semantics break under grouping (a
+                    group has multiple statuses, one per chip).
+                    Progress narrows at the GROUP level: "show me
+                    everyone with at least one cycle still owed" =
+                    In Progress + Not Started; "show me where all
+                    work is done" = Complete. Client-side only — no
+                    server roundtrip on toggle. */}
                 <div className="flex items-center gap-2">
-                  <label htmlFor="ro-cycle-filter" className={filterLabelCls}>
-                    Cycle
+                  <label htmlFor="ro-progress-filter" className={filterLabelCls}>
+                    Progress
                   </label>
                   <select
-                    id="ro-cycle-filter"
-                    value={activeFilters.cycle ?? "all"}
-                    onChange={(e) => setFilter("cycle", e.target.value)}
-                    className={`${filterSelectCls} min-w-[120px]`}
+                    id="ro-progress-filter"
+                    value={progressFilter}
+                    onChange={(e) =>
+                      setProgressFilter(
+                        e.target.value as typeof progressFilter,
+                      )
+                    }
+                    className={`${filterSelectCls} min-w-[140px]`}
                   >
+                    {/* Labels chosen for self-explanatory reading:
+                        each option states the relationship to the
+                        "reviewed" state of cycles in the row. The
+                        underlying values stay unchanged so the
+                        filter logic in `visibleGroups` doesn't need
+                        to know about the renaming. */}
                     <option value="all">All</option>
-                    {cycles.map((c) => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="flex items-center gap-2">
-                  <label htmlFor="ro-status-filter" className={filterLabelCls}>
-                    Status
-                  </label>
-                  <select
-                    id="ro-status-filter"
-                    value={activeFilters.status ?? "all"}
-                    onChange={(e) => setFilter("status", e.target.value)}
-                    className={`${filterSelectCls} min-w-[120px]`}
-                  >
-                    <option value="all">All</option>
-                    <option value="pending">Pending PM</option>
-                    <option value="reviewed">Reviewed</option>
+                    <option value="complete">Fully Reviewed</option>
+                    <option value="in_progress">Partially Reviewed</option>
+                    <option value="not_started">Not Reviewed</option>
                   </select>
                 </div>
               </>
             );
           })()}
           <span className="text-xs text-text-muted">
-            {/* Controlled mode (HR): serverTotal is the universe count
-                matching active filters; `filtered.length` equals
-                `reviews.length` because the client-side loop is
-                skipped — so "{serverTotal} matches" is the clean read.
-                Uncontrolled mode (Mentor): legacy "filtered / total"
-                framing where total is the un-paginated mentee count. */}
-            {isControlled
-              ? `${serverTotal ?? 0} ${(serverTotal ?? 0) === 1 ? "match" : "matches"}`
-              : `${filtered.length} of ${reviews.length}`}
+            {/* Counter reflects what's actually visible: groups (the
+                row unit) + the underlying review count. Both update
+                with every filter change — server-side ones reshape
+                `visibleGroups` via the request, the client-side
+                Progress filter narrows it again. Using
+                `visibleReviewCount` instead of `serverTotal` keeps
+                the count in sync with the post-Progress-filter view;
+                `serverTotal` lags because it only reflects the
+                server filter set. */}
+            {visibleGroups.length}{" "}
+            {visibleGroups.length === 1 ? "row" : "rows"}
+            {visibleReviewCount > 0 && (
+              <>
+                {" · "}
+                {visibleReviewCount}{" "}
+                {visibleReviewCount === 1 ? "review" : "reviews"}
+              </>
+            )}
           </span>
           <ClearFiltersButton
             active={hasActiveFilters}
-            onClear={() => setActiveFilters({})}
+            // In uncontrolled mode (Mentor) reset to the page default
+            // (Year + Period parsed from defaultCycle) rather than a
+            // fully empty filter object — "Clear" means "go back to
+            // the entry state", which here is "this cycle's mentee
+            // reviews", not the multi-cycle history view. Controlled
+            // mode (HR) drives the filter set via
+            // `filters`/`onFiltersChange`, so the empty fallback
+            // there is fine — HR's parent owns the default-cycle
+            // re-pin separately.
+            onClear={() => {
+              if (!isControlled && defaultCycle) {
+                const reset: AllProjectReviewsFilters = {};
+                if (defaultYear !== null) reset.fy_year = defaultYear;
+                // period intentionally not restored — see URL reader.
+                setActiveFilters(reset);
+              } else {
+                setActiveFilters({});
+              }
+              // Progress is a separate axis from the server-side
+              // filter set — reset it too so "Clear" really clears.
+              setProgressFilter("all");
+            }}
           />
          </div>
          <div className="shrink-0">
@@ -1027,11 +1363,14 @@ function ReadOnlyReviewsList({
         <div
           role="table"
           aria-label="Read-only project reviews"
-          aria-rowcount={sorted.length}
+          aria-rowcount={visibleGroups.length}
           className="text-[13px]"
           style={{ minWidth: READ_ONLY_TABLE_MIN_WIDTH_PX }}
         >
-          {/* Header — non-virtualized, pinned at top */}
+          {/* Header — non-virtualized, pinned at top. 5 columns:
+              Employee | Project | PM | Year | Cycle Reviews. The
+              previous per-cycle Status / Rating / Actions / Cycle
+              columns collapsed into the Cycle Reviews chip strip. */}
           <div role="rowgroup" className="bg-slate-50/80 border-b border-border">
             <div
               role="row"
@@ -1039,9 +1378,6 @@ function ReadOnlyReviewsList({
               style={{ gridTemplateColumns: READ_ONLY_GRID_TEMPLATE_COLUMNS }}
             >
               <div role="columnheader" className="text-left px-5 py-2.5">
-                <SortableHeader label="Project" columnKey="project_name" sort={sort} onSort={setSort} />
-              </div>
-              <div role="columnheader" className="text-left px-4 py-2.5">
                 <SortableHeader
                   label={employeeColumnLabel}
                   columnKey="employee_name"
@@ -1050,29 +1386,57 @@ function ReadOnlyReviewsList({
                 />
               </div>
               <div role="columnheader" className="text-left px-4 py-2.5">
-                <SortableHeader label="PM" columnKey="pm_name" sort={sort} onSort={setSort} />
+                <SortableHeader label="Project" columnKey="project_name" sort={sort} onSort={setSort} />
               </div>
               <div role="columnheader" className="text-left px-4 py-2.5">
-                <SortableHeader label="Cycle" columnKey="cycle" sort={sort} onSort={setSort} />
+                {/* Non-sortable header. Wraps the label in an
+                    inline-flex span so the inner-text geometry
+                    matches the sortable headers' <SortableHeader>
+                    (which renders a <button> with inline-flex). The
+                    outer <div> uses the same px-4 / py-2.5 padding,
+                    and the inner span carries the typography — so a
+                    "Project Code" header text aligns at the exact
+                    same x-offset as the body cell's
+                    "MIL-PRJ-101". */}
+                <span className="inline-flex items-center text-[11px] font-bold uppercase tracking-wider text-text-muted">
+                  Project Code
+                </span>
               </div>
               <div role="columnheader" className="text-left px-4 py-2.5">
-                <SortableHeader label="Status" columnKey="status" sort={sort} onSort={setSort} />
+                <SortableHeader
+                  label="Project Manager"
+                  columnKey="pm_name"
+                  sort={sort}
+                  onSort={setSort}
+                />
               </div>
               <div role="columnheader" className="text-left px-4 py-2.5">
-                <SortableHeader label="Rating" columnKey="performance_group" sort={sort} onSort={setSort} />
+                <SortableHeader label="Year" columnKey="fy_year" sort={sort} onSort={setSort} />
               </div>
-              <div
-                role="columnheader"
-                className="text-left px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted"
-              >
-                Actions
+              <div role="columnheader" className="text-left px-4 py-2.5">
+                {/* Sortable header + a popover legend button so HR
+                    can see real chip swatches alongside the
+                    descriptions. The popover renders via portal so
+                    the table's `overflow-x-auto` wrapper doesn't
+                    clip it; hover-with-delay + click-to-pin gives
+                    both casual and keyboard / touch users an
+                    equivalent path. */}
+                <div className="flex items-center gap-1.5">
+                  <SortableHeader
+                    label="Cycle Reviews"
+                    columnKey="progress"
+                    sort={sort}
+                    onSort={setSort}
+                  />
+                  <CycleReviewsLegendButton />
+                </div>
               </div>
             </div>
           </div>
 
           {/* Body — either the no-matches branch or the virtualized
               scroll container. */}
-          {sorted.length === 0 ? (
+          {visibleGroups.length === 0 ? (
             <div className="px-5 py-10 text-center">
               <Search className="h-6 w-6 text-text-muted mx-auto mb-1" aria-hidden="true" />
               <p className="text-[13px] text-text-main font-medium">No matching reviews</p>
@@ -1095,17 +1459,12 @@ function ReadOnlyReviewsList({
                 }}
               >
                 {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                  const r = sorted[virtualRow.index];
-                  const isReviewed = r.status === "reviewed";
+                  const group = visibleGroups[virtualRow.index];
                   return (
                     <div
                       role="row"
                       aria-rowindex={virtualRow.index + 1}
-                      key={r.id}
-                      // data-index is REQUIRED by measureElement to map
-                      // the ResizeObserver entry back to this row's
-                      // index in the virtualizer's size cache. See
-                      // doc #16 part 1.
+                      key={group.key}
                       data-index={virtualRow.index}
                       ref={rowVirtualizer.measureElement}
                       style={{
@@ -1118,59 +1477,55 @@ function ReadOnlyReviewsList({
                       }}
                       className="grid items-center hover:bg-slate-50/60 transition-colors border-b border-border/50"
                     >
-                      <div role="cell" className="px-5 py-3">
-                        <div className="font-medium text-text-main">
-                          {r.project_name}
-                        </div>
-                        <div className="font-mono text-[11px] text-text-muted">
-                          {r.project_code}
-                        </div>
+                      <div role="cell" className="px-5 py-3 font-medium text-text-main truncate">
+                        {group.employee_name}
                       </div>
                       <div role="cell" className="px-4 py-3 font-medium text-text-main truncate">
-                        {r.employee_name}
+                        {group.project_name}
+                      </div>
+                      <div role="cell" className="px-4 py-3 font-mono text-[11px] text-text-muted truncate">
+                        {group.project_code}
                       </div>
                       <div role="cell" className="px-4 py-3 text-text-muted truncate">
-                        {r.pm_name ?? r.reviewer_name ?? "—"}
+                        {group.pm_name ?? "—"}
                       </div>
                       <div role="cell" className="px-4 py-3">
                         <span className="text-[12px] font-semibold text-text-muted bg-slate-100 px-1.5 py-0.5 rounded">
-                          {r.cycle}
+                          {formatFyYearSpan(group.fy_year)}
                         </span>
                       </div>
                       <div role="cell" className="px-4 py-3">
-                        {isReviewed ? (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-[11px] font-bold uppercase text-green-700">
-                            <CheckCircle2 className="h-3 w-3" /> Reviewed
-                          </span>
+                        {/* "X of N reviewed" fraction. Lock indicator
+                            replaces the count when the org-wide
+                            project_ratings_visible gate is off and
+                            the viewer would be downstream of that
+                            gate (HR + Mentor consumers bypass it via
+                            their parent passing true). */}
+                        {projectRatingsVisible ? (
+                          <p className="text-[11px] text-text-muted mb-1.5">
+                            <span className="font-semibold text-text-main tabular-nums">
+                              {group.reviewedCount}
+                            </span>
+                            {" "}of{" "}
+                            <span className="tabular-nums">{group.totalSlots}</span>
+                            {" "}reviewed
+                          </p>
                         ) : (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-bold uppercase text-amber-700">
-                            <Clock className="h-3 w-3" /> Pending PM
-                          </span>
+                          <p className="text-[11px] text-text-muted/60 mb-1.5 inline-flex items-center gap-1">
+                            <Lock className="h-3 w-3" /> Ratings hidden
+                          </p>
                         )}
-                      </div>
-                      <div role="cell" className="px-4 py-3">
-                        {!projectRatingsVisible ? (
-                          <span className="inline-flex items-center gap-1 text-[11px] text-text-muted/60">
-                            <Lock className="h-3 w-3" /> Hidden
-                          </span>
-                        ) : (
-                          <PerformanceRatingBadge value={r.performance_group} />
-                        )}
-                      </div>
-                      <div role="cell" className="px-4 py-3">
-                        {isReviewed ? (
-                          <button
-                            type="button"
-                            onClick={() => setViewTarget(r)}
-                            className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-text-muted hover:bg-brand/10 hover:text-brand transition-colors"
-                          >
-                            <Eye className="h-3 w-3" /> View
-                          </button>
-                        ) : (
-                          <span className="text-[11px] italic text-text-muted/70">
-                            Awaiting PM
-                          </span>
-                        )}
+                        <div className="flex flex-wrap items-center gap-1">
+                          {group.slots.map((slot) => (
+                            <CycleReviewChip
+                              key={slot.cycleName}
+                              slot={slot}
+                              onClick={(s) => {
+                                if (s.review) setViewTarget(s.review);
+                              }}
+                            />
+                          ))}
+                        </div>
                       </div>
                     </div>
                   );
