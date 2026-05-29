@@ -1444,7 +1444,35 @@ def get_all_reviews(
     # exact values; substring search would be a future PR).
     cycle: Optional[str] = Query(
         None,
-        description="Exact match on review.cycle (e.g. 'Q1 FY26-27').",
+        description=(
+            "Exact match on review.cycle (e.g. 'Q1 FY26-27'). Takes "
+            "precedence over `fy_year` + `period` when both shapes are "
+            "supplied — the legacy path for callers that already know "
+            "the exact composite token."
+        ),
+    ),
+    fy_year: Optional[int] = Query(
+        None,
+        ge=2000,
+        le=2099,
+        description=(
+            "FY start year (e.g. 2026 → 'FY26-27'). Matches every "
+            "review.cycle that ends in the corresponding FY token. The "
+            "All Reviews tab's Year dropdown uses this so HR can pick "
+            "'all of FY 26-27' without enumerating every period inside "
+            "that FY. Ignored when `cycle` is also supplied."
+        ),
+    ),
+    period: Optional[str] = Query(
+        None,
+        pattern=r"^(?:H[12]|Q[1-4])$",
+        description=(
+            "Period prefix — 'H1' / 'H2' for half-yearly orgs, "
+            "'Q1'..'Q4' for quarterly. Matches review.cycle values that "
+            "start with `<period> ` (single space). Lets HR pick 'H1 "
+            "across all FYs' without enumerating each (period, FY) "
+            "combination. Ignored when `cycle` is also supplied."
+        ),
     ),
     status_: Optional[str] = Query(
         None,
@@ -1545,7 +1573,29 @@ def get_all_reviews(
     # the Project + PMUser joins even with no `pm` filter. Same doc-30
     # Part 3 pattern.
     if cycle:
+        # Exact match wins — legacy deep-link path. `fy_year` and
+        # `period` are ignored when an explicit cycle is provided.
         base_q = base_q.filter(ProjectReview.cycle == cycle)
+    else:
+        # Either of the two new filters can fire independently. Both
+        # together describe a single composite cycle ("H1 FY26-27") —
+        # frontend usually collapses that case to the exact `cycle`
+        # path, but we still honour the pair shape defensively.
+        if fy_year is not None:
+            # Mirror the frontend's fyStartYearToToken: 2026 → "FY26-27"
+            yy = f"{fy_year % 100:02d}"
+            nn = f"{(fy_year + 1) % 100:02d}"
+            fy_token = f"FY{yy}-{nn}"
+            # Cycle strings look like "H1 FY26-27" or "Q3 FY26-27" —
+            # `LIKE '%FY26-27'` (anchored at the end) avoids false
+            # positives if a period name ever contains digits.
+            base_q = base_q.filter(ProjectReview.cycle.like(f"%{fy_token}"))
+        if period:
+            # The frontend dropdown only emits validated values
+            # (Pydantic Query regex above is the second gate), so
+            # `<period> ` with a trailing space safely matches all
+            # cycles starting with that period token.
+            base_q = base_q.filter(ProjectReview.cycle.like(f"{period} %"))
     if status_:
         base_q = base_q.filter(ProjectReview.status == status_)
 

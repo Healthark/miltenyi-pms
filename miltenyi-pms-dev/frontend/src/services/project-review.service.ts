@@ -338,8 +338,20 @@ export type PaginatedProjectReviews = Paginated<ProjectReviewResponse>;
  *  equality. The frontend's combobox/select UI commits exact values
  *  so partial-match isn't needed yet. */
 export interface AllProjectReviewsFilters {
-  /** Exact match on review.cycle (e.g. "Q1 FY26-27"). */
+  /** Exact match on review.cycle (e.g. "Q1 FY26-27"). When supplied
+   *  takes precedence over `fy_year` + `period` (legacy deep-link
+   *  path). */
   cycle?: string;
+  /** FY start year (e.g. 2026). Backend matches every review whose
+   *  cycle ends with the corresponding FY token ("FY26-27"). Powers
+   *  the Year dropdown on the All Reviews tab so HR can pick "all of
+   *  FY 26-27" without enumerating each period in that FY. */
+  fy_year?: number;
+  /** Period prefix — "H1" / "H2" for half-yearly orgs, "Q1".."Q4"
+   *  for quarterly. Backend matches every review whose cycle starts
+   *  with `<period> `. Powers the Period dropdown so HR can pick
+   *  "H1 across all FYs". */
+  period?: string;
   /** Exact match on review.status. */
   status?: string;
   /** Exact match on the project's assigned PM full_name. */

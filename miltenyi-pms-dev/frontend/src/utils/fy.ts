@@ -18,6 +18,22 @@ export function extractFyToken(cycleName: string): string {
 }
 
 /**
+ * Pull the period prefix from a composite cycle name.
+ *   "H1 FY26-27" → "H1"
+ *   "Q3 FY25-26" → "Q3"
+ *   "FY26-27"    → null   (bare FY, no period part)
+ *   ""           → null
+ * Used by ProjectReviews' Year + Period split filter to derive the
+ * current period from `settings.active_cycle_name` and to back-compat
+ * the legacy `?cycle=H1 FY26-27` deep-link URL form.
+ */
+export function extractCyclePeriod(cycleName: string): string | null {
+  if (!cycleName) return null;
+  const head = cycleName.split(" ")[0]?.toUpperCase() ?? "";
+  return /^(?:H[12]|Q[1-4])$/.test(head) ? head : null;
+}
+
+/**
  * Render a cycle name as a human-readable FY label.
  *   "FY26-27"     → "FY 2026-27"
  *   "H1 FY26-27"  → "FY 2026-27"
