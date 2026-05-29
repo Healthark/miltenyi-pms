@@ -26,7 +26,6 @@ import { AnnualReviewFunnelCard } from "@/components/dashboard/AnnualReviewFunne
 import { GoalApprovalFunnelCard } from "@/components/dashboard/GoalApprovalFunnelCard";
 import { ProjectReviewCompletionCard } from "@/components/dashboard/ProjectReviewCompletionCard";
 import { PendingActionsCard } from "@/components/dashboard/PendingActionsCard";
-import { ActiveCycleWidget } from "@/components/dashboard/ActiveCycleWidget";
 import { ActiveCyclesCard } from "@/components/dashboard/ActiveCyclesCard";
 import { MentorCoverageCard } from "@/components/dashboard/MentorCoverageCard";
 
@@ -144,9 +143,14 @@ export function HrDashboard() {
       {isMiltenyiHR ? (
         <>
           <div className="grid grid-cols-1 gap-4">
-            <ActiveCycleWidget
+            {/* Miltenyi sees Fiscal Year + Project Review Cycle in
+                the same container. Goal Review block is omitted —
+                Miltenyi doesn't own annual goal reviews. Reuses the
+                ActiveCyclesCard layout so the visual language is
+                consistent with HR_MyOrg's three-block version. */}
+            <ActiveCyclesCard
               activeCycle={activeCycleName ?? null}
-              variant="project"
+              blocks={["fy", "project"]}
             />
           </div>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">

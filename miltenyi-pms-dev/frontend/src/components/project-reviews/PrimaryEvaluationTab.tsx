@@ -32,6 +32,13 @@ import { PerformanceRatingBadge } from "@/components/reviews/PerformanceRatingBa
 import { ClearFiltersButton } from "@/components/common/ClearFiltersButton";
 import { StringCombobox } from "@/components/common/StringCombobox";
 import { setOrDeleteParam, searchParamsChanged } from "@/utils/searchParams";
+import {
+  extractCyclePeriod,
+  extractFyToken,
+  formatFyYearSpan,
+  fyStartYearToToken,
+  fyTokenToStartYear,
+} from "@/utils/fy";
 
 // ── Constants ───────────────────────────────────────────────────────
 
@@ -174,20 +181,32 @@ export function PrimaryEvaluationTab() {
   const [funcFilter, setFuncFilter] = useState<string>("all");
   const [projectFilter, setProjectFilter] = useState<string>("all");
   const [employeeFilter, setEmployeeFilter] = useState<string>("all");
-  // Default the cycle filter to the active cycle once settings load.
-  // Snapshot during render via React 19's "store info from previous
-  // renders" pattern; the conditional gate prevents an infinite loop.
-  const [cycleFilter, setCycleFilter] = useState<string>("");
-  if (cycleFilter === "" && activeCycle) {
-    setCycleFilter(activeCycle);
-  }
+  // Cycle filter split into Year + Period. Single Cycle dropdown grew
+  // long after 3-4 years of data accumulated (16+ entries for
+  // quarterly orgs). Splitting keeps each dropdown short forever:
+  // Year scales linearly with FY count (typically 1-5 entries);
+  // Period is fixed at 2 (half-yearly) or 4 (quarterly). Defaults to
+  // the active cycle's year + period so PM still lands on the
+  // current cycle on first paint. Same shape we shipped on HR's All
+  // Reviews tab — see fy.ts helpers + utils/searchParams.ts for the
+  // primitives shared across pages.
+  const defaultYear = activeCycle ? extractFyToken(activeCycle) : "";
+  const defaultPeriod = activeCycle ? extractCyclePeriod(activeCycle) ?? "" : "";
+  const [yearFilter, setYearFilter] = useState<string>("");
+  const [periodFilter, setPeriodFilter] = useState<string>("");
+  // Lazy default once settings have loaded — same "store info from
+  // previous render" trick as the legacy single-cycle code so we
+  // don't need a follow-up effect just to copy settings into state.
+  if (yearFilter === "" && defaultYear) setYearFilter(defaultYear);
+  if (periodFilter === "" && defaultPeriod) setPeriodFilter(defaultPeriod);
   const [sort, setSort] = useState<SortState<EvalSortKey> | null>(null);
 
   // ── URL state ──────────────────────────────────────────────────────
   // Read deep-link params on first mount and seed filter state. Today's
   // senders:
   //   • ActionItemsWidget "Project reviews to write" → ?status=pending
-  //   • Future: dashboard cards may carry ?cycle= / ?project=.
+  //   • Future: dashboard cards may carry ?fy_year= / ?period= or the
+  //     legacy `?cycle=` shape (still honoured for back-compat).
   // Write-back mirrors the current filter selection to URL so refresh
   // and share-link preserve the view. Both effects gated on the same
   // ref so the first render's empty/default state can't clobber URL
@@ -197,12 +216,30 @@ export function PrimaryEvaluationTab() {
   useEffect(() => {
     if (filtersDefaultedRef.current) return;
     const urlStatus = searchParams.get("status");
+    const urlFyYear = searchParams.get("fy_year");
+    const urlPeriod = searchParams.get("period");
     const urlCycle = searchParams.get("cycle");
     const urlFunc = searchParams.get("function");
     const urlProject = searchParams.get("project");
     const urlEmployee = searchParams.get("employee");
     if (urlStatus) setStatusFilter(urlStatus);
-    if (urlCycle) setCycleFilter(urlCycle);
+    // Year/Period URL contract — prefer the explicit two-param form;
+    // fall back to parsing the legacy `?cycle=H1 FY26-27` shape into
+    // its year + period parts so old dashboard deep-links keep
+    // landing on the right cycle.
+    if (urlFyYear) {
+      const parsed = Number(urlFyYear);
+      if (!Number.isNaN(parsed)) setYearFilter(fyStartYearToToken(parsed));
+    } else if (urlCycle) {
+      const parsedYear = fyTokenToStartYear(urlCycle);
+      if (parsedYear !== null) setYearFilter(fyStartYearToToken(parsedYear));
+    }
+    if (urlPeriod) {
+      setPeriodFilter(urlPeriod);
+    } else if (urlCycle) {
+      const parsedPeriod = extractCyclePeriod(urlCycle);
+      if (parsedPeriod) setPeriodFilter(parsedPeriod);
+    }
     if (urlFunc) setFuncFilter(urlFunc);
     if (urlProject) setProjectFilter(urlProject);
     if (urlEmployee) setEmployeeFilter(urlEmployee);
@@ -223,14 +260,27 @@ export function PrimaryEvaluationTab() {
     } else {
       next.delete("status");
     }
-    // Cycle: only persist when it differs from the active-cycle default
-    // so the URL stays clean for the common case (PM is on the current
-    // cycle — that's the page's natural state, no need to encode it).
-    setOrDeleteParam(
-      next,
-      "cycle",
-      cycleFilter === activeCycle ? undefined : cycleFilter,
-    );
+    // Year + Period: only persist when they differ from the
+    // active-cycle defaults so the URL stays clean for the common
+    // case (PM is on the current cycle). Year is stored as the FY
+    // token internally; URL exposes the integer start year via
+    // `?fy_year=` for consistency with the existing HR deep-link
+    // shape. Drop the legacy `?cycle=` from URL on write — the
+    // reader still understands it for back-compat but writes go to
+    // the new shape.
+    next.delete("cycle");
+    if (yearFilter && yearFilter !== defaultYear) {
+      const startYear = fyTokenToStartYear(yearFilter);
+      if (startYear !== null) next.set("fy_year", String(startYear));
+      else next.delete("fy_year");
+    } else {
+      next.delete("fy_year");
+    }
+    if (periodFilter && periodFilter !== defaultPeriod) {
+      next.set("period", periodFilter);
+    } else {
+      next.delete("period");
+    }
     setOrDeleteParam(next, "function", funcFilter);
     setOrDeleteParam(next, "project", projectFilter);
     setOrDeleteParam(next, "employee", employeeFilter);
@@ -239,11 +289,13 @@ export function PrimaryEvaluationTab() {
     }
   }, [
     statusFilter,
-    cycleFilter,
+    yearFilter,
+    periodFilter,
+    defaultYear,
+    defaultPeriod,
     funcFilter,
     projectFilter,
     employeeFilter,
-    activeCycle,
     searchParams,
     setSearchParams,
   ]);
@@ -356,11 +408,61 @@ export function PrimaryEvaluationTab() {
   const availableEmployees = Array.from(
     new Set(rows.map((r) => r.employee_name)),
   ).sort();
-  const availableCycles = Array.from(new Set(rows.map((r) => r.cycle).filter((c): c is string => !!c)));
+  // Year + Period option lists derived from the rows the PM queue
+  // returns, plus the active cycle's year + period as a defensive
+  // fallback so the dropdowns always include "this cycle" even when
+  // no rows exist yet (right after cycle rollover). Without the
+  // fallback there's a dead-zone where the default selection
+  // (active cycle) wouldn't match any visible <option>, the bound
+  // value would still filter the table to zero rows, and the
+  // <select> would visually fall back to "All".
+  //
+  // Years come from extracting the FY token from each row's cycle
+  // string (e.g. "Q3 FY26-27" → "FY26-27") + dedup. Sorted newest
+  // first so the active FY sits at the top of the picker.
+  const availableYears = Array.from(
+    new Set([
+      ...(defaultYear ? [defaultYear] : []),
+      ...rows
+        .map((r) => (r.cycle ? extractFyToken(r.cycle) : null))
+        .filter((y): y is string => !!y),
+    ]),
+  ).sort((a, b) => b.localeCompare(a));
+  // Periods come from the org's cycle_type (half_yearly → H1/H2,
+  // quarterly → Q1..Q4, annual → empty so the dropdown hides itself
+  // — annual orgs have no within-FY period to pick). Falls back to
+  // deriving from row data if cycle_type isn't loaded yet.
+  const cycleType = settings?.cycle_type ?? null;
+  const PERIODS_BY_CYCLE_TYPE: Record<string, readonly string[]> = {
+    half_yearly: ["H1", "H2"],
+    quarterly: ["Q1", "Q2", "Q3", "Q4"],
+    annual: [],
+  };
+  const availablePeriods = cycleType
+    ? PERIODS_BY_CYCLE_TYPE[cycleType] ?? []
+    : Array.from(
+        new Set(
+          rows
+            .map((r) => (r.cycle ? extractCyclePeriod(r.cycle) : null))
+            .filter((p): p is string => !!p),
+        ),
+      ).sort();
   const availableProjects = Array.from(new Set(rows.map((r) => r.project_name))).sort();
 
   const filteredRows = rows.filter((r) => {
-    if (cycleFilter !== "all" && cycleFilter !== "" && r.cycle !== cycleFilter) return false;
+    // Year + Period narrow independently. Extract once per row so
+    // the predicate stays cheap. Year compares against the FY token
+    // ("FY26-27"); period against the prefix ("Q3" / "H1"). Either
+    // unset (empty string) means "don't narrow on this axis"; the
+    // "all" sentinel from the dropdowns also short-circuits.
+    if (yearFilter && yearFilter !== "all") {
+      const rowYear = r.cycle ? extractFyToken(r.cycle) : null;
+      if (rowYear !== yearFilter) return false;
+    }
+    if (periodFilter && periodFilter !== "all") {
+      const rowPeriod = r.cycle ? extractCyclePeriod(r.cycle) : null;
+      if (rowPeriod !== periodFilter) return false;
+    }
     if (statusFilter === "pending"
         && (r.review_status !== "pending" || r.has_draft_content)) return false;
     if (statusFilter === "draft"
@@ -479,14 +581,38 @@ export function PrimaryEvaluationTab() {
           </div>
         </div>
         <div className="flex items-center gap-4 flex-wrap">
-          <div className="flex items-center gap-2">
-            <label className="text-[11px] font-bold uppercase tracking-wider text-text-muted">Cycle</label>
-            <select value={cycleFilter} onChange={(e) => setCycleFilter(e.target.value)}
-              className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand min-w-[110px] cursor-pointer">
-              <option value="all">All Cycles</option>
-              {availableCycles.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
+          {/* Year + Period replace the single Cycle dropdown. After
+              3-4 years of data accumulated, the single dropdown grew
+              to 16+ entries for quarterly orgs — uncomfortable to
+              scroll. Split keeps each picker short: Year scales
+              linearly with FY count; Period is fixed at 2 or 4. */}
+          {availableYears.length > 0 && (
+            <div className="flex items-center gap-2">
+              <label className="text-[11px] font-bold uppercase tracking-wider text-text-muted">Year</label>
+              <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)}
+                className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand min-w-[120px] cursor-pointer">
+                <option value="all">All Years</option>
+                {availableYears.map((y) => {
+                  const startYear = fyTokenToStartYear(y);
+                  return (
+                    <option key={y} value={y}>
+                      {startYear !== null ? formatFyYearSpan(startYear) : y}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+          )}
+          {availablePeriods.length > 0 && (
+            <div className="flex items-center gap-2">
+              <label className="text-[11px] font-bold uppercase tracking-wider text-text-muted">Period</label>
+              <select value={periodFilter} onChange={(e) => setPeriodFilter(e.target.value)}
+                className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand min-w-[100px] cursor-pointer">
+                <option value="all">All</option>
+                {availablePeriods.map((p) => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </div>
+          )}
           <div className="flex items-center gap-2">
             <label className="text-[11px] font-bold uppercase tracking-wider text-text-muted">Status</label>
             <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
@@ -541,17 +667,18 @@ export function PrimaryEvaluationTab() {
           </div>
           <ClearFiltersButton
             // Defaults the PM page settles into: status=pending +
-            // cycle=active. Both count as "no filter applied" because
-            // they're the natural entry-point state ("what do I owe
-            // for this cycle?"). The button activates only when the
-            // PM has deviated from one of those.
+            // year=active FY + period=active period. All three count
+            // as "no filter applied" because they're the natural
+            // entry-point state ("what do I owe for this cycle?").
+            // The button activates only when the PM has deviated.
             active={
               searchQuery.trim().length > 0 ||
               statusFilter !== "pending" ||
               funcFilter !== "all" ||
               projectFilter !== "all" ||
               employeeFilter !== "all" ||
-              (cycleFilter !== "" && cycleFilter !== activeCycle)
+              (yearFilter !== "" && yearFilter !== defaultYear) ||
+              (periodFilter !== "" && periodFilter !== defaultPeriod)
             }
             onClear={() => {
               setSearchQuery("");
@@ -559,7 +686,8 @@ export function PrimaryEvaluationTab() {
               setFuncFilter("all");
               setProjectFilter("all");
               setEmployeeFilter("all");
-              setCycleFilter(activeCycle ?? "");
+              setYearFilter(defaultYear);
+              setPeriodFilter(defaultPeriod);
             }}
           />
         </div>
