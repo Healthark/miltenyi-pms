@@ -162,7 +162,18 @@ export function ProfileInfoCard({ profile, isLoading }: ProfileInfoCardProps) {
           value={profile.designation}
           emptyText="N/A"
         />
-        <InfoRow icon={Users} label="Mentor" value={profile.mentor_name} />
+        {/* Mentor row hidden for roles that don't have a mentor
+            relationship in this product:
+              • HR_Miltenyi — Miltenyi-side HR; mentor pairings are
+                a Healthark concern.
+              • PM         — per the Role enum docstring (no
+                goals, never rated; no mentor either).
+            Other roles (HR_MyOrg / Mentor / Employee) still render
+            the row even when mentor_name is null so HR can see
+            who's unmentored. */}
+        {profile.role !== "HR_Miltenyi" && profile.role !== "PM" && (
+          <InfoRow icon={Users} label="Mentor" value={profile.mentor_name} />
+        )}
         <InfoRow icon={Calendar} label="Joined" value={joinDate} />
       </div>
 
