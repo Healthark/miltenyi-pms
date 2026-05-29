@@ -1,4 +1,5 @@
-import { useState, useCallback, Fragment } from "react";
+import { useEffect, useRef, useState, useCallback, Fragment } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/queryKeys";
 import { patchRowsAcross } from "@/lib/optimistic";
@@ -268,23 +269,48 @@ export function TeamGoalsTab() {
   const goals: TeamGoal[] = teamGoalsQuery.data ?? [];
   const isLoading = teamGoalsQuery.isPending;
 
-  // Filters
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  // Filters. Status default is `pending_approval` — Mentor's primary
+  // job here is approving submitted goals (reinforced by the Bulk
+  // Approve badge counting pending across loaded goals). Defaulting
+  // to "all" forced the Mentor to narrow every session before they
+  // could act.
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("pending_approval");
   const [yearFilter, setYearFilter] = useState("all");
   const [functionFilter, setFunctionFilter] = useState("all");
   const [designationFilter, setDesignationFilter] = useState("all");
   // Empty string means "no mentee filter" (StringCombobox convention).
   const [menteeFilter, setMenteeFilter] = useState("");
 
+  // Read deep-link `?status=` on first mount and seed the filter so
+  // dashboard CTAs like MenteeGoalFunnelCard land Mentor on the
+  // matching status bucket (typically `pending_approval`). Ref guard
+  // fires once per mount; later user edits via the dropdown are
+  // preserved. Pure read-on-mount — no URL write-back yet (deferred
+  // to a separate batch alongside the full URL-state work).
+  const [searchParams] = useSearchParams();
+  const teamGoalsDefaultedRef = useRef(false);
+  useEffect(() => {
+    if (teamGoalsDefaultedRef.current) return;
+    const urlStatus = searchParams.get("status");
+    if (urlStatus) {
+      setStatusFilter(urlStatus as StatusFilter);
+    }
+    teamGoalsDefaultedRef.current = true;
+  }, [searchParams]);
+
+  // `pending_approval` is the page's default state (not a "filter
+  // applied" choice), so Clear Filters shouldn't flag it as active.
+  // Same default-aware approach used by PrimaryEvaluationTab (PM
+  // status=pending) and UsersTab (status=active).
   const hasActiveFilters =
-    statusFilter !== "all" ||
+    statusFilter !== "pending_approval" ||
     yearFilter !== "all" ||
     functionFilter !== "all" ||
     designationFilter !== "all" ||
     menteeFilter !== "";
 
   const clearFilters = () => {
-    setStatusFilter("all");
+    setStatusFilter("pending_approval");
     setYearFilter("all");
     setFunctionFilter("all");
     setDesignationFilter("all");

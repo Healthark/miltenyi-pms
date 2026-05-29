@@ -13,10 +13,10 @@
  *   draft              → "Awaiting self-review" (mentee hasn't submitted)
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/queryKeys";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   ClipboardCheck, Eye, LayoutGrid, Search,
   Table2, UserCircle, Users,
@@ -161,8 +161,33 @@ export function TeamReviewTab() {
   // keystroke (see useDebouncedValue + doc 29 Part 4). The input
   // element keeps binding to `searchInput` for instant echo; the
   // query reads `effectiveFilters` which lags by `delayMs`.
-  const [filters, setFilters] = useState<MenteeReviewsFilters>({});
+  //
+  // Status default `pending_mentor` — Mentor's primary job here is
+  // evaluating mentee submissions. Defaulting to "all" forced the
+  // Mentor to narrow every session before they could act.
+  const [filters, setFilters] = useState<MenteeReviewsFilters>({
+    status: "pending_mentor",
+  });
   const [searchInput, setSearchInput] = useState("");
+
+  // Read deep-link `?status=` on first mount and seed the filter so
+  // dashboard CTAs (MenteeReviewFunnelCard "View all") land Mentor on
+  // the matching status bucket. Pure read-on-mount — no URL write-back
+  // yet (deferred). Ref guard fires once per mount; user dropdown
+  // edits after that are preserved.
+  const [searchParams] = useSearchParams();
+  const teamReviewDefaultedRef = useRef(false);
+  useEffect(() => {
+    if (teamReviewDefaultedRef.current) return;
+    const urlStatus = searchParams.get("status");
+    if (urlStatus) {
+      setFilters((prev) => ({
+        ...prev,
+        status: urlStatus as MenteeReviewsFilters["status"],
+      }));
+    }
+    teamReviewDefaultedRef.current = true;
+  }, [searchParams]);
   const debouncedSearch = useDebouncedValue(searchInput, 300);
   const effectiveFilters: MenteeReviewsFilters = {
     ...filters,
@@ -269,10 +294,18 @@ export function TeamReviewTab() {
   // or re-sorting needed.
   const sorted = reviews;
 
-  // Boolean used by counter + empty-state branching.
+  // Boolean used by counter + empty-state branching. `pending_mentor`
+  // is the page default (Mentor's first task), so it doesn't count as
+  // a "filter applied" state — Clear Filters only activates when the
+  // Mentor has narrowed beyond / off the default. Same default-aware
+  // shape used by PrimaryEvaluationTab + UsersTab.
   const hasActiveFilters =
     searchInput !== "" ||
-    Object.values(filters).some((v) => v !== undefined && v !== "");
+    Object.entries(filters).some(([key, value]) => {
+      if (value === undefined || value === "") return false;
+      if (key === "status" && value === "pending_mentor") return false;
+      return true;
+    });
 
   const viewBtnCls = (mode: ViewMode) =>
     `flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] font-medium transition-colors ${
@@ -417,7 +450,11 @@ export function TeamReviewTab() {
               active={hasActiveFilters}
               onClear={() => {
                 setSearchInput("");
-                setFilters({});
+                // Reset to the page default (status=pending_mentor),
+                // not an empty filter object. "Clear" means "go back
+                // to the entry state", which for this tab is the
+                // actionable subset, not the universe.
+                setFilters({ status: "pending_mentor" });
               }}
             />
           </div>
