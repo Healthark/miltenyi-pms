@@ -62,14 +62,14 @@ const USERS_GRID_TEMPLATE_COLUMNS =
   "minmax(130px, 1.1fr) " +    // Function
   "minmax(130px, 1.1fr) " +    // Designation
   "minmax(150px, 1.2fr) " +    // Mentor / Project Manager
-  "minmax(110px, 0.9fr) " +    // Phone
+  "minmax(150px, 1.1fr) " +    // Phone (e.g. "+91 98765 43210" needs ~140px at text-sm)
   "minmax(90px, 0.7fr) " +     // Status
   "minmax(110px, 0.8fr)";      // Actions
 
 // Sum of the minimums above + breathing room. Drives the outer wrapper's
 // min-width so the wrapper's horizontal scroll engages BEFORE any
 // inner div overflows. Mirrors the pattern in AnnualGoals / ManagementReview.
-const USERS_TABLE_MIN_WIDTH_PX = 1322;
+const USERS_TABLE_MIN_WIDTH_PX = 1362;
 
 // Uniform row height — applied as inline style now that the virtualizer
 // (PR #74) no longer enforces it implicitly. text-sm + py-3.5 + two
