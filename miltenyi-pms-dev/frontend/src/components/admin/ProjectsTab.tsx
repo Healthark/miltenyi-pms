@@ -505,6 +505,12 @@ export function ProjectsTab({ ref }: ProjectsTabProps = {}) {
           <table className="w-full min-w-max text-sm">
             <thead>
               <tr className="border-b border-border bg-slate-50 text-left">
+                {/* Running row number. Cumulative across pages (page 2
+                    starts at 26 when pageSize=25), matching the
+                    "Showing 51–75 of 247" counter at the bottom. */}
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-text-muted w-12">
+                  #
+                </th>
                 <th className="px-5 py-3">
                   <SortableHeader label="Project" columnKey="name" sort={sort} onSort={setSort} />
                 </th>
@@ -541,11 +547,14 @@ export function ProjectsTab({ ref }: ProjectsTabProps = {}) {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {visibleProjects.map((project) => (
+              {visibleProjects.map((project, idx) => (
                 <tr
                   key={project.id}
                   className="transition-colors hover:bg-slate-50"
                 >
+                  <td className="px-4 py-3.5 text-text-muted tabular-nums text-xs">
+                    {((page - 1) * pageSize + idx + 1).toLocaleString()}
+                  </td>
                   <td className="px-5 py-3.5">
                     <div className="font-medium text-text-main">
                       {project.name}

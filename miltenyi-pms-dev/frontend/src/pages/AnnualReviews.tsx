@@ -532,8 +532,10 @@ export function AnnualReviews() {
 // + body rows). `minmax(<floor>, <weight>fr)` keeps narrow columns
 // readable while letting wide ones expand. See PR #15 for the
 // rationale on table → div + CSS Grid.
+// First column is the running row number ("#") — narrow fixed-ish
+// width sized for 4-digit page numbers (e.g. "1,234").
 const ALL_REVIEWS_GRID_TEMPLATE_COLUMNS =
-  "minmax(180px, 1.8fr) minmax(120px, 1.2fr) minmax(140px, 1.4fr) " +
+  "minmax(48px, 0.4fr) minmax(180px, 1.8fr) minmax(120px, 1.2fr) minmax(140px, 1.4fr) " +
   "minmax(100px, 1fr) minmax(120px, 1.1fr) minmax(80px, 0.8fr) " +
   "minmax(80px, 0.8fr) minmax(80px, 0.8fr)";
 
@@ -543,7 +545,7 @@ const ALL_REVIEWS_GRID_TEMPLATE_COLUMNS =
 // pairing for overflow-y: auto) does — otherwise the body scrolls
 // horizontally on its own and the header stays put. Mirrors the same
 // fix in ManagementReview.tsx.
-const ALL_REVIEWS_TABLE_MIN_WIDTH_PX = 960;
+const ALL_REVIEWS_TABLE_MIN_WIDTH_PX = 1008;
 
 // Virtualizer constants removed (PR #74). With max 50 rows per page
 // the previous measure-driven variable-height logic isn't needed —
@@ -824,6 +826,14 @@ function AllReviewsTab({
               className="grid items-center"
               style={{ gridTemplateColumns: ALL_REVIEWS_GRID_TEMPLATE_COLUMNS }}
             >
+              {/* Running row number ("#") — cumulative across pages,
+                  matches the "Showing N–M of T" counter below. */}
+              <div
+                role="columnheader"
+                className="text-left px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted"
+              >
+                #
+              </div>
               <div role="columnheader" className="text-left px-5 py-2.5">
                 <SortableHeader label="Employee" columnKey="employee_name" sort={sort} onSort={onSortChange} />
               </div>
@@ -882,6 +892,13 @@ function AllReviewsTab({
                           ALL_REVIEWS_GRID_TEMPLATE_COLUMNS,
                       }}
                     >
+                      {/* # — cumulative across pages */}
+                      <div
+                        role="cell"
+                        className="px-4 py-3 text-text-muted tabular-nums text-xs"
+                      >
+                        {((page - 1) * pageSize + idx + 1).toLocaleString()}
+                      </div>
                       <div role="cell" className="px-5 py-3 font-medium text-text-main">
                         <div className="flex items-center gap-2">
                           <ChevronDown

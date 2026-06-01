@@ -739,6 +739,9 @@ export function ProjectReviews() {
                 filters={allReviewsFilters}
                 onFiltersChange={setAllReviewsFilters}
                 serverTotal={allReviewsTotal}
+                // Running row-number offset so the # column reads as
+                // the row's absolute position (1-based) across pages.
+                rowNumberOffset={(allReviewsPage - 1) * allReviewsPageSize}
                 // Canonical filter options — keeps the dropdowns stable
                 // across filter changes. Mentor consumer above omits
                 // this prop and falls back to the derive-from-reviews
@@ -812,8 +815,13 @@ export function ProjectReviews() {
 // leave dead cell space on the right while Project clips. The 220px
 // minimum on Cycle Reviews still guarantees 4 chips fit without
 // wrapping at narrow viewports.
+// First column is the running row number ("#") — only rendered for the
+// HR consumer (paginated). The Mentor consumer (uncontrolled mode,
+// non-paginated) doesn't render a # cell, but the grid template stays
+// the same so both consumers can use a single template; Mentor view
+// renders an empty leading cell. Narrow 48px fits 4-digit page numbers.
 const READ_ONLY_GRID_TEMPLATE_COLUMNS =
-  "minmax(160px, 1.3fr) minmax(220px, 2.6fr) minmax(110px, 0.9fr) " +
+  "minmax(48px, 0.4fr) minmax(160px, 1.3fr) minmax(220px, 2.6fr) minmax(110px, 0.9fr) " +
   "minmax(160px, 1.3fr) minmax(120px, 0.9fr) minmax(220px, 1.5fr)";
 
 // Sum of the READ_ONLY_GRID_TEMPLATE_COLUMNS minimums plus a little
@@ -822,8 +830,8 @@ const READ_ONLY_GRID_TEMPLATE_COLUMNS =
 // CSS pairing for overflow-y: auto) does — otherwise the body scrolls
 // horizontally on its own and the header stays put. Mirrors the same
 // fix in ManagementReview.tsx.
-// 6-column total: 160 + 220 + 110 + 160 + 120 + 220 = 990 + ~50 breathing.
-const READ_ONLY_TABLE_MIN_WIDTH_PX = 1040;
+// 7-column total: 48 + 160 + 220 + 110 + 160 + 120 + 220 = 1038 + ~50 breathing.
+const READ_ONLY_TABLE_MIN_WIDTH_PX = 1088;
 
 // Starting guess for the collapsed row height (project cell's 2-line
 // content + py-3 padding ≈ 60-64px). measureElement corrects after
@@ -846,6 +854,7 @@ function ReadOnlyReviewsList({
   filters,
   onFiltersChange,
   serverTotal,
+  rowNumberOffset = 0,
   filterOptionsOverride,
   defaultCycle,
   cycleType,
@@ -887,6 +896,12 @@ function ReadOnlyReviewsList({
    *  (matching what Load More pages through) instead of the loaded
    *  array length. */
   readonly serverTotal?: number;
+  /** 0-based offset for the running row-number column. Passed by the
+   *  HR consumer as `(page - 1) * pageSize` so the # cell reads as the
+   *  row's absolute position across pages (matches the "Showing N–M of
+   *  T" counter). Defaults to 0 — the Mentor (uncontrolled) consumer
+   *  isn't paginated and just numbers from 1. */
+  readonly rowNumberOffset?: number;
   // Sort is now client-side only — operates on GROUPED rows, not flat
   // review rows. The server's cycle-desc default still influences the
   // order reviews arrive in (which affects which group is first if
@@ -1425,6 +1440,17 @@ function ReadOnlyReviewsList({
               className="grid items-center"
               style={{ gridTemplateColumns: READ_ONLY_GRID_TEMPLATE_COLUMNS }}
             >
+              {/* Running row number ("#") — cumulative across pages
+                  via `rowNumberOffset` for the HR (paginated) consumer.
+                  The Mentor consumer (non-paginated, offset=0) just
+                  numbers from 1; the column stays for visual
+                  consistency with the HR view. */}
+              <div
+                role="columnheader"
+                className="text-left px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted"
+              >
+                #
+              </div>
               <div role="columnheader" className="text-left px-5 py-2.5">
                 <SortableHeader
                   label={employeeColumnLabel}
@@ -1505,6 +1531,14 @@ function ReadOnlyReviewsList({
                       }}
                       className="grid items-center hover:bg-slate-50/60 transition-colors border-b border-border/50"
                     >
+                      {/* # — `rowNumberOffset` is `(page - 1) * pageSize`
+                          for the HR consumer, 0 for Mentor. */}
+                      <div
+                        role="cell"
+                        className="px-4 py-3 text-text-muted tabular-nums text-xs"
+                      >
+                        {(rowNumberOffset + idx + 1).toLocaleString()}
+                      </div>
                       <div role="cell" className="px-5 py-3 font-medium text-text-main truncate">
                         {group.employee_name}
                       </div>

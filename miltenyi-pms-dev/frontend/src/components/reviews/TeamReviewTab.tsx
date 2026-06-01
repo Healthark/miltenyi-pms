@@ -491,6 +491,13 @@ export function TeamReviewTab() {
           <table className="w-full min-w-max text-[13px]">
             <thead>
               <tr className="bg-slate-50/80 border-b border-border">
+                {/* Running row number ("#") — cumulative across pages,
+                    table view only (Cards view doesn't surface a row
+                    number concept). Matches the "Showing N–M of T"
+                    counter at the bottom. */}
+                <th className="text-left px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted w-12">
+                  #
+                </th>
                 <th className="text-left px-5 py-2.5">
                   <SortableHeader
                     label="Mentee"
@@ -545,7 +552,7 @@ export function TeamReviewTab() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border/50">
-              {sorted.map((r) => {
+              {sorted.map((r, idx) => {
                 const canEvaluate = r.status === "pending_mentor";
                 const canView =
                   r.status === "pending_management" ||
@@ -556,6 +563,9 @@ export function TeamReviewTab() {
                     key={r.id}
                     className="hover:bg-slate-50/60 transition-colors"
                   >
+                    <td className="px-4 py-3 text-text-muted tabular-nums text-xs">
+                      {((page - 1) * pageSize + idx + 1).toLocaleString()}
+                    </td>
                     <td className="px-5 py-3 font-medium text-text-main">
                       <div className="flex items-center gap-1.5 min-w-0">
                         <UserCircle className="h-3.5 w-3.5 text-text-muted shrink-0" />

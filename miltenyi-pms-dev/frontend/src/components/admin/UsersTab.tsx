@@ -55,6 +55,7 @@ type StatusFilter = "all" | "active" | "inactive";
 // before flexing — important because the table sits inside a horizontal
 // scroll wrapper on narrow viewports.
 const USERS_GRID_TEMPLATE_COLUMNS =
+  "minmax(48px, 0.4fr) " +     // # (running row number)
   "minmax(180px, 1.4fr) " +    // Employee (name + employee_code)
   "minmax(180px, 1.6fr) " +    // Email
   "minmax(110px, 0.8fr) " +    // Role
@@ -68,7 +69,7 @@ const USERS_GRID_TEMPLATE_COLUMNS =
 // Sum of the minimums above + breathing room. Drives the outer wrapper's
 // min-width so the wrapper's horizontal scroll engages BEFORE any
 // inner div overflows. Mirrors the pattern in AnnualGoals / ManagementReview.
-const USERS_TABLE_MIN_WIDTH_PX = 1290;
+const USERS_TABLE_MIN_WIDTH_PX = 1338;
 
 // Uniform row height — applied as inline style now that the virtualizer
 // (PR #74) no longer enforces it implicitly. text-sm + py-3.5 + two
@@ -530,6 +531,14 @@ export function UsersTab({
                 className="grid items-center text-left"
                 style={{ gridTemplateColumns: USERS_GRID_TEMPLATE_COLUMNS }}
               >
+                {/* Running row number ("#") — cumulative across pages,
+                    matches the "Showing N–M of T" counter below. */}
+                <div
+                  role="columnheader"
+                  className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-text-muted"
+                >
+                  #
+                </div>
                 <div role="columnheader" className="px-5 py-3">
                   <SortableHeader label="Employee" columnKey="full_name" sort={sort} onSort={setSort} />
                 </div>
@@ -604,6 +613,13 @@ export function UsersTab({
                           gridTemplateColumns: USERS_GRID_TEMPLATE_COLUMNS,
                         }}
                       >
+                        {/* # — cumulative across pages */}
+                        <div
+                          role="cell"
+                          className="px-4 text-text-muted tabular-nums text-xs"
+                        >
+                          {((page - 1) * pageSize + idx + 1).toLocaleString()}
+                        </div>
                         <div role="cell" className="px-5">
                           <div className="font-medium text-text-main truncate">
                             {user.full_name}
