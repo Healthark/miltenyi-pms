@@ -112,6 +112,44 @@ def _require_hr_myorg(current_user: User) -> None:
         )
 
 
+def _validate_mentor_role(
+    db: DbSession, org_id: int, mentor_id: int | None
+) -> None:
+    """Confirm the user being assigned as mentor exists, is in this org,
+    is not soft-deleted, and has role=Mentor.
+
+    Called from create_user + update_user before persisting any
+    mentor_id change. The frontend filters the picker to Mentor-role
+    users only, but this server-side gate protects against direct API
+    callers (curl / Postman / future admin tooling) that could
+    otherwise assign a PM / Employee / HR user as somebody's mentor
+    and produce nonsensical mentor pairings.
+
+    Pass `mentor_id=None` to short-circuit — unassigning is always
+    valid.
+    """
+    if mentor_id is None:
+        return
+    mentor = db.query(User).filter(
+        User.id == mentor_id,
+        User.org_id == org_id,
+        User.is_deleted == False,  # noqa: E712
+    ).first()
+    if mentor is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Assigned mentor not found in this organization.",
+        )
+    if mentor.role != Role.MENTOR.value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Assigned mentor must have role=Mentor "
+                f"(user '{mentor.full_name}' has role={mentor.role})."
+            ),
+        )
+
+
 def _authorize_user_mutation(current_user: User, target_role: str | None) -> None:
     """Enforce the security boundary on user-mutating endpoints.
 
@@ -634,6 +672,10 @@ def create_user(
             detail=f"Employee code '{user_in.employee_code}' is already in use.",
         )
 
+    # Validate mentor_id points at a real Mentor-role user in this org.
+    # Cheap query but runs late so cheaper 400/409s fail first.
+    _validate_mentor_role(db, current_user.org_id, user_in.mentor_id)
+
     new_user = User(
         org_id=current_user.org_id,  # Forced from JWT — never trusted from body
         employee_code=user_in.employee_code,
@@ -784,6 +826,12 @@ def update_user(
     # detect a true mentor reassignment after commit. A PATCH that
     # resubmits the same mentor_id is a no-op and shouldn't notify.
     old_mentor_id = user.mentor_id
+
+    # If the PATCH is changing mentor_id to something non-null, validate
+    # the target has role=Mentor. Skip the check when mentor_id is
+    # being cleared or wasn't in the payload at all (already a no-op).
+    if "mentor_id" in update_data and update_data["mentor_id"] is not None:
+        _validate_mentor_role(db, current_user.org_id, update_data["mentor_id"])
 
     for field, value in update_data.items():
         setattr(user, field, value)

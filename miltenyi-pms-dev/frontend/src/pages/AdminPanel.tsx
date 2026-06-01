@@ -156,21 +156,24 @@ export default function AdminPanel() {
   }
 
   // ── Derived ───────────────────────────────────────────────────────────────
-  // Any active user can mentor — Manager/Principal/Admin gating is a UX
-  // choice that fights real-world team structures (a senior IC can mentor a
-  // junior IC without being a "Manager"). Filter here is just the active set.
+  // Mentor picker shows ONLY users with role="Mentor". Previously this
+  // list was every active user with the rationale "any senior IC can
+  // mentor a junior IC" — but in practice the picker became a noisy
+  // mix of Employees, PMs, HR roles, and Mentors, and HR ended up
+  // accidentally assigning the wrong role as a mentor. The backend
+  // also enforces role=Mentor on the mentor_id assignment now (see
+  // admin_routes._validate_mentor_role); this filter keeps the UI in
+  // sync so non-Mentor candidates never appear in the dropdown.
   //
-  // HR_Miltenyi viewers don't get any Mentor or HR_MyOrg candidates in
-  // the picker. UserModal also hides the mentor field entirely for
-  // them (it derives the same flag from useAuth internally). This
-  // filter mirrors that scope so the option list stays clean even if
-  // the field were ever re-enabled for HR_Miltenyi.
+  // HR_Miltenyi viewers separately can't see Mentor or HR_MyOrg rows
+  // (security boundary). That filter is a no-op now since the Mentor
+  // narrowing above already excludes every option for HR_Miltenyi —
+  // and UserModal hides the mentor field entirely for them anyway.
   const isViewerMiltenyiHR = user?.role === "HR_Miltenyi";
   const mentorOptions = users.filter((u) => {
     if (u.is_deleted) return false;
-    if (isViewerMiltenyiHR && (u.role === "Mentor" || u.role === "HR_MyOrg")) {
-      return false;
-    }
+    if (u.role !== "Mentor") return false;
+    if (isViewerMiltenyiHR) return false;
     return true;
   });
 
