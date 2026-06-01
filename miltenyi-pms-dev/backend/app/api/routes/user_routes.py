@@ -15,6 +15,8 @@ Security Layers Applied:
     Layer 4 — Ownership:        Guaranteed (CurrentUser IS the owner)
 """
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, HTTPException, status
 
 from app.api.dependencies import DbSession, CurrentUser, CurrentUserAllowingPasswordReset
@@ -87,8 +89,15 @@ def change_password(
 
     # 3. Hash and persist. Also clear the admin-reset flag so subsequent
     # logins don't force the user back into the change-password screen.
+    # `password_changed_at = now()` bumps the timestamp embedded in the
+    # JWT's `pwd_iat` claim — every OTHER active session for this user
+    # (other browsers, other devices, captured tokens) gets invalidated
+    # on its next request. The current session's cookie gets re-issued
+    # by the sliding-refresh in resolve_authenticated_user with the new
+    # `pwd_iat`, so the user stays signed in here.
     current_user.password_hash = get_password_hash(request.new_password)
     current_user.must_change_password = False
+    current_user.password_changed_at = datetime.now(timezone.utc)
     db.commit()
 
     return {"message": "Password updated successfully."}

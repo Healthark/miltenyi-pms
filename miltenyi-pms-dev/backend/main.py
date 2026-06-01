@@ -1,7 +1,9 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 
 from app.core.config import settings
 from app.core.csrf import CSRFMiddleware
@@ -49,10 +51,35 @@ _extra_origins = [
 
 origins = _default_origins + _extra_origins
 
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Set hardening response headers app-wide.
+
+    `Referrer-Policy: no-referrer` is the primary motivator — the
+    password-reset link carries the raw token in the URL query string,
+    and any third-party asset on the /reset-password page (analytics
+    pixel, CDN image, embedded iframe) would otherwise leak the token
+    via the Referer header on its own outbound request. Setting the
+    policy globally is cheaper than per-route handling and protects
+    every page from a class of leak we haven't enumerated.
+
+    Other headers TBD — keep this middleware narrow for now so we can
+    add CSP / X-Content-Type-Options / etc. incrementally without
+    revisiting the integration point.
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        response: Response = await call_next(request)
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        return response
+
+
 # Starlette executes middleware in reverse registration order on the request
 # phase — the LAST add_middleware call is the outermost layer. CORS must be
 # outermost so browser preflight OPTIONS requests are answered before the
 # CSRF check runs (an OPTIONS without X-CSRF-Token would otherwise 403).
+# Security headers run innermost so the policy is applied to EVERY
+# response, including ones short-circuited by CSRF or CORS.
+app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(CSRFMiddleware)
 
 app.add_middleware(

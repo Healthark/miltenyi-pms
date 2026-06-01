@@ -35,7 +35,18 @@ DbSession = Annotated[Session, Depends(get_db)]
 # same password_reset_tokens table and the email template renders the TTL
 # verbatim, so divergence would surface as inconsistent UX.
 RESET_TOKEN_TTL_MINUTES = 15
-RESETS_PER_USER_PER_HOUR = 3
+# Per-user quota: at most one ACTIVE (unused + unexpired) token at a time.
+# Dropped from 3 to 1 alongside narrowing the count query to only active
+# tokens (see `forgot_password` below). The combination eliminates the
+# email-volume side channel that previously signalled account existence:
+# every request results in at most one email per cycle, and a follow-up
+# request only succeeds once the previous token is consumed or expires.
+RESETS_PER_USER_PER_HOUR = 1
+# How long expired tokens live before cleanup. 7 days gives a forensic
+# attribution window (security audit, support tickets) without letting
+# the table grow indefinitely. Piggybacked on every forgot-password call
+# in lieu of a scheduled-task infrastructure that doesn't exist here.
+RESET_TOKEN_RETENTION_DAYS = 7
 
 
 def _build_session(user: User, db: Session) -> dict:
@@ -193,6 +204,12 @@ def reset_password(payload: ResetPasswordRequest, db: DbSession):
 
     user.password_hash = get_password_hash(payload.new_password)
     user.must_change_password = False
+    # Bump the JWT revocation timestamp so every active session for this
+    # user (other browsers, captured tokens, the attacker who stole the
+    # session that prompted this reset) is invalidated on its next
+    # request. See dependencies.resolve_authenticated_user for the
+    # `pwd_iat` comparison that enforces this.
+    user.password_changed_at = now
     record.used_at = now
     db.commit()
 
@@ -238,16 +255,38 @@ def forgot_password(
     email = payload.email.strip().lower()
     user = db.query(User).filter(func.lower(User.email) == email).first()
 
+    now = datetime.now(timezone.utc)
+
+    # Hygiene: drop tokens whose expiry passed RESET_TOKEN_RETENTION_DAYS
+    # ago. Piggybacked on every forgot-password call in lieu of a
+    # scheduled-task infrastructure that doesn't exist in this codebase.
+    # Runs BEFORE the per-user count below so stale rows can't inflate
+    # the active-token count. `synchronize_session=False` skips the
+    # in-memory ORM bookkeeping (we're about to commit anyway).
+    cleanup_cutoff = now - timedelta(days=RESET_TOKEN_RETENTION_DAYS)
+    db.query(PasswordResetToken).filter(
+        PasswordResetToken.expires_at < cleanup_cutoff
+    ).delete(synchronize_session=False)
+
     # Pre-compute the same crypto + DB work along every path so response
     # time does not leak whether the email maps to a real account. We
     # query against `user.id` when present and a sentinel (-1) otherwise;
     # both incur the same index lookup cost.
-    one_hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
-    recent = (
+    #
+    # The count now narrows to ACTIVE tokens only (`used_at IS NULL AND
+    # expires_at > now`). Previously the filter was `created_at` within
+    # the past hour — that double-counted recently-consumed tokens
+    # against the quota, and combined with the 3-per-hour cap meant a
+    # single forgot/consume/forgot loop could lock the user out of
+    # further requests for an hour. The narrowed filter + the
+    # RESETS_PER_USER_PER_HOUR=1 cap together mean: at most one active
+    # token at a time, but consuming it frees the slot immediately.
+    active_count = (
         db.query(PasswordResetToken)
         .filter(
             PasswordResetToken.user_id == (user.id if user else -1),
-            PasswordResetToken.created_at >= one_hour_ago,
+            PasswordResetToken.used_at.is_(None),
+            PasswordResetToken.expires_at > now,
         )
         .count()
     )
@@ -257,10 +296,14 @@ def forgot_password(
     # Silently skip the issue + email side-effects if the email is unknown,
     # the account is deactivated, or the per-user quota is exhausted. The
     # response itself is identical to the success path.
-    if not user or user.is_deleted or recent >= RESETS_PER_USER_PER_HOUR:
+    if (
+        not user
+        or user.is_deleted
+        or active_count >= RESETS_PER_USER_PER_HOUR
+    ):
         return None
 
-    expires_at = datetime.now(timezone.utc) + timedelta(minutes=RESET_TOKEN_TTL_MINUTES)
+    expires_at = now + timedelta(minutes=RESET_TOKEN_TTL_MINUTES)
 
     db.add(
         PasswordResetToken(
@@ -273,7 +316,17 @@ def forgot_password(
             expires_at=expires_at,
         )
     )
-    user.must_change_password = True
+    # NOTE (security): `must_change_password = True` is deliberately NOT
+    # set here. Previously this line let any attacker with knowledge of
+    # a victim's email lock the victim out of their already-active
+    # session — every forgot-password request would flip the gate and
+    # cause the victim's next API call to 403 (per-IP cap of 10/hour
+    # was the only ceiling). The flag is meaningful for admin-issued
+    # temp passwords (admin chose your password; you must change it on
+    # first login) but the self-service flow already requires the user
+    # to choose a new password via the email link, so the gate adds
+    # no value here. `reset_password` clears the flag anyway when the
+    # email link is consumed.
     db.commit()
 
     reset_link = (
@@ -288,6 +341,11 @@ def forgot_password(
             reset_link=reset_link,
             expires_in_minutes=RESET_TOKEN_TTL_MINUTES,
             org_id=user.org_id,
+            # Self-service path — the email template branches lead copy
+            # + security tip on this flag so the user doesn't get the
+            # alarming "an administrator initiated…" wording when they
+            # personally clicked Forgot Password.
+            triggered_by="self",
         )
 
     return None

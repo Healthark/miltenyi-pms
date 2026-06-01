@@ -67,6 +67,21 @@ class User(Base):
 
     avatar_url = Column(String, nullable=True)
     password_hash = Column(String, nullable=False)
+    # Timestamp of the most recent password change. Embedded in JWTs as
+    # the `pwd_iat` claim; on JWT validation the server compares the
+    # claim to this column and rejects tokens whose value is stale —
+    # i.e. tokens issued before the current password took effect. This
+    # is the mechanism that revokes every active session when the user
+    # (or an admin) changes the password, closing the captured-JWT
+    # window that defeated the point of password-reset.
+    #
+    # Set by `create_user` (initial password choice), `change_password`
+    # (self-service), and `reset_password` (email-link flow). Backfilled
+    # to NOW() in the migration for every existing user so all pre-deploy
+    # JWTs are invalidated on rollout (strict-rollout decision; the
+    # alternative — leaving the column NULL and treating that as
+    # "accept any JWT" — leaves a grace window we deliberately rejected).
+    password_changed_at = Column(DateTime(timezone=True), nullable=True)
     # Set to True when an admin reset this user's password to a temporary one.
     # The frontend gates the app until the user chooses a new password, and
     # the self-service change-password endpoint clears it on success.

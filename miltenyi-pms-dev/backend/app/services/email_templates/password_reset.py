@@ -8,6 +8,8 @@ interpolation boundary via `esc()`.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from app.services.email_templates._shared import EmailTheme, esc
 
 
@@ -16,8 +18,18 @@ def password_reset_html(
     reset_link: str,
     expires_in_minutes: int,
     theme: EmailTheme,
+    triggered_by: Literal["self", "admin"] = "admin",
 ) -> str:
-    """Inline-styled HTML for the admin-initiated password reset email.
+    """Inline-styled HTML for the password reset email.
+
+    `triggered_by` selects the lead-paragraph + security-tip variant:
+    - `"self"` — the user clicked Forgot Password. Lead acknowledges
+                 they made the request; security tip tells them they
+                 can safely ignore the email if they didn't.
+    - `"admin"` — an HR administrator initiated on their behalf. Lead
+                  says so explicitly; security tip tells them to
+                  contact HR if unexpected. (Legacy default for
+                  back-compat with the admin reset endpoint.)
 
     The body header and footer brand name come from `theme.brand_name`
     directly (per-org), independent of the SMTP_FROM_NAME env override —
@@ -35,6 +47,37 @@ def password_reset_html(
     brand_name_e = esc(theme.brand_name)
     brand_e = esc(theme.brand)
     brand_light_e = esc(theme.brand_light)
+
+    # Variant copy — branched on `triggered_by`. Pre-computed so the
+    # f-string template body stays readable and the conditional logic
+    # doesn't fight with the inline HTML markup.
+    if triggered_by == "self":
+        lead_html = (
+            "You requested a password reset for your account. Click the "
+            "button below to choose a new password. This link expires in "
+            f"<strong>{expires_e} minutes</strong> and can only be used once."
+        )
+        security_tip_html = (
+            f"<strong>Security tip:</strong> this link is one-time-use "
+            f"and expires in {expires_e} minutes. Your previous password "
+            "is still valid until you choose a new one. If you did not "
+            "request this reset, you can safely ignore this email — the "
+            "link will expire on its own and your password won't change."
+        )
+    else:  # "admin"
+        lead_html = (
+            "An administrator has initiated a password reset for your "
+            "account. Click the button below to choose a new password. "
+            f"This link expires in <strong>{expires_e} minutes</strong> "
+            "and can only be used once."
+        )
+        security_tip_html = (
+            f"<strong>Security tip:</strong> this link is one-time-use "
+            f"and expires in {expires_e} minutes. Your previous password "
+            "is no longer valid. If you did not expect a password reset, "
+            "contact your HR administrator immediately and do not click "
+            "the link."
+        )
 
     return f"""\
 <!DOCTYPE html>
@@ -71,10 +114,7 @@ def password_reset_html(
                 Hi {full_name_e},
               </p>
               <p style="margin:0 0 20px 0;font-size:14px;line-height:1.6;color:#0F172A;">
-                An administrator has initiated a password reset for your
-                account. Click the button below to choose a new password.
-                This link expires in <strong>{expires_e} minutes</strong>
-                and can only be used once.
+                {lead_html}
               </p>
 
               <!-- CTA button (brand) -->
@@ -108,11 +148,7 @@ def password_reset_html(
                 <tr>
                   <td style="background-color:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:14px 16px;">
                     <p style="margin:0;font-size:13px;line-height:1.5;color:#92400E;">
-                      <strong>Security tip:</strong> this link is one-time-use
-                      and expires in {expires_e} minutes. Your previous
-                      password is no longer valid. If you did not expect a
-                      password reset, contact your HR administrator
-                      immediately and do not click the link.
+                      {security_tip_html}
                     </p>
                   </td>
                 </tr>
@@ -143,18 +179,45 @@ def password_reset_text(
     reset_link: str,
     expires_in_minutes: int,
     from_name: str,
+    triggered_by: Literal["self", "admin"] = "admin",
 ) -> str:
     """Plain-text fallback. No HTML, so no escape needed — user-
-    controlled text in plaintext can't break out of any markup."""
+    controlled text in plaintext can't break out of any markup.
+
+    `triggered_by` selects the same lead + security-tip variants as
+    `password_reset_html`. See that function's docstring for rationale.
+    """
+    if triggered_by == "self":
+        lead = (
+            "You requested a password reset for your account. Open the "
+            "link below to choose a new password. This link expires in "
+            f"{expires_in_minutes} minutes and can only be used once."
+        )
+        security_tip = (
+            f"Security tip: this link is one-time-use and expires in "
+            f"{expires_in_minutes} minutes. Your previous password is "
+            "still valid until you choose a new one. If you did not "
+            "request this reset, you can safely ignore this email — "
+            "the link will expire on its own and your password won't change."
+        )
+    else:  # "admin"
+        lead = (
+            "An administrator has initiated a password reset for your "
+            "account. Open the link below to choose a new password. "
+            f"This link expires in {expires_in_minutes} minutes and can "
+            "only be used once."
+        )
+        security_tip = (
+            f"Security tip: this link is one-time-use and expires in "
+            f"{expires_in_minutes} minutes. Your previous password is "
+            "no longer valid. If you did not expect a password reset, "
+            "contact your HR administrator immediately and do not "
+            "click the link."
+        )
     return (
         f"Hi {full_name},\n\n"
-        "An administrator has initiated a password reset for your account. "
-        "Open the link below to choose a new password. This link expires in "
-        f"{expires_in_minutes} minutes and can only be used once.\n\n"
+        f"{lead}\n\n"
         f"{reset_link}\n\n"
-        f"Security tip: this link is one-time-use and expires in "
-        f"{expires_in_minutes} minutes. Your previous password is no longer "
-        "valid. If you did not expect a password reset, contact your HR "
-        "administrator immediately and do not click the link.\n\n"
+        f"{security_tip}\n\n"
         f"— {from_name}\n"
     )

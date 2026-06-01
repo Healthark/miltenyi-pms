@@ -12,7 +12,16 @@ class ResetPasswordRequest(BaseModel):
     Submitted by the unauthenticated user via the public reset page after
     clicking the email link. The plaintext token is hashed in-process and
     looked up against `password_reset_tokens.token_hash`."""
-    token: str = Field(..., min_length=20, max_length=128)
+    # `secrets.token_urlsafe(32)` always produces 43 URL-safe chars; the
+    # token length is therefore fixed. The previous (20, 128) range was
+    # an over-loose probing surface — an attacker iterating short or
+    # weird-length tokens could hit handler logic before the schema
+    # rejected them. Exact-length validation 422s those payloads in
+    # Pydantic before they ever touch the DB lookup.
+    token: str = Field(..., min_length=43, max_length=43)
+    # Password length unchanged at 8 per project policy. The hardening
+    # PR explicitly defers any password-policy bump to a separate
+    # decision so existing users aren't surprised mid-flight.
     new_password: str = Field(..., min_length=8, max_length=128)
 
 
