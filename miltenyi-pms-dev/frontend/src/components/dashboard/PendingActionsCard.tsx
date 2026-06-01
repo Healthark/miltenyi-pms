@@ -233,7 +233,12 @@ function ChaseList({
       <p className="text-[11px] font-semibold uppercase tracking-wider text-text-muted mb-1">
         {sublabel}
       </p>
-      <ul className="flex flex-col gap-1">
+      {/* Thin row separators match the divide-y pattern used by every
+          other in-app list (NotificationDropdown, ActionItemsWidget,
+          MentorCoverageCard). Without them five+ user rows visually
+          run together — the previous `gap-1` only gave a 4px breath
+          which wasn't enough on a cramped HR dashboard. */}
+      <ul className="flex flex-col divide-y divide-border/50">
         {users.map((u) => {
           const rowContent = (
             <>
@@ -350,7 +355,7 @@ function PausedSettingsSection() {
           subtitle="All org-wide gates are at default."
         />
       ) : (
-        <ul className="flex flex-col gap-1">
+        <ul className="flex flex-col divide-y divide-border/50">
           {activeRows.map((row) => (
             <li key={row.settingKey}>
               <Link
