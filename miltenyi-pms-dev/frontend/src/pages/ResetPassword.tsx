@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { KeyRound, Loader2, Lock, AlertCircle, CheckCircle2 } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
 
 const API_BASE =
   import.meta.env.VITE_API_URL ?? "http://localhost:8000/api/v1";
@@ -13,11 +14,57 @@ const MIN_PASSWORD_LENGTH = 8;
  * POSTs to /auth/reset-password. Uses plain fetch (not apiClient) to avoid
  * the auth interceptor's 401 → forceLogout side-effect — the user is
  * unauthenticated by definition while sitting on this page.
+ *
+ * Two security guards run on mount:
+ *
+ *   1. URL scrub. The raw token arrives in `?token=…` which means it
+ *      ends up in: browser history, server access logs, and any
+ *      Referer header sent by third-party assets loaded on this page.
+ *      We capture the token into local state once and immediately
+ *      `navigate(..., { replace: true })` to drop it from the URL +
+ *      history. The backend's global `Referrer-Policy: no-referrer`
+ *      header is the second layer of this defence.
+ *
+ *   2. Force-logout if a logged-in user lands here. If user A is
+ *      signed in and clicks user B's reset link (forwarded by mistake,
+ *      shared inbox, etc.), the original code would have let A change
+ *      B's password while A's session kept a stale JWT. We sign A out
+ *      immediately. Combined with the backend's `pwd_iat`-based JWT
+ *      revocation (any active token for B is invalidated when B's
+ *      password changes), the stranger-link attack is fully closed.
  */
 export function ResetPassword() {
   const [params] = useSearchParams();
-  const token = params.get("token") ?? "";
   const navigate = useNavigate();
+  const { isAuthenticated, logout } = useAuth();
+
+  // Capture the token once and store in component state. The URL is
+  // scrubbed below; subsequent reads of `params` would return null.
+  const [token] = useState<string>(
+    () => params.get("token") ?? "",
+  );
+
+  // One-shot guard for the URL-scrub effect. Without it, the navigate()
+  // would re-fire on every re-render after the URL had already been
+  // replaced.
+  const scrubbedRef = useRef(false);
+  useEffect(() => {
+    if (scrubbedRef.current) return;
+    if (!params.get("token")) return; // nothing to scrub
+    scrubbedRef.current = true;
+    // Replace removes the token from both URL bar AND browser history;
+    // a Back nav doesn't restore it.
+    navigate("/reset-password", { replace: true });
+  }, [params, navigate]);
+
+  // One-shot logout guard for the authenticated-user case.
+  const loggedOutRef = useRef(false);
+  useEffect(() => {
+    if (loggedOutRef.current) return;
+    if (!isAuthenticated) return;
+    loggedOutRef.current = true;
+    logout();
+  }, [isAuthenticated, logout]);
 
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -52,9 +99,11 @@ export function ResetPassword() {
 
       if (res.status === 204) {
         setDone(true);
-        // Auto-redirect to login after a short pause so the user sees the
-        // success state. They can also click through manually.
-        setTimeout(() => navigate("/login", { replace: true }), 2500);
+        // No auto-redirect. The success screen has a prominent "Go to
+        // sign in" button; the user clicks when ready. Removed the
+        // 2.5s setTimeout because users who tab away mid-message lost
+        // context, and the silent navigate broke any back-button
+        // intent.
         return;
       }
 
@@ -87,8 +136,7 @@ export function ResetPassword() {
             Password updated
           </h1>
           <p className="mt-2 text-sm text-text-muted">
-            You can now sign in with your new password. Redirecting you to the
-            login page…
+            You can now sign in with your new password.
           </p>
           <Link
             to="/login"

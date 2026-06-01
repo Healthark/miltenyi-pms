@@ -19,6 +19,7 @@ import smtplib
 import socket
 from email.message import EmailMessage
 from email.utils import formataddr
+from typing import Literal
 
 from app.core.config import settings
 from app.services.email_templates._shared import (
@@ -173,6 +174,7 @@ def send_password_reset_email(
     reset_link: str,
     expires_in_minutes: int,
     org_id: int | None = None,
+    triggered_by: Literal["self", "admin"] = "admin",
 ) -> bool:
     """Email a one-time, time-limited password-reset link to the user.
 
@@ -185,6 +187,18 @@ def send_password_reset_email(
     `org_id` selects the per-org theme (brand color + display name). When
     `None` or unmapped, falls back to the HealthArk palette.
 
+    `triggered_by` selects between two body variants:
+      - `"self"` — the user clicked Forgot Password. Lead reads "You
+                   requested…"; the security tip tells them they can
+                   ignore the email if they didn't request it.
+      - `"admin"` — an HR administrator initiated the reset on their
+                    behalf. Lead reads "An administrator has initiated…";
+                    the security tip tells them to contact HR
+                    immediately if they didn't expect a reset.
+    Defaults to `"admin"` for back-compat with the legacy caller (the
+    admin reset path). The self-service `forgot_password` caller passes
+    `"self"` explicitly.
+
     This function is intended to be called from `BackgroundTasks` so the
     blocking SMTP handshake doesn't sit on the API request thread."""
     theme = resolve_theme(org_id)
@@ -192,8 +206,12 @@ def send_password_reset_email(
     return _send(
         to_email=to_email,
         subject=f"Reset your {theme.brand_name} password",
-        html_body=password_reset_html(full_name, reset_link, expires_in_minutes, theme),
-        text_body=password_reset_text(full_name, reset_link, expires_in_minutes, theme.brand_name),
+        html_body=password_reset_html(
+            full_name, reset_link, expires_in_minutes, theme, triggered_by
+        ),
+        text_body=password_reset_text(
+            full_name, reset_link, expires_in_minutes, theme.brand_name, triggered_by
+        ),
         from_name=sender_display_name,
     )
 

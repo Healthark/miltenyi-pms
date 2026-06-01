@@ -35,11 +35,28 @@ def issue_auth_cookies(
     Returns (access_token, csrf_token) so the login route can echo both
     values to the body.
     """
+    # `pwd_iat` (password-issued-at) backs JWT session revocation. The
+    # claim equals `users.password_changed_at` at the moment this token
+    # was minted; `resolve_authenticated_user` rejects any token whose
+    # claim is lower than the current column value, which is how a
+    # password change (self-service, reset link, or admin temp-password
+    # issue) invalidates every other active session for that user.
+    #
+    # If `password_changed_at` is somehow None (shouldn't happen — the
+    # migration backfills every row and every write site sets it), we
+    # encode 0 and `resolve_authenticated_user` will reject mismatching
+    # tokens until the next password change syncs the value.
+    pwd_iat = (
+        int(user.password_changed_at.timestamp())
+        if user.password_changed_at is not None
+        else 0
+    )
     token_payload = {
         "sub": user.email,
         "user_id": user.id,
         "org_id": user.org_id,
         "role": user.role,
+        "pwd_iat": pwd_iat,
     }
     access_token = create_access_token(
         data=token_payload,
@@ -120,6 +137,7 @@ def resolve_authenticated_user(
 
         user_id: int = payload.get("user_id")
         token_org_id: int | None = payload.get("org_id")
+        token_pwd_iat: int | None = payload.get("pwd_iat")
         if user_id is None:
             raise credentials_exception
 
@@ -144,6 +162,30 @@ def resolve_authenticated_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="This account has been deactivated."
         )
+
+    # 6. JWT session revocation on password change.
+    # `pwd_iat` is stamped at token issue time (see issue_auth_cookies)
+    # and equals `users.password_changed_at` at the moment of mint. We
+    # reject any token whose claim is lower than the current column
+    # value — i.e. the password has been changed since this token was
+    # issued. This closes the captured-JWT window that previously
+    # defeated password reset (attacker keeps using the stolen token
+    # for up to ACCESS_TOKEN_EXPIRE_MINUTES after the victim "resets").
+    #
+    # Strict mode (per design decision):
+    #   - Token missing `pwd_iat` (pre-deploy JWT) → reject. The
+    #     migration backfilled every existing row to NOW(), so even if
+    #     an old-format token is replayed it gets rejected on first use.
+    #   - User row missing `password_changed_at` (shouldn't happen given
+    #     the backfill + write-site enforcement) → encode 0 and require
+    #     token to also be 0; any non-zero token still gets rejected.
+    expected_pwd_iat = (
+        int(user.password_changed_at.timestamp())
+        if user.password_changed_at is not None
+        else 0
+    )
+    if token_pwd_iat is None or token_pwd_iat != expected_pwd_iat:
+        raise credentials_exception
 
     # 6. Sliding refresh — re-issue cookies on the outgoing response so the
     # 30-minute window rolls forward from this request. Only fires for the
