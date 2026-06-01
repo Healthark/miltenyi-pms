@@ -1,11 +1,18 @@
 """Shared theming + escaping helpers for outbound email templates.
 
-Per-org theme resolution and HTML-attribute-safe escaping. Used by every
+Theme resolution and HTML-attribute-safe escaping. Used by every
 template in this package and by `send_email.py` (for the From: line).
 
-Mirrors the frontend's THEME_MAP / BRAND_META — keep the two in sync
-when adding a tenant, otherwise a Miltenyi user receives a HealthArk-
-branded email or vice versa.
+Single-brand mode: every outbound email — regardless of recipient's
+org_id — renders with the Miltenyi PMS palette. The previous
+per-tenant branching (Healthark blue for org_id=1, Miltenyi purple
+for org_id=2) was retired because the product is positioned as a
+single Miltenyi-branded surface; the Healthark/Miltenyi split lives
+on as a role / data-model concept (HR_MyOrg vs HR_Miltenyi) but is
+not surfaced in email branding.
+
+Re-enabling per-tenant theming is a small re-add: drop entries into
+`_ORG_THEMES` keyed by org_id and they'll override the default.
 """
 
 from __future__ import annotations
@@ -18,10 +25,10 @@ from app.core.config import settings
 
 @dataclass(frozen=True)
 class EmailTheme:
-    """Color + display-name palette for a single tenant's outbound mail.
+    """Color + display-name palette for outbound mail.
 
-    Mirrors `--brand` / `--brand-light` in `frontend/src/index.css` and
-    the title in `BRAND_META` from `frontend/src/contexts/AuthProvider.tsx`."""
+    Brand color mirrors `--brand` / `--brand-light` in
+    `frontend/src/index.css` (Miltenyi purple)."""
 
     brand_name: str
     brand: str
@@ -29,26 +36,21 @@ class EmailTheme:
 
 
 _DEFAULT_THEME = EmailTheme(
-    brand_name="Healthark PMS",
-    brand="#315C84",
-    brand_light="#EBF1F6",
+    brand_name="Miltenyi PMS",
+    brand="#3C1053",
+    brand_light="#F4EFF8",
 )
 
-# org_id → theme. Org IDs match `data-theme` slugs:
-#   1 = healthark, 2 = miltenyi  (per CLAUDE.md / AuthProvider.tsx)
-_ORG_THEMES: dict[int, EmailTheme] = {
-    1: _DEFAULT_THEME,
-    2: EmailTheme(
-        brand_name="Miltenyi PMS",
-        brand="#3C1053",
-        brand_light="#F4EFF8",
-    ),
-}
+# Per-org overrides. Empty in single-brand mode — every org_id falls
+# through to `_DEFAULT_THEME` above. To bring back per-tenant
+# branding, add entries here keyed by org_id; the resolve_theme()
+# fallback handles unmapped orgs.
+_ORG_THEMES: dict[int, EmailTheme] = {}
 
 
 def resolve_theme(org_id: int | None) -> EmailTheme:
-    """Look up the per-org theme. Unknown org_id → default (HealthArk).
-    Same fallback behavior as the frontend's THEME_MAP."""
+    """Look up the email theme for an org. Unknown or unmapped org_id
+    → `_DEFAULT_THEME` (Miltenyi PMS palette)."""
     if org_id is None:
         return _DEFAULT_THEME
     return _ORG_THEMES.get(org_id, _DEFAULT_THEME)
