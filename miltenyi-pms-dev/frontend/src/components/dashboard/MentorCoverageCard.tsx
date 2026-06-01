@@ -98,13 +98,6 @@ function UnmentoredSection({
         </div>
       ) : (
         <>
-          <p className="text-[12px] text-text-muted">
-            <span className="font-semibold text-text-main tabular-nums">
-              {count}
-            </span>{" "}
-            {count === 1 ? "Employee is" : "Employees are"} blocked
-            from goals + reviews.
-          </p>
           <div className="rounded-lg border border-border bg-slate-50/40 max-h-32 overflow-y-auto divide-y divide-border/60">
             {unmentored.map((s) => (
               <div key={s.user_id} className="px-3 py-1.5">
