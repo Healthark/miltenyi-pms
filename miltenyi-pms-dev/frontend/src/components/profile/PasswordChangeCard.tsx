@@ -87,7 +87,7 @@ function PasswordInput({
 }
 
 export function PasswordChangeCard() {
-  const { refreshSession } = useAuth();
+  const { user, refreshSession } = useAuth();
   const toast = useToast();
   const snackbar = useSnackbar();
   const confirm = useConfirm();
@@ -108,15 +108,27 @@ export function PasswordChangeCard() {
     newPassword === confirmPassword &&
     !isSaving;
 
+  // The confirmation modal is shown for voluntary password changes
+  // (a user opens Profile and decides to rotate their password).
+  // It is skipped during the forced-first-login flow
+  // (`must_change_password === true`): in that context the user has
+  // already been told by the dedicated /change-password page that
+  // they MUST set a new password to continue, so an extra "Update
+  // password?" modal is friction without information value. Profile
+  // page keeps the modal because the change there is opt-in.
+  const requireConfirmation = !user?.must_change_password;
+
   const handleSubmit = useCallback(async () => {
-    const ok = await confirm({
-      title: "Update password?",
-      message:
-        "Your account will use the new password from now on. Make sure you " +
-        "remember it — you'll be asked for it the next time you sign in.",
-      confirmText: "Update Password",
-    });
-    if (!ok) return;
+    if (requireConfirmation) {
+      const ok = await confirm({
+        title: "Update password?",
+        message:
+          "Your account will use the new password from now on. Make sure you " +
+          "remember it — you'll be asked for it the next time you sign in.",
+        confirmText: "Update Password",
+      });
+      if (!ok) return;
+    }
 
     setIsSaving(true);
 
@@ -139,7 +151,15 @@ export function PasswordChangeCard() {
     } finally {
       setIsSaving(false);
     }
-  }, [currentPassword, newPassword, refreshSession, toast, snackbar, confirm]);
+  }, [
+    currentPassword,
+    newPassword,
+    refreshSession,
+    toast,
+    snackbar,
+    confirm,
+    requireConfirmation,
+  ]);
 
   return (
     <div className="rounded-xl border border-border bg-surface p-6 shadow-sm">
