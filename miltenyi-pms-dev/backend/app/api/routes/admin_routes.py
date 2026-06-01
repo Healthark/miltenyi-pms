@@ -21,9 +21,10 @@ Security Layers Applied (ALL endpoints):
 
 import secrets
 import string
-from typing import List
-from fastapi import APIRouter, BackgroundTasks, HTTPException, status
-from sqlalchemy.orm import joinedload
+from typing import List, Literal, Optional
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
+from sqlalchemy import or_
+from sqlalchemy.orm import aliased, joinedload
 
 from app.api.dependencies import DbSession, CurrentUser
 from app.core.cache import (
@@ -72,6 +73,7 @@ from app.schemas.admin_schemas import (
     YearPreflightEntry,
     YearPreflightResponse,
 )
+from app.schemas.pagination import Paginated
 
 
 _TEMP_PASSWORD_ALPHABET = string.ascii_letters + string.digits
@@ -289,6 +291,294 @@ def list_users(
         u.project_manager_names = names  # type: ignore[attr-defined]
 
     return users
+
+
+# ── Paginated user listing ──────────────────────────────────────────────
+# `_USERS_SORT_COLUMNS` and `_USERS_NO_MENTOR_SENTINEL` are module-level
+# constants used by the paginated endpoint below. Kept here so the
+# wire-contract is defined alongside the route that consumes it.
+#
+# Sort map mirrors the frontend's `UsersSortKey` for the columns the
+# server can sort directly (User-attribute + joined reference-table
+# columns). `mentor_name` and `project_manager_names` involve correlated
+# subqueries / set aggregations — those columns stay rendered as plain
+# (non-sortable) headers; same deferral the goal_routes `/all` endpoint
+# uses for `latest_fy_year` / `latest_manager_name`.
+_USERS_SORT_COLUMNS = {
+    "full_name":        User.full_name,
+    "email":            User.email,
+    "role":             User.role,
+    "created_at":       User.created_at,
+    "function_name":    Function.name,
+    "designation_name": Designation.name,
+}
+
+# Mirrors the frontend's `NO_MENTOR_SENTINEL` in UsersTab.tsx. The wire
+# value is the literal display label `(No mentor)` — guaranteed not to
+# collide with any real full_name (parens + leading space). When the
+# `mentor_name` filter equals this sentinel, the WHERE clause flips from
+# `mentor.full_name == X` to `User.mentor_id IS NULL`.
+_USERS_NO_MENTOR_SENTINEL = "(No mentor)"
+
+
+@router.get("/users/paginated", response_model=Paginated[UserResponse])
+def list_users_paginated(
+    db: DbSession,
+    current_user: CurrentUser,
+    limit: int = Query(
+        50,
+        ge=1,
+        le=200,
+        description=(
+            "Maximum users to return on this page. Server-clamped to "
+            "1..200 (matches the cap on every other paginated endpoint)."
+        ),
+    ),
+    offset: int = Query(
+        0,
+        ge=0,
+        description="Users to skip before this page. 0 for the first page.",
+    ),
+    # ── Filter dimensions ───────────────────────────────────────────────
+    # All optional. Match the toolbar surface in `UsersTab.tsx` 1-to-1 so
+    # the user's filter selections round-trip server-side without the
+    # per-page client-side narrowing the unpaginated endpoint used to do.
+    search: Optional[str] = Query(
+        None,
+        description=(
+            "Case-insensitive substring across full_name + email + "
+            "employee_code. Empty string is treated as no filter."
+        ),
+    ),
+    role: Optional[str] = Query(
+        None,
+        description=(
+            "Exact match on Role enum value (HR_MyOrg / HR_Miltenyi / "
+            "Mentor / PM / Employee). The value 'all' is treated as no "
+            "filter for back-compat with the legacy client-side sentinel."
+        ),
+    ),
+    status_: Optional[str] = Query(
+        None,
+        alias="status",
+        description=(
+            "'active' returns rows with is_deleted=False; 'inactive' "
+            "returns is_deleted=True; 'all' (or omitted) returns both."
+        ),
+    ),
+    function_name: Optional[str] = Query(
+        None,
+        description="Exact match on the user's Function name.",
+    ),
+    designation_name: Optional[str] = Query(
+        None,
+        description="Exact match on the user's Designation name.",
+    ),
+    mentor_name: Optional[str] = Query(
+        None,
+        description=(
+            "Exact match on the resolved mentor's full_name. The "
+            "special value `(No mentor)` matches rows whose mentor_id "
+            "is NULL — same sentinel the frontend's mentor filter "
+            "dropdown uses."
+        ),
+    ),
+    pm_name: Optional[str] = Query(
+        None,
+        description=(
+            "Exact match: row passes when at least one active "
+            "ProjectAssignment ties the user to a Project whose PM "
+            "has the supplied full_name. Active means the assignment's "
+            "end_date IS NULL — same definition used by the "
+            "project_manager_names column."
+        ),
+    ),
+    sort_by: Optional[
+        Literal[
+            "full_name", "email", "role", "created_at",
+            "function_name", "designation_name",
+        ]
+    ] = Query(
+        None,
+        description=(
+            "Sort column. Direct user-attribute + reference-table "
+            "columns only; mentor_name and project_manager_names sorts "
+            "are deferred (would need correlated subqueries)."
+        ),
+    ),
+    sort_dir: Literal["asc", "desc"] = Query(
+        "asc",
+        description="Sort direction. Default 'asc'.",
+    ),
+):
+    """HR-only paginated user listing — companion endpoint to the
+    unpaginated `GET /admin/users` above.
+
+    The unpaginated endpoint is preserved unchanged for callers that
+    need the full org roster (dropdown-option hooks: `useOrgUsers`,
+    `useOrgProjectNames`-adjacent code, `ExportsTab` employee picker,
+    `ProjectModal` PM / member pickers). This new endpoint serves
+    `UsersTab`'s row query, which needs proper server-side pagination +
+    server-side filtering + server-side sort once we move past tiny
+    seed orgs.
+
+    Two-query pattern (same as `goal_routes.list_all_goals`):
+      1. Apply filters + sort to a User query.
+      2. `total` = `.count()` over the filtered query.
+      3. Page slice = `.offset().limit().all()` over the same query.
+      4. Resolve project-manager names for the page slice only (single
+         batched JOIN, scoped to the returned user_ids).
+
+    Soft-deleted users are NOT excluded — UsersTab needs them to render
+    the "Status" column's "Deactivated" badge. The `status` filter is
+    the user-facing knob for that. If `status` isn't passed, deleted
+    rows are returned alongside live ones (matching the unpaginated
+    endpoint's behaviour).
+    """
+    _require_hr_any(current_user)
+
+    # ── Base query + filters ────────────────────────────────────────────
+    users_q = db.query(User).filter(User.org_id == current_user.org_id)
+
+    # Status filter applies first — most rows fall out here cheaply.
+    if status_ and status_ != "all":
+        if status_ == "active":
+            users_q = users_q.filter(User.is_deleted == False)  # noqa: E712
+        elif status_ == "inactive":
+            users_q = users_q.filter(User.is_deleted == True)  # noqa: E712
+        # Any other value is silently treated as "all" — matches the
+        # legacy client-side default and avoids a noisy 400 on the
+        # transitional `?status=` values the URL writer used to emit.
+
+    if role and role != "all":
+        users_q = users_q.filter(User.role == role)
+
+    if search:
+        like = f"%{search.strip()}%"
+        users_q = users_q.filter(
+            or_(
+                User.full_name.ilike(like),
+                User.email.ilike(like),
+                User.employee_code.ilike(like),
+            )
+        )
+
+    # Conditional joins — same compose-with-sort pattern from
+    # `goal_routes.list_all_goals` (doc 30 Part 3). Compute "needs join"
+    # from filter ∪ sort so sort can require a join the filter doesn't.
+    needs_function_join = bool(function_name) or sort_by == "function_name"
+    needs_designation_join = bool(designation_name) or sort_by == "designation_name"
+
+    if needs_function_join:
+        users_q = users_q.join(Function, Function.id == User.function_id)
+        if function_name:
+            users_q = users_q.filter(Function.name == function_name)
+    if needs_designation_join:
+        users_q = users_q.join(Designation, Designation.id == User.designation_id)
+        if designation_name:
+            users_q = users_q.filter(Designation.name == designation_name)
+
+    if mentor_name:
+        if mentor_name == _USERS_NO_MENTOR_SENTINEL:
+            users_q = users_q.filter(User.mentor_id.is_(None))
+        else:
+            # Aliased join so the WHERE clause can reference the mentor's
+            # full_name without colliding with the outer User select.
+            MentorAlias = aliased(User)
+            users_q = users_q.join(
+                MentorAlias, MentorAlias.id == User.mentor_id,
+            ).filter(MentorAlias.full_name == mentor_name)
+
+    if pm_name:
+        # The user passes the `pm_name` filter when an active assignment
+        # ties them to a project whose PM has the given name. EXISTS
+        # subquery keeps the join from multiplying user rows by
+        # assignment count. Active = end_date IS NULL.
+        PMUserAlias = aliased(User)
+        pm_exists = (
+            db.query(ProjectAssignment.id)
+            .join(Project, Project.id == ProjectAssignment.project_id)
+            .join(PMUserAlias, PMUserAlias.id == Project.pm_id)
+            .filter(
+                ProjectAssignment.user_id == User.id,
+                ProjectAssignment.org_id == current_user.org_id,
+                ProjectAssignment.end_date.is_(None),
+                Project.is_deleted.is_(False),
+                PMUserAlias.full_name == pm_name,
+                PMUserAlias.is_deleted == False,  # noqa: E712
+            )
+            .exists()
+        )
+        users_q = users_q.filter(pm_exists)
+
+    # ── Sort ────────────────────────────────────────────────────────────
+    if sort_by is None:
+        # Default: created_at desc — preserves the unpaginated
+        # endpoint's existing implicit ordering so a side-by-side
+        # comparison reads identically.
+        users_q = users_q.order_by(User.created_at.desc(), User.id.asc())
+    else:
+        sort_column = _USERS_SORT_COLUMNS[sort_by]
+        primary = sort_column.asc() if sort_dir == "asc" else sort_column.desc()
+        users_q = users_q.order_by(primary, User.id.asc())
+
+    # ── Step 2: count for `total`. Single COUNT(*) over the filtered
+    # query, before offset/limit. Use `with_entities(User.id)` to keep
+    # the SELECT light — the planner still pushes the same filter set.
+    total_users = users_q.with_entities(User.id).count()
+
+    # ── Step 3: page slice with eager-loads. joinedload pulls Function
+    # + Designation in the same query so the response build is N+1-safe.
+    page_users = (
+        users_q.options(
+            joinedload(User.function),
+            joinedload(User.designation),
+        )
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    # ── Step 4: attach project_manager_names for the page slice only —
+    # the unpaginated endpoint resolves this for the whole org; we
+    # restrict to the returned user_ids so the join cost scales with
+    # the page size, not the org size.
+    page_user_ids = [u.id for u in page_users]
+    if page_user_ids:
+        pm_rows = (
+            db.query(ProjectAssignment.user_id, User.full_name)
+            .join(Project, Project.id == ProjectAssignment.project_id)
+            .join(User, User.id == Project.pm_id)
+            .filter(
+                ProjectAssignment.org_id == current_user.org_id,
+                ProjectAssignment.user_id.in_(page_user_ids),
+                ProjectAssignment.end_date.is_(None),
+                Project.is_deleted.is_(False),
+                User.is_deleted == False,  # noqa: E712
+            )
+            .distinct()
+            .all()
+        )
+        pm_names_by_user: dict[int, set[str]] = {}
+        for user_id, full_name in pm_rows:
+            pm_names_by_user.setdefault(user_id, set()).add(full_name)
+        for u in page_users:
+            u.project_manager_names = sorted(  # type: ignore[attr-defined]
+                pm_names_by_user.get(u.id, set())
+            )
+    else:
+        # No users on this page — still set the transient attribute so
+        # Pydantic doesn't complain about missing fields when items=[].
+        for u in page_users:
+            u.project_manager_names = []  # type: ignore[attr-defined]
+
+    return Paginated[UserResponse](
+        items=page_users,
+        total=total_users,
+        limit=limit,
+        offset=offset,
+        has_more=(offset + len(page_users)) < total_users,
+    )
 
 
 @router.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)

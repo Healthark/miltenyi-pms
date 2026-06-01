@@ -1,21 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import { useQuery } from "@tanstack/react-query";
 import { Search, Pencil, UserX, UserCheck } from "lucide-react";
 import { setOrDeleteParam, searchParamsChanged } from "@/utils/searchParams";
-import type { UserResponse } from "@/services/admin.service";
+import {
+  adminService,
+  type UserResponse,
+  type UsersPaginatedSortBy,
+} from "@/services/admin.service";
+import { queryKeys } from "@/lib/queryKeys";
 import { StatusBadge } from "@/components/admin/StatusBadge";
 import { RoleBadge } from "@/components/admin/RoleBadge";
 import { ExportExcelButton } from "@/components/admin/ExportExcelButton";
 import { SortableHeader } from "@/components/SortableHeader";
 import { StringCombobox } from "@/components/common/StringCombobox";
 import { ClearFiltersButton } from "@/components/common/ClearFiltersButton";
+import { Pagination } from "@/components/common/Pagination";
 import { useAuth } from "@/hooks/useAuth";
 import {
-  compareValues,
-  type SortKind,
   type SortState,
-  type SortValue,
 } from "@/utils/sort";
 
 interface UsersTabProps {
@@ -28,15 +31,17 @@ interface UsersTabProps {
   readonly onReactivate: (user: UserResponse) => void;
 }
 
+// Sort keys the SERVER can ORDER BY (mirrors backend `_USERS_SORT_COLUMNS`).
+// mentor_name + project_manager_names sorts are intentionally deferred —
+// they'd need correlated subqueries. Status column sort is also dropped
+// (frontend can derive it from is_deleted but the backend doesn't expose
+// a corresponding column); HR can use the Status filter instead.
 type UsersSortKey =
   | "full_name"
   | "email"
   | "role"
-  | "mentor_name"
-  | "project_manager_names"
   | "function_name"
-  | "designation_name"
-  | "status";
+  | "designation_name";
 
 type RoleFilter = "all" | "HR_MyOrg" | "HR_Miltenyi" | "Mentor" | "PM" | "Employee";
 type StatusFilter = "all" | "active" | "inactive";
@@ -65,20 +70,13 @@ const USERS_GRID_TEMPLATE_COLUMNS =
 // inner div overflows. Mirrors the pattern in AnnualGoals / ManagementReview.
 const USERS_TABLE_MIN_WIDTH_PX = 1290;
 
-// Rows are uniform height (text-sm + py-3.5 padding + two stacked
-// lines in the Employee cell). No measureElement needed because no
-// expansion / variable content. ~58px observed in dev.
+// Uniform row height — applied as inline style now that the virtualizer
+// (PR #74) no longer enforces it implicitly. text-sm + py-3.5 + two
+// stacked lines in the Employee cell ≈ 58px observed in dev.
 const USERS_ROW_HEIGHT_PX = 58;
 
-// Body scroll viewport. Picked so ~10 rows are visible without
-// scrolling on a typical desktop — same heuristic as AnnualGoals.
-const USERS_SCROLL_HEIGHT_PX = 600;
-
-// Standard overscan for uniform-height rows. Higher than AnnualGoals
-// (which uses 4 because expanded rows are tall and re-render cost is
-// real) — here every row is small and cheap, so a larger window keeps
-// scroll smooth on slower devices.
-const USERS_OVERSCAN = 8;
+// Body scroll-viewport + overscan constants removed (PR #74). At max
+// 50 rows per page the previous virtualization isn't paying off.
 
 /** Mentor-filter sentinel meaning "rows whose mentor_id is NULL".
  *  Distinct from "all" (no filter) so HR can specifically find
@@ -107,29 +105,9 @@ const STATUS_OPTIONS: { value: StatusFilter; label: string }[] = [
 // HR_Miltenyi cannot edit or deactivate Mentor / HR_MyOrg rows (security boundary).
 const PROTECTED_ROLES = new Set<string>(["Mentor", "HR_MyOrg"]);
 
-const USERS_SORT_CONFIG: Record<
-  UsersSortKey,
-  { kind: SortKind; get: (u: UserResponse, all: readonly UserResponse[]) => SortValue }
-> = {
-  full_name:        { kind: "alpha", get: (u) => u.full_name },
-  email:            { kind: "alpha", get: (u) => u.email },
-  role:             { kind: "alpha", get: (u) => u.role },
-  mentor_name:      {
-    kind: "alpha",
-    get: (u, all) =>
-      u.mentor_id ? all.find((x) => x.id === u.mentor_id)?.full_name ?? null : null,
-  },
-  project_manager_names: {
-    kind: "alpha",
-    get: (u) =>
-      u.project_manager_names.length > 0
-        ? u.project_manager_names.join(", ")
-        : null,
-  },
-  function_name:    { kind: "alpha", get: (u) => u.function?.name ?? null },
-  designation_name: { kind: "alpha", get: (u) => u.designation?.name ?? null },
-  status:           { kind: "alpha", get: (u) => (u.is_deleted ? "Inactive" : "Active") },
-};
+// USERS_SORT_CONFIG removed (PR #74). Sort now flows to the server via
+// `sort_by` / `sort_dir` query params; the per-column comparators are
+// no longer needed on the client.
 
 const FILTER_LABEL_CLS =
   "text-[11px] font-bold uppercase tracking-wider text-text-muted";
@@ -294,50 +272,96 @@ export function UsersTab({
     return !PROTECTED_ROLES.has(target.role);
   };
 
-  const visibleUsers = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    const filtered = users.filter((u) => {
-      // Viewer-role scope: HR_Miltenyi never sees Healthark's Mentor or
-      // HR_MyOrg rows in the table. The full `users` array stays intact
-      // so the Mentor column's name lookup (and the sort comparator)
-      // still resolves names of those hidden mentors.
-      if (isViewerMiltenyiHR && PROTECTED_ROLES.has(u.role)) return false;
-      if (q) {
-        const matchesSearch =
-          u.full_name.toLowerCase().includes(q) ||
-          u.email.toLowerCase().includes(q) ||
-          u.employee_code.toLowerCase().includes(q);
-        if (!matchesSearch) return false;
-      }
-      if (roleFilter !== "all" && u.role !== roleFilter) return false;
-      if (statusFilter === "active" && u.is_deleted) return false;
-      if (statusFilter === "inactive" && !u.is_deleted) return false;
-      if (functionFilter !== "all" && u.function?.name !== functionFilter) return false;
-      if (designationFilter !== "all" && u.designation?.name !== designationFilter) return false;
-      if (mentorFilter !== "all") {
-        // "(No mentor)" sentinel: pass only rows whose mentor_id is
-        // NULL. Other values match against the resolved mentor name.
-        if (mentorFilter === NO_MENTOR_SENTINEL) {
-          if (u.mentor_id !== null) return false;
-        } else {
-          const mentorName = u.mentor_id
-            ? users.find((m) => m.id === u.mentor_id)?.full_name
-            : null;
-          if (mentorName !== mentorFilter) return false;
-        }
-      }
-      if (pmFilter !== "all") {
-        // Row passes when its PM set contains the selected name.
-        if (!u.project_manager_names.includes(pmFilter)) return false;
-      }
-      return true;
-    });
-    if (!sort) return filtered;
-    const { kind, get } = USERS_SORT_CONFIG[sort.key];
-    return filtered.slice().sort((a, b) =>
-      compareValues(get(a, users), get(b, users), kind, sort.direction),
-    );
-  }, [users, searchQuery, roleFilter, statusFilter, functionFilter, designationFilter, mentorFilter, pmFilter, sort, isViewerMiltenyiHR]);
+  // ── Server-side paginated query (PR #74) ────────────────────────────
+  // Switch from client-side filter/sort against the `users` prop (still
+  // received from AdminPanel for dropdown options + mentor lookup) to a
+  // separate paginated query that pushes the filter + sort + page state
+  // to GET /admin/users/paginated. The `users` prop is the FULL
+  // roster — keeping it as the dropdown-options + mentor-name-lookup
+  // source means no filter-option shrink-on-narrow bug. The new query
+  // drives only what the table body renders.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+
+  // Build the wire params from filter state. The legacy `"all"` /
+  // `""` sentinels collapse to "no filter" by omitting the field.
+  const queryFilterParams = useMemo(() => {
+    const params: Record<string, string | number> = {};
+    const search = searchQuery.trim();
+    if (search) params.search = search;
+    if (roleFilter !== "all") params.role = roleFilter;
+    if (statusFilter !== "all") params.status = statusFilter;
+    if (functionFilter !== "all") params.function_name = functionFilter;
+    if (designationFilter !== "all") params.designation_name = designationFilter;
+    if (mentorFilter !== "all") params.mentor_name = mentorFilter;
+    if (pmFilter !== "all") params.pm_name = pmFilter;
+    if (sort) {
+      params.sort_by = sort.key;
+      params.sort_dir = sort.direction;
+    }
+    return params;
+  }, [
+    searchQuery,
+    roleFilter,
+    statusFilter,
+    functionFilter,
+    designationFilter,
+    mentorFilter,
+    pmFilter,
+    sort,
+  ]);
+
+  // Reset to page 1 when filters or sort change — otherwise a user
+  // narrowing the result set from page 5 lands on an empty table.
+  const queryFilterParamsKey = JSON.stringify(queryFilterParams);
+  useEffect(() => {
+    setPage(1);
+  }, [queryFilterParamsKey]);
+
+  const paginatedQuery = useQuery({
+    queryKey: queryKeys.admin.usersPaginated({
+      ...queryFilterParams,
+      _page: page,
+      _pageSize: pageSize,
+    }),
+    queryFn: () =>
+      adminService.getUsersPaginated({
+        ...queryFilterParams,
+        sort_by: sort?.key as UsersPaginatedSortBy | undefined,
+        sort_dir: sort?.direction,
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
+      }),
+  });
+
+  // Page-slice rows + server total. `visibleUsers` keeps the same name
+  // the old client-side code used so downstream JSX is unchanged.
+  // Viewer-role scope filter still runs client-side on the page slice:
+  // HR_Miltenyi shouldn't see Mentor/HR_MyOrg rows. The server doesn't
+  // know about that viewer-role projection (it's a UI concern), so we
+  // strip them after the page lands. The `total` shown by the
+  // Pagination toolbar still reflects the SERVER total — slightly
+  // overstated for HR_Miltenyi when Mentor/HR_MyOrg rows exist. Per
+  // the plan that's an acceptable trade-off (the protection lives at
+  // the mutation layer; HR_Miltenyi never sees actionable buttons on
+  // those rows anyway). Future: push the viewer-role projection
+  // server-side so the count agrees.
+  const pageItems = paginatedQuery.data?.items ?? [];
+  const totalCount = paginatedQuery.data?.total ?? 0;
+  const visibleUsers = useMemo(
+    () =>
+      isViewerMiltenyiHR
+        ? pageItems.filter((u) => !PROTECTED_ROLES.has(u.role))
+        : pageItems,
+    [pageItems, isViewerMiltenyiHR],
+  );
+
+  // Loading state — `isPending` is only true on the very first fetch.
+  // Subsequent page changes keep previous rows visible while the new
+  // page lands. Falls back to the prop's `isLoading` when the
+  // paginated query hasn't fired yet (paranoid; covers a race where
+  // both arrive at once).
+  const isPaginatedLoading = paginatedQuery.isPending || isLoading;
 
   // Role-filter dropdown: HR_Miltenyi never sees Mentor or HR_MyOrg
   // options (those buckets would always read zero for them).
@@ -349,20 +373,9 @@ export function UsersTab({
     [isViewerMiltenyiHR],
   );
 
-  // ── Virtualisation ───────────────────────────────────────────────────
-  // Uniform-height rows (no expansion / variable content) so we can
-  // use a constant estimateSize and skip measureElement entirely.
-  // Stable item key by user.id keeps any future re-render cycles from
-  // re-mounting rows that didn't actually move.
-  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
-  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual's useVirtualizer returns non-memoisable functions; React Compiler logs a benign skip here.
-  const rowVirtualizer = useVirtualizer({
-    count: visibleUsers.length,
-    getScrollElement: () => scrollContainerRef.current,
-    estimateSize: () => USERS_ROW_HEIGHT_PX,
-    overscan: USERS_OVERSCAN,
-    getItemKey: (index) => visibleUsers[index].id,
-  });
+  // Virtualizer dropped (PR #74). At max 50 rows per page the
+  // virtualization overhead isn't paying off. Plain .map() renders
+  // the page slice; outer page wrapper keeps the scroll context.
 
   return (
     <div className="p-5 flex flex-col gap-4">
@@ -495,16 +508,9 @@ export function UsersTab({
         </div>
       </div>
 
-      {/* Virtualised user list. Replaces a vanilla <table> so we can
-          render only the rows in the current scroll window — cheap
-          today (<200 users) but prevents O(n) DOM growth as the org
-          grows. The outer wrapper handles horizontal scroll on narrow
-          viewports; the inner ref'd div handles vertical scroll +
-          virtualisation. Header sits OUTSIDE the scroll container so
-          it remains visible as the body scrolls. CSS Grid template is
-          shared between header + body rows so columns align without
-          <table> magic. */}
-      {isLoading ? (
+      {/* User list. Header sits ABOVE the body div; CSS Grid template
+          is shared so columns align without <table> magic. */}
+      {isPaginatedLoading ? (
         <div className="flex items-center justify-center py-16 text-sm text-text-muted">
           Loading users…
         </div>
@@ -517,7 +523,7 @@ export function UsersTab({
             className="text-sm"
             style={{ minWidth: USERS_TABLE_MIN_WIDTH_PX }}
           >
-            {/* Header — non-virtualised, sits above the scroll viewport. */}
+            {/* Header */}
             <div role="rowgroup" className="bg-slate-50 border-b border-border">
               <div
                 role="row"
@@ -539,22 +545,16 @@ export function UsersTab({
                 <div role="columnheader" className="px-5 py-3">
                   <SortableHeader label="Designation" columnKey="designation_name" sort={sort} onSort={setSort} />
                 </div>
-                <div role="columnheader" className="px-5 py-3">
-                  {isViewerMiltenyiHR ? (
-                    <SortableHeader
-                      label="Project Manager"
-                      columnKey="project_manager_names"
-                      sort={sort}
-                      onSort={setSort}
-                    />
-                  ) : (
-                    <SortableHeader
-                      label="Mentor"
-                      columnKey="mentor_name"
-                      sort={sort}
-                      onSort={setSort}
-                    />
-                  )}
+                {/* Mentor / Project Manager — not sortable in this PR
+                    (PR #74 plan: derived columns deferred; would need
+                    correlated subqueries). Rendered as plain headers
+                    so the visual style matches the others without the
+                    chevron affordance. */}
+                <div
+                  role="columnheader"
+                  className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-text-muted"
+                >
+                  {isViewerMiltenyiHR ? "Project Manager" : "Mentor"}
                 </div>
                 <div
                   role="columnheader"
@@ -562,8 +562,16 @@ export function UsersTab({
                 >
                   Phone
                 </div>
-                <div role="columnheader" className="px-5 py-3">
-                  <SortableHeader label="Status" columnKey="status" sort={sort} onSort={setSort} />
+                {/* Status — non-sortable; HR can use the Status filter
+                    above. The backend doesn't expose a `status` sort
+                    column (is_deleted is a bool, lifecycle ordering
+                    is computed client-side and would need a CASE-WHEN
+                    on the server to match). */}
+                <div
+                  role="columnheader"
+                  className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-text-muted"
+                >
+                  Status
                 </div>
                 <div
                   role="columnheader"
@@ -574,45 +582,25 @@ export function UsersTab({
               </div>
             </div>
 
-            {/* Body — virtualised. Empty-state replaces the entire
-                scroll container (no rows = nothing to virtualise). */}
+            {/* Body — plain .map() over the page slice. */}
             {visibleUsers.length === 0 ? (
               <div className="px-5 py-10 text-center text-text-muted">
                 No users match your filters.
               </div>
             ) : (
-              <div
-                ref={scrollContainerRef}
-                role="rowgroup"
-                style={{ height: USERS_SCROLL_HEIGHT_PX }}
-                className="overflow-y-auto"
-              >
-                <div
-                  style={{
-                    height: rowVirtualizer.getTotalSize(),
-                    position: "relative",
-                    width: "100%",
-                  }}
-                >
-                  {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                    const user = visibleUsers[virtualRow.index];
+              <div role="rowgroup">
+                  {visibleUsers.map((user, idx) => {
                     const mutable = canMutateRow(user);
                     return (
                       <div
                         key={user.id}
                         role="row"
-                        aria-rowindex={virtualRow.index + 1}
-                        data-index={virtualRow.index}
+                        aria-rowindex={idx + 1}
                         className={`grid items-center border-b border-border/70 transition-colors hover:bg-slate-50 ${
                           user.is_deleted ? "opacity-60" : ""
                         }`}
                         style={{
-                          position: "absolute",
-                          top: 0,
-                          left: 0,
-                          width: "100%",
                           height: USERS_ROW_HEIGHT_PX,
-                          transform: `translateY(${virtualRow.start}px)`,
                           gridTemplateColumns: USERS_GRID_TEMPLATE_COLUMNS,
                         }}
                       >
@@ -696,11 +684,28 @@ export function UsersTab({
                       </div>
                     );
                   })}
-                </div>
               </div>
             )}
           </div>
         </div>
+      )}
+
+      {/* Pagination toolbar — sits below the table. The component
+          handles its own zero-total state; we still hide it during
+          the very first load so we don't flash controls on a
+          skeleton table. */}
+      {!isPaginatedLoading && (
+        <Pagination
+          page={page}
+          pageSize={pageSize}
+          total={totalCount}
+          onPageChange={setPage}
+          onPageSizeChange={(n) => {
+            setPageSize(n);
+            setPage(1);
+          }}
+          entityLabel="users"
+        />
       )}
     </div>
   );

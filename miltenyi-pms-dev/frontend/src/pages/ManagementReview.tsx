@@ -14,12 +14,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
-  useInfiniteQuery,
   useMutation,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   ChevronDown,
   ChevronUp,
@@ -45,6 +43,7 @@ import { useOrgUsers } from "@/hooks/useOrgUsers";
 import { useAnnualReviewCycles } from "@/hooks/useAnnualReviewCycles";
 import { StringCombobox } from "@/components/common/StringCombobox";
 import { ClearFiltersButton } from "@/components/common/ClearFiltersButton";
+import { Pagination } from "@/components/common/Pagination";
 import { patchRowsAcross } from "@/lib/optimistic";
 import { PerformanceRatingBadge } from "@/components/reviews/PerformanceRatingBadge";
 import { PerformanceRatingSelect } from "@/components/reviews/PerformanceRatingSelect";
@@ -150,21 +149,16 @@ const GRID_TEMPLATE_COLUMNS =
 // 140 + 150 + 110 + 180 + 220 + 90 + 140 + 70 + 70 + 90 + 180 = 1440
 const TABLE_MIN_WIDTH_PX = 1440;
 
-// Fixed row height (in px) the virtualizer uses to size the scrollbar
-// thumb and decide which rows are in-window. py-3.5 (28px total) +
-// content (~22px line-height) ≈ 50px; rounded to 52 to leave breathing
-// room for badge spacing without forcing measureElement.
+// Fixed row height (in px) — applied as inline style on every row to
+// preserve the spreadsheet-style uniform appearance now that the
+// virtualizer (PR #74) no longer enforces it implicitly. py-3.5
+// (28px total) + content (~22px line-height) ≈ 50px; 52 leaves
+// breathing room for badge spacing.
 const ROW_HEIGHT_PX = 52;
 
-// Scroll container height. Fixed for now; viewport-relative sizing
-// (`calc(100vh - 320px)`) is a follow-up if the page header height
-// ever drifts. 600px keeps roughly 11 rows visible at once.
-const SCROLL_CONTAINER_HEIGHT_PX = 600;
-
-// How many rows beyond the viewport edges to render. Higher = smoother
-// scroll on slow devices, more DOM. 8 is the default sweet spot for
-// fixed-height rows.
-const VIRTUALIZER_OVERSCAN = 8;
+// Virtualizer scroll-container + overscan constants removed (PR #74).
+// At max 50 rows per page the previous virtualization wasn't paying
+// for itself.
 
 const STATUS_FILTER_OPTIONS: Array<{ value: StatusFilter; label: string }> = [
   { value: "all",                label: "All" },
@@ -337,9 +331,11 @@ export function ManagementReview() {
   //    invalidation on `annualReviews.all` still catches every variant
   //    when setManagementRating's onSuccess fires.
   //
-  //    - initialPageParam: 0  → first request: ?offset=0&limit=50
-  //    - getNextPageParam: derives from has_more on the latest page.
-  const CALIBRATION_PAGE_SIZE = 50;
+  // Classic-pagination rewrite (PR #74): useInfiniteQuery → useQuery
+  // + <Pagination>. page is 1-indexed; pageSize default 25.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+
   // Sort state — declared earlier (employee_name asc default). Wire
   // it into the request params alongside filters. `requestParams` is
   // a superset of `filterParams` that includes the active sort.
@@ -348,36 +344,42 @@ export function ManagementReview() {
     sort_by: sortKey,
     sort_dir: sortDir,
   };
-  const gridQuery = useInfiniteQuery({
-    queryKey: queryKeys.annualReviews.calibration(requestParams),
-    queryFn: ({ pageParam }) =>
+
+  // Reset to page 1 whenever filters or sort change — otherwise a user
+  // narrowing the result set from page 5 lands on an empty table.
+  const requestParamsKey = JSON.stringify(requestParams);
+  useEffect(() => {
+    setPage(1);
+  }, [requestParamsKey]);
+
+  const gridQueryKeyParams: Record<string, string | number> = {
+    ...requestParams,
+    _page: page,
+    _pageSize: pageSize,
+  };
+  const gridQuery = useQuery({
+    queryKey: queryKeys.annualReviews.calibration(
+      gridQueryKeyParams as Record<string, string | undefined>,
+    ),
+    queryFn: () =>
       annualReviewService.getCalibrationGrid({
         ...(requestParams as Record<string, string> & {
           sort_by?: CalibrationSortBy;
         }),
-        limit: CALIBRATION_PAGE_SIZE,
-        offset: pageParam,
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
       }),
-    initialPageParam: 0,
-    getNextPageParam: (lastPage) =>
-      lastPage.has_more ? lastPage.offset + lastPage.limit : undefined,
   });
-  // Flatten loaded pages → row array. As HR clicks "Load more" this
-  // grows; every downstream consumer (filters, sort, virtualizer) sees
-  // one combined list. Memoised so the `?? []` fallback doesn't
-  // manufacture a fresh array each render and break downstream useMemo
-  // dependency stability.
+  // Single page slice — useQuery returns one Paginated payload. Memoised
+  // so the `?? []` fallback doesn't manufacture a fresh array each
+  // render and break downstream useMemo dependency stability.
   const rows: CalibrationRow[] = useMemo(
-    () => gridQuery.data?.pages.flatMap((p) => p.items) ?? [],
+    () => gridQuery.data?.items ?? [],
     [gridQuery.data],
   );
-  // Total Employee count returned by the server (same on every page,
-  // we read it off the latest one). Drives the "Loaded N of T" counter.
-  const totalUsers =
-    gridQuery.data?.pages[gridQuery.data.pages.length - 1]?.total ?? 0;
-  // For paginated queries, `isPending` is true only on the FIRST fetch.
-  // Subsequent fetchNextPage() calls flip `isFetchingNextPage` instead —
-  // handled separately near the Load More button below.
+  // Total Employee count returned by the server for this filter set.
+  const totalUsers = gridQuery.data?.total ?? 0;
+  // `isPending` is true on the very first load only.
   const isLoading = gridQuery.isPending;
   const loadError = gridQuery.isError ? getErrorMessage(gridQuery.error) : "";
 
@@ -543,26 +545,9 @@ export function ManagementReview() {
     searchInput !== "" ||
     Object.values(filters).some((v) => v !== undefined && v !== "");
 
-  // ── Virtualization ───────────────────────────────────────────────────
-  // useVirtualizer needs a scroll-container ref and an item count. It
-  // returns `getVirtualItems()` — the subset of rows whose index falls
-  // within the current scroll window (± overscan). Each item carries
-  // its precomputed `start` offset which we apply via translateY.
-  //
-  // Re-creating the virtualizer when `visibleRows.length` changes
-  // (filter / sort) is correct: the scroll position resets to top,
-  // which is the right UX for "I just narrowed the filter — show me
-  // the first match." If we ever want scroll-preservation across
-  // filter changes, we'd need to lift this state and snapshot/restore
-  // it explicitly.
-  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
-  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual's useVirtualizer returns non-memoisable functions; React Compiler logs a benign skip here.
-  const rowVirtualizer = useVirtualizer({
-    count: visibleRows.length,
-    getScrollElement: () => scrollContainerRef.current,
-    estimateSize: () => ROW_HEIGHT_PX,
-    overscan: VIRTUALIZER_OVERSCAN,
-  });
+  // Virtualizer dropped (PR #74). At max 50 rows per page the
+  // virtualization overhead doesn't pay off — straight render is
+  // simpler and removes the scroll-container measurement bug surface.
 
   const handleSave = async () => {
     if (!editTarget) return;
@@ -867,42 +852,11 @@ export function ManagementReview() {
                   </div>
                 </div>
 
-                {/* Scrollable + virtualized body. The OUTER div is the
-                    scroll viewport (overflow-y: auto, fixed height). The
-                    INNER div is sized to the TOTAL list height so the
-                    browser draws a correct-length scrollbar. Each
-                    virtualized row is absolute-positioned inside it.
-
-                    Why fixed height instead of `flex-1` / viewport-
-                    relative: the virtualizer needs a definite container
-                    size to compute which rows are in-window. Once we
-                    have telemetry on real-world usage we can tune this
-                    to `calc(100vh - <page header>)` for adaptive sizing. */}
-                <div
-                  ref={scrollContainerRef}
-                  role="rowgroup"
-                  style={{ height: SCROLL_CONTAINER_HEIGHT_PX }}
-                  // `overflow-x-hidden` here is load-bearing. Without it
-                  // CSS computes `overflow-x: auto` from the explicit
-                  // `overflow-y: auto` (paired-overflow rule), and the
-                  // body grows a second horizontal scrollbar — the
-                  // grid template's column MINIMUMS sum to exactly
-                  // TABLE_MIN_WIDTH_PX, so when the vertical scrollbar
-                  // appears it consumes ~15px and the grid overflows by
-                  // that amount. The OUTER wrapper above (overflow-x-
-                  // auto on the bordered card) is the single source of
-                  // horizontal scrolling; pinning it here defers to that.
-                  className="overflow-y-auto overflow-x-hidden"
-                >
-                  <div
-                    style={{
-                      height: rowVirtualizer.getTotalSize(),
-                      position: "relative",
-                      width: "100%",
-                    }}
-                  >
-                    {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                      const r = visibleRows[virtualRow.index];
+                {/* Body — plain map() over the page slice (virtualizer
+                    dropped in PR #74; max 50 rows per page makes it
+                    unnecessary). */}
+                <div role="rowgroup">
+                  {visibleRows.map((r, idx) => {
                       // Action gating per stage:
                       //   not_started / draft   -> no actions (mentee
                       //     work is either nonexistent or private)
@@ -921,7 +875,7 @@ export function ManagementReview() {
                       return (
                         <div
                           role="row"
-                          aria-rowindex={virtualRow.index + 1}
+                          aria-rowindex={idx + 1}
                           // Composite key — `user_id` alone collides in
                           // multi-cycle mode where the same employee
                           // appears once per cycle. `review_id` is
@@ -934,17 +888,7 @@ export function ManagementReview() {
                           }
                           className="grid items-center border-b border-border transition-colors hover:bg-slate-50"
                           style={{
-                            // Absolute positioning is how every virtual
-                            // list library works — the container reserves
-                            // the full scroll height, rows are stacked at
-                            // explicit offsets, and only the in-window
-                            // ones exist in the DOM.
-                            position: "absolute",
-                            top: 0,
-                            left: 0,
-                            width: "100%",
-                            height: virtualRow.size,
-                            transform: `translateY(${virtualRow.start}px)`,
+                            height: ROW_HEIGHT_PX,
                             gridTemplateColumns: GRID_TEMPLATE_COLUMNS,
                           }}
                         >
@@ -1052,7 +996,6 @@ export function ManagementReview() {
                         </div>
                       );
                     })}
-                  </div>
                 </div>
                 </div>
               </div>
@@ -1062,29 +1005,21 @@ export function ManagementReview() {
         </div>
       </div>
 
-      {/* Load More — sits BELOW the calibration card so HR can see the
-          "more available" affordance without scrolling to the bottom of
-          the 600px virtualized window. Hidden when the server reports
-          no more pages (hasNextPage === false). The counter reads
-          "Loaded N of T" — same unit on both sides because each row
-          corresponds to one Staff user (vs doc 20 where total was the
-          parent count and items.length was the child count). */}
-      {gridQuery.hasNextPage && (
-        <div className="flex items-center gap-3 justify-center">
-          <button
-            type="button"
-            onClick={() => {
-              void gridQuery.fetchNextPage();
-            }}
-            disabled={gridQuery.isFetchingNextPage}
-            className="inline-flex items-center gap-2 rounded-lg border border-border bg-white px-4 py-2 text-[13px] font-medium text-text-main hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
-          >
-            {gridQuery.isFetchingNextPage ? "Loading…" : "Load more"}
-          </button>
-          <span className="text-xs text-text-muted">
-            Loaded {rows.length} of {totalUsers}
-          </span>
-        </div>
+      {/* Pagination toolbar — per-page selector + prev/next + page
+          indicator. Replaces the previous Load-more + counter combo.
+          The Pagination component handles its own zero-total state. */}
+      {!isLoading && (
+        <Pagination
+          page={page}
+          pageSize={pageSize}
+          total={totalUsers}
+          onPageChange={setPage}
+          onPageSizeChange={(n) => {
+            setPageSize(n);
+            setPage(1);
+          }}
+          entityLabel="employees"
+        />
       )}
 
       {editTarget && (

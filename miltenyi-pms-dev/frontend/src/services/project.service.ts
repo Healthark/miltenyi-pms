@@ -8,6 +8,7 @@
  */
 
 import apiClient from "@/services/api.client";
+import type { Paginated } from "@/lib/pagination";
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -94,6 +95,33 @@ export interface ProjectUpdatePayload {
   secondary_evaluator_id?: number | null;
 }
 
+/** Sort columns the paginated projects endpoint supports server-side.
+ *  Mirrors backend `_PROJECTS_SORT_COLUMNS`. pm_name + member_count
+ *  sort intentionally absent — derived columns; the corresponding
+ *  headers stay non-sortable. */
+export type ProjectsPaginatedSortBy =
+  | "name"
+  | "project_code"
+  | "start_date"
+  | "created_at"
+  | "status";
+
+/** Query params for GET /projects/paginated. */
+export interface ListProjectsPaginatedParams {
+  limit?: number;
+  offset?: number;
+  search?: string;
+  /** 'active' | 'completed' | 'all' (or omitted). */
+  status?: string;
+  /** Exact PM full_name, OR the literal "(No PM)" sentinel for rows
+   *  whose pm_id IS NULL. */
+  pm_name?: string;
+  /** Filter on EXTRACT(year FROM start_date). */
+  start_year?: number;
+  sort_by?: ProjectsPaginatedSortBy;
+  sort_dir?: "asc" | "desc";
+}
+
 // ── Service ─────────────────────────────────────────────────────────
 
 export const projectService = {
@@ -105,6 +133,20 @@ export const projectService = {
     const res = await apiClient.get<ProjectResponse[]>("/projects/", {
       params: includeCompleted ? { include_completed: true } : undefined,
     });
+    return res.data;
+  },
+
+  /** Paginated projects endpoint — companion to `listProjects` so the
+   *  ProjectsTab table can drive server-side pagination + filtering +
+   *  sort without forcing every dropdown consumer through page math.
+   *  ProjectsTab is the only consumer of this method today. */
+  listProjectsPaginated: async (
+    params: ListProjectsPaginatedParams = {},
+  ): Promise<Paginated<ProjectResponse>> => {
+    const res = await apiClient.get<Paginated<ProjectResponse>>(
+      "/projects/paginated",
+      { params },
+    );
     return res.data;
   },
 

@@ -46,6 +46,14 @@ export const queryKeys = {
   admin: {
     all: ["admin"] as const,
     users: () => [...queryKeys.admin.all, "users"] as const,
+    /** Paginated users cache entry — separate from `users()` (full list,
+     *  consumed by dropdown hooks + ExportsTab + ProjectModal). Filter +
+     *  pagination state are baked into the key so each (filter, page,
+     *  pageSize) combination is its own cache entry; broadcast
+     *  invalidation on `admin.all` still catches every variant. */
+    usersPaginated: (
+      params: Record<string, string | number | undefined> = {},
+    ) => [...queryKeys.admin.all, "users", "paginated", params] as const,
     functions: () => [...queryKeys.admin.all, "functions"] as const,
     designations: () => [...queryKeys.admin.all, "designations"] as const,
     settings: () => [...queryKeys.admin.all, "settings"] as const,
@@ -182,6 +190,16 @@ export const queryKeys = {
      *  invalidate `projects.all` so the AdminPanel grid and every
      *  PM/filter dropdown across the app refresh in lock-step. */
     list: () => [...queryKeys.projects.all, "list", "include_completed"] as const,
+    /** Paginated project list cache entry — separate from `list()` (full
+     *  list used by useOrgProjectNames + ProjectsTab's filter-option
+     *  derivation). Filter + pagination state baked into the key so each
+     *  (filter, page, pageSize) combination is its own cache entry;
+     *  broadcast invalidation on `projects.all` still catches every
+     *  variant. */
+    listPaginated: (
+      params: Record<string, string | number | undefined> = {},
+    ) =>
+      [...queryKeys.projects.all, "list", "paginated", params] as const,
   },
 
   // ── Project review rows ────────────────────────────────────────────

@@ -20,8 +20,7 @@
 
 import { useEffect, useMemo, useRef, useState, Fragment } from "react";
 import { useSearchParams } from "react-router-dom";
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import { useQuery } from "@tanstack/react-query";
 import {
   Briefcase,
   CheckCircle2,
@@ -72,6 +71,7 @@ import { SortableHeader } from "@/components/SortableHeader";
 import { ExportExcelButton } from "@/components/admin/ExportExcelButton";
 import { StringCombobox } from "@/components/common/StringCombobox";
 import { ClearFiltersButton } from "@/components/common/ClearFiltersButton";
+import { Pagination } from "@/components/common/Pagination";
 import { useOrgUsers } from "@/hooks/useOrgUsers";
 import { useProjectReviewCycles } from "@/hooks/useProjectReviewCycles";
 import { useOrgProjectNames } from "@/hooks/useOrgProjectNames";
@@ -255,7 +255,10 @@ export function ProjectReviews() {
   // - getNextPageParam: derives from has_more on the latest page.
   // - enabled: isHR  → Mentor and Employee don't pre-fetch this; HR's
   //                     mentees query has its own key + observer.
-  const ALL_REVIEWS_PAGE_SIZE = 50;
+  // Classic-pagination rewrite (PR #74): useInfiniteQuery → useQuery
+  // + <Pagination>. page is 1-indexed; pageSize 10/25/50 (default 25).
+  const [allReviewsPage, setAllReviewsPage] = useState(1);
+  const [allReviewsPageSize, setAllReviewsPageSize] = useState(25);
   const [allReviewsFilters, setAllReviewsFilters] =
     useState<AllProjectReviewsFilters>({});
   // Sort state was moved into ReadOnlyReviewsList itself — the new
@@ -423,19 +426,29 @@ export function ProjectReviews() {
   // column they could map onto. Request params == filter params.
   const allReviewsRequestParams: Record<string, string> =
     allReviewsFilterParams;
-  const allReviewsQuery = useInfiniteQuery({
-    queryKey: queryKeys.projectReviews.org(allReviewsRequestParams),
-    queryFn: ({ pageParam }) =>
+  // Reset to page 1 whenever filters change.
+  const allReviewsRequestParamsKey = JSON.stringify(allReviewsRequestParams);
+  useEffect(() => {
+    setAllReviewsPage(1);
+  }, [allReviewsRequestParamsKey]);
+
+  const allReviewsQueryKeyParams: Record<string, string | number> = {
+    ...allReviewsRequestParams,
+    _page: allReviewsPage,
+    _pageSize: allReviewsPageSize,
+  };
+  const allReviewsQuery = useQuery({
+    queryKey: queryKeys.projectReviews.org(
+      allReviewsQueryKeyParams as Record<string, string | undefined>,
+    ),
+    queryFn: () =>
       projectReviewService.getAllReviews({
         ...(allReviewsRequestParams as Record<string, string> & {
           sort_by?: AllProjectReviewsSortBy;
         }),
-        limit: ALL_REVIEWS_PAGE_SIZE,
-        offset: pageParam,
+        limit: allReviewsPageSize,
+        offset: (allReviewsPage - 1) * allReviewsPageSize,
       }),
-    initialPageParam: 0,
-    getNextPageParam: (lastPage) =>
-      lastPage.has_more ? lastPage.offset + lastPage.limit : undefined,
     enabled: isHR,
   });
 
@@ -470,15 +483,10 @@ export function ProjectReviews() {
     () => menteeReviewsQuery.data ?? [],
     [menteeReviewsQuery.data],
   );
-  // Flatten loaded pages → review array (PR #39). Downstream filter /
-  // sort / virtualizer code reads one combined list.
-  const allReviews =
-    allReviewsQuery.data?.pages.flatMap((p) => p.items) ?? [];
-  // Total review count across all pages — read off the latest page
-  // (server returns the same value on every paginated response).
-  // Drives the "Loaded N of T" counter alongside the Load More button.
-  const allReviewsTotal =
-    allReviewsQuery.data?.pages[allReviewsQuery.data.pages.length - 1]?.total ?? 0;
+  // Single-page slice — useQuery returns one Paginated payload.
+  const allReviews = allReviewsQuery.data?.items ?? [];
+  // Total review count returned by the server for this filter set.
+  const allReviewsTotal = allReviewsQuery.data?.total ?? 0;
 
   // `isLoading` follows the role-appropriate query's pending flag. PM
   // doesn't have a page-level query (their tab loads its own data), so
@@ -746,29 +754,26 @@ export function ProjectReviews() {
                 activeCycle={settings?.active_cycle_name ?? null}
               />
 
-              {/* Load More — outside ReadOnlyReviewsList because that
-                  component stays pure (presentational only) and is
-                  also used by Mentor's mentee-reviews view, which
-                  isn't paginated. Hidden when the server reports no
-                  more pages. `rows.length` and `allReviewsTotal` are
-                  the same unit (review rows) so the counter is terse
-                  — unlike doc 20 where the unit shift required
-                  explicit "employees" labelling. */}
-              {allReviewsQuery.hasNextPage && (
-                <div className="mt-4 flex items-center gap-3 justify-center">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void allReviewsQuery.fetchNextPage();
+              {/* Pagination toolbar — outside ReadOnlyReviewsList
+                  because that component stays pure presentational and
+                  is also used by Mentor's mentee-reviews view (which
+                  isn't paginated). The Pagination component handles
+                  its own zero-total state; we only suppress it during
+                  the very first load to avoid flashing controls on a
+                  skeleton table. */}
+              {!isLoading && (
+                <div className="mt-2">
+                  <Pagination
+                    page={allReviewsPage}
+                    pageSize={allReviewsPageSize}
+                    total={allReviewsTotal}
+                    onPageChange={setAllReviewsPage}
+                    onPageSizeChange={(n) => {
+                      setAllReviewsPageSize(n);
+                      setAllReviewsPage(1);
                     }}
-                    disabled={allReviewsQuery.isFetchingNextPage}
-                    className="inline-flex items-center gap-2 rounded-lg border border-border bg-white px-4 py-2 text-[13px] font-medium text-text-main hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {allReviewsQuery.isFetchingNextPage ? "Loading…" : "Load more"}
-                  </button>
-                  <span className="text-xs text-text-muted">
-                    Loaded {allReviews.length} of {allReviewsTotal}
-                  </span>
+                    entityLabel="reviews"
+                  />
                 </div>
               )}
             </>
@@ -827,14 +832,9 @@ const READ_ONLY_TABLE_MIN_WIDTH_PX = 1040;
 // to handle that edge case correctly.
 //
 // Note: this table has NO inline expansion (the View button opens a
-// MODAL, not an inline panel). We could have used fixed-height
-// virtualization like PR #15. We chose variable-height anyway because
-// (a) project names can wrap, (b) it keeps the codebase consistent
-// with PR #16's template, (c) the cost vs fixed-height is minimal.
-const READ_ONLY_ESTIMATE_ROW_PX = 64;
-
-const READ_ONLY_SCROLL_HEIGHT_PX = 600;
-const READ_ONLY_OVERSCAN = 6;
+// Virtualizer constants removed (PR #74). At max 50 rows per page
+// the previous virtualization overhead (variable-height measurement,
+// scroll container sizing) wasn't paying for itself.
 
 function ReadOnlyReviewsList({
   isLoading,
@@ -1152,22 +1152,9 @@ function ReadOnlyReviewsList({
     [visibleGroups],
   );
 
-  // Variable-height virtualizer (same template as PR #16 / doc #16).
-  // Project cell can wrap to two lines on long names; the rest of
-  // the row stays compact. `getItemKey` keys the measurement cache
-  // by group identity (not array index) so the cached row height
-  // follows a group across re-sorts / filter changes — same pattern
-  // we use on the AnnualGoals All Goals tab to avoid post-filter
-  // gap artifacts.
-  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
-  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual's useVirtualizer returns non-memoisable functions; React Compiler logs a benign skip here.
-  const rowVirtualizer = useVirtualizer({
-    count: visibleGroups.length,
-    getScrollElement: () => scrollContainerRef.current,
-    estimateSize: () => READ_ONLY_ESTIMATE_ROW_PX,
-    overscan: READ_ONLY_OVERSCAN,
-    getItemKey: (index) => visibleGroups[index].key,
-  });
+  // Virtualizer dropped (PR #74). At max 50 rows per page the
+  // virtualization overhead doesn't pay off and complicated the
+  // variable-height Project cell wrap. Plain map() is enough.
 
   if (isLoading) {
     return <TableSkeleton />;
@@ -1506,34 +1493,14 @@ function ReadOnlyReviewsList({
               </p>
             </div>
           ) : (
-            <div
-              ref={scrollContainerRef}
-              role="rowgroup"
-              style={{ height: READ_ONLY_SCROLL_HEIGHT_PX }}
-              className="overflow-y-auto"
-            >
-              <div
-                style={{
-                  height: rowVirtualizer.getTotalSize(),
-                  position: "relative",
-                  width: "100%",
-                }}
-              >
-                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                  const group = visibleGroups[virtualRow.index];
-                  return (
+            <div role="rowgroup">
+              {visibleGroups.map((group, idx) => {
+                return (
                     <div
                       role="row"
-                      aria-rowindex={virtualRow.index + 1}
+                      aria-rowindex={idx + 1}
                       key={group.key}
-                      data-index={virtualRow.index}
-                      ref={rowVirtualizer.measureElement}
                       style={{
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
-                        width: "100%",
-                        transform: `translateY(${virtualRow.start}px)`,
                         gridTemplateColumns: READ_ONLY_GRID_TEMPLATE_COLUMNS,
                       }}
                       className="grid items-center hover:bg-slate-50/60 transition-colors border-b border-border/50"
@@ -1591,7 +1558,6 @@ function ReadOnlyReviewsList({
                     </div>
                   );
                 })}
-              </div>
             </div>
           )}
         </div>
