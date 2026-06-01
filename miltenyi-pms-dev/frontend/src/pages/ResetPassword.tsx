@@ -67,19 +67,25 @@ export function ResetPassword() {
   }, [isAuthenticated, logout]);
 
   const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
+  // Single password field on this surface (no confirm-re-enter). The
+  // user just reached this page via a one-time-use email link — the
+  // link itself is the second factor proving intent, so forcing them
+  // to type the password twice adds friction without security gain.
+  // The Profile page's Change Password flow still keeps the confirm
+  // field + the "Update password?" modal because that flow can be
+  // triggered from an already-authenticated session (e.g. unlocked
+  // screen) where the extra confirmation actually matters.
   const validation = useMemo<string | null>(() => {
     if (!token) return "Reset token is missing from the URL.";
     if (password.length < MIN_PASSWORD_LENGTH) {
       return `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`;
     }
-    if (confirm !== password) return "Passwords do not match.";
     return null;
-  }, [token, password, confirm]);
+  }, [token, password]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -172,15 +178,6 @@ export function ResetPassword() {
           type="password"
           value={password}
           onChange={setPassword}
-          autoComplete="new-password"
-          minLength={MIN_PASSWORD_LENGTH}
-        />
-        <Field
-          id="confirm-password"
-          label="Confirm new password"
-          type="password"
-          value={confirm}
-          onChange={setConfirm}
           autoComplete="new-password"
           minLength={MIN_PASSWORD_LENGTH}
         />
