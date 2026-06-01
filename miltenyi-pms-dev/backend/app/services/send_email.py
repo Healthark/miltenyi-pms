@@ -184,8 +184,11 @@ def send_password_reset_email(
     (the link is also returned in the API response so it can be relayed
     out-of-band when delivery fails).
 
-    `org_id` selects the per-org theme (brand color + display name). When
-    `None` or unmapped, falls back to the HealthArk palette.
+    `org_id` is kept in the signature for the multi-tenant theming
+    plumbing in email_templates._shared.resolve_theme, but in
+    single-brand mode every recipient gets the Miltenyi PMS palette
+    regardless. See _shared.py for how to re-enable per-tenant
+    branding.
 
     `triggered_by` selects between two body variants:
       - `"self"` — the user clicked Forgot Password. Lead reads "You
