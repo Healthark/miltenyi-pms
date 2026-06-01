@@ -33,11 +33,11 @@ Security Layers:
 
 from typing import List, Literal, Optional
 from fastapi import APIRouter, HTTPException, Query, status
-from sqlalchemy import and_, case, or_
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import aliased, joinedload
 
 from app.api.dependencies import DbSession, CurrentUser
-from app.services.notification_service import notify
+from app.services.notification_service import notify, notify_many
 from app.core.user_filters import active_user_ids_query
 from app.core.cycle_utils import (
     _fy_label_of_review,
@@ -1129,6 +1129,75 @@ def submit_mentor_evaluation(
         entity_url=f"/annual-reviews?review_id={review.id}",
     )
     db.commit()
+
+    # Aggregate alert: when this submission was the LAST PENDING_MENTOR
+    # row for the cycle in this org, ping HR_MyOrg once so they know
+    # calibration can begin. Per-review fan-out was deliberately
+    # rejected — in a 100-person org HR would get N bells per cycle,
+    # which is exactly the noise the notifications-decision-matrix
+    # (row 2.3) warned against. The aggregate is one bell per cycle
+    # per HR user; mentor submissions trickle in over a two-week
+    # window and HR only needs to act once the queue is fully built.
+    #
+    # The count runs AFTER the status flip is committed above, so the
+    # row we just transitioned no longer counts as PENDING_MENTOR —
+    # the trigger condition is `== 0`, not `== 1`. Scoped to:
+    #   - same org           (tenant isolation)
+    #   - same cycle_name    (only this FY's calibration unlocks; a
+    #                         half-finished prior cycle isn't relevant
+    #                         and the matrix decision is per-cycle)
+    #   - active users only  (a soft-deleted mentee's stale PENDING
+    #                         row would otherwise block the alert
+    #                         forever — same reasoning the All Reviews
+    #                         listing uses).
+    remaining_pending_mentor = (
+        db.query(func.count(AnnualReview.id))
+        .filter(
+            AnnualReview.org_id == current_user.org_id,
+            AnnualReview.cycle_name == review.cycle_name,
+            AnnualReview.status == ReviewStatus.PENDING_MENTOR.value,
+            AnnualReview.user_id.in_(
+                active_user_ids_query(db, current_user.org_id)
+            ),
+        )
+        .scalar()
+    ) or 0
+
+    if remaining_pending_mentor == 0:
+        # Direct query for HR_MyOrg user ids; no helper exists for
+        # "role-scoped active user ids" since this is the first place
+        # in the codebase that fans out by role. If a second caller
+        # appears, lift this into user_filters.py.
+        hr_user_ids = [
+            uid
+            for (uid,) in db.query(User.id)
+            .filter(
+                User.org_id == current_user.org_id,
+                User.role == Role.HR_MYORG.value,
+                User.is_deleted == False,  # noqa: E712 — SQLAlchemy needs ==
+            )
+            .all()
+        ]
+        if hr_user_ids:
+            notify_many(
+                db,
+                org_id=current_user.org_id,
+                recipient_ids=hr_user_ids,
+                sender_id=current_user.id,
+                module="annual_review",
+                # No specific review row drives this alert — it's a
+                # cycle-level event. entity_id stays None so the
+                # default deep-link logic doesn't append a stray
+                # `?annual_review_id=…` to the URL.
+                entity_type="annual_review_cycle",
+                entity_id=None,
+                message=(
+                    f"All mentor evaluations are in for {review.cycle_name}. "
+                    f"Management calibration can begin."
+                ),
+                entity_url="/management-review",
+            )
+            db.commit()
 
     return review
 
