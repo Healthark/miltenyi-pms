@@ -815,13 +815,13 @@ export function ProjectReviews() {
 // leave dead cell space on the right while Project clips. The 220px
 // minimum on Cycle Reviews still guarantees 4 chips fit without
 // wrapping at narrow viewports.
-// First column is the running row number ("#") — only rendered for the
-// HR consumer (paginated). The Mentor consumer (uncontrolled mode,
-// non-paginated) doesn't render a # cell, but the grid template stays
-// the same so both consumers can use a single template; Mentor view
-// renders an empty leading cell. Narrow 48px fits 4-digit page numbers.
+// First column is the running row number ("#") — narrow capped range
+// so it doesn't grow on wide screens. The previous `0.4fr` weight
+// let the column stretch unnecessarily on large desktops. Same fixed
+// range used for both consumers (HR paginated + Mentor non-paginated)
+// so the grid template is shared.
 const READ_ONLY_GRID_TEMPLATE_COLUMNS =
-  "minmax(48px, 0.4fr) minmax(160px, 1.3fr) minmax(220px, 2.6fr) minmax(110px, 0.9fr) " +
+  "minmax(40px, 52px) minmax(160px, 1.3fr) minmax(220px, 2.6fr) minmax(110px, 0.9fr) " +
   "minmax(160px, 1.3fr) minmax(120px, 0.9fr) minmax(220px, 1.5fr)";
 
 // Sum of the READ_ONLY_GRID_TEMPLATE_COLUMNS minimums plus a little
@@ -830,8 +830,8 @@ const READ_ONLY_GRID_TEMPLATE_COLUMNS =
 // CSS pairing for overflow-y: auto) does — otherwise the body scrolls
 // horizontally on its own and the header stays put. Mirrors the same
 // fix in ManagementReview.tsx.
-// 7-column total: 48 + 160 + 220 + 110 + 160 + 120 + 220 = 1038 + ~50 breathing.
-const READ_ONLY_TABLE_MIN_WIDTH_PX = 1088;
+// 7-column total: 40 + 160 + 220 + 110 + 160 + 120 + 220 = 1030 + ~50 breathing.
+const READ_ONLY_TABLE_MIN_WIDTH_PX = 1080;
 
 // Starting guess for the collapsed row height (project cell's 2-line
 // content + py-3 padding ≈ 60-64px). measureElement corrects after
@@ -1447,7 +1447,7 @@ function ReadOnlyReviewsList({
                   consistency with the HR view. */}
               <div
                 role="columnheader"
-                className="text-left px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted"
+                className="text-left px-3 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted"
               >
                 #
               </div>
@@ -1535,7 +1535,7 @@ function ReadOnlyReviewsList({
                           for the HR consumer, 0 for Mentor. */}
                       <div
                         role="cell"
-                        className="px-4 py-3 text-text-muted tabular-nums text-xs"
+                        className="px-3 py-3 text-text-muted tabular-nums text-xs"
                       >
                         {(rowNumberOffset + idx + 1).toLocaleString()}
                       </div>

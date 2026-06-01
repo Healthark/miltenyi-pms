@@ -138,18 +138,19 @@ const COLUMN_DEFS: Array<{ label: string; key: SortKey | null }> = [
 // needs ~170px to render without clipping. The body's 15px right-edge
 // clip (from overflow-x:hidden on the scroll container) eats into the
 // cell's right padding rather than the buttons themselves.
-// First column is the running row number ("#") — narrow fixed-ish
-// width sized for 4-digit page numbers (e.g. "1,234").
+// First column is the running row number ("#") — narrow capped range
+// so it doesn't grow on wide screens. The previous `0.4fr` weight
+// let the column stretch unnecessarily on large desktops.
 const GRID_TEMPLATE_COLUMNS =
-  "minmax(48px, 0.4fr) minmax(140px, 1.4fr) minmax(150px, 1.3fr) minmax(110px, 1fr) minmax(180px, 1.4fr) minmax(220px, 1.7fr) minmax(90px, 0.9fr) minmax(140px, 1.2fr) minmax(70px, 0.7fr) minmax(70px, 0.7fr) minmax(90px, 1fr) minmax(180px, 1.2fr)";
+  "minmax(40px, 52px) minmax(140px, 1.4fr) minmax(150px, 1.3fr) minmax(110px, 1fr) minmax(180px, 1.4fr) minmax(220px, 1.7fr) minmax(90px, 0.9fr) minmax(140px, 1.2fr) minmax(70px, 0.7fr) minmax(70px, 0.7fr) minmax(90px, 1fr) minmax(180px, 1.2fr)";
 
 // Sum of the GRID_TEMPLATE_COLUMNS minimums. Drives the table's
 // min-width so the outer horizontal-scroll wrapper keeps the header
 // and body grids aligned on narrow viewports — without it, the body's
 // implicit overflow-x (per the y-auto spec interaction) would scroll
 // independently of the header.
-// 48 + 140 + 150 + 110 + 180 + 220 + 90 + 140 + 70 + 70 + 90 + 180 = 1488
-const TABLE_MIN_WIDTH_PX = 1488;
+// 40 + 140 + 150 + 110 + 180 + 220 + 90 + 140 + 70 + 70 + 90 + 180 = 1480
+const TABLE_MIN_WIDTH_PX = 1480;
 
 // Fixed row height (in px) — applied as inline style on every row to
 // preserve the spreadsheet-style uniform appearance now that the
@@ -815,7 +816,7 @@ export function ManagementReview() {
                         counter at the bottom. */}
                     <div
                       role="columnheader"
-                      className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-text-muted"
+                      className="px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-text-muted"
                     >
                       #
                     </div>
@@ -906,7 +907,7 @@ export function ManagementReview() {
                           {/* # — cumulative across pages */}
                           <div
                             role="cell"
-                            className="px-4 text-text-muted tabular-nums text-xs"
+                            className="px-3 text-text-muted tabular-nums text-xs"
                           >
                             {((page - 1) * pageSize + idx + 1).toLocaleString()}
                           </div>

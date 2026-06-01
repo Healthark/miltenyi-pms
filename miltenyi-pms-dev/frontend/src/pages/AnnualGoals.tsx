@@ -1224,10 +1224,12 @@ export function AnnualGoals() {
 // First column is the running row number ("#"). The expansion sub-
 // rows below pass through this column with an empty cell (or the
 // existing border-l-2 styling on what was previously the first cell —
-// see the sub-header / per-goal-sub-row render below). Narrow 48px
-// fits 4-digit page numbers (e.g. "1,234").
+// see the sub-header / per-goal-sub-row render below). Narrow capped
+// range fits up to 3-digit page numbers without growing on wide
+// screens (the `0.4fr` weight in the original version made the
+// column stretch unnecessarily wide on large desktops).
 const ALL_GOALS_GRID_TEMPLATE_COLUMNS =
-  "minmax(48px, 0.4fr) minmax(180px, 1.6fr) minmax(140px, 1.4fr) minmax(140px, 1.4fr) " +
+  "minmax(40px, 52px) minmax(180px, 1.6fr) minmax(140px, 1.4fr) minmax(140px, 1.4fr) " +
   "minmax(100px, 1fr) minmax(140px, 1.3fr)";
 
 // Sum of the GRID_TEMPLATE_COLUMNS minimums plus a little breathing
@@ -1236,7 +1238,7 @@ const ALL_GOALS_GRID_TEMPLATE_COLUMNS =
 // pairing for overflow-y: auto) does — otherwise the body scrolls
 // horizontally on its own and the header stays put. Mirrors the same
 // fix in ManagementReview.tsx.
-const ALL_GOALS_TABLE_MIN_WIDTH_PX = 808;
+const ALL_GOALS_TABLE_MIN_WIDTH_PX = 800;
 
 // Virtualizer constants removed (PR #74). With per-page max 50 rows
 // the previous variable-height measurement infrastructure (estimate
@@ -1551,7 +1553,7 @@ function AllGoalsTab({
                   employee-as-unit shape so the row number agrees. */}
               <div
                 role="columnheader"
-                className="text-left px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-text-muted"
+                className="text-left px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-text-muted"
               >
                 #
               </div>
@@ -1610,7 +1612,7 @@ function AllGoalsTab({
                       {/* # — cumulative employee count across pages */}
                       <div
                         role="cell"
-                        className="px-4 py-3 text-text-muted tabular-nums text-xs"
+                        className="px-3 py-3 text-text-muted tabular-nums text-xs"
                       >
                         {((page - 1) * pageSize + idx + 1).toLocaleString()}
                       </div>
@@ -1661,7 +1663,7 @@ function AllGoalsTab({
                         >
                           {/* # placeholder — keeps the sub-header
                               aligned with the parent grid's new # column. */}
-                          <div className="px-4 py-2" />
+                          <div className="px-3 py-2" />
                           <div className="text-left px-5 py-2 pl-10 font-bold border-l-2 border-brand/40">
                             Goal
                           </div>
@@ -1694,7 +1696,7 @@ function AllGoalsTab({
                                   ("1.", "2." …) inside the Goal cell
                                   below covers the within-employee
                                   ordering. */}
-                              <div className="px-4 py-2.5 self-start" />
+                              <div className="px-3 py-2.5 self-start" />
                               <div className="px-5 py-2.5 pl-10 border-l-2 border-brand/40 self-start">
                                 <span className="font-medium text-text-main">
                                   <span className="mr-2 font-mono text-[12px] text-text-muted tabular-nums">
