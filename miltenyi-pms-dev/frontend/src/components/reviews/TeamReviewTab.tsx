@@ -495,7 +495,7 @@ export function TeamReviewTab() {
                     table view only (Cards view doesn't surface a row
                     number concept). Matches the "Showing N–M of T"
                     counter at the bottom. */}
-                <th className="text-left px-3 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted w-10">
+                <th className="text-center px-2 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted w-8">
                   #
                 </th>
                 <th className="text-left px-5 py-2.5">
@@ -563,7 +563,7 @@ export function TeamReviewTab() {
                     key={r.id}
                     className="hover:bg-slate-50/60 transition-colors"
                   >
-                    <td className="px-3 py-3 text-text-muted tabular-nums text-xs">
+                    <td className="px-2 py-3 text-center text-text-muted tabular-nums text-xs">
                       {((page - 1) * pageSize + idx + 1).toLocaleString()}
                     </td>
                     <td className="px-5 py-3 font-medium text-text-main">

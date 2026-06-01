@@ -532,11 +532,12 @@ export function AnnualReviews() {
 // + body rows). `minmax(<floor>, <weight>fr)` keeps narrow columns
 // readable while letting wide ones expand. See PR #15 for the
 // rationale on table → div + CSS Grid.
-// First column is the running row number ("#") — narrow capped range
-// so it doesn't grow on wide screens. The previous `0.4fr` weight
-// let the column stretch unnecessarily on large desktops.
+// First column is the running row number ("#") — tightly capped
+// 32-40px range, paired with px-2 cell padding (16px total) and
+// text-center for visual balance. Short numeric content (1-4 chars)
+// doesn't need more.
 const ALL_REVIEWS_GRID_TEMPLATE_COLUMNS =
-  "minmax(40px, 52px) minmax(180px, 1.8fr) minmax(120px, 1.2fr) minmax(140px, 1.4fr) " +
+  "minmax(32px, 40px) minmax(180px, 1.8fr) minmax(120px, 1.2fr) minmax(140px, 1.4fr) " +
   "minmax(100px, 1fr) minmax(120px, 1.1fr) minmax(80px, 0.8fr) " +
   "minmax(80px, 0.8fr) minmax(80px, 0.8fr)";
 
@@ -546,7 +547,7 @@ const ALL_REVIEWS_GRID_TEMPLATE_COLUMNS =
 // pairing for overflow-y: auto) does — otherwise the body scrolls
 // horizontally on its own and the header stays put. Mirrors the same
 // fix in ManagementReview.tsx.
-const ALL_REVIEWS_TABLE_MIN_WIDTH_PX = 1000;
+const ALL_REVIEWS_TABLE_MIN_WIDTH_PX = 992;
 
 // Virtualizer constants removed (PR #74). With max 50 rows per page
 // the previous measure-driven variable-height logic isn't needed —
@@ -831,7 +832,7 @@ function AllReviewsTab({
                   matches the "Showing N–M of T" counter below. */}
               <div
                 role="columnheader"
-                className="text-left px-3 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted"
+                className="text-center px-2 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted"
               >
                 #
               </div>
@@ -896,7 +897,7 @@ function AllReviewsTab({
                       {/* # — cumulative across pages */}
                       <div
                         role="cell"
-                        className="px-3 py-3 text-text-muted tabular-nums text-xs"
+                        className="px-2 py-3 text-center text-text-muted tabular-nums text-xs"
                       >
                         {((page - 1) * pageSize + idx + 1).toLocaleString()}
                       </div>

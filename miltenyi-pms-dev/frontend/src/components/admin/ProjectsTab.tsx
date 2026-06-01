@@ -508,7 +508,7 @@ export function ProjectsTab({ ref }: ProjectsTabProps = {}) {
                 {/* Running row number. Cumulative across pages (page 2
                     starts at 26 when pageSize=25), matching the
                     "Showing 51–75 of 247" counter at the bottom. */}
-                <th className="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-text-muted w-10">
+                <th className="text-center px-2 py-3 text-xs font-semibold uppercase tracking-wide text-text-muted w-8">
                   #
                 </th>
                 <th className="px-5 py-3">
@@ -552,7 +552,7 @@ export function ProjectsTab({ ref }: ProjectsTabProps = {}) {
                   key={project.id}
                   className="transition-colors hover:bg-slate-50"
                 >
-                  <td className="px-3 py-3.5 text-text-muted tabular-nums text-xs">
+                  <td className="px-2 py-3.5 text-center text-text-muted tabular-nums text-xs">
                     {((page - 1) * pageSize + idx + 1).toLocaleString()}
                   </td>
                   <td className="px-5 py-3.5">
