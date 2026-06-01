@@ -1,12 +1,10 @@
 import { useCallback, useEffect, useRef, useState, Fragment } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
-  useInfiniteQuery,
   useMutation,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useVirtualizer } from "@tanstack/react-virtual";
 import { queryKeys } from "@/lib/queryKeys";
 import {
   Plus, Target, Lock, Search,
@@ -45,6 +43,7 @@ import { CriteriaChecklist } from "@/components/goals/CriteriaChecklist";
 import { RoleExpectationsModal } from "@/components/goals/RoleExpectationsModal";
 import { StringCombobox } from "@/components/common/StringCombobox";
 import { ClearFiltersButton } from "@/components/common/ClearFiltersButton";
+import { Pagination } from "@/components/common/Pagination";
 import { useOrgReferenceData } from "@/hooks/useOrgReferenceData";
 import { useOrgUsers } from "@/hooks/useOrgUsers";
 import { useGoalYears } from "@/hooks/useGoalYears";
@@ -324,10 +323,14 @@ export function AnnualGoals() {
   // broadcast invalidations on queryKeys.goals.all keep working for
   // every filter variant when goal mutations fire.
   //
-  // - initialPageParam: 0  → first request: GET /goals/all?offset=0&limit=50
-  // - getNextPageParam: derives the next offset from the previous page's
-  //   has_more flag (server-computed). Return undefined to stop paging.
-  const ALL_GOALS_PAGE_SIZE = 50;
+  // Classic-pagination rewrite (PR #74): replaced `useInfiniteQuery` +
+  // virtualizer + Load-more with `useQuery` + `<Pagination>` per the
+  // pagination plan. `page` is 1-indexed; `pageSize` is one of
+  // 10/25/50. Both are baked into the queryKey so each (filter, page,
+  // pageSize) triple gets its own cache entry — page jumps therefore
+  // serve instantly on revisit.
+  const [allGoalsPage, setAllGoalsPage] = useState(1);
+  const [allGoalsPageSize, setAllGoalsPageSize] = useState(25);
   const [allGoalsFilters, setAllGoalsFilters] = useState<AllGoalsFilters>({});
   const [allGoalsSort, setAllGoalsSort] = useState<
     SortState<AllGoalsSortKey> | null
@@ -447,39 +450,57 @@ export function AnnualGoals() {
       ? { sort_by: allGoalsSort.key, sort_dir: allGoalsSort.direction }
       : {}),
   };
-  const allGoalsQuery = useInfiniteQuery({
-    queryKey: queryKeys.goals.org(allGoalsRequestParams),
-    queryFn: ({ pageParam }) =>
+  // Reset to page 1 whenever filters or sort change. Without this, a
+  // user on page 5 of 247 employees who narrows to a 12-row filter
+  // would land on "Page 5 of 1" (clamped to legal range, but empty
+  // table). Watching the serialised filter+sort params is safer than
+  // listing each individually — anyone adding a new filter
+  // automatically gets reset behaviour too.
+  const allGoalsRequestParamsKey = JSON.stringify(allGoalsRequestParams);
+  useEffect(() => {
+    setAllGoalsPage(1);
+  }, [allGoalsRequestParamsKey]);
+
+  // Bake page + pageSize into the cache key so each (filter, page,
+  // pageSize) triple is its own entry; navigating page 3 → 4 → 3
+  // serves the page-3 cache instantly. Filter changes already shard
+  // the key via `allGoalsRequestParams`.
+  const allGoalsQueryKeyParams: Record<string, string | number> = {
+    ...allGoalsRequestParams,
+    _page: allGoalsPage,
+    _pageSize: allGoalsPageSize,
+  };
+  const allGoalsQuery = useQuery({
+    queryKey: queryKeys.goals.org(allGoalsQueryKeyParams),
+    queryFn: () =>
       goalService.getAllGoals({
         ...(allGoalsRequestParams as Record<string, string | number> & {
           sort_by?: AllGoalsSortBy;
         }),
-        limit: ALL_GOALS_PAGE_SIZE,
-        offset: pageParam,
+        limit: allGoalsPageSize,
+        offset: (allGoalsPage - 1) * allGoalsPageSize,
       }),
-    initialPageParam: 0,
-    getNextPageParam: (lastPage) =>
-      lastPage.has_more ? lastPage.offset + lastPage.limit : undefined,
     enabled: isHRMyOrg,
   });
 
   const roleExpectation: UserRoleExpectation | null =
     expectationsQuery.data ?? null;
   const goals: Goal[] = myGoalsQuery.data ?? [];
-  // Flatten loaded pages into a single goal array. Every consumer
-  // downstream (filters, sort, grouping) sees one combined list as the
-  // user loads more pages. Empty array on the first render before any
-  // page resolves.
-  const allGoals: TeamGoal[] =
-    allGoalsQuery.data?.pages.flatMap((p) => p.items) ?? [];
-  // Total employee count across ALL pages (the server returns the same
-  // value on every paginated response, so we read it off the latest
-  // page). 0 before the first page resolves.
-  const allGoalsTotalEmployees =
-    allGoalsQuery.data?.pages[allGoalsQuery.data.pages.length - 1]?.total ?? 0;
-  // For paginated queries `isPending` covers ONLY the first-page fetch
-  // (no pages loaded yet); subsequent fetchNextPage() calls flip
-  // `isFetchingNextPage` instead, handled at the Load More button below.
+  // Single-page slice — `useQuery` returns one Paginated payload
+  // (rows replace per page; no accumulation across pages). The
+  // previous useInfiniteQuery pattern flattened `pages.flatMap(...)`;
+  // not needed any more.
+  const allGoals: TeamGoal[] = allGoalsQuery.data?.items ?? [];
+  // Server's count of qualifying parents (employees) — same field
+  // shape as before, just one page deep.
+  const allGoalsTotalEmployees = allGoalsQuery.data?.total ?? 0;
+  // `isPending` is true on the very first load. Subsequent page
+  // changes flip `isFetching` but keep `isPending` false — the
+  // previously-loaded rows stay visible during a page change so the
+  // layout doesn't snap to a skeleton. Pagination component handles
+  // its own disabled state during the in-flight fetch via the parent
+  // not changing `page` mid-flight (TanStack Query absorbs the
+  // double-click).
   const isLoading = isEmployee
     ? myGoalsQuery.isPending
     : isHRMyOrg
@@ -1137,10 +1158,12 @@ export function AnnualGoals() {
               goals={allGoals}
               isLoading={isLoading}
               totalEmployees={allGoalsTotalEmployees}
-              hasNextPage={Boolean(allGoalsQuery.hasNextPage)}
-              isFetchingNextPage={allGoalsQuery.isFetchingNextPage}
-              onLoadMore={() => {
-                void allGoalsQuery.fetchNextPage();
+              page={allGoalsPage}
+              pageSize={allGoalsPageSize}
+              onPageChange={setAllGoalsPage}
+              onPageSizeChange={(n) => {
+                setAllGoalsPageSize(n);
+                setAllGoalsPage(1);
               }}
               filters={allGoalsFilters}
               onFiltersChange={setAllGoalsFilters}
@@ -1198,8 +1221,14 @@ export function AnnualGoals() {
 // the Description cell uses `gridColumn: span 2` to occupy what Function
 // + Designation would have held — the CSS Grid equivalent of the
 // legacy <td colSpan={2}>.
+// First column is the running row number ("#"). The expansion sub-
+// rows below pass through this column with an empty cell. Tightly
+// capped 32-40px range — content is short numeric (1-4 chars) so the
+// column doesn't need more than ~24px of content area. Combined with
+// px-2 cell padding (16px total) the rendered column footprint is
+// 32-40px depending on viewport.
 const ALL_GOALS_GRID_TEMPLATE_COLUMNS =
-  "minmax(180px, 1.6fr) minmax(140px, 1.4fr) minmax(140px, 1.4fr) " +
+  "minmax(32px, 40px) minmax(180px, 1.6fr) minmax(140px, 1.4fr) minmax(140px, 1.4fr) " +
   "minmax(100px, 1fr) minmax(140px, 1.3fr)";
 
 // Sum of the GRID_TEMPLATE_COLUMNS minimums plus a little breathing
@@ -1208,28 +1237,21 @@ const ALL_GOALS_GRID_TEMPLATE_COLUMNS =
 // pairing for overflow-y: auto) does — otherwise the body scrolls
 // horizontally on its own and the header stays put. Mirrors the same
 // fix in ManagementReview.tsx.
-const ALL_GOALS_TABLE_MIN_WIDTH_PX = 760;
+const ALL_GOALS_TABLE_MIN_WIDTH_PX = 792;
 
-// Collapsed user row (~48px) — text-[13px] + py-3 padding. measureElement
-// records the real size after render; this estimate seeds the initial
-// total-size calculation before any row has rendered.
-const ALL_GOALS_ESTIMATE_ROW_PX = 48;
-
-const ALL_GOALS_SCROLL_HEIGHT_PX = 600;
-
-// Lower overscan than PR #15/#17 because expanded groups can be VERY
-// tall (a user with 10 goals = ~500px expansion). Over-rendering tall
-// rows costs more measurement work; tune up only if scroll on slow
-// devices flashes empty rows.
-const ALL_GOALS_OVERSCAN = 4;
+// Virtualizer constants removed (PR #74). With per-page max 50 rows
+// the previous variable-height measurement infrastructure (estimate
+// size + overscan + scroll-height) is no longer needed — the table
+// renders straight.
 
 function AllGoalsTab({
   goals,
   isLoading,
   totalEmployees,
-  hasNextPage,
-  isFetchingNextPage,
-  onLoadMore,
+  page,
+  pageSize,
+  onPageChange,
+  onPageSizeChange,
   filters,
   onFiltersChange,
   sort,
@@ -1238,9 +1260,13 @@ function AllGoalsTab({
   readonly goals: TeamGoal[];
   readonly isLoading: boolean;
   readonly totalEmployees: number;
-  readonly hasNextPage: boolean;
-  readonly isFetchingNextPage: boolean;
-  readonly onLoadMore: () => void;
+  /** 1-indexed current page. */
+  readonly page: number;
+  /** Rows per page (10 / 25 / 50). */
+  readonly pageSize: number;
+  readonly onPageChange: (page: number) => void;
+  /** Caller resets page to 1 inside this handler. */
+  readonly onPageSizeChange: (size: number) => void;
   readonly filters: AllGoalsFilters;
   readonly onFiltersChange: (next: AllGoalsFilters) => void;
   /** Current sort. Controlled by the page (doc 30 / 31). */
@@ -1299,32 +1325,14 @@ function AllGoalsTab({
     });
   };
 
-  // Variable-height virtualizer for the per-user groups. Each "row" in
-  // the virtualizer is a user GROUP; when expanded, the group's outer
-  // div contains the user-level row plus the sub-header + per-goal rows
-  // inline. measureElement records the total height — collapsed groups
-  // are ~48px, expanded groups can be 200-700px depending on goal
-  // count. Same pattern as PR #16/#17, applied to the most variable
-  // expansion shape so far.
-  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
-  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual's useVirtualizer returns non-memoisable functions; React Compiler logs a benign skip here.
-  const rowVirtualizer = useVirtualizer({
-    count: sortedGroups.length,
-    getScrollElement: () => scrollContainerRef.current,
-    estimateSize: () => ALL_GOALS_ESTIMATE_ROW_PX,
-    overscan: ALL_GOALS_OVERSCAN,
-    // Key the measurement cache by stable group identity (same key we
-    // use for the row's React `key`). Without this, the cache uses the
-    // array index — so when the user changes a filter or sort, the
-    // index → group mapping shifts but a previously-expanded group's
-    // cached "tall" height ends up applied to a different group at the
-    // same index, producing a visible gap or overlap. With getItemKey
-    // the cached height follows the group across reorderings.
-    getItemKey: (index) => {
-      const g = sortedGroups[index];
-      return `${g.user_id}_${g.fy_year ?? "null"}`;
-    },
-  });
+  // Virtualizer dropped (PR #74). At max 50 rows per page the
+  // virtualization overhead — scroll container measurement, ResizeObserver
+  // for variable-height expansions, getItemKey-driven measurement cache —
+  // wasn't paying for itself any more. Plain .map() over the page slice
+  // is simpler, deletes the scroll-container height/measurement bugs,
+  // and lets the expanded-group height be however tall it needs without
+  // a measurement round-trip. The outer page wrapper still owns its own
+  // scroll context.
 
   if (isLoading) {
     return (
@@ -1512,12 +1520,11 @@ function AllGoalsTab({
        </div>
       </div>
 
-      {/* Virtualized "All Goals" view (variable-height; see doc #18).
-          Outer div handles x-scroll on narrow viewports. Inner scroll
-          container handles y-virtualization. The expansion shape here
-          is denser than PR #16/#17 — sub-header + N per-goal rows
-          inside one outer measured div. measureElement records the
-          total height including the variable expansion.
+      {/* "All Goals" view — plain table render (virtualizer dropped in
+          PR #74). With max 50 rows on screen, virtualization wasn't
+          paying for itself and complicated the variable-height
+          expansion handling. Outer div keeps x-scroll on narrow
+          viewports.
 
           When the loaded goals list is empty (either the org has none
           yet or the current filters produced zero matches), the empty
@@ -1532,13 +1539,23 @@ function AllGoalsTab({
           className="text-[13px]"
           style={{ minWidth: ALL_GOALS_TABLE_MIN_WIDTH_PX }}
         >
-          {/* Header — non-virtualized */}
+          {/* Header */}
           <div role="rowgroup" className="bg-slate-50/80 border-b border-border">
             <div
               role="row"
               className="grid items-center"
               style={{ gridTemplateColumns: ALL_GOALS_GRID_TEMPLATE_COLUMNS }}
             >
+              {/* Running row number ("#") — counts EMPLOYEE groups,
+                  cumulative across pages. The "Showing N–M of T
+                  employees" counter at the bottom uses the same
+                  employee-as-unit shape so the row number agrees. */}
+              <div
+                role="columnheader"
+                className="text-center px-2 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-text-muted"
+              >
+                #
+              </div>
               <div role="columnheader" className="text-left px-5 py-2.5">
                 <SortableHeader label="Employee" columnKey="owner_name" sort={sort} onSort={onSortChange} />
               </div>
@@ -1567,42 +1584,17 @@ function AllGoalsTab({
             </div>
           </div>
 
-          {/* Body — virtualized per-user groups */}
-          <div
-            ref={scrollContainerRef}
-            role="rowgroup"
-            style={{ height: ALL_GOALS_SCROLL_HEIGHT_PX }}
-            className="overflow-y-auto"
-          >
-            <div
-              style={{
-                height: rowVirtualizer.getTotalSize(),
-                position: "relative",
-                width: "100%",
-              }}
-            >
-              {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                const group = sortedGroups[virtualRow.index];
-                const groupKey = `${group.user_id}_${group.fy_year ?? "null"}`;
-                const isExpanded = expandedGroupKey === groupKey;
-                return (
-                  <div
+          {/* Body — plain map() over the page slice */}
+          <div role="rowgroup">
+            {sortedGroups.map((group, idx) => {
+              const groupKey = `${group.user_id}_${group.fy_year ?? "null"}`;
+              const isExpanded = expandedGroupKey === groupKey;
+              return (
+                <div
                     role="row"
-                    aria-rowindex={virtualRow.index + 1}
+                    aria-rowindex={idx + 1}
                     aria-expanded={isExpanded}
                     key={groupKey}
-                    // data-index REQUIRED so the ResizeObserver maps
-                    // each measurement back to the right group index.
-                    // See doc #16 for the full mechanics.
-                    data-index={virtualRow.index}
-                    ref={rowVirtualizer.measureElement}
-                    style={{
-                      position: "absolute",
-                      top: 0,
-                      left: 0,
-                      width: "100%",
-                      transform: `translateY(${virtualRow.start}px)`,
-                    }}
                     className={`transition-colors border-b border-border/50 ${
                       isExpanded ? "bg-brand/5" : "hover:bg-slate-50/60"
                     }`}
@@ -1616,6 +1608,13 @@ function AllGoalsTab({
                         setExpandedGroupKey(isExpanded ? null : groupKey)
                       }
                     >
+                      {/* # — cumulative employee count across pages */}
+                      <div
+                        role="cell"
+                        className="px-2 py-3 text-center text-text-muted tabular-nums text-xs"
+                      >
+                        {((page - 1) * pageSize + idx + 1).toLocaleString()}
+                      </div>
                       <div role="cell" className="px-5 py-3 font-medium text-text-main">
                         <div className="flex items-center gap-2 min-w-0">
                           <ChevronDown
@@ -1661,6 +1660,9 @@ function AllGoalsTab({
                             gridTemplateColumns: ALL_GOALS_GRID_TEMPLATE_COLUMNS,
                           }}
                         >
+                          {/* # placeholder — keeps the sub-header
+                              aligned with the parent grid's new # column. */}
+                          <div className="px-2 py-2" />
                           <div className="text-left px-5 py-2 pl-10 font-bold border-l-2 border-brand/40">
                             Goal
                           </div>
@@ -1687,6 +1689,13 @@ function AllGoalsTab({
                                 gridTemplateColumns: ALL_GOALS_GRID_TEMPLATE_COLUMNS,
                               }}
                             >
+                              {/* # placeholder — keeps the per-goal
+                                  sub-row aligned with the parent grid's
+                                  new # column. The per-goal numbering
+                                  ("1.", "2." …) inside the Goal cell
+                                  below covers the within-employee
+                                  ordering. */}
+                              <div className="px-2 py-2.5 self-start" />
                               <div className="px-5 py-2.5 pl-10 border-l-2 border-brand/40 self-start">
                                 <span className="font-medium text-text-main">
                                   <span className="mr-2 font-mono text-[12px] text-text-muted tabular-nums">
@@ -1733,34 +1742,26 @@ function AllGoalsTab({
                   </div>
                 );
               })}
-            </div>
           </div>
         </div>
       </div>
       )}
 
-      {/* Load More — sits BELOW the virtualized scroll card so HR can
-          see the "more available" affordance without scrolling to the
-          bottom of the 600px window. Hidden when the server reports
-          no more pages (hasNextPage === false). The counter alongside
-          names the pagination unit (employees) — not the filtered
-          group count above. Distinct-user_ids over the unfiltered
-          `goals` array is the right "how many parents has the server
-          shipped so far" number; filters don't change it. */}
-      {hasNextPage && (
-        <div className="flex items-center gap-3 justify-center">
-          <button
-            type="button"
-            onClick={onLoadMore}
-            disabled={isFetchingNextPage}
-            className="inline-flex items-center gap-2 rounded-lg border border-border bg-white px-4 py-2 text-[13px] font-medium text-text-main hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
-          >
-            {isFetchingNextPage ? "Loading…" : "Load more"}
-          </button>
-          <span className="text-xs text-text-muted">
-            Loaded {new Set(goals.map((g) => g.user_id)).size} of {totalEmployees} employees
-          </span>
-        </div>
+      {/* Pagination toolbar — per-page selector + prev/next + page
+          indicator. Replaces the previous Load-more button + counter
+          combo. Hidden when there's nothing loaded yet (isLoading); the
+          Pagination component itself collapses to an "empty" line when
+          totalEmployees === 0 + the empty state above is already
+          covering that case. */}
+      {!isLoading && (
+        <Pagination
+          page={page}
+          pageSize={pageSize}
+          total={totalEmployees}
+          onPageChange={onPageChange}
+          onPageSizeChange={onPageSizeChange}
+          entityLabel="employees"
+        />
       )}
 
       {viewGoal && (

@@ -1,12 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
-  useInfiniteQuery,
   useMutation,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useVirtualizer } from "@tanstack/react-virtual";
 import { queryKeys } from "@/lib/queryKeys";
 import { ChevronDown } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -20,6 +18,7 @@ import { PerformanceRatingBadge } from "@/components/reviews/PerformanceRatingBa
 import { ReviewStatusBadge } from "@/components/reviews/ReviewStatusBadge";
 import { StringCombobox } from "@/components/common/StringCombobox";
 import { ClearFiltersButton } from "@/components/common/ClearFiltersButton";
+import { Pagination } from "@/components/common/Pagination";
 import { useOrgReferenceData } from "@/hooks/useOrgReferenceData";
 import { useOrgUsers } from "@/hooks/useOrgUsers";
 import { useAnnualReviewCycles } from "@/hooks/useAnnualReviewCycles";
@@ -127,14 +126,14 @@ export function AnnualReviews() {
   // entry. AllReviewsTab consumes filters + sort + their setters as
   // props (controlled component).
   //
-  // - initialPageParam: 0  → first request: GET /all?offset=0&limit=50
-  // - getNextPageParam: derives the next offset from the previous page's
-  //   has_more flag (server-computed). Return undefined to stop paging.
-  // - queryKey: queryKeys.annualReviews.org(requestParams) bakes the
-  //   non-empty filter + sort values into the cache key. Existing
-  //   broadcast invalidations on `queryKeys.annualReviews.all` still
-  //   catch every variant.
-  const PAGE_SIZE = 50;
+  // Classic-pagination rewrite (PR #74): swapped useInfiniteQuery +
+  // virtualizer + Load-more for useQuery + <Pagination>. page is
+  // 1-indexed; pageSize is 10/25/50 (default 25). Both are baked into
+  // the queryKey so each (filter, page, pageSize) is its own cache
+  // entry; broadcast invalidations on `queryKeys.annualReviews.all`
+  // still catch every variant.
+  const [allReviewsPage, setAllReviewsPage] = useState(1);
+  const [allReviewsPageSize, setAllReviewsPageSize] = useState(25);
   const [allReviewsFilters, setAllReviewsFilters] = useState<AllReviewsFilters>(
     {},
   );
@@ -225,19 +224,32 @@ export function AnnualReviews() {
       ? { sort_by: allReviewsSort.key, sort_dir: allReviewsSort.direction }
       : {}),
   };
-  const allReviewsQuery = useInfiniteQuery({
-    queryKey: queryKeys.annualReviews.org(requestParams),
-    queryFn: ({ pageParam }) =>
+  // Reset to page 1 when filters or sort change — otherwise a user
+  // narrowing a 247-row list to 8 rows from page 5 sees the empty
+  // page-5 state. Watching the serialised request params is safer
+  // than enumerating each filter individually.
+  const requestParamsKey = JSON.stringify(requestParams);
+  useEffect(() => {
+    setAllReviewsPage(1);
+  }, [requestParamsKey]);
+
+  const allReviewsQueryKeyParams: Record<string, string | number> = {
+    ...requestParams,
+    _page: allReviewsPage,
+    _pageSize: allReviewsPageSize,
+  };
+  const allReviewsQuery = useQuery({
+    queryKey: queryKeys.annualReviews.org(
+      allReviewsQueryKeyParams as Record<string, string | undefined>,
+    ),
+    queryFn: () =>
       annualReviewService.getAllReviews({
         ...(requestParams as Record<string, string> & {
           sort_by?: AllReviewsSortBy;
         }),
-        limit: PAGE_SIZE,
-        offset: pageParam,
+        limit: allReviewsPageSize,
+        offset: (allReviewsPage - 1) * allReviewsPageSize,
       }),
-    initialPageParam: 0,
-    getNextPageParam: (lastPage) =>
-      lastPage.has_more ? lastPage.offset + lastPage.limit : undefined,
     enabled: isHRMyOrg,
   });
 
@@ -245,22 +257,13 @@ export function AnnualReviews() {
   // even before the first fetch resolves. The cache stays the source of
   // truth — these are just renaming-for-readability locals.
   const reviews = myReviewsQuery.data ?? [];
-  // Flatten loaded pages into a single array. As the user clicks "Load
-  // more" this array grows; everything downstream (filter / sort /
-  // virtualizer) sees one combined list.
-  const allReviews =
-    allReviewsQuery.data?.pages.flatMap((p) => p.items) ?? [];
-  // Total count across ALL pages (taken from the most recent page's
-  // `total` field — the server returns the SAME total on every page).
-  // Used by the UI to render "Showing N of T" alongside Load more.
-  const allReviewsTotal =
-    allReviewsQuery.data?.pages[allReviewsQuery.data.pages.length - 1]
-      ?.total ?? 0;
-  // Show the table skeleton while the role-relevant query is loading.
-  // For paginated queries, `isPending` is true only on the FIRST fetch
-  // (no pages loaded yet). Subsequent `fetchNextPage` calls flip
-  // `isFetchingNextPage` instead — handled separately near the Load
-  // More button below.
+  // Single page slice — `useQuery` returns one Paginated payload (rows
+  // replace per page change; no cross-page accumulation).
+  const allReviews = allReviewsQuery.data?.items ?? [];
+  // Server's count of qualifying rows for the current filter set.
+  const allReviewsTotal = allReviewsQuery.data?.total ?? 0;
+  // `isPending` is true on the very first load only. Page changes flip
+  // `isFetching` while keeping previous rows visible.
   const isLoading = isEmployee
     ? myReviewsQuery.isPending
     : isHRMyOrg
@@ -487,10 +490,12 @@ export function AnnualReviews() {
               reviews={allReviews}
               isLoading={isLoading}
               total={allReviewsTotal}
-              hasNextPage={Boolean(allReviewsQuery.hasNextPage)}
-              isFetchingNextPage={allReviewsQuery.isFetchingNextPage}
-              onLoadMore={() => {
-                void allReviewsQuery.fetchNextPage();
+              page={allReviewsPage}
+              pageSize={allReviewsPageSize}
+              onPageChange={setAllReviewsPage}
+              onPageSizeChange={(n) => {
+                setAllReviewsPageSize(n);
+                setAllReviewsPage(1);
               }}
               filters={allReviewsFilters}
               onFiltersChange={setAllReviewsFilters}
@@ -527,8 +532,12 @@ export function AnnualReviews() {
 // + body rows). `minmax(<floor>, <weight>fr)` keeps narrow columns
 // readable while letting wide ones expand. See PR #15 for the
 // rationale on table → div + CSS Grid.
+// First column is the running row number ("#") — tightly capped
+// 32-40px range, paired with px-2 cell padding (16px total) and
+// text-center for visual balance. Short numeric content (1-4 chars)
+// doesn't need more.
 const ALL_REVIEWS_GRID_TEMPLATE_COLUMNS =
-  "minmax(180px, 1.8fr) minmax(120px, 1.2fr) minmax(140px, 1.4fr) " +
+  "minmax(32px, 40px) minmax(180px, 1.8fr) minmax(120px, 1.2fr) minmax(140px, 1.4fr) " +
   "minmax(100px, 1fr) minmax(120px, 1.1fr) minmax(80px, 0.8fr) " +
   "minmax(80px, 0.8fr) minmax(80px, 0.8fr)";
 
@@ -538,27 +547,20 @@ const ALL_REVIEWS_GRID_TEMPLATE_COLUMNS =
 // pairing for overflow-y: auto) does — otherwise the body scrolls
 // horizontally on its own and the header stays put. Mirrors the same
 // fix in ManagementReview.tsx.
-const ALL_REVIEWS_TABLE_MIN_WIDTH_PX = 960;
+const ALL_REVIEWS_TABLE_MIN_WIDTH_PX = 992;
 
-// Starting guess for a collapsed row's height (py-3 + text-[13px] line
-// height ≈ 46px; round up). Unlike PR #15's ManagementReview, this
-// table has VARIABLE-height rows (inline expansion). The virtualizer
-// uses `estimateSize` only for unmeasured rows; once a row has
-// rendered, `measureElement` records its real size and the
-// virtualizer uses that. Subsequent expansions trigger re-measurement
-// via the underlying ResizeObserver.
-const ALL_REVIEWS_ESTIMATE_ROW_PX = 48;
-
-const ALL_REVIEWS_SCROLL_HEIGHT_PX = 600;
-const ALL_REVIEWS_OVERSCAN = 5;
+// Virtualizer constants removed (PR #74). With max 50 rows per page
+// the previous measure-driven variable-height logic isn't needed —
+// the table renders straight.
 
 function AllReviewsTab({
   reviews,
   isLoading,
   total,
-  hasNextPage,
-  isFetchingNextPage,
-  onLoadMore,
+  page,
+  pageSize,
+  onPageChange,
+  onPageSizeChange,
   filters,
   onFiltersChange,
   sort,
@@ -566,24 +568,19 @@ function AllReviewsTab({
 }: {
   readonly reviews: AnnualReview[];
   readonly isLoading: boolean;
-  /** Total rows matching the SERVER FILTER across all pages. Equal to
-   *  the org-wide review count when no filters are active; smaller as
-   *  filters narrow. The server returns this on every paginated
-   *  response (same value across pages of the same filter set). */
+  /** Total rows matching the SERVER FILTER. Equal to the org-wide
+   *  review count when no filters are active; smaller as filters
+   *  narrow. */
   readonly total: number;
-  /** True while at least one more page exists on the server FOR THE
-   *  CURRENT FILTER SET (server-derived from has_more). When filters
-   *  change, the cache entry resets and `hasNextPage` recomputes
-   *  against the new universe. */
-  readonly hasNextPage: boolean;
-  /** True while a fetchNextPage() call is in flight — drives the Load
-   *  More button's spinner state without flashing the initial-load
-   *  skeleton. */
-  readonly isFetchingNextPage: boolean;
-  /** Trigger for fetchNextPage. Wired by the parent page. */
-  readonly onLoadMore: () => void;
+  /** 1-indexed current page. */
+  readonly page: number;
+  /** Rows per page (10 / 25 / 50). */
+  readonly pageSize: number;
+  readonly onPageChange: (page: number) => void;
+  /** Caller resets page to 1 inside this handler. */
+  readonly onPageSizeChange: (size: number) => void;
   /** Current filter set. Controlled by the page so the values flow
-   *  into the useInfiniteQuery's queryKey (PR #43, doc 26). */
+   *  into the queryKey (PR #43, doc 26). */
   readonly filters: AllReviewsFilters;
   /** Setter for the filter set. Each call replaces the entire object;
    *  helpers below produce new objects via `{ ...filters, X: value }`. */
@@ -645,27 +642,10 @@ function AllReviewsTab({
     });
   };
 
-  // ── Virtualization (variable-height) ──────────────────────────────
-  // measureElement turns this into a variable-height virtualizer:
-  // estimateSize is used only for rows that haven't rendered yet;
-  // measured heights override the estimate via a ResizeObserver under
-  // the hood. When the user toggles expandedId, the affected row's
-  // outer div re-renders with the expansion panel inside, the
-  // ResizeObserver fires, the virtualizer updates its size cache and
-  // the total list height, and the scroll position stays sensible.
-  //
-  // overscan is intentionally smaller than PR #15 (5 vs 8) because
-  // measurement work is more expensive than fixed-size lookup —
-  // rendering extra rows that the user can't see costs a bit more
-  // here. Tune up if scrolling on slow devices flashes empty rows.
-  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
-  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual's useVirtualizer returns non-memoisable functions; React Compiler logs a benign skip here.
-  const rowVirtualizer = useVirtualizer({
-    count: sorted.length,
-    getScrollElement: () => scrollContainerRef.current,
-    estimateSize: () => ALL_REVIEWS_ESTIMATE_ROW_PX,
-    overscan: ALL_REVIEWS_OVERSCAN,
-  });
+  // Virtualizer dropped (PR #74). At max 50 rows per page the
+  // measurement/ResizeObserver overhead wasn't paying for itself and
+  // complicated the variable-height expansion. The table renders
+  // straight; outer page wrapper still owns the scroll.
 
   if (isLoading) {
     return (
@@ -848,6 +828,14 @@ function AllReviewsTab({
               className="grid items-center"
               style={{ gridTemplateColumns: ALL_REVIEWS_GRID_TEMPLATE_COLUMNS }}
             >
+              {/* Running row number ("#") — cumulative across pages,
+                  matches the "Showing N–M of T" counter below. */}
+              <div
+                role="columnheader"
+                className="text-center px-2 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted"
+              >
+                #
+              </div>
               <div role="columnheader" className="text-left px-5 py-2.5">
                 <SortableHeader label="Employee" columnKey="employee_name" sort={sort} onSort={onSortChange} />
               </div>
@@ -884,133 +872,100 @@ function AllReviewsTab({
           {isEmpty ? (
             <div className="px-5 py-10">{emptyStateNode}</div>
           ) : (
-            <div
-              ref={scrollContainerRef}
-              role="rowgroup"
-              style={{ height: ALL_REVIEWS_SCROLL_HEIGHT_PX }}
-              className="overflow-y-auto"
-            >
-              <div
-                style={{
-                  height: rowVirtualizer.getTotalSize(),
-                  position: "relative",
-                  width: "100%",
-                }}
-              >
-                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                  const r = sorted[virtualRow.index];
-                  const isExpanded = expandedId === r.id;
-                  return (
+            <div role="rowgroup">
+              {sorted.map((r, idx) => {
+                const isExpanded = expandedId === r.id;
+                return (
+                  <div
+                    role="row"
+                    aria-rowindex={idx + 1}
+                    aria-expanded={isExpanded}
+                    key={r.id}
+                    onClick={() => setExpandedId(isExpanded ? null : r.id)}
+                    className={`cursor-pointer transition-colors border-b border-border/50 ${
+                      isExpanded ? "bg-brand/5" : "hover:bg-slate-50/60"
+                    }`}
+                  >
+                    {/* Base row (always rendered) */}
                     <div
-                      role="row"
-                      aria-rowindex={virtualRow.index + 1}
-                      aria-expanded={isExpanded}
-                      key={r.id}
-                      // data-index is REQUIRED by measureElement — it's
-                      // how the virtualizer maps a ResizeObserver entry
-                      // back to a row index.
-                      data-index={virtualRow.index}
-                      ref={rowVirtualizer.measureElement}
-                      onClick={() => setExpandedId(isExpanded ? null : r.id)}
+                      className="grid items-center"
                       style={{
-                        // No explicit height — measureElement reads the
-                        // natural offsetHeight after render and tells
-                        // the virtualizer the actual size.
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
-                        width: "100%",
-                        transform: `translateY(${virtualRow.start}px)`,
+                        gridTemplateColumns:
+                          ALL_REVIEWS_GRID_TEMPLATE_COLUMNS,
                       }}
-                      className={`cursor-pointer transition-colors border-b border-border/50 ${
-                        isExpanded ? "bg-brand/5" : "hover:bg-slate-50/60"
-                      }`}
                     >
-                      {/* Base row (always rendered) */}
+                      {/* # — cumulative across pages */}
                       <div
-                        className="grid items-center"
-                        style={{
-                          gridTemplateColumns:
-                            ALL_REVIEWS_GRID_TEMPLATE_COLUMNS,
-                        }}
+                        role="cell"
+                        className="px-2 py-3 text-center text-text-muted tabular-nums text-xs"
                       >
-                        <div role="cell" className="px-5 py-3 font-medium text-text-main">
-                          <div className="flex items-center gap-2">
-                            <ChevronDown
-                              className={`h-4 w-4 text-text-muted shrink-0 transition-transform duration-200 ${
-                                isExpanded ? "rotate-180" : ""
-                              }`}
-                              aria-hidden="true"
-                            />
-                            {r.employee_name ?? `User #${r.user_id}`}
-                          </div>
-                        </div>
-                        <div role="cell" className="px-4 py-3 text-text-muted">
-                          {r.function ?? "—"}
-                        </div>
-                        <div role="cell" className="px-4 py-3 text-text-muted">
-                          {r.designation ?? "—"}
-                        </div>
-                        <div role="cell" className="px-4 py-3">
-                          <span className="text-[12px] font-semibold text-text-muted bg-slate-100 px-1.5 py-0.5 rounded">
-                            {r.cycle_name}
-                          </span>
-                        </div>
-                        <div role="cell" className="px-4 py-3">
-                          <ReviewStatusBadge status={r.status} />
-                        </div>
-                        <div role="cell" className="px-4 py-3">
-                          <PerformanceRatingBadge value={r.self_performance_rating} />
-                        </div>
-                        <div role="cell" className="px-4 py-3">
-                          <PerformanceRatingBadge value={r.mentor_performance_rating} />
-                        </div>
-                        <div role="cell" className="px-4 py-3">
-                          <PerformanceRatingBadge value={r.final_performance_rating} />
+                        {((page - 1) * pageSize + idx + 1).toLocaleString()}
+                      </div>
+                      <div role="cell" className="px-5 py-3 font-medium text-text-main">
+                        <div className="flex items-center gap-2">
+                          <ChevronDown
+                            className={`h-4 w-4 text-text-muted shrink-0 transition-transform duration-200 ${
+                              isExpanded ? "rotate-180" : ""
+                            }`}
+                            aria-hidden="true"
+                          />
+                          {r.employee_name ?? `User #${r.user_id}`}
                         </div>
                       </div>
-
-                      {/* Expanded narrative panel (conditional). This is
-                          INSIDE the row's outer div, so measureElement
-                          sees the row's total height grow when the
-                          panel appears and shrink when it disappears.
-                          ResizeObserver fires → virtualizer updates
-                          total size → scrollbar adjusts → other rows'
-                          translateY offsets recompute. */}
-                      {isExpanded && (
-                        <div className="bg-slate-50/40 border-t border-brand/10 px-5 py-5">
-                          <ReviewNarrativePanel review={r} />
-                        </div>
-                      )}
+                      <div role="cell" className="px-4 py-3 text-text-muted">
+                        {r.function ?? "—"}
+                      </div>
+                      <div role="cell" className="px-4 py-3 text-text-muted">
+                        {r.designation ?? "—"}
+                      </div>
+                      <div role="cell" className="px-4 py-3">
+                        <span className="text-[12px] font-semibold text-text-muted bg-slate-100 px-1.5 py-0.5 rounded">
+                          {r.cycle_name}
+                        </span>
+                      </div>
+                      <div role="cell" className="px-4 py-3">
+                        <ReviewStatusBadge status={r.status} />
+                      </div>
+                      <div role="cell" className="px-4 py-3">
+                        <PerformanceRatingBadge value={r.self_performance_rating} />
+                      </div>
+                      <div role="cell" className="px-4 py-3">
+                        <PerformanceRatingBadge value={r.mentor_performance_rating} />
+                      </div>
+                      <div role="cell" className="px-4 py-3">
+                        <PerformanceRatingBadge value={r.final_performance_rating} />
+                      </div>
                     </div>
-                  );
-                })}
-              </div>
+
+                    {/* Expanded narrative panel (conditional). */}
+                    {isExpanded && (
+                      <div className="bg-slate-50/40 border-t border-brand/10 px-5 py-5">
+                        <ReviewNarrativePanel review={r} />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
       </div>
 
-      {/* Load More — sits BELOW the virtualized scroll card so HR can
-          see the "more available" affordance without scrolling to the
-          bottom of the 600px window. The button is hidden when no
-          more pages exist on the server (hasNextPage === false). The
-          live counter alongside it explains exactly what was loaded
-          vs what's available. */}
-      {hasNextPage && (
-        <div className="flex items-center gap-3 justify-center">
-          <button
-            type="button"
-            onClick={onLoadMore}
-            disabled={isFetchingNextPage}
-            className="inline-flex items-center gap-2 rounded-lg border border-border bg-white px-4 py-2 text-[13px] font-medium text-text-main hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
-          >
-            {isFetchingNextPage ? "Loading…" : "Load more"}
-          </button>
-          <span className="text-xs text-text-muted">
-            Loaded {reviews.length} of {total}
-          </span>
-        </div>
+      {/* Pagination toolbar — per-page selector + prev/next + page
+          indicator. Replaces the previous Load-more button + counter
+          combo. The Pagination component handles its own zero-total
+          empty state internally, but our `isEmpty` branch above also
+          renders the contextual empty-state copy so the toolbar reads
+          clean. */}
+      {!isEmpty && (
+        <Pagination
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          onPageChange={onPageChange}
+          onPageSizeChange={onPageSizeChange}
+          entityLabel="reviews"
+        />
       )}
     </div>
   );

@@ -14,8 +14,9 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/queryKeys";
+import { Pagination } from "@/components/common/Pagination";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   ClipboardCheck, Eye, LayoutGrid, Search,
@@ -234,39 +235,46 @@ export function TeamReviewTab() {
       : {}),
   };
 
+  // Classic-pagination rewrite (PR #74): useInfiniteQuery → useQuery
+  // + <Pagination>. page is 1-indexed; pageSize default 25.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+
+  const requestParamsKey = JSON.stringify(requestParams);
+  useEffect(() => {
+    setPage(1);
+  }, [requestParamsKey]);
+
   // The mentor's view of every mentee's annual review. Cache-keyed
   // under ['annual-reviews', 'mentees']. EvalDrawer / useReviewDetails
   // mutations invalidate this key so the table refreshes after a
   // submit. refetchOnWindowFocus (default true) also handles the
   // "I just reviewed a mentee in another tab" case.
   //
-  // Server-side filters + sort: each (filter, sort) tuple lives in
-  // its own paginated cache entry. Broadcast invalidation on
+  // Server-side filters + sort: each (filter, sort, page, pageSize)
+  // tuple lives in its own cache entry. Broadcast invalidation on
   // `annualReviews.all` (fired by EvalDrawer's mutations) catches
   // every variant.
-  const MENTEE_REVIEWS_PAGE_SIZE = 50;
-  const reviewsQuery = useInfiniteQuery({
-    queryKey: queryKeys.annualReviews.mentees(requestParams),
-    queryFn: ({ pageParam }) =>
+  const reviewsQueryKeyParams: Record<string, string | number> = {
+    ...requestParams,
+    _page: page,
+    _pageSize: pageSize,
+  };
+  const reviewsQuery = useQuery({
+    queryKey: queryKeys.annualReviews.mentees(reviewsQueryKeyParams),
+    queryFn: () =>
       annualReviewService.getMenteeReviews({
         ...(requestParams as Record<string, string | number> & {
           sort_by?: MenteeReviewsSortBy;
         }),
-        limit: MENTEE_REVIEWS_PAGE_SIZE,
-        offset: pageParam,
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
       }),
-    initialPageParam: 0,
-    getNextPageParam: (lastPage) =>
-      lastPage.has_more ? lastPage.offset + lastPage.limit : undefined,
   });
-  // Flatten loaded pages → review array. Downstream filter / sort code
-  // sees one combined list as the user clicks Load More.
-  const reviews: MenteeAnnualReview[] =
-    reviewsQuery.data?.pages.flatMap((p) => p.items) ?? [];
-  // Total review count returned by the server (same on every page,
-  // we read it off the latest one). Drives the "Loaded N of T" counter.
-  const totalReviews =
-    reviewsQuery.data?.pages[reviewsQuery.data.pages.length - 1]?.total ?? 0;
+  // Single page slice — no flatten.
+  const reviews: MenteeAnnualReview[] = reviewsQuery.data?.items ?? [];
+  // Total review count returned by the server (same across pages).
+  const totalReviews = reviewsQuery.data?.total ?? 0;
   const isLoading = reviewsQuery.isPending;
 
   const availableYears = Array.from(
@@ -483,6 +491,13 @@ export function TeamReviewTab() {
           <table className="w-full min-w-max text-[13px]">
             <thead>
               <tr className="bg-slate-50/80 border-b border-border">
+                {/* Running row number ("#") — cumulative across pages,
+                    table view only (Cards view doesn't surface a row
+                    number concept). Matches the "Showing N–M of T"
+                    counter at the bottom. */}
+                <th className="text-center px-2 py-2.5 text-[11px] font-bold uppercase tracking-wider text-text-muted w-8">
+                  #
+                </th>
                 <th className="text-left px-5 py-2.5">
                   <SortableHeader
                     label="Mentee"
@@ -537,7 +552,7 @@ export function TeamReviewTab() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border/50">
-              {sorted.map((r) => {
+              {sorted.map((r, idx) => {
                 const canEvaluate = r.status === "pending_mentor";
                 const canView =
                   r.status === "pending_management" ||
@@ -548,6 +563,9 @@ export function TeamReviewTab() {
                     key={r.id}
                     className="hover:bg-slate-50/60 transition-colors"
                   >
+                    <td className="px-2 py-3 text-center text-text-muted tabular-nums text-xs">
+                      {((page - 1) * pageSize + idx + 1).toLocaleString()}
+                    </td>
                     <td className="px-5 py-3 font-medium text-text-main">
                       <div className="flex items-center gap-1.5 min-w-0">
                         <UserCircle className="h-3.5 w-3.5 text-text-muted shrink-0" />
@@ -614,28 +632,21 @@ export function TeamReviewTab() {
         </div>
       )}
 
-      {/* Load More — appears below either view mode (grid or table)
-          when the server reports more pages. Hidden in the common case
-          (mentor's full history fits in one page). Same UI as the
-          AllReviewsTab template; consistent affordance across every
-          HR/mentor paginated list. See doc 23 for the "consistency
-          play" rationale. */}
-      {reviewsQuery.hasNextPage && (
-        <div className="flex items-center gap-3 justify-center">
-          <button
-            type="button"
-            onClick={() => {
-              void reviewsQuery.fetchNextPage();
-            }}
-            disabled={reviewsQuery.isFetchingNextPage}
-            className="inline-flex items-center gap-2 rounded-lg border border-border bg-white px-4 py-2 text-[13px] font-medium text-text-main hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
-          >
-            {reviewsQuery.isFetchingNextPage ? "Loading…" : "Load more"}
-          </button>
-          <span className="text-xs text-text-muted">
-            Loaded {reviews.length} of {totalReviews}
-          </span>
-        </div>
+      {/* Pagination toolbar — appears below either view mode (grid or
+          table). The Pagination component handles its own "no rows"
+          state internally so we don't need a hasNextPage gate here. */}
+      {reviews.length > 0 && (
+        <Pagination
+          page={page}
+          pageSize={pageSize}
+          total={totalReviews}
+          onPageChange={setPage}
+          onPageSizeChange={(n) => {
+            setPageSize(n);
+            setPage(1);
+          }}
+          entityLabel="reviews"
+        />
       )}
 
       {viewTarget && (

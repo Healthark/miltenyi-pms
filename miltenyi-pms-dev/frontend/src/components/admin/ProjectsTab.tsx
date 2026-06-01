@@ -28,6 +28,7 @@ import {
 import {
   projectService,
   type ProjectResponse,
+  type ProjectsPaginatedSortBy,
 } from "@/services/project.service";
 import { adminService } from "@/services/admin.service";
 import { queryKeys } from "@/lib/queryKeys";
@@ -36,17 +37,13 @@ import { ProjectModal } from "@/components/admin/ProjectModal";
 import { ExportExcelButton } from "@/components/admin/ExportExcelButton";
 import { ClearFiltersButton } from "@/components/common/ClearFiltersButton";
 import { StringCombobox } from "@/components/common/StringCombobox";
+import { Pagination } from "@/components/common/Pagination";
 import { setOrDeleteParam, searchParamsChanged } from "@/utils/searchParams";
 import { useToast } from "@/hooks/useToast";
 import { useSnackbar } from "@/hooks/useSnackbar";
 import { useConfirm } from "@/hooks/useConfirm";
 import { SortableHeader } from "@/components/SortableHeader";
-import {
-  compareValues,
-  type SortKind,
-  type SortState,
-  type SortValue,
-} from "@/utils/sort";
+import { type SortState } from "@/utils/sort";
 
 function formatDate(dateStr: string | null): string {
   if (!dateStr) return "—";
@@ -57,29 +54,20 @@ function formatDate(dateStr: string | null): string {
   });
 }
 
+// Sort keys the SERVER can ORDER BY (mirrors backend
+// `_PROJECTS_SORT_COLUMNS`). expected_end_date, pm_name,
+// secondary_evaluator_name + member_count are deferred — they'd
+// require correlated subqueries or extra joins. Those headers stay
+// rendered as plain (non-sortable) text in this PR.
 type ProjectsSortKey =
   | "name"
   | "project_code"
   | "start_date"
-  | "expected_end_date"
-  | "pm_name"
-  | "secondary_evaluator_name"
-  | "member_count"
   | "status";
 
-const PROJECTS_SORT_CONFIG: Record<
-  ProjectsSortKey,
-  { kind: SortKind; get: (p: ProjectResponse) => SortValue }
-> = {
-  name:              { kind: "alpha",   get: (p) => p.name },
-  project_code:      { kind: "natural", get: (p) => p.project_code },
-  start_date:        { kind: "alpha",   get: (p) => p.start_date },
-  expected_end_date: { kind: "alpha",   get: (p) => p.expected_end_date },
-  pm_name:           { kind: "alpha",   get: (p) => p.pm_name },
-  secondary_evaluator_name: { kind: "alpha", get: (p) => p.secondary_evaluator_name },
-  member_count:      { kind: "numeric", get: (p) => p.member_count },
-  status:            { kind: "alpha",   get: (p) => p.status },
-};
+// PROJECTS_SORT_CONFIG removed (PR #74). Sort flows to the server via
+// sort_by / sort_dir query params; per-column comparators no longer
+// needed on the client.
 
 type StatusFilter = "active" | "completed" | "all";
 
@@ -311,6 +299,11 @@ export function ProjectsTab({ ref }: ProjectsTabProps = {}) {
     invalidateProjectsScope();
   };
 
+  // Filter-option lists derive from the FULL `projects` list (the
+  // existing `listProjects(true)` query) — NOT from the paginated
+  // page slice — so a narrowed filter set never collapses the dropdown
+  // options to "only what's on this page". Same pattern UsersTab uses
+  // for Function/Designation/Mentor dropdowns.
   const availableYears = useMemo(
     () =>
       Array.from(
@@ -337,40 +330,57 @@ export function ProjectsTab({ ref }: ProjectsTabProps = {}) {
     [projects],
   );
 
-  const visibleProjects = useMemo(() => {
-    const q = searchQuery.toLowerCase();
-    const filtered = projects.filter((p) => {
-      if (statusFilter !== "all" && p.status !== statusFilter) return false;
-      if (q) {
-        const matchesSearch =
-          p.name.toLowerCase().includes(q) ||
-          p.project_code.toLowerCase().includes(q);
-        if (!matchesSearch) return false;
-      }
-      if (yearFilter !== "all") {
-        const year = p.start_date
-          ? new Date(p.start_date).getFullYear().toString()
-          : null;
-        if (year !== yearFilter) return false;
-      }
-      // PM filter: "(No PM)" sentinel matches rows where pm_name is
-      // null/empty — HR uses this during cleanup to find unassigned
-      // projects. Otherwise exact-match against the selected name.
-      if (pmFilter !== "all") {
-        if (pmFilter === "(No PM)") {
-          if (p.pm_name) return false;
-        } else {
-          if (p.pm_name !== pmFilter) return false;
-        }
-      }
-      return true;
-    });
-    if (!sort) return filtered;
-    const { kind, get } = PROJECTS_SORT_CONFIG[sort.key];
-    return filtered
-      .slice()
-      .sort((a, b) => compareValues(get(a), get(b), kind, sort.direction));
-  }, [projects, searchQuery, yearFilter, pmFilter, statusFilter, sort]);
+  // ── Server-side paginated query (PR #74) ────────────────────────────
+  // Push filters + sort + page state to GET /projects/paginated. The
+  // `projects` full list (above) still drives dropdown options +
+  // ProjectModal's PM/member pickers; this new query drives only what
+  // the table body renders.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+
+  const paginatedQueryFilterParams = useMemo(() => {
+    const params: Record<string, string | number> = {};
+    const q = searchQuery.trim();
+    if (q) params.search = q;
+    if (statusFilter !== "all") params.status = statusFilter;
+    if (pmFilter !== "all") params.pm_name = pmFilter;
+    if (yearFilter !== "all") {
+      const yearNum = Number(yearFilter);
+      if (!Number.isNaN(yearNum)) params.start_year = yearNum;
+    }
+    if (sort) {
+      params.sort_by = sort.key;
+      params.sort_dir = sort.direction;
+    }
+    return params;
+  }, [searchQuery, statusFilter, pmFilter, yearFilter, sort]);
+
+  // Reset to page 1 when filters or sort change.
+  const paginatedQueryFilterParamsKey = JSON.stringify(
+    paginatedQueryFilterParams,
+  );
+  useEffect(() => {
+    setPage(1);
+  }, [paginatedQueryFilterParamsKey]);
+
+  const paginatedQuery = useQuery({
+    queryKey: queryKeys.projects.listPaginated({
+      ...paginatedQueryFilterParams,
+      _page: page,
+      _pageSize: pageSize,
+    }),
+    queryFn: () =>
+      projectService.listProjectsPaginated({
+        ...paginatedQueryFilterParams,
+        sort_by: sort?.key as ProjectsPaginatedSortBy | undefined,
+        sort_dir: sort?.direction,
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
+      }),
+  });
+
+  const visibleProjects = paginatedQuery.data?.items ?? [];
+  const totalProjects = paginatedQuery.data?.total ?? 0;
 
   return (
     <div className="p-5 flex flex-col gap-4">
@@ -495,6 +505,12 @@ export function ProjectsTab({ ref }: ProjectsTabProps = {}) {
           <table className="w-full min-w-max text-sm">
             <thead>
               <tr className="border-b border-border bg-slate-50 text-left">
+                {/* Running row number. Cumulative across pages (page 2
+                    starts at 26 when pageSize=25), matching the
+                    "Showing 51–75 of 247" counter at the bottom. */}
+                <th className="text-center px-2 py-3 text-xs font-semibold uppercase tracking-wide text-text-muted w-8">
+                  #
+                </th>
                 <th className="px-5 py-3">
                   <SortableHeader label="Project" columnKey="name" sort={sort} onSort={setSort} />
                 </th>
@@ -504,17 +520,23 @@ export function ProjectsTab({ ref }: ProjectsTabProps = {}) {
                 <th className="px-5 py-3">
                   <SortableHeader label="Start Date" columnKey="start_date" sort={sort} onSort={setSort} />
                 </th>
-                <th className="px-5 py-3">
-                  <SortableHeader label="End Date" columnKey="expected_end_date" sort={sort} onSort={setSort} />
+                {/* End Date / PM / Secondary / Members — non-sortable
+                    in this PR (PR #74 plan: derived columns deferred;
+                    they'd need extra joins or correlated subqueries to
+                    sort server-side). Rendered as plain headers so the
+                    visual style matches the others without the
+                    chevron affordance. */}
+                <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-text-muted">
+                  End Date
                 </th>
-                <th className="px-5 py-3">
-                  <SortableHeader label="PM" columnKey="pm_name" sort={sort} onSort={setSort} />
+                <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-text-muted">
+                  PM
                 </th>
-                <th className="px-5 py-3">
-                  <SortableHeader label="Secondary" columnKey="secondary_evaluator_name" sort={sort} onSort={setSort} />
+                <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-text-muted">
+                  Secondary
                 </th>
-                <th className="px-5 py-3">
-                  <SortableHeader label="Members" columnKey="member_count" sort={sort} onSort={setSort} />
+                <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-text-muted">
+                  Members
                 </th>
                 <th className="px-5 py-3">
                   <SortableHeader label="Status" columnKey="status" sort={sort} onSort={setSort} />
@@ -525,11 +547,14 @@ export function ProjectsTab({ ref }: ProjectsTabProps = {}) {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {visibleProjects.map((project) => (
+              {visibleProjects.map((project, idx) => (
                 <tr
                   key={project.id}
                   className="transition-colors hover:bg-slate-50"
                 >
+                  <td className="px-2 py-3.5 text-center text-text-muted tabular-nums text-xs">
+                    {((page - 1) * pageSize + idx + 1).toLocaleString()}
+                  </td>
                   <td className="px-5 py-3.5">
                     <div className="font-medium text-text-main">
                       {project.name}
@@ -629,6 +654,23 @@ export function ProjectsTab({ ref }: ProjectsTabProps = {}) {
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* Pagination toolbar — below the table. The component handles
+          its own zero-total state; we hide during the very first load
+          so we don't flash controls on a skeleton table. */}
+      {!paginatedQuery.isPending && (
+        <Pagination
+          page={page}
+          pageSize={pageSize}
+          total={totalProjects}
+          onPageChange={setPage}
+          onPageSizeChange={(n) => {
+            setPageSize(n);
+            setPage(1);
+          }}
+          entityLabel="projects"
+        />
       )}
 
       {showModal && (

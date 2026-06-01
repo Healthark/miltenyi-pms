@@ -1,4 +1,5 @@
 import apiClient from "@/services/api.client";
+import type { Paginated } from "@/lib/pagination";
 
 // ---------------------------------------------------------------------------
 // Response types — mirror backend admin_schemas.py exactly
@@ -172,6 +173,42 @@ export interface UserUpdatePayload {
   mentor_id?: number | null;
 }
 
+/** Sort columns the server can ORDER BY on the paginated users
+ *  endpoint. Mirrors backend `_USERS_SORT_COLUMNS` exactly. Mentor /
+ *  PM-set columns are intentionally absent — they'd require correlated
+ *  subqueries; the corresponding column headers stay non-sortable
+ *  client-side. */
+export type UsersPaginatedSortBy =
+  | "full_name"
+  | "email"
+  | "role"
+  | "created_at"
+  | "function_name"
+  | "designation_name";
+
+/** Query params for GET /admin/users/paginated. Every field optional;
+ *  the server treats omission as "no filter" and 'all' as a back-compat
+ *  alias for the same. */
+export interface GetUsersPaginatedParams {
+  limit?: number;
+  offset?: number;
+  search?: string;
+  role?: string;
+  /** 'active' | 'inactive' | 'all'. Sent verbatim. */
+  status?: string;
+  function_name?: string;
+  designation_name?: string;
+  /** Exact mentor full_name, OR the literal "(No mentor)" sentinel
+   *  (matches rows whose mentor_id IS NULL — same wire value the
+   *  frontend dropdown uses). */
+  mentor_name?: string;
+  /** Exact PM full_name — passes rows the user has an active
+   *  ProjectAssignment for under a Project whose PM matches. */
+  pm_name?: string;
+  sort_by?: UsersPaginatedSortBy;
+  sort_dir?: "asc" | "desc";
+}
+
 // ---------------------------------------------------------------------------
 // Service
 // ---------------------------------------------------------------------------
@@ -180,6 +217,20 @@ export const adminService = {
   // Users
   getUsers: async (): Promise<UserResponse[]> => {
     const res = await apiClient.get<UserResponse[]>("/admin/users");
+    return res.data;
+  },
+
+  /** Paginated users endpoint — separate from `getUsers` so dropdown
+   *  consumers (`useOrgUsers`, ExportsTab, ProjectModal pickers) keep
+   *  receiving the full roster without going through page math. The
+   *  admin Users table is the only consumer of this method today. */
+  getUsersPaginated: async (
+    params: GetUsersPaginatedParams = {},
+  ): Promise<Paginated<UserResponse>> => {
+    const res = await apiClient.get<Paginated<UserResponse>>(
+      "/admin/users/paginated",
+      { params },
+    );
     return res.data;
   },
 

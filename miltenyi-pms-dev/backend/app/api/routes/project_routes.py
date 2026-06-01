@@ -20,9 +20,10 @@ Notes:
 """
 
 from datetime import date, datetime, timezone
-from typing import List
-from fastapi import APIRouter, BackgroundTasks, HTTPException, status
-from sqlalchemy import func
+from typing import List, Literal, Optional
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
+from sqlalchemy import extract, func, or_
+from sqlalchemy.orm import aliased
 
 from app.api.dependencies import DbSession, CurrentUser
 from app.services.notification_service import notify, notify_many
@@ -38,6 +39,7 @@ from app.schemas.project_schemas import (
     ProjectCreate, ProjectUpdate, ProjectResponse, ProjectDetail,
     AssignmentCreate, AssignmentUpdate, AssignmentResponse,
 )
+from app.schemas.pagination import Paginated
 
 router = APIRouter()
 
@@ -239,6 +241,197 @@ def list_projects(
         _build_project_response(p, db, count_map.get(p.id, 0))
         for p in projects
     ]
+
+
+# ── Paginated project listing ──────────────────────────────────────────
+# `_PROJECTS_SORT_COLUMNS` maps the frontend `ProjectsSortKey` union to
+# server-side SQLAlchemy columns. Derived columns (pm_name,
+# member_count) involve user joins / count subqueries — those headers
+# stay non-sortable, matching the goal_routes `/all` deferred-sort
+# pattern.
+_PROJECTS_SORT_COLUMNS = {
+    "name":         Project.name,
+    "project_code": Project.project_code,
+    "start_date":   Project.start_date,
+    "created_at":   Project.created_at,
+    "status":       Project.status,
+}
+
+# Mirrors frontend's `(No PM)` sentinel — same shape as UsersTab's
+# `(No mentor)`. Parens + leading space guarantee no collision with
+# a real user full_name.
+_PROJECTS_NO_PM_SENTINEL = "(No PM)"
+
+
+@router.get("/paginated", response_model=Paginated[ProjectResponse])
+def list_projects_paginated(
+    db: DbSession,
+    current_user: CurrentUser,
+    limit: int = Query(
+        50,
+        ge=1,
+        le=200,
+        description=(
+            "Maximum projects to return on this page. Server-clamped "
+            "to 1..200 (matches every other paginated endpoint)."
+        ),
+    ),
+    offset: int = Query(
+        0,
+        ge=0,
+        description="Projects to skip before this page.",
+    ),
+    search: Optional[str] = Query(
+        None,
+        description=(
+            "Case-insensitive substring across name + project_code."
+        ),
+    ),
+    status_: Optional[str] = Query(
+        None,
+        alias="status",
+        description=(
+            "'active' / 'completed' / 'all'. Omitted treated as 'all' "
+            "(returns both active + completed; hard-deleted always "
+            "excluded)."
+        ),
+    ),
+    pm_name: Optional[str] = Query(
+        None,
+        description=(
+            "Exact match on the PM's full_name. The special value "
+            "`(No PM)` matches rows whose `pm_id` is NULL — same "
+            "sentinel the ProjectsTab PM filter uses."
+        ),
+    ),
+    start_year: Optional[int] = Query(
+        None,
+        description=(
+            "Filter on EXTRACT(year FROM start_date). NULL-start_date "
+            "rows are excluded when this filter is set."
+        ),
+    ),
+    sort_by: Optional[
+        Literal["name", "project_code", "start_date", "created_at", "status"]
+    ] = Query(
+        None,
+        description=(
+            "Sort column. Direct project-attribute columns only; "
+            "pm_name + member_count sorts are deferred."
+        ),
+    ),
+    sort_dir: Literal["asc", "desc"] = Query(
+        "asc",
+        description="Sort direction. Default 'asc'.",
+    ),
+):
+    """HR-only paginated project listing — companion to the
+    unpaginated `GET /projects/` above.
+
+    The unpaginated endpoint is preserved unchanged for callers that
+    need the full project list (dropdown options: `useOrgProjectNames`
+    and ProjectsTab's own filter-option derivation). This endpoint
+    serves ProjectsTab's row query with proper server-side pagination
+    + filtering + sort, so the admin table stays performant as the
+    project count scales past current seed-org sizes.
+
+    Two-query pattern matches `admin_routes.list_users_paginated`:
+      1. Apply filters + sort to a Project query.
+      2. `total` = `.count()` over the filtered query.
+      3. Page slice = `.offset().limit().all()`.
+      4. Batched member-count + name resolution for the page slice
+         only — the unpaginated endpoint resolves these org-wide; we
+         scope to the returned project_ids.
+    """
+    _require_hr_any(current_user)
+
+    projects_q = db.query(Project).filter(
+        Project.org_id == current_user.org_id,
+        Project.is_deleted == False,  # noqa: E712
+    )
+
+    if status_ and status_ != "all":
+        projects_q = projects_q.filter(Project.status == status_)
+
+    if search:
+        like = f"%{search.strip()}%"
+        projects_q = projects_q.filter(
+            or_(
+                Project.name.ilike(like),
+                Project.project_code.ilike(like),
+            )
+        )
+
+    if pm_name:
+        if pm_name == _PROJECTS_NO_PM_SENTINEL:
+            projects_q = projects_q.filter(Project.pm_id.is_(None))
+        else:
+            PMAlias = aliased(User)
+            projects_q = projects_q.join(
+                PMAlias, PMAlias.id == Project.pm_id,
+            ).filter(
+                PMAlias.full_name == pm_name,
+                # Deactivated PMs would have their pm_id null'd out by
+                # the cascade in admin_routes.deactivate_user; this
+                # check protects pre-cascade rows.
+                PMAlias.is_deleted == False,  # noqa: E712
+            )
+
+    if start_year is not None:
+        # EXTRACT works against the start_date Date column. Rows with
+        # NULL start_date naturally drop out — that matches the
+        # legacy client-side filter's behaviour exactly.
+        projects_q = projects_q.filter(
+            extract("year", Project.start_date) == start_year
+        )
+
+    # ── Sort ────────────────────────────────────────────────────────────
+    if sort_by is None:
+        # Default mirrors the unpaginated endpoint's implicit ordering.
+        projects_q = projects_q.order_by(
+            Project.created_at.desc(), Project.id.asc(),
+        )
+    else:
+        sort_column = _PROJECTS_SORT_COLUMNS[sort_by]
+        primary = sort_column.asc() if sort_dir == "asc" else sort_column.desc()
+        projects_q = projects_q.order_by(primary, Project.id.asc())
+
+    total_projects = projects_q.with_entities(Project.id).count()
+
+    page_projects = projects_q.offset(offset).limit(limit).all()
+    page_project_ids = [p.id for p in page_projects]
+
+    # Member counts only for the page slice. Same active-assignment
+    # filter the unpaginated endpoint uses (end_date IS NULL).
+    if page_project_ids:
+        count_map = dict(
+            db.query(
+                ProjectAssignment.project_id,
+                func.count(ProjectAssignment.id),
+            )
+            .filter(
+                ProjectAssignment.org_id == current_user.org_id,
+                ProjectAssignment.project_id.in_(page_project_ids),
+                ProjectAssignment.end_date.is_(None),
+            )
+            .group_by(ProjectAssignment.project_id)
+            .all()
+        )
+    else:
+        count_map = {}
+
+    items = [
+        _build_project_response(p, db, count_map.get(p.id, 0))
+        for p in page_projects
+    ]
+
+    return Paginated[ProjectResponse](
+        items=items,
+        total=total_projects,
+        limit=limit,
+        offset=offset,
+        has_more=(offset + len(items)) < total_projects,
+    )
 
 
 @router.post("/", response_model=ProjectDetail, status_code=status.HTTP_201_CREATED)
