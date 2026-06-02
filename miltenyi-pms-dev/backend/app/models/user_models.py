@@ -64,6 +64,15 @@ class User(Base):
     # Self-referencing FK for the mentoring hierarchy. Set on Employee users only;
     # points to a Mentor row. Other roles leave this NULL.
     mentor_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    # Set when this user's mentor is deactivated or role-changed away
+    # from Mentor — the cascade in admin_routes nulls `mentor_id` and
+    # stamps this timestamp so HR's dashboard can distinguish
+    # "deactivation orphans" (this user used to have a mentor, lost
+    # them, needs reassignment) from "truly unmentored" (never
+    # assigned). Cleared when HR assigns the user to a new live
+    # Mentor via update_user. NULL on every other user. See
+    # docs/policies/mentor-transition-policy.md for the full policy.
+    mentor_orphaned_at = Column(DateTime(timezone=True), nullable=True)
 
     avatar_url = Column(String, nullable=True)
     password_hash = Column(String, nullable=False)

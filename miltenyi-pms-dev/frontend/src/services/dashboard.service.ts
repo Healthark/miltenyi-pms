@@ -158,6 +158,20 @@ export interface UnmentoredEmployee {
   designation_name: string | null;
 }
 
+/** Same shape as UnmentoredEmployee plus `orphaned_at` so the
+ *  dashboard can render "Orphaned X days ago". Backed by
+ *  `users.mentor_orphaned_at` which is stamped when a mentor is
+ *  deactivated or role-changed away from Mentor. See
+ *  docs/policies/mentor-transition-policy.md. */
+export interface OrphanedEmployee {
+  user_id: number;
+  full_name: string;
+  function_name: string | null;
+  designation_name: string | null;
+  /** ISO datetime when this user lost their mentor via the cascade. */
+  orphaned_at: string;
+}
+
 export interface MentorLoad {
   mentor_id: number;
   full_name: string;
@@ -166,6 +180,7 @@ export interface MentorLoad {
 
 export interface MentorCoverage {
   unmentored_employees: UnmentoredEmployee[];
+  orphaned_employees: OrphanedEmployee[];
   top_mentors: MentorLoad[];
 }
 

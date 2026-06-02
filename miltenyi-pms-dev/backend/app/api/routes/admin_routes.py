@@ -49,13 +49,14 @@ from app.models.system_settings_year_override_models import (
     SystemSettingsYearOverride,
 )
 from app.models.annual_review_models import AnnualReview, ReviewStatus
-from app.models.goal_models import Goal, GoalType
+from app.models.goal_models import Goal, GoalType, ApprovalStatus
+from app.models.mentor_reassignment_log_models import MentorReassignmentLog
 from sqlalchemy import func as sql_func
 from app.services.send_email import (
     is_smtp_configured,
     send_welcome_user_email,
 )
-from app.services.notification_service import notify
+from app.services.notification_service import notify, notify_many
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from app.schemas.admin_schemas import (
@@ -148,6 +149,337 @@ def _validate_mentor_role(
                 f"(user '{mentor.full_name}' has role={mentor.role})."
             ),
         )
+
+
+# ── Mentor-transition cascade (docs/policies/mentor-transition-policy.md) ──
+#
+# Statuses where the assigned mentor still owes an action. Drives the
+# cascade in `_cascade_mentor_reassignment` and `_orphan_mentees`: rows
+# in these statuses have their stamped mentor reassigned to the new
+# mentor (or NULL on orphan), so the new mentor inherits the work.
+# Rows OUTSIDE these statuses (post-mentor-review, completed,
+# fully-cycled-through) stay stamped with the original mentor so the
+# audit story "who actually did the work" is preserved.
+
+_GOAL_IN_FLIGHT_STATUSES = frozenset({
+    # Pre-approval lifecycle — mentor owes the approval decision.
+    ApprovalStatus.DRAFT.value,
+    ApprovalStatus.PENDING_APPROVAL.value,
+    ApprovalStatus.CHANGES_REQUESTED.value,
+    # Mid-cycle review — employee has self-reviewed for the half/quarter;
+    # mentor still owes the mentor-review submission for THIS cycle.
+    # Each cycle is independent: moving to a new mentor means the new
+    # mentor does THIS cycle's review. Once the mentor reviews
+    # (advancing the status to *_mentor_reviewed), that cycle is closed
+    # — historical attribution preserved.
+    ApprovalStatus.H1_SELF_REVIEWED.value,
+    ApprovalStatus.H2_SELF_REVIEWED.value,
+    ApprovalStatus.Q1_SELF_REVIEWED.value,
+    ApprovalStatus.Q2_SELF_REVIEWED.value,
+    ApprovalStatus.Q3_SELF_REVIEWED.value,
+    ApprovalStatus.Q4_SELF_REVIEWED.value,
+})
+
+_REVIEW_IN_FLIGHT_STATUSES = frozenset({
+    # Self-review drafted but not yet routed to mentor — mentor still
+    # owes the evaluation once it lands in their queue.
+    ReviewStatus.DRAFT.value,
+    # Mentor's turn to evaluate.
+    ReviewStatus.PENDING_MENTOR.value,
+    # NOTE: pending_management + completed are NOT in-flight — the
+    # mentor has already submitted their evaluation; reassignment
+    # shouldn't rewrite history.
+})
+
+
+def _log_mentor_move(
+    db: DbSession,
+    *,
+    org_id: int,
+    admin_user_id: int,
+    employee_user_id: int,
+    entity_type: str,
+    entity_id: int | None,
+    old_mentor_id: int | None,
+    new_mentor_id: int | None,
+    reason: str,
+) -> None:
+    """Append one row to mentor_reassignment_logs.
+
+    Caller is responsible for `db.commit()` — this just adds the row.
+    Keep this in a single helper so every cascade path uses the same
+    schema (no per-call divergence on column names / shape).
+    """
+    db.add(MentorReassignmentLog(
+        org_id=org_id,
+        admin_user_id=admin_user_id,
+        employee_user_id=employee_user_id,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        old_mentor_id=old_mentor_id,
+        new_mentor_id=new_mentor_id,
+        reason=reason,
+    ))
+
+
+def _cascade_mentor_reassignment(
+    db: DbSession,
+    *,
+    admin: User,
+    mentee: User,
+    old_mentor_id: int | None,
+    new_mentor_id: int | None,
+    reason: str,
+) -> None:
+    """Move all in-flight stamped mentor refs for `mentee` from the old
+    mentor to the new mentor (or NULL on orphan / explicit unassign).
+
+    Touches three things:
+      1. Goal.manager_id for rows in `_GOAL_IN_FLIGHT_STATUSES`.
+      2. AnnualReview.mentor_id (and clears the mentor-draft fields)
+         for rows in `_REVIEW_IN_FLIGHT_STATUSES`.
+      3. ALSO claims any NULL-stamped in-flight rows when assigning a
+         new mentor — this handles the re-mentoring-an-orphan case
+         where the previous cascade had set the stamped mentor to
+         NULL on deactivation.
+
+    Logs one row to mentor_reassignment_logs per moved entity. Caller
+    owns the surrounding commit.
+
+    Does NOT touch User.mentor_id itself — that's the caller's
+    responsibility (the cascade only handles downstream stamped
+    references on related rows).
+    """
+    # ── 1. Move rows currently stamped with the old mentor ────────────
+    if old_mentor_id is not None:
+        moved_goals = (
+            db.query(Goal.id)
+            .filter(
+                Goal.user_id == mentee.id,
+                Goal.manager_id == old_mentor_id,
+                Goal.approval_status.in_(_GOAL_IN_FLIGHT_STATUSES),
+            )
+            .all()
+        )
+        if moved_goals:
+            goal_ids = [gid for (gid,) in moved_goals]
+            db.query(Goal).filter(Goal.id.in_(goal_ids)).update(
+                {"manager_id": new_mentor_id},
+                synchronize_session=False,
+            )
+            for gid in goal_ids:
+                _log_mentor_move(
+                    db,
+                    org_id=mentee.org_id,
+                    admin_user_id=admin.id,
+                    employee_user_id=mentee.id,
+                    entity_type="goal",
+                    entity_id=gid,
+                    old_mentor_id=old_mentor_id,
+                    new_mentor_id=new_mentor_id,
+                    reason=reason,
+                )
+
+        moved_reviews = (
+            db.query(AnnualReview.id)
+            .filter(
+                AnnualReview.user_id == mentee.id,
+                AnnualReview.mentor_id == old_mentor_id,
+                AnnualReview.status.in_(_REVIEW_IN_FLIGHT_STATUSES),
+            )
+            .all()
+        )
+        if moved_reviews:
+            review_ids = [rid for (rid,) in moved_reviews]
+            # Clear mentor-side drafts when the row moves — the new
+            # mentor types their own evaluation rather than
+            # inheriting half-typed words from the previous mentor
+            # (Scenario 3b in the policy doc). The self-side drafts
+            # belong to the employee and stay untouched.
+            db.query(AnnualReview).filter(AnnualReview.id.in_(review_ids)).update(
+                {
+                    "mentor_id": new_mentor_id,
+                    "mentor_overall_review_draft": None,
+                    "mentor_performance_rating_draft": None,
+                },
+                synchronize_session=False,
+            )
+            for rid in review_ids:
+                _log_mentor_move(
+                    db,
+                    org_id=mentee.org_id,
+                    admin_user_id=admin.id,
+                    employee_user_id=mentee.id,
+                    entity_type="annual_review",
+                    entity_id=rid,
+                    old_mentor_id=old_mentor_id,
+                    new_mentor_id=new_mentor_id,
+                    reason=reason,
+                )
+
+    # ── 2. Claim NULL-stamped in-flight rows when assigning a NEW mentor
+    # to a previously-orphaned mentee. After a deactivation cascade the
+    # mentee's in-flight goals/reviews carry manager_id=NULL /
+    # mentor_id=NULL. When HR finally assigns them a new mentor, those
+    # rows need to be claimed too (the loop above wouldn't catch them
+    # because old_mentor_id is None — the orphan state).
+    if new_mentor_id is not None:
+        claimed_goals = (
+            db.query(Goal.id)
+            .filter(
+                Goal.user_id == mentee.id,
+                Goal.manager_id.is_(None),
+                Goal.approval_status.in_(_GOAL_IN_FLIGHT_STATUSES),
+            )
+            .all()
+        )
+        if claimed_goals:
+            goal_ids = [gid for (gid,) in claimed_goals]
+            db.query(Goal).filter(Goal.id.in_(goal_ids)).update(
+                {"manager_id": new_mentor_id},
+                synchronize_session=False,
+            )
+            for gid in goal_ids:
+                _log_mentor_move(
+                    db,
+                    org_id=mentee.org_id,
+                    admin_user_id=admin.id,
+                    employee_user_id=mentee.id,
+                    entity_type="goal",
+                    entity_id=gid,
+                    old_mentor_id=None,
+                    new_mentor_id=new_mentor_id,
+                    reason=reason,
+                )
+
+        claimed_reviews = (
+            db.query(AnnualReview.id)
+            .filter(
+                AnnualReview.user_id == mentee.id,
+                AnnualReview.mentor_id.is_(None),
+                AnnualReview.status.in_(_REVIEW_IN_FLIGHT_STATUSES),
+            )
+            .all()
+        )
+        if claimed_reviews:
+            review_ids = [rid for (rid,) in claimed_reviews]
+            db.query(AnnualReview).filter(AnnualReview.id.in_(review_ids)).update(
+                {"mentor_id": new_mentor_id},
+                synchronize_session=False,
+            )
+            for rid in review_ids:
+                _log_mentor_move(
+                    db,
+                    org_id=mentee.org_id,
+                    admin_user_id=admin.id,
+                    employee_user_id=mentee.id,
+                    entity_type="annual_review",
+                    entity_id=rid,
+                    old_mentor_id=None,
+                    new_mentor_id=new_mentor_id,
+                    reason=reason,
+                )
+
+
+def _orphan_mentees(
+    db: DbSession,
+    *,
+    admin: User,
+    departing_mentor: User,
+    reason: str,
+) -> int:
+    """Sweep every active mentee of `departing_mentor` and mark them
+    orphaned. Used when the mentor is deactivated OR their role is
+    changed away from Mentor.
+
+    For each mentee:
+      - Set mentor_id = NULL
+      - Stamp mentor_orphaned_at = NOW()
+      - Cascade their in-flight goal/review rows to NULL stamped
+        mentor (work freezes until HR reassigns).
+      - Log a 'user' entity move alongside the per-row cascade logs.
+
+    After the per-mentee work, fire ONE notification per HR_MyOrg user
+    in the org with the affected count so HR knows to reassign these
+    orphans. Returns the orphan count for the caller (so the route can
+    surface it in the response if needed).
+
+    Caller owns the surrounding db.commit().
+    """
+    mentees = (
+        db.query(User)
+        .filter(
+            User.org_id == departing_mentor.org_id,
+            User.mentor_id == departing_mentor.id,
+            User.is_deleted == False,  # noqa: E712
+        )
+        .all()
+    )
+    if not mentees:
+        return 0
+
+    now = datetime.now(timezone.utc)
+
+    for mentee in mentees:
+        # Per-mentee cascade: in-flight goals + reviews lose their
+        # stamped mentor (set to NULL).
+        _cascade_mentor_reassignment(
+            db,
+            admin=admin,
+            mentee=mentee,
+            old_mentor_id=departing_mentor.id,
+            new_mentor_id=None,
+            reason=reason,
+        )
+        # Flip the mentee's own pointer + stamp the orphan timestamp.
+        mentee.mentor_id = None
+        mentee.mentor_orphaned_at = now
+        # Log the user-level move alongside the per-row entries.
+        _log_mentor_move(
+            db,
+            org_id=mentee.org_id,
+            admin_user_id=admin.id,
+            employee_user_id=mentee.id,
+            entity_type="user",
+            entity_id=mentee.id,
+            old_mentor_id=departing_mentor.id,
+            new_mentor_id=None,
+            reason=reason,
+        )
+
+    # Notify all HR_MyOrg users so the dashboard's new orphan bucket
+    # gets human attention. One notification per HR user, in-app + email.
+    hr_user_ids = [
+        uid for (uid,) in db.query(User.id)
+        .filter(
+            User.org_id == departing_mentor.org_id,
+            User.role == Role.HR_MYORG.value,
+            User.is_deleted == False,  # noqa: E712
+        )
+        .all()
+    ]
+    if hr_user_ids:
+        count = len(mentees)
+        mentee_word = "mentee" if count == 1 else "mentees"
+        reason_phrase = (
+            "deactivated" if reason == "deactivation" else "no longer a Mentor"
+        )
+        notify_many(
+            db,
+            org_id=departing_mentor.org_id,
+            recipient_ids=hr_user_ids,
+            sender_id=admin.id,
+            module="admin",
+            entity_type=f"mentor_{reason}",
+            entity_id=departing_mentor.id,
+            message=(
+                f"Mentor {departing_mentor.full_name} is {reason_phrase}. "
+                f"{count} {mentee_word} now need a new mentor."
+            ),
+            entity_url="/dashboard",
+        )
+
+    return len(mentees)
 
 
 def _authorize_user_mutation(current_user: User, target_role: str | None) -> None:
@@ -833,8 +1165,66 @@ def update_user(
     if "mentor_id" in update_data and update_data["mentor_id"] is not None:
         _validate_mentor_role(db, current_user.org_id, update_data["mentor_id"])
 
+    # Role-change-away-from-Mentor cascade: if this PATCH is taking a
+    # Mentor and giving them a different role, every active mentee of
+    # theirs needs to be orphaned (mentor_id nulled, in-flight rows
+    # un-stamped, HR notified). Same semantics as deactivation — see
+    # docs/policies/mentor-transition-policy.md (Part D). Run BEFORE
+    # the setattr loop so the cascade queries see the user's old role
+    # = Mentor; after the role flips applies, the mentee lookup would
+    # still work (mentor_id is a plain FK) but the conceptual frame is
+    # "their previous Mentor lost the ability."
+    is_role_demotion = (
+        "role" in update_data
+        and update_data["role"]
+        and update_data["role"] != user.role
+        and user.role == Role.MENTOR.value
+    )
+    if is_role_demotion:
+        _orphan_mentees(
+            db,
+            admin=current_user,
+            departing_mentor=user,
+            reason="role_change",
+        )
+
     for field, value in update_data.items():
         setattr(user, field, value)
+
+    # Mentor reassignment cascade: move in-flight stamped refs on Goal
+    # + AnnualReview rows from the old mentor to the new mentor (or
+    # NULL on unassign). See policy doc Part B + E for the full rule.
+    # Skip when mentor_id wasn't in the payload or was a no-op resave.
+    if "mentor_id" in update_data and user.mentor_id != old_mentor_id:
+        _cascade_mentor_reassignment(
+            db,
+            admin=current_user,
+            mentee=user,
+            old_mentor_id=old_mentor_id,
+            new_mentor_id=user.mentor_id,
+            reason="reassignment",
+        )
+        # Re-mentoring an orphan clears the orphan stamp. Only clear
+        # when the new mentor is a real user — NULL→NULL or X→NULL
+        # shouldn't change the orphan state (NULL→NULL is a no-op
+        # anyway; X→NULL is HR explicitly unassigning, which is NOT
+        # an "orphan resolved" event).
+        if user.mentor_id is not None:
+            user.mentor_orphaned_at = None
+        # The user-level move is logged separately from the per-row
+        # cascade entries above so per-mentee history queries can
+        # filter on entity_type="user" to find pointer changes.
+        _log_mentor_move(
+            db,
+            org_id=user.org_id,
+            admin_user_id=current_user.id,
+            employee_user_id=user.id,
+            entity_type="user",
+            entity_id=user.id,
+            old_mentor_id=old_mentor_id,
+            new_mentor_id=user.mentor_id,
+            reason="reassignment",
+        )
 
     db.commit()
 
@@ -1014,6 +1404,24 @@ def deactivate_user(
         Project.org_id == current_user.org_id,
         Project.secondary_evaluator_id == user.id,
     ).update({"secondary_evaluator_id": None})
+
+    # Mentor orphan cascade: when the deactivated user is a Mentor,
+    # every active mentee of theirs needs to be orphaned (mentor_id
+    # nulled, in-flight goals/reviews un-stamped, HR notified).
+    # Without this cascade mentees end up with dangling pointers at a
+    # deactivated user, in-flight work freezes (the approval gate
+    # matches an id nobody can log in with), and the mentee
+    # disappears from HR's pairings view entirely. See
+    # docs/policies/mentor-transition-policy.md (Part C) for the full
+    # rationale. Other roles' deactivations are unaffected by this
+    # block — non-Mentor users have no mentees to orphan.
+    if user.role == Role.MENTOR.value:
+        _orphan_mentees(
+            db,
+            admin=current_user,
+            departing_mentor=user,
+            reason="deactivation",
+        )
 
     db.commit()
 
