@@ -14,8 +14,13 @@ Endpoints:
 Notes:
     - The PM is NOT a project_assignments row. They live on Project.pm_id.
     - The PM must have role=PM (Miltenyi manager).
-    - The Secondary evaluator (Project.secondary_evaluator_id) must NOT have
-      role=PM or role=Mentor.
+    - The Secondary evaluator (Project.secondary_evaluator_id) must be EITHER
+      role=PM or role=HR_Miltenyi. Employees / Mentors / HR_MyOrg are not
+      eligible — the impact statement is a Miltenyi-side editorial gate, and
+      narrowing the pool to PMs + Miltenyi HR keeps it inside that team's
+      management chain. (Historical projects may carry legacy values from
+      before this rule was tightened; `update_project` skips re-validating
+      when `secondary_evaluator_id` is unchanged so those rows still save.)
     - Both HR roles (HR_MyOrg, HR_Miltenyi) can manage projects.
 """
 
@@ -82,7 +87,16 @@ def _validate_pm_role(db: DbSession, org_id: int, pm_id: int) -> None:
 
 
 def _validate_secondary_role(db: DbSession, org_id: int, secondary_id: int) -> None:
-    """The Secondary evaluator may be any role except PM and Mentor."""
+    """The Secondary evaluator may ONLY be role=PM or role=HR_Miltenyi.
+
+    Previously this allowed anyone except PM + Mentor (i.e. HR_MyOrg /
+    HR_Miltenyi / Employee). The pool was narrowed because the impact
+    statement is a Miltenyi-side editorial gate — opening it to Employees
+    or to Healthark's HR diluted that intent. The disjoint check on
+    Project.pm_id covers the "can't be the PM of THIS project" case for
+    the PM-as-Secondary scenario (a PM may secondary on other projects
+    they don't manage, just not their own).
+    """
     user = db.query(User).filter(
         User.id == secondary_id,
         User.org_id == org_id,
@@ -93,10 +107,10 @@ def _validate_secondary_role(db: DbSession, org_id: int, secondary_id: int) -> N
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Secondary evaluator user not found in this org.",
         )
-    if user.role in (Role.PM.value, Role.MENTOR.value):
+    if user.role not in (Role.PM.value, Role.HR_MILTENYI.value):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="The Secondary evaluator cannot be a PM or Mentor.",
+            detail="The Secondary evaluator must be a PM or a Miltenyi HR user.",
         )
 
 
@@ -684,12 +698,27 @@ def update_project(
                 detail=f"Project code '{update_data['project_code']}' already exists.",
             )
 
-    # Role validation on incoming pm_id / secondary_evaluator_id (if changing).
-    if "pm_id" in update_data and update_data["pm_id"] is not None:
+    # Role validation on incoming pm_id / secondary_evaluator_id —
+    # gated on the value ACTUALLY changing relative to the persisted
+    # row. The frontend modal sends the full payload on every save
+    # (not just the diff), so without this gate a no-op edit on a
+    # legacy project — one whose Secondary was set when the rule was
+    # looser (pre-PR #85: anyone except PM/Mentor was allowed) —
+    # would 400 here on every save until HR cleaned up the Secondary,
+    # which would break unrelated edits. Re-validating only on real
+    # changes keeps legacy data settable + still rejects fresh
+    # invalid assignments. The user-facing nudge to clean up the
+    # legacy value lives on the frontend modal as an inline warning.
+    if (
+        "pm_id" in update_data
+        and update_data["pm_id"] is not None
+        and update_data["pm_id"] != project.pm_id
+    ):
         _validate_pm_role(db, current_user.org_id, update_data["pm_id"])
     if (
         "secondary_evaluator_id" in update_data
         and update_data["secondary_evaluator_id"] is not None
+        and update_data["secondary_evaluator_id"] != project.secondary_evaluator_id
     ):
         _validate_secondary_role(db, current_user.org_id, update_data["secondary_evaluator_id"])
 

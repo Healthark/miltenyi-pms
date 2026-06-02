@@ -128,8 +128,11 @@ class ProjectCreate(BaseModel):
         - PM and Secondary must be different people.
         - PM cannot also be in `assignments` (they're not a member).
         - Secondary can be in assignments OR not (no constraint).
-        - Role validation (PM has role=PM, secondary is not PM/Mentor) is
-          enforced at the route layer with a DB lookup.
+        - Role validation (PM has role=PM, Secondary is role=PM OR
+          role=HR_Miltenyi) is enforced at the route layer with a DB
+          lookup. The Secondary pool was narrowed in PR #85 — previously
+          it allowed anyone except PM/Mentor; now only PMs (on other
+          projects than this one) and Miltenyi HR users are eligible.
         - Each assignment.assigned_date must fall inside the project's
           date window — enforced at the route layer because Pydantic
           model_validators are evaluated per-model and the assignment

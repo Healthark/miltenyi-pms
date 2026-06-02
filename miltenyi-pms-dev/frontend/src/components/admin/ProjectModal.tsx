@@ -2,9 +2,18 @@
  * ProjectModal.tsx — Create/Edit Project with Team Assignments.
  *
  * The PM is a project-level field (combobox at the top), filtered to users
- * with role=PM. The Secondary Evaluator is also a project-level combobox
- * (filtered to non-PM, non-Mentor). Team Members are Employee users only —
- * the PM is NOT in the assignments list.
+ * with role=PM. The Secondary Evaluator is also a project-level combobox,
+ * filtered to role=PM OR role=HR_Miltenyi (narrowed in PR #85 — previously
+ * the pool was "anyone except PM/Mentor" which let Employees + Healthark
+ * HR appear as Secondary, diluting the Miltenyi-editorial intent of the
+ * impact-statement step). Team Members are Employee users only — the PM
+ * is NOT in the assignments list.
+ *
+ * Backwards-compat: existing projects may carry a Secondary whose role
+ * is no longer eligible. The combobox still shows that user (via
+ * `augmentWithCurrent`) and an inline amber hint nudges HR to pick a
+ * new Secondary. The backend skips re-validating the Secondary when its
+ * value is unchanged, so unrelated edits on legacy projects still save.
  *
  * Placement: src/components/admin/ProjectModal.tsx
  */
@@ -130,10 +139,16 @@ export function ProjectModal({
   const confirm = useConfirm();
 
   // Pre-bucket users by role for dropdown filtering. Active users only.
+  // Secondary-evaluator pool: ONLY PM + HR_Miltenyi (PR #85). The previous
+  // rule (anyone except PM/Mentor — i.e. Employees / HR_MyOrg also
+  // allowed) was loosened beyond what the impact-statement step was for.
+  // Backend `_validate_secondary_role` enforces the same rule; the legacy
+  // warning below covers projects saved under the looser rule.
+  const SECONDARY_ALLOWED_ROLES: ReadonlySet<string> = new Set(["PM", "HR_Miltenyi"]);
   const activeUsers = users.filter((u) => !u.is_deleted);
   const pmCandidates = activeUsers.filter((u) => u.role === "PM");
-  const secondaryCandidates = activeUsers.filter(
-    (u) => u.role !== "PM" && u.role !== "Mentor",
+  const secondaryCandidates = activeUsers.filter((u) =>
+    SECONDARY_ALLOWED_ROLES.has(u.role),
   );
   const memberCandidates = activeUsers.filter((u) => u.role === "Employee");
 
@@ -190,8 +205,28 @@ export function ProjectModal({
     secondaryCandidates,
     secondaryEvaluatorId,
     secondaryDisplayName,
-    "Employee",
+    // Fallback role only matters when we have to synthesise a stub
+    // user (existing secondary not in the parent's `users` list). Use
+    // HR_Miltenyi as the neutral default — it's one of the now-eligible
+    // roles and renders cleanly in the combobox's role badge.
+    "HR_Miltenyi",
   );
+
+  // Legacy-rule detection: a saved Secondary whose CURRENT role is no
+  // longer in the eligible set. Surfaces as an inline amber hint under
+  // the combobox so HR knows to pick a new Secondary. Doesn't block
+  // save — the backend skips re-validating an unchanged value (see
+  // `update_project` route comment) so unrelated edits still go
+  // through. If HR explicitly picks a non-eligible user, the backend
+  // 400s with a clear message.
+  const loadedSecondaryRole = (() => {
+    if (secondaryEvaluatorId === null) return null;
+    const u = users.find((x) => x.id === secondaryEvaluatorId);
+    return u ? u.role : null;
+  })();
+  const legacySecondaryIneligible =
+    loadedSecondaryRole !== null &&
+    !SECONDARY_ALLOWED_ROLES.has(loadedSecondaryRole);
 
   // ── Load reference data + existing project ──────────────────────
   useEffect(() => {
@@ -632,11 +667,22 @@ export function ProjectModal({
                     users={secondaryComboboxUsers}
                     value={secondaryEvaluatorId}
                     onChange={setSecondaryEvaluatorId}
-                    label="Secondary Evaluator"
-                    placeholder="Optional — can be added later"
+                    label="Secondary Evaluator (PM or Miltenyi HR)"
+                    placeholder={
+                      secondaryCandidates.length === 0
+                        ? "No eligible users in directory"
+                        : "Optional — pick a PM or Miltenyi HR"
+                    }
                     excludeIds={secondaryExclude}
                   />
                   <FieldError message={validationErrors.secondaryId} />
+                  {legacySecondaryIneligible && (
+                    <p className="mt-1 text-xs text-amber-700">
+                      The current Secondary is no longer eligible
+                      (Secondary must be a PM or Miltenyi HR user).
+                      Pick a new one or clear the field.
+                    </p>
+                  )}
                 </div>
               </div>
 
