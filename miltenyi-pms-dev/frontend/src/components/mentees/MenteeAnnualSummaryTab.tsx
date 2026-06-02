@@ -2,8 +2,15 @@
  * MenteeAnnualSummaryTab — Mentor's at-a-glance view of everything they
  * need to write a mentee's annual review for the selected FY.
  *
+ * The FY this tab summarises is driven by the page-level FY picker in
+ * MenteeDetail (passed via the `fy` prop). One picker now governs every
+ * tab at once — Goals, Reviews, Projects, and this Summary tab — instead
+ * of each tab owning its own. The `"all"` sentinel from the picker
+ * resolves locally to the newest available FY because Annual Summary is
+ * inherently per-FY (one review per FY exists).
+ *
  * Surfaces:
- *   - Year picker + review status pill + "Fill Annual Review" CTA
+ *   - Static FY label + review status pill + "Fill Annual Review" CTA
  *   - Mentee's self review (rating + paragraph) when filed
  *   - Annual goals for the FY, each with H1 + H2 self/mentor review text
  *     side by side and criteria progress at the top
@@ -47,6 +54,14 @@ import {
 
 interface MenteeAnnualSummaryTabProps {
   readonly mentee: MenteeDetail;
+  /**
+   * Page-level FY filter selection. Either a canonical token like
+   * "FY26-27" or the sentinel "all". Annual Summary is inherently
+   * per-FY (one review per FY), so when `fy === "all"` the tab
+   * resolves internally to its newest available FY rather than
+   * trying to display every year at once.
+   */
+  readonly fy: string;
   /** Open the page-level eval drawer for the given FY token. Drawer
    *  state lives in MenteeDetail so tab switches don't unmount it. */
   readonly onOpenEval: (fy: string) => void;
@@ -428,6 +443,7 @@ function ProjectSummaryCard({
 
 export function MenteeAnnualSummaryTab({
   mentee,
+  fy,
   onOpenEval,
 }: MenteeAnnualSummaryTabProps) {
   const { settings } = useSystemSettings();
@@ -444,8 +460,12 @@ export function MenteeAnnualSummaryTab({
     return m;
   }, [mentee.reviews_list]);
 
-  // FYs the picker exposes: every FY with a review row + the active FY (so
-  // the mentor can land here even before the mentee files self-review).
+  // FYs this tab can resolve to: every FY with a review row + the active
+  // FY (so the mentor can land here even before the mentee files
+  // self-review). The page-level picker (in MenteeDetail) shows the
+  // broader union across goals/reviews/projects; here we only need the
+  // FYs that have review-relevant data because Annual Summary is purely
+  // about one FY's annual review.
   const availableFys = useMemo(() => {
     const s = new Set<string>();
     if (activeFyToken) s.add(activeFyToken);
@@ -453,19 +473,16 @@ export function MenteeAnnualSummaryTab({
     return Array.from(s).sort((a, b) => b.localeCompare(a));
   }, [mentee.reviews_list, activeFyToken]);
 
-  const [selectedFy, setSelectedFy] = useState(
-    activeFyToken || availableFys[0] || "",
-  );
-
-  // Settings load is async — once `activeFyToken` arrives (transitions
-  // from "" to a real value) and we haven't picked anything yet, default
-  // to it. Done as a during-render compare instead of a useEffect to
-  // avoid the post-commit re-render the effect form would cause.
-  const [trackedActiveFy, setTrackedActiveFy] = useState(activeFyToken);
-  if (trackedActiveFy !== activeFyToken) {
-    setTrackedActiveFy(activeFyToken);
-    if (activeFyToken && !selectedFy) setSelectedFy(activeFyToken);
-  }
+  // Effective FY driving everything in this tab. The page-level picker
+  // owns the displayed selection; we just resolve "all" (which makes no
+  // semantic sense here — only one review per FY exists) to the newest
+  // available FY. Otherwise we trust the prop verbatim, falling back to
+  // newest when the prop names an FY this mentee has no review/active
+  // signal for (defensive — the parent normally filters those out).
+  const selectedFy =
+    fy === "all" || !availableFys.includes(fy)
+      ? activeFyToken || availableFys[0] || ""
+      : fy;
 
   const selectedReview = selectedFy
     ? reviewByCycle.get(selectedFy) ?? null
@@ -538,28 +555,21 @@ export function MenteeAnnualSummaryTab({
 
   return (
     <div className="space-y-5">
-      {/* Header strip — year picker, status, CTA */}
+      {/* Header strip — status + CTA. The FY picker that used to live
+          here has moved to the page header in MenteeDetail; it now
+          governs every tab at once. We render the resolved FY as a
+          static label here so it's still clear which year this tab is
+          summarising. */}
       <div className="flex flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
-          <label
-            htmlFor="annual-summary-fy"
-            className="text-[11px] font-bold uppercase tracking-wider text-text-muted"
-          >
-            FY
-          </label>
-          <select
-            id="annual-summary-fy"
-            value={selectedFy}
-            onChange={(e) => setSelectedFy(e.target.value)}
-            className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand cursor-pointer"
-          >
-            {availableFys.map((fy) => (
-              <option key={fy} value={fy}>
-                {formatFyLabel(fy)}
-                {fy === activeFyToken ? " (current)" : ""}
-              </option>
-            ))}
-          </select>
+          <p className="text-sm font-semibold text-text-main">
+            {formatFyLabel(selectedFy)}
+            {selectedFy === activeFyToken && (
+              <span className="ml-1.5 text-[11px] font-medium text-text-muted">
+                (current)
+              </span>
+            )}
+          </p>
           <StatusPill status={status} />
         </div>
         <div className="flex items-center gap-2">
