@@ -45,8 +45,23 @@ class Project(Base):
 
     # The Miltenyi PM who reviews every Staff member assigned to this project.
     # Required at create time; nullable at the column level only so the FK stays
-    # legal during edits where the PM is being swapped (transient null).
+    # legal during edits where the PM is being swapped (transient null) AND so
+    # the deactivation / role-change cascade in admin_routes can null this
+    # column when a PM goes away (see `pm_orphaned_at` below).
     pm_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    # Stamped when this project's PM is deactivated or role-changed away from
+    # PM and the cascade nulled `pm_id`. Cleared when HR assigns a new live
+    # PM via the project edit form. Drives the "Orphaned Projects" bucket on
+    # the HR dashboard — distinguishes a project whose PM went away mid-flight
+    # (has in-flight review work that froze) from a project that was created
+    # without one (which can't happen today — ProjectCreate.pm_id is required —
+    # but the bucket would still surface the dangling case if it ever did).
+    # NULL on every project with a live PM. Mirrors the User.mentor_orphaned_at
+    # pattern from PR #81 (mentor cascade). See
+    # docs/policies/mentor-transition-policy.md for the original policy
+    # rationale; the PM cascade applies the same Option-C semantics to
+    # ProjectReview.reviewer_id.
+    pm_orphaned_at = Column(DateTime(timezone=True), nullable=True)
 
     # Optional Secondary evaluator. Adds an impact statement after the PM has
     # submitted their review. May or may not be a project member. Cannot be a

@@ -36,7 +36,17 @@ from app.core.config import settings
 from app.core.security import get_password_hash
 from app.models.user_models import User, Role, ADMIN_ROLES, PROTECTED_USER_ROLES
 from app.models.reference_models import Function, Designation
-from app.models.project_models import Project, ProjectAssignment
+from app.models.project_models import (
+    Project,
+    ProjectAssignment,
+    PROJECT_STATUS_ACTIVE,
+)
+from app.models.project_review_models import (
+    ProjectReview,
+    ProjectReviewEvaluator,
+    ProjectReviewStatus,
+    EvaluatorStatus,
+)
 from app.models.system_settings_models import SystemSettings, CycleType
 from app.core.cycle_utils import (
     YEAR_OVERRIDE_FLAGS,
@@ -480,6 +490,203 @@ def _orphan_mentees(
         )
 
     return len(mentees)
+
+
+# ── PM Transition Cascade ─────────────────────────────────────────────
+#
+# Applies the same Option-C semantics as the mentor cascade to the
+# PM-and-project axis. When HR deactivates a PM (or role-changes them
+# away from PM) every project they ran needs:
+#
+#   1. `Project.pm_id` set to NULL — that's the live pointer.
+#   2. `Project.pm_orphaned_at` stamped — drives the dashboard alert.
+#   3. In-flight `ProjectReview.reviewer_id` rows nulled — so the
+#      stranded drafts don't sit in a dead-user's queue. Closed
+#      (`reviewed`) rows keep their stamped reviewer for audit history,
+#      same as closed annual-reviews keep their stamped mentor.
+#
+# When HR assigns a NEW PM to an orphaned project, the cascade runs in
+# reverse: claim any NULL-reviewer in-flight rows on this project back
+# to the new PM. Same shape as `_cascade_mentor_reassignment`'s "claim
+# orphaned rows" branch.
+#
+# In-flight ProjectReview statuses are `pending` (auto-created
+# placeholder before the PM starts) and `draft` (PM saved partial
+# work). `reviewed` is closed — those rows preserve their stamped
+# reviewer_id forever for audit.
+
+_PROJECT_REVIEW_IN_FLIGHT_STATUSES = frozenset({
+    ProjectReviewStatus.PENDING.value,
+    ProjectReviewStatus.DRAFT.value,
+})
+
+
+def _cascade_pm_reassignment(
+    db: DbSession,
+    *,
+    project: Project,
+    old_pm_id: int | None,
+    new_pm_id: int | None,
+) -> None:
+    """Move all in-flight ProjectReview reviewer refs on `project` from
+    the old PM to the new PM (or NULL on orphan / explicit unassign).
+
+    Also handles the "re-mentoring an orphan" symmetry case: when
+    assigning a NEW PM, claim any in-flight rows currently sitting at
+    NULL reviewer (left there by a previous deactivation cascade) so
+    the new PM gets a clean queue.
+
+    Does NOT touch `Project.pm_id` or `Project.pm_orphaned_at` itself
+    — caller (deactivate / role-change / PATCH) owns those because the
+    surrounding update logic is route-specific (notifications, log
+    rows, commit boundaries differ).
+
+    No audit-log table for the PM axis: the mentor axis got one
+    because reassignments touched many independent rows across
+    employees + entities, but each PM swap is naturally scoped to one
+    project — `ProjectReview.updated_at` already records the per-row
+    move, so a parallel log adds noise without insight.
+    """
+    if old_pm_id is not None:
+        # Rows currently stamped with the old PM → move them.
+        db.query(ProjectReview).filter(
+            ProjectReview.project_id == project.id,
+            ProjectReview.reviewer_id == old_pm_id,
+            ProjectReview.status.in_(_PROJECT_REVIEW_IN_FLIGHT_STATUSES),
+            ProjectReview.is_deleted == False,  # noqa: E712
+        ).update(
+            {"reviewer_id": new_pm_id},
+            synchronize_session=False,
+        )
+
+    if new_pm_id is not None:
+        # Claim any NULL-stamped in-flight rows on this project — they
+        # were left there by a previous deactivation cascade and need
+        # to land in the new PM's queue.
+        db.query(ProjectReview).filter(
+            ProjectReview.project_id == project.id,
+            ProjectReview.reviewer_id.is_(None),
+            ProjectReview.status.in_(_PROJECT_REVIEW_IN_FLIGHT_STATUSES),
+            ProjectReview.is_deleted == False,  # noqa: E712
+        ).update(
+            {"reviewer_id": new_pm_id},
+            synchronize_session=False,
+        )
+
+
+def _orphan_pm_projects(
+    db: DbSession,
+    *,
+    admin: User,
+    departing_pm: User,
+    reason: str,
+) -> int:
+    """Sweep every active project where `pm_id == departing_pm.id` and
+    mark them orphaned. Used when the PM is deactivated OR their role
+    is changed away from PM.
+
+    For each project:
+      - `Project.pm_id = NULL`
+      - `Project.pm_orphaned_at = NOW()`
+      - In-flight `ProjectReview.reviewer_id` rows nulled via
+        `_cascade_pm_reassignment(..., new_pm_id=None)`.
+
+    Soft-deleted + completed projects are skipped — the cascade is for
+    operational ("act on me") state. A completed project that happened
+    to be PM'd by the departing user doesn't need reassignment; its
+    reviews are already closed.
+
+    After the per-project work, fire ONE notification per HR_MyOrg
+    user with the orphan count so they can chase the reassignment.
+    Returns the count for the caller's response payload (if any).
+
+    Caller owns the surrounding db.commit().
+    """
+    projects = (
+        db.query(Project)
+        .filter(
+            Project.org_id == departing_pm.org_id,
+            Project.pm_id == departing_pm.id,
+            Project.is_deleted == False,  # noqa: E712
+            Project.status == PROJECT_STATUS_ACTIVE,
+        )
+        .all()
+    )
+    if not projects:
+        return 0
+
+    now = datetime.now(timezone.utc)
+
+    for project in projects:
+        _cascade_pm_reassignment(
+            db,
+            project=project,
+            old_pm_id=departing_pm.id,
+            new_pm_id=None,
+        )
+        project.pm_id = None
+        project.pm_orphaned_at = now
+
+    # Notify all HR_MyOrg users so the dashboard's new orphan bucket
+    # gets human attention. One in-app + email per HR user.
+    hr_user_ids = [
+        uid for (uid,) in db.query(User.id)
+        .filter(
+            User.org_id == departing_pm.org_id,
+            User.role == Role.HR_MYORG.value,
+            User.is_deleted == False,  # noqa: E712
+        )
+        .all()
+    ]
+    if hr_user_ids:
+        count = len(projects)
+        project_word = "project" if count == 1 else "projects"
+        reason_phrase = (
+            "deactivated" if reason == "deactivation" else "no longer a PM"
+        )
+        notify_many(
+            db,
+            org_id=departing_pm.org_id,
+            recipient_ids=hr_user_ids,
+            sender_id=admin.id,
+            module="admin",
+            entity_type=f"pm_{reason}",
+            entity_id=departing_pm.id,
+            message=(
+                f"PM {departing_pm.full_name} is {reason_phrase}. "
+                f"{count} {project_word} now need a new PM."
+            ),
+            entity_url="/dashboard",
+        )
+
+    return len(projects)
+
+
+def _clear_secondary_drafts(
+    db: DbSession,
+    *,
+    departing_user: User,
+) -> int:
+    """Hard-delete in-flight Secondary impact-statement rows owned by
+    the departing user. Submitted rows stay (audit history).
+
+    Each ProjectReviewEvaluator row is uniquely owned by one user —
+    they can't be "transferred" to a new Secondary the way a PM
+    handoff transfers a ProjectReview. The cleanest semantic is: when
+    the Secondary goes away, their unsubmitted drafts go with them.
+    The new Secondary HR assigns will start fresh with an empty
+    statement field. Returns the deleted-row count for caller's logs.
+    """
+    deleted = (
+        db.query(ProjectReviewEvaluator)
+        .filter(
+            ProjectReviewEvaluator.org_id == departing_user.org_id,
+            ProjectReviewEvaluator.evaluator_id == departing_user.id,
+            ProjectReviewEvaluator.status == EvaluatorStatus.DRAFT.value,
+        )
+        .delete(synchronize_session=False)
+    )
+    return deleted
 
 
 def _authorize_user_mutation(current_user: User, target_role: str | None) -> None:
@@ -1188,6 +1395,27 @@ def update_user(
             reason="role_change",
         )
 
+    # Role-change-away-from-PM cascade: parallel to the Mentor branch
+    # above. Without this, a user demoted from PM to Employee keeps
+    # appearing as the PM on every project they ran (Project.pm_id
+    # still points at them) but their PM-role permissions are gone, so
+    # in-flight ProjectReviews freeze and HR has no signal that the
+    # projects need a new PM. Run BEFORE the setattr loop so the
+    # cascade sees `user.role` as PM.
+    is_pm_role_demotion = (
+        "role" in update_data
+        and update_data["role"]
+        and update_data["role"] != user.role
+        and user.role == Role.PM.value
+    )
+    if is_pm_role_demotion:
+        _orphan_pm_projects(
+            db,
+            admin=current_user,
+            departing_pm=user,
+            reason="role_change",
+        )
+
     for field, value in update_data.items():
         setattr(user, field, value)
 
@@ -1383,45 +1611,49 @@ def deactivate_user(
     # rule includes them in any FY that ends on/after `deleted_at`.
     user.deleted_at = datetime.now(timezone.utc)
 
-    # Cascade-null project-level FKs that pointed at this user. These
-    # are operational fields — leaving them populated after the user is
-    # gone would surface ghost names on the HR project list, the
-    # employee's "My Projects" cards, and the management overview,
-    # AND would block ProjectReview generation (the PM is the
-    # reviewer; there must be a live one). Goal / review / project-
-    # assignment rows intentionally keep their user_id for audit; only
-    # the Project's operational pointers are reset.
+    # ── Cascade live pointers that referenced this user ─────────────
+    # Three axes, three cascades — all of them use the Option-C
+    # semantics: in-flight work moves to NULL (so HR can reassign),
+    # closed work preserves stamped attribution.
     #
-    # Both UPDATEs run unconditionally — secondary evaluator may be
-    # any role except PM/Mentor (see project_routes._validate_secondary_role),
-    # so role-gating these writes would miss cases. For users who hold
-    # neither pointer the UPDATE matches zero rows and is a no-op.
-    db.query(Project).filter(
-        Project.org_id == current_user.org_id,
-        Project.pm_id == user.id,
-    ).update({"pm_id": None})
-    db.query(Project).filter(
-        Project.org_id == current_user.org_id,
-        Project.secondary_evaluator_id == user.id,
-    ).update({"secondary_evaluator_id": None})
+    #   1. PM    → projects orphaned + in-flight ProjectReview.reviewer_id
+    #              nulled; HR_MyOrg notified.
+    #   2. Mentor→ mentees orphaned + in-flight goal/review stamped
+    #              mentor nulled; HR_MyOrg notified.
+    #   3. Secondary → in-flight ProjectReviewEvaluator drafts deleted
+    #              (each row is uniquely owned; can't be transferred).
+    #
+    # The PM and Mentor branches gate on `user.role` because role
+    # invariants on the FK fields are airtight (only role=PM can be a
+    # Project.pm_id; only role=Mentor can be a User.mentor_id). The
+    # secondary branch + Project.secondary_evaluator_id null run
+    # unconditionally because the secondary can be any role except
+    # PM/Mentor — gating would miss cases.
 
-    # Mentor orphan cascade: when the deactivated user is a Mentor,
-    # every active mentee of theirs needs to be orphaned (mentor_id
-    # nulled, in-flight goals/reviews un-stamped, HR notified).
-    # Without this cascade mentees end up with dangling pointers at a
-    # deactivated user, in-flight work freezes (the approval gate
-    # matches an id nobody can log in with), and the mentee
-    # disappears from HR's pairings view entirely. See
-    # docs/policies/mentor-transition-policy.md (Part C) for the full
-    # rationale. Other roles' deactivations are unaffected by this
-    # block — non-Mentor users have no mentees to orphan.
-    if user.role == Role.MENTOR.value:
+    if user.role == Role.PM.value:
+        _orphan_pm_projects(
+            db,
+            admin=current_user,
+            departing_pm=user,
+            reason="deactivation",
+        )
+    elif user.role == Role.MENTOR.value:
         _orphan_mentees(
             db,
             admin=current_user,
             departing_mentor=user,
             reason="deactivation",
         )
+
+    # Secondary evaluator cleanup runs for everyone — the secondary can
+    # be any non-PM, non-Mentor user. Null the Project pointer + delete
+    # in-flight draft impact statements they owned. Submitted impact
+    # statements (status=SUBMITTED) are preserved as audit history.
+    db.query(Project).filter(
+        Project.org_id == current_user.org_id,
+        Project.secondary_evaluator_id == user.id,
+    ).update({"secondary_evaluator_id": None})
+    _clear_secondary_drafts(db, departing_user=user)
 
     db.commit()
 

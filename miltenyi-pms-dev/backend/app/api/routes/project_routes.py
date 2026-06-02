@@ -40,6 +40,12 @@ from app.schemas.project_schemas import (
     AssignmentCreate, AssignmentUpdate, AssignmentResponse,
 )
 from app.schemas.pagination import Paginated
+# Single-source the PM cascade helper in admin_routes — same pattern
+# the mentor backfill script uses (`from app.api.routes.admin_routes
+# import _cascade_mentor_reassignment`). Keeps the cascade logic
+# co-located with the user-lifecycle code that also calls it from
+# deactivate_user + update_user.
+from app.api.routes.admin_routes import _cascade_pm_reassignment
 
 router = APIRouter()
 
@@ -722,6 +728,29 @@ def update_project(
     # Capture the prior Secondary so we can notify when it changes. Done
     # BEFORE the setattr loop overwrites the column.
     prior_secondary_id = project.secondary_evaluator_id
+
+    # PM swap / orphan-recovery cascade. When pm_id changes, in-flight
+    # ProjectReview.reviewer_id rows on this project need to follow
+    # the live PM (or be claimed back from NULL when re-assigning an
+    # orphaned project to a new PM). Closed reviews keep their stamped
+    # reviewer for audit. Mirrors `_cascade_mentor_reassignment` —
+    # symmetric semantics for the PM axis. See the audit doc on the
+    # PR for the bug this closes (in-flight reviewer_id frozen at the
+    # deactivated PM's id).
+    if "pm_id" in update_data and update_data["pm_id"] != project.pm_id:
+        old_pm_id = project.pm_id
+        new_pm_id = update_data["pm_id"]
+        _cascade_pm_reassignment(
+            db,
+            project=project,
+            old_pm_id=old_pm_id,
+            new_pm_id=new_pm_id,
+        )
+        # Re-mentoring an orphaned project clears the stamp. Only on
+        # transitions to a real PM — NULL→NULL would be a no-op anyway,
+        # and the PATCH guard above rejects pm_id=NULL entirely.
+        if new_pm_id is not None:
+            update_data["pm_orphaned_at"] = None
 
     for field, value in update_data.items():
         setattr(project, field, value)
