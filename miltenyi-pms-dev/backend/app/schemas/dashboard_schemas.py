@@ -15,6 +15,7 @@ field regardless of role, defaulting to zero/null when the layer
 doesn't apply.
 """
 
+from datetime import datetime
 from pydantic import BaseModel
 from typing import Optional
 
@@ -205,6 +206,19 @@ class UnmentoredEmployee(BaseModel):
     designation_name: str | None = None
 
 
+class OrphanedEmployee(BaseModel):
+    """One row in the orphaned-Employee list.
+
+    Same shape as UnmentoredEmployee plus `orphaned_at` so the frontend
+    can render "Orphaned X days ago" — gives HR a sense of how stale
+    the lack-of-mentor situation is."""
+    user_id: int
+    full_name: str
+    function_name: str | None = None
+    designation_name: str | None = None
+    orphaned_at: datetime
+
+
 class MentorLoad(BaseModel):
     """Mentor + their currently-active mentee count."""
     mentor_id: int
@@ -215,18 +229,27 @@ class MentorLoad(BaseModel):
 class MentorCoverage(BaseModel):
     """Org-wide mentor pairing health snapshot.
 
-    Two paired insights HR cares about:
-      - `unmentored_employees` — active Staff with no mentor (or with a
-        mentor that's been deactivated). These users are blocked from
-        submitting annual goals/reviews. List is unbounded; the
-        frontend scrolls.
+    Three paired insights HR cares about:
+      - `unmentored_employees` — active Staff who have never been
+        assigned a mentor (`mentor_id IS NULL AND mentor_orphaned_at
+        IS NULL`). A process gap — HR probably forgot to assign on
+        user creation.
+      - `orphaned_employees` — active Staff whose mentor was
+        deactivated or role-changed away from Mentor and the cascade
+        nulled their `mentor_id`. Distinct from truly-unmentored
+        because there's likely in-flight work that froze; HR should
+        prioritise reassigning. Shows `orphaned_at` so the dashboard
+        can render staleness ("Orphaned 3 days ago").
       - `top_mentors` — top 5 mentors by active mentee count. Useful
-        for spotting overload and for picking who to assign new
-        Staff to. Sorted desc by count, ties broken alphabetically.
+        for spotting overload and picking who to assign new Staff to.
+        Sorted desc by count, ties broken alphabetically.
 
     Not FY-scoped — this is a "right now" snapshot, like Headcount.
+    See docs/policies/mentor-transition-policy.md for the policy
+    behind the orphaned bucket.
     """
     unmentored_employees: list[UnmentoredEmployee] = []
+    orphaned_employees: list[OrphanedEmployee] = []
     top_mentors: list[MentorLoad] = []
 
 

@@ -60,6 +60,7 @@ from app.schemas.dashboard_schemas import (
     MentorLoad,
     MissingAnnualReviewUser,
     MissingAnnualReviewsSummary,
+    OrphanedEmployee,
     ProjectReviewCompletion,
     StalledGoal,
     StalledGoalsSummary,
@@ -657,16 +658,51 @@ def get_hr_dashboard_summary(
         .all()
     )
 
-    unmentored = [
-        UnmentoredEmployee(
-            user_id=s.id,
-            full_name=s.full_name,
-            function_name=s.function.name if s.function else None,
-            designation_name=s.designation.name if s.designation else None,
+    # Partition mentor-less Employees into TRULY-UNMENTORED vs
+    # ORPHANED-BY-DEACTIVATION. Both end up with no live mentor, but
+    # they're operationally different:
+    #   - Truly unmentored = mentor_id IS NULL AND mentor_orphaned_at
+    #     IS NULL — process gap, never assigned.
+    #   - Orphaned = mentor_orphaned_at IS NOT NULL — used to have a
+    #     mentor; lost them via deactivation or role-change cascade.
+    #     Likely has in-flight work that froze; HR should prioritise.
+    # The dangling-FK fallback (mentor_id non-null but pointing at a
+    # soft-deleted user) is kept as a third path that classifies into
+    # "orphaned" — if it happens it means the deactivation cascade
+    # didn't run (e.g. pre-cascade legacy data, fixed by the one-shot
+    # backfill script). See docs/policies/mentor-transition-policy.md.
+    unmentored: list[UnmentoredEmployee] = []
+    orphaned: list[OrphanedEmployee] = []
+    for s in all_staff:
+        has_live_mentor = (
+            s.mentor_id is not None
+            and s.mentor is not None
+            and not s.mentor.is_deleted
         )
-        for s in all_staff
-        if s.mentor_id is None or s.mentor is None or s.mentor.is_deleted
-    ]
+        if has_live_mentor:
+            continue
+        if s.mentor_orphaned_at is not None or (
+            s.mentor_id is not None and s.mentor is not None and s.mentor.is_deleted
+        ):
+            orphaned.append(OrphanedEmployee(
+                user_id=s.id,
+                full_name=s.full_name,
+                function_name=s.function.name if s.function else None,
+                designation_name=s.designation.name if s.designation else None,
+                # Defensive fallback for pre-cascade legacy data: a
+                # dangling FK with no orphaned_at stamp uses
+                # "right now" so the UI shows a useful timestamp
+                # rather than null. The backfill script normalises
+                # this case proactively.
+                orphaned_at=s.mentor_orphaned_at or datetime.now(timezone.utc),
+            ))
+        else:
+            unmentored.append(UnmentoredEmployee(
+                user_id=s.id,
+                full_name=s.full_name,
+                function_name=s.function.name if s.function else None,
+                designation_name=s.designation.name if s.designation else None,
+            ))
 
     # Active mentee counts per mentor — only counts Employees whose mentor
     # is still active (so a dangling FK to a deactivated mentor doesn't
@@ -708,6 +744,7 @@ def get_hr_dashboard_summary(
 
     mentor_coverage = MentorCoverage(
         unmentored_employees=unmentored,
+        orphaned_employees=orphaned,
         top_mentors=top_mentors,
     )
 
