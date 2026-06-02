@@ -29,10 +29,16 @@ import { MenteeProjectsTab } from "@/components/mentees/MenteeProjectsTab";
 import { MenteeAnnualSummaryTab } from "@/components/mentees/MenteeAnnualSummaryTab";
 import { EvalDrawer } from "@/components/reviews/EvalDrawer";
 import { usePageTitleOverride } from "@/hooks/usePageTitleOverride";
+import { useSystemSettings } from "@/hooks/useSystemSettings";
 import { useConfirm } from "@/hooks/useConfirm";
 import { useToast } from "@/hooks/useToast";
 import { getErrorMessage } from "@/utils/errors";
-import { extractFyToken, formatFyLabel } from "@/utils/fy";
+import {
+  extractFyToken,
+  formatFyLabel,
+  fyStartYearToToken,
+  fyTokenToStartYear,
+} from "@/utils/fy";
 
 type TabKey = "summary" | "projects" | "goals" | "review";
 
@@ -121,6 +127,98 @@ export function MenteeDetail() {
     next.set("tab", key);
     setSearchParams(next, { replace: true });
   };
+
+  // ── Page-level FY filter ───────────────────────────────────────────
+  // One picker in the header narrows every tab at once (Goals, Reviews,
+  // Projects, Annual Summary). URL-synced via `?fy=` so deep-links + the
+  // back button work, mirroring the existing `?tab=` pattern. Sentinel
+  // value "all" reproduces today's flat-history behaviour; missing /
+  // unknown values fall back to the newest FY in the data.
+  //
+  // Filtering is pure client-side narrowing — the detail endpoint already
+  // returns full history; no extra round-trip per FY change.
+  const fyFromUrl = searchParams.get("fy");
+
+  const { settings } = useSystemSettings();
+  const activeFyToken = settings?.active_cycle_name
+    ? extractFyToken(settings.active_cycle_name)
+    : "";
+
+  // Union of every FY the mentee has rows for, plus the org's active FY
+  // (so the picker always offers "the current cycle" even when the
+  // mentee has no rows in it yet). Sorted newest-first by 4-digit start
+  // year so the default selection (availableFys[0]) is the most-recent.
+  const availableFys = useMemo(() => {
+    const s = new Set<string>();
+    if (activeFyToken) s.add(activeFyToken);
+    if (data) {
+      for (const g of data.goals_list) {
+        s.add(fyStartYearToToken(g.fy_year));
+      }
+      for (const r of data.reviews_list) {
+        s.add(extractFyToken(r.cycle_name));
+      }
+      for (const a of data.project_assignments) {
+        if (a.cycle) s.add(extractFyToken(a.cycle));
+      }
+    }
+    return Array.from(s).sort((a, b) => {
+      // fyTokenToStartYear may return null for malformed tokens — push
+      // them to the bottom rather than tripping the comparator.
+      const ya = fyTokenToStartYear(a) ?? -Infinity;
+      const yb = fyTokenToStartYear(b) ?? -Infinity;
+      return yb - ya;
+    });
+  }, [data, activeFyToken]);
+
+  // Resolve the effective filter:
+  //   "all"  → no filter, every tab renders full history (opt-in)
+  //   token in availableFys → use it
+  //   null / stale / empty data → newest available FY, or "all" when
+  //     the mentee genuinely has no history yet (picker is hidden in
+  //     that case so this fallback is mostly defensive).
+  const selectedFy: string = useMemo(() => {
+    if (fyFromUrl === "all") return "all";
+    if (fyFromUrl && availableFys.includes(fyFromUrl)) return fyFromUrl;
+    return availableFys[0] ?? "all";
+  }, [fyFromUrl, availableFys]);
+
+  const setSelectedFy = (next: string) => {
+    const params = new URLSearchParams(searchParams);
+    params.set("fy", next);
+    setSearchParams(params, { replace: true });
+  };
+
+  // Three filtered slices handed to the list-style tabs. The Annual
+  // Summary tab is handled differently — it receives the full mentee
+  // object + the `fy` prop and resolves its own effective FY internally
+  // (the tab is inherently per-FY and renders one FY at a time).
+  const filteredGoals = useMemo(() => {
+    if (!data) return [];
+    if (selectedFy === "all") return data.goals_list;
+    const startYear = fyTokenToStartYear(selectedFy);
+    if (startYear === null) return data.goals_list;
+    return data.goals_list.filter((g) => g.fy_year === startYear);
+  }, [data, selectedFy]);
+
+  const filteredReviews = useMemo(() => {
+    if (!data) return [];
+    if (selectedFy === "all") return data.reviews_list;
+    return data.reviews_list.filter(
+      (r) => extractFyToken(r.cycle_name) === selectedFy,
+    );
+  }, [data, selectedFy]);
+
+  const filteredAssignments = useMemo(() => {
+    if (!data) return [];
+    if (selectedFy === "all") return data.project_assignments;
+    return data.project_assignments.filter(
+      // `cycle === null` is the active-cycle placeholder row (no review
+      // exists yet). Keep those visible across every FY filter — they
+      // represent ongoing work that isn't tied to a closed FY.
+      (a) => !a.cycle || extractFyToken(a.cycle) === selectedFy,
+    );
+  }, [data, selectedFy]);
 
   // ── Annual eval drawer ────────────────────────────────────────────
   // The drawer lives at the page level (NOT inside the Annual Summary
@@ -361,12 +459,41 @@ export function MenteeDetail() {
                 </div>
                 <p className="mt-0.5 text-sm text-text-muted">{data.role}</p>
               </div>
-              {data.pending_actions_count > 0 && (
-                <div className="flex items-center gap-1.5 rounded-md bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
-                  <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />
-                  {data.pending_actions_count} pending
-                </div>
-              )}
+              {/* Right-side controls: FY picker + pending-actions chip.
+                  Picker is hidden when there's nothing to filter (brand
+                  new mentee with zero history). */}
+              <div className="flex items-center gap-3 shrink-0">
+                {availableFys.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <label
+                      htmlFor="mentee-detail-fy"
+                      className="text-[11px] font-bold uppercase tracking-wider text-text-muted"
+                    >
+                      FY
+                    </label>
+                    <select
+                      id="mentee-detail-fy"
+                      value={selectedFy}
+                      onChange={(e) => setSelectedFy(e.target.value)}
+                      className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand cursor-pointer"
+                    >
+                      {availableFys.map((fy) => (
+                        <option key={fy} value={fy}>
+                          {formatFyLabel(fy)}
+                          {fy === activeFyToken ? " (current)" : ""}
+                        </option>
+                      ))}
+                      <option value="all">All Years</option>
+                    </select>
+                  </div>
+                )}
+                {data.pending_actions_count > 0 && (
+                  <div className="flex items-center gap-1.5 rounded-md bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
+                    <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />
+                    {data.pending_actions_count} pending
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Personal details — single inline strip; wraps on narrow screens. */}
@@ -408,7 +535,7 @@ export function MenteeDetail() {
             <div className="p-5">
               {activeTab === "goals" && (
                 <MenteeGoalsTab
-                  goals={data.goals_list}
+                  goals={filteredGoals}
                   menteeName={data.full_name}
                   menteeId={menteeId}
                 />
@@ -416,18 +543,19 @@ export function MenteeDetail() {
               {activeTab === "summary" && (
                 <MenteeAnnualSummaryTab
                   mentee={data}
+                  fy={selectedFy}
                   onOpenEval={openEval}
                 />
               )}
               {activeTab === "review" && (
                 <MenteeReviewTab
-                  reviews={data.reviews_list}
+                  reviews={filteredReviews}
                   menteeName={data.full_name}
                 />
               )}
               {activeTab === "projects" && (
                 <MenteeProjectsTab
-                  assignments={data.project_assignments}
+                  assignments={filteredAssignments}
                   menteeName={data.full_name}
                   menteeUserId={data.user_id}
                 />
