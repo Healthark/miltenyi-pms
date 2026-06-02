@@ -28,7 +28,7 @@ Security Layers Applied:
 from datetime import datetime, timezone
 from typing import Annotated, Optional
 
-from sqlalchemy import func, Integer, cast
+from sqlalchemy import func, Integer, cast, or_
 from sqlalchemy.orm import joinedload
 from fastapi import APIRouter, Query
 
@@ -61,11 +61,14 @@ from app.schemas.dashboard_schemas import (
     MissingAnnualReviewUser,
     MissingAnnualReviewsSummary,
     OrphanedEmployee,
+    OrphanedProject,
+    ProjectCoverage,
     ProjectReviewCompletion,
     StalledGoal,
     StalledGoalsSummary,
     UnmentoredEmployee,
 )
+from app.models.project_models import PROJECT_STATUS_ACTIVE
 
 
 # How many top-loaded mentors to surface in the mentor-coverage widget.
@@ -748,6 +751,54 @@ def get_hr_dashboard_summary(
         top_mentors=top_mentors,
     )
 
+    # ── Project Coverage (orphaned projects) ─────────────────────────
+    # PM-side analog of the unmentored/orphaned split above. We only
+    # surface ACTIVE, non-deleted projects whose PM left without
+    # reassignment — those are the "act on me" rows that have in-flight
+    # ProjectReview work stranded. Completed projects are filtered out:
+    # if a project finished and its old PM was later deactivated, the
+    # closed reviews preserve their stamped reviewer for audit and there
+    # is nothing operational to fix. Mirrors the MentorCoverage shape
+    # so the frontend card can share the same visual language.
+    #
+    # Defensive: include a project even when `pm_orphaned_at IS NULL`
+    # but `pm_id IS NULL` — that catches any pre-cascade legacy row the
+    # migration's data backfill missed (e.g. a project created with
+    # NULL pm_id directly via SQL outside the API). Today the schema
+    # requires pm_id at create time so this case shouldn't exist, but
+    # the OR makes the bucket resilient.
+    orphan_project_rows = (
+        db.query(Project)
+        .options(joinedload(Project.secondary_evaluator))
+        .filter(
+            Project.org_id == current_user.org_id,
+            Project.is_deleted == False,  # noqa: E712
+            Project.status == PROJECT_STATUS_ACTIVE,
+            or_(
+                Project.pm_orphaned_at.isnot(None),
+                Project.pm_id.is_(None),
+            ),
+        )
+        .order_by(Project.pm_orphaned_at.desc().nullslast())
+        .all()
+    )
+    orphaned_projects = [
+        OrphanedProject(
+            project_id=p.id,
+            project_code=p.project_code,
+            name=p.name,
+            secondary_evaluator_name=(
+                p.secondary_evaluator.full_name
+                if p.secondary_evaluator is not None
+                and not p.secondary_evaluator.is_deleted
+                else None
+            ),
+            orphaned_at=p.pm_orphaned_at or datetime.now(timezone.utc),
+        )
+        for p in orphan_project_rows
+    ]
+    project_coverage = ProjectCoverage(orphaned_projects=orphaned_projects)
+
     return HrDashboardSummary(
         headcount=headcount,
         annual_review_funnel=review_funnel,
@@ -756,5 +807,6 @@ def get_hr_dashboard_summary(
         missing_annual_reviews=missing_reviews,
         stalled_goals=stalled_goals,
         mentor_coverage=mentor_coverage,
+        project_coverage=project_coverage,
         available_fys=available_fys,
     )

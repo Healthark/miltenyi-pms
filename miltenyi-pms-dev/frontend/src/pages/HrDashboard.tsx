@@ -28,6 +28,7 @@ import { ProjectReviewCompletionCard } from "@/components/dashboard/ProjectRevie
 import { PendingActionsCard } from "@/components/dashboard/PendingActionsCard";
 import { ActiveCyclesCard } from "@/components/dashboard/ActiveCyclesCard";
 import { MentorCoverageCard } from "@/components/dashboard/MentorCoverageCard";
+import { ProjectCoverageCard } from "@/components/dashboard/ProjectCoverageCard";
 
 export function HrDashboard() {
   const { user } = useAuth();
@@ -209,6 +210,13 @@ export function HrDashboard() {
       {!isMiltenyiHR && (
         <MentorCoverageCard data={summary?.mentor_coverage ?? null} />
       )}
+
+      {/* Project Coverage — PM-side analog of MentorCoverage. Shown
+          to BOTH HR roles because Miltenyi HR also manages projects
+          (they can edit projects + reassign PMs — see
+          project_routes._require_hr_any). Self-hides when there are
+          no orphans so the card doesn't add passive noise. */}
+      <ProjectCoverageCard data={summary?.project_coverage ?? null} />
     </div>
   );
 }
