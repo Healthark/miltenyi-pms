@@ -8,9 +8,43 @@ Schema map:
     ProjectResponse                      → resolved pm_name + secondary_evaluator_name
 """
 
-from pydantic import BaseModel, Field, ConfigDict, model_validator
+from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
 from typing import Optional
 from datetime import date, datetime
+
+
+# ── Shared bounds ─────────────────────────────────────────────────────
+#
+# Lower + upper sanity bounds for any date entered in a project payload.
+# Bounds the "we typed FY9999" / "we typed FY1900" tier of data-quality
+# bugs without making the validator opinionated about FY semantics. The
+# upper bound is calendar 2099-12-31 (far enough that no realistic
+# expected_end_date would hit it; tight enough to catch obvious typos
+# like 9999-12-31).
+_MIN_PROJECT_DATE = date(2000, 1, 1)
+_MAX_PROJECT_DATE = date(2099, 12, 31)
+
+
+def _check_date_bounds(label: str, value: Optional[date]) -> None:
+    """Raise ValueError if `value` is set and falls outside the sanity
+    window. No-op when `value is None` — both project dates are
+    optional."""
+    if value is None:
+        return
+    if value < _MIN_PROJECT_DATE or value > _MAX_PROJECT_DATE:
+        raise ValueError(
+            f"{label} must be between {_MIN_PROJECT_DATE.isoformat()} "
+            f"and {_MAX_PROJECT_DATE.isoformat()}."
+        )
+
+
+def _strip_or_none(v: object) -> object:
+    """Lightweight pre-validator: strip leading/trailing whitespace on
+    incoming strings so downstream `min_length=1` checks reject a
+    string that's just spaces, and so uniqueness comparisons aren't
+    defeated by trailing whitespace. Non-string values pass through
+    untouched (Optional[int] fields, etc.)."""
+    return v.strip() if isinstance(v, str) else v
 
 
 # ── Assignment Schemas ───────────────────────────────────────────────
@@ -29,12 +63,30 @@ class AssignmentCreate(BaseModel):
     )
     assigned_date: Optional[date] = None
 
+    # Strip leading/trailing whitespace before max_length runs so a role
+    # of "   " doesn't slip past as a 3-char string.
+    _strip_role = field_validator("assignment_role", mode="before")(_strip_or_none)
+
+    @field_validator("assigned_date")
+    @classmethod
+    def _assigned_date_in_bounds(cls, v: Optional[date]) -> Optional[date]:
+        _check_date_bounds("Joined date", v)
+        return v
+
 
 class AssignmentUpdate(BaseModel):
     """Payload for updating a member's role/function."""
     assignment_role: Optional[str] = Field(default=None, max_length=100)
     function_id: Optional[int] = None
     assigned_date: Optional[date] = None
+
+    _strip_role = field_validator("assignment_role", mode="before")(_strip_or_none)
+
+    @field_validator("assigned_date")
+    @classmethod
+    def _assigned_date_in_bounds(cls, v: Optional[date]) -> Optional[date]:
+        _check_date_bounds("Joined date", v)
+        return v
 
 
 class AssignmentResponse(BaseModel):
@@ -62,6 +114,15 @@ class ProjectCreate(BaseModel):
     """Create-project payload from the Admin Panel.
 
     Validation:
+        - project_code + name are stripped of whitespace BEFORE the
+          min_length=1 check runs so " " is rejected as empty.
+        - description is capped at 2000 chars to stop arbitrary-size
+          payloads (the DB column is TEXT and would otherwise accept
+          megabytes).
+        - start_date, expected_end_date, and each assignment.assigned_date
+          must fall in [2000-01-01, 2099-12-31] (sanity bounds — stops
+          year-1900 / year-9999 typos).
+        - expected_end_date must be on or after start_date when both set.
         - pm_id is required.
         - secondary_evaluator_id is optional.
         - PM and Secondary must be different people.
@@ -69,10 +130,15 @@ class ProjectCreate(BaseModel):
         - Secondary can be in assignments OR not (no constraint).
         - Role validation (PM has role=PM, secondary is not PM/Mentor) is
           enforced at the route layer with a DB lookup.
+        - Each assignment.assigned_date must fall inside the project's
+          date window — enforced at the route layer because Pydantic
+          model_validators are evaluated per-model and the assignment
+          rows don't have access to the parent's date window during
+          their own validation phase.
     """
     project_code: str = Field(..., min_length=1, max_length=20)
     name: str = Field(..., min_length=1, max_length=200)
-    description: Optional[str] = None
+    description: Optional[str] = Field(default=None, max_length=2000)
     start_date: Optional[date] = None
     expected_end_date: Optional[date] = None
     pm_id: int = Field(
@@ -84,6 +150,23 @@ class ProjectCreate(BaseModel):
         description="Optional senior who adds an impact statement after the PM submits.",
     )
     assignments: list[AssignmentCreate] = Field(default_factory=list)
+
+    # Strip whitespace before min_length / max_length checks.
+    _strip_code = field_validator("project_code", mode="before")(_strip_or_none)
+    _strip_name = field_validator("name", mode="before")(_strip_or_none)
+    _strip_desc = field_validator("description", mode="before")(_strip_or_none)
+
+    @field_validator("start_date")
+    @classmethod
+    def _start_in_bounds(cls, v: Optional[date]) -> Optional[date]:
+        _check_date_bounds("Start date", v)
+        return v
+
+    @field_validator("expected_end_date")
+    @classmethod
+    def _end_in_bounds(cls, v: Optional[date]) -> Optional[date]:
+        _check_date_bounds("Expected end date", v)
+        return v
 
     @model_validator(mode="after")
     def _pm_and_secondary_disjoint(self) -> "ProjectCreate":
@@ -102,16 +185,49 @@ class ProjectCreate(BaseModel):
             )
         return self
 
+    @model_validator(mode="after")
+    def _start_before_end(self) -> "ProjectCreate":
+        if (
+            self.start_date is not None
+            and self.expected_end_date is not None
+            and self.expected_end_date < self.start_date
+        ):
+            raise ValueError("Expected end date cannot be before start date.")
+        return self
+
 
 class ProjectUpdate(BaseModel):
-    """Patch project metadata. Any field optional."""
+    """Patch project metadata. Any field optional.
+
+    Cross-field constraints (start_date < expected_end_date, PM != Secondary,
+    pm_id must not be null) are enforced at the route layer because PATCH
+    sends only the fields being changed — the validator needs to merge
+    the incoming subset with the persisted project to make a meaningful
+    decision. Field-shape rules (strip, length, sanity bounds) live here.
+    """
     project_code: Optional[str] = Field(default=None, min_length=1, max_length=20)
     name: Optional[str] = Field(default=None, min_length=1, max_length=200)
-    description: Optional[str] = None
+    description: Optional[str] = Field(default=None, max_length=2000)
     start_date: Optional[date] = None
     expected_end_date: Optional[date] = None
     pm_id: Optional[int] = None
     secondary_evaluator_id: Optional[int] = None
+
+    _strip_code = field_validator("project_code", mode="before")(_strip_or_none)
+    _strip_name = field_validator("name", mode="before")(_strip_or_none)
+    _strip_desc = field_validator("description", mode="before")(_strip_or_none)
+
+    @field_validator("start_date")
+    @classmethod
+    def _start_in_bounds(cls, v: Optional[date]) -> Optional[date]:
+        _check_date_bounds("Start date", v)
+        return v
+
+    @field_validator("expected_end_date")
+    @classmethod
+    def _end_in_bounds(cls, v: Optional[date]) -> Optional[date]:
+        _check_date_bounds("Expected end date", v)
+        return v
 
 
 class ProjectResponse(BaseModel):

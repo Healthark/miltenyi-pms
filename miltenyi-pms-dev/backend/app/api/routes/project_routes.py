@@ -94,6 +94,42 @@ def _validate_secondary_role(db: DbSession, org_id: int, secondary_id: int) -> N
         )
 
 
+def _validate_assigned_date_window(
+    *,
+    assigned_date: Optional[date],
+    project_start: Optional[date],
+    project_end: Optional[date],
+    user_label: str,
+) -> None:
+    """A team member's joined date must fall inside the project's date
+    window when both endpoints are known. `assigned_date is None` is
+    allowed (HR hasn't recorded a start date yet) and any open end of
+    the window (start or end unset) is treated as unconstrained on
+    that side.
+
+    Reused by `create_project`'s inline-assignments loop and by
+    `add_assignment` — keeping the rule single-sourced so the two
+    surfaces can't drift."""
+    if assigned_date is None:
+        return
+    if project_start is not None and assigned_date < project_start:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Joined date for {user_label} is before the project's "
+                f"start date ({project_start.isoformat()})."
+            ),
+        )
+    if project_end is not None and assigned_date > project_end:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Joined date for {user_label} is after the project's "
+                f"expected end date ({project_end.isoformat()})."
+            ),
+        )
+
+
 def _validate_member_role(db: DbSession, org_id: int, user_id: int) -> None:
     """Project members must be Staff. PMs and Mentors don't work on projects."""
     user = db.query(User).filter(
@@ -443,9 +479,12 @@ def create_project(
     """Create a project with an assigned PM and optional team members."""
     _require_hr_any(current_user)
 
+    # Case-insensitive uniqueness — "PRJ-001" and "prj-001" must not
+    # coexist. Whitespace was already stripped by the Pydantic
+    # `_strip_or_none` pre-validator before this point.
     existing = db.query(Project).filter(
         Project.org_id == current_user.org_id,
-        Project.project_code == project_in.project_code,
+        func.lower(Project.project_code) == project_in.project_code.lower(),
         Project.is_deleted == False,  # noqa: E712
     ).first()
     if existing:
@@ -460,6 +499,16 @@ def create_project(
         _validate_secondary_role(db, current_user.org_id, project_in.secondary_evaluator_id)
     for a in project_in.assignments:
         _validate_member_role(db, current_user.org_id, a.user_id)
+        # Joined-date sanity vs the parent project window. Pydantic can't
+        # check this at the schema level — assignment validation runs
+        # before the parent model's fields are bound. Doing it here keeps
+        # the rule co-located with the other cross-field checks.
+        _validate_assigned_date_window(
+            assigned_date=a.assigned_date,
+            project_start=project_in.start_date,
+            project_end=project_in.expected_end_date,
+            user_label=f"user {a.user_id}",
+        )
 
     new_project = Project(
         org_id=current_user.org_id,
@@ -600,10 +649,26 @@ def update_project(
 
     update_data = project_in.model_dump(exclude_unset=True)
 
+    # PM is required on Project — ProjectCreate enforces that, and on
+    # update the column is left nullable only to keep the FK legal during
+    # a PM swap (see Project.pm_id docstring). We reject `pm_id: null`
+    # explicitly so the project doesn't end up persistently PM-less,
+    # which breaks downstream cycle generation that assumes pm_id is set.
+    if "pm_id" in update_data and update_data["pm_id"] is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Project must have a PM. To swap PMs, send the new pm_id; "
+                "unsetting pm_id is not supported."
+            ),
+        )
+
     if "project_code" in update_data and update_data["project_code"] != project.project_code:
+        # Case-insensitive uniqueness; whitespace already stripped by the
+        # schema validator.
         existing = db.query(Project).filter(
             Project.org_id == current_user.org_id,
-            Project.project_code == update_data["project_code"],
+            func.lower(Project.project_code) == update_data["project_code"].lower(),
             Project.is_deleted == False,  # noqa: E712
             Project.id != project_id,
         ).first()
@@ -636,6 +701,22 @@ def update_project(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Secondary Evaluator must be a different user than the PM.",
+        )
+
+    # Date range: validated against the post-merge state so a PATCH that
+    # changes only one of the two dates still gets checked against the
+    # persisted value of the other. Sanity bounds (year window) already
+    # applied by the schema's per-field validators.
+    final_start = update_data.get("start_date", project.start_date)
+    final_end = update_data.get("expected_end_date", project.expected_end_date)
+    if (
+        final_start is not None
+        and final_end is not None
+        and final_end < final_start
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Expected end date cannot be before start date.",
         )
 
     # Capture the prior Secondary so we can notify when it changes. Done
@@ -738,6 +819,15 @@ def add_assignment(
 
     _validate_member_role(db, current_user.org_id, assignment_in.user_id)
 
+    # Joined-date must fall inside the project's date window. Mirrors
+    # the same check applied to inline assignments in `create_project`.
+    _validate_assigned_date_window(
+        assigned_date=assignment_in.assigned_date,
+        project_start=project.start_date,
+        project_end=project.expected_end_date,
+        user_label=f"user {assignment_in.user_id}",
+    )
+
     # Only block when there's an *active* row already. End-dated rows are
     # historical stints and may coexist with a fresh active row (re-join).
     existing_active = db.query(ProjectAssignment).filter(
@@ -806,6 +896,22 @@ def update_assignment(
     if not update_data:
         # No-op PATCH — don't notify or commit a meaningless event.
         return _build_assignment_response(assignment, db)
+
+    # Joined-date window check when the PATCH touches assigned_date.
+    # We re-validate against the project's CURRENT window — same rule
+    # as create / add. Sanity bounds (year window) already applied by
+    # AssignmentUpdate's per-field validator.
+    if "assigned_date" in update_data:
+        parent = db.query(Project).filter(
+            Project.id == assignment.project_id
+        ).first()
+        if parent is not None:
+            _validate_assigned_date_window(
+                assigned_date=update_data["assigned_date"],
+                project_start=parent.start_date,
+                project_end=parent.expected_end_date,
+                user_label=f"user {assignment.user_id}",
+            )
 
     for field, value in update_data.items():
         setattr(assignment, field, value)

@@ -9,7 +9,7 @@
  * Placement: src/components/admin/ProjectModal.tsx
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { X, Loader2, UserPlus, Trash2 } from "lucide-react";
 import {
@@ -32,7 +32,36 @@ import { UserCombobox } from "@/components/common/UserCombobox";
 
 const INPUT_CLS =
   "w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-brand";
+const INPUT_ERROR_CLS =
+  "w-full rounded-lg border border-red-300 bg-white px-3 py-2 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-red-400";
 const LABEL_CLS = "block text-xs font-medium text-text-muted mb-1";
+
+// Backend caps — keep in sync with backend/app/schemas/project_schemas.py.
+// Centralised here so the input maxLength attrs + the in-form length
+// checks share a single number.
+const MAX_CODE_LENGTH = 20;
+const MAX_NAME_LENGTH = 200;
+const MAX_DESC_LENGTH = 2000;
+
+// All validation messages live here so the per-field errors object and
+// the input aria-labels stay in sync.
+type FieldErrors = {
+  projectCode?: string;
+  name?: string;
+  description?: string;
+  endDate?: string;
+  pmId?: string;
+  secondaryId?: string;
+  pmInTeam?: string;
+};
+
+// Small inline error helper — kept dumb so it can render under any
+// field without coupling to specific styling. Renders nothing when
+// `message` is falsy so the caller can pass `errors.xxx` directly.
+function FieldError({ message }: { readonly message: string | undefined }) {
+  if (!message) return null;
+  return <p className="mt-1 text-xs text-red-600">{message}</p>;
+}
 
 interface ProjectModalProps {
   readonly projectId: number | null;
@@ -311,34 +340,70 @@ export function ProjectModal({
     ...draftAssignments.filter((a) => a.user_id).map((a) => Number(a.user_id)),
   ]);
 
-  // Validation requirements:
+  // Per-field validation. Each field renders its own error inline so the
+  // user sees every problem at once (the old single-string banner showed
+  // them in priority order, one at a time, forcing a Save-fix-Save loop).
   //   - pm_id is set
   //   - pm_id !== secondary_evaluator_id
   //   - pm_id is not in any assignment row (PMs aren't members)
   //   - expected_end_date >= start_date when both set
+  //   - project_code / name / description respect backend length caps
   const pmInAssignments =
     pmId !== null &&
     (existingAssignments.some((a) => a.user_id === pmId) ||
       draftAssignments.some((a) => a.user_id && Number(a.user_id) === pmId));
-  const secondaryConflictWithPm =
-    pmId !== null && secondaryEvaluatorId === pmId;
   const endBeforeStart =
     !!startDate && !!expectedEndDate && expectedEndDate < startDate;
 
-  const validationError =
-    !projectCode.trim()
-      ? "Project Code is required."
-      : !name.trim()
-        ? "Project Name is required."
-        : endBeforeStart
-          ? "End Date cannot be before Start Date."
-          : pmId === null
-            ? "PM is required — pick the Miltenyi project manager who reviews the team."
-            : secondaryConflictWithPm
-              ? "Secondary Evaluator must be a different user than the PM."
-              : pmInAssignments
-                ? "The PM cannot also appear in the team members list. Remove them from members."
-                : null;
+  const validationErrors: FieldErrors = useMemo(() => {
+    const e: FieldErrors = {};
+
+    const trimmedCode = projectCode.trim();
+    if (!trimmedCode) {
+      e.projectCode = "Project Code is required.";
+    } else if (trimmedCode.length > MAX_CODE_LENGTH) {
+      e.projectCode = `Project Code must be ${MAX_CODE_LENGTH} characters or fewer.`;
+    }
+
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      e.name = "Project Name is required.";
+    } else if (trimmedName.length > MAX_NAME_LENGTH) {
+      e.name = `Project Name must be ${MAX_NAME_LENGTH} characters or fewer.`;
+    }
+
+    if (description.length > MAX_DESC_LENGTH) {
+      e.description = `Description must be ${MAX_DESC_LENGTH} characters or fewer.`;
+    }
+
+    if (endBeforeStart) {
+      e.endDate = "End Date cannot be before Start Date.";
+    }
+
+    if (pmId === null) {
+      e.pmId = "PM is required — pick the Miltenyi project manager who reviews the team.";
+    }
+
+    if (pmId !== null && secondaryEvaluatorId === pmId) {
+      e.secondaryId = "Secondary Evaluator must be a different user than the PM.";
+    }
+
+    if (pmInAssignments) {
+      e.pmInTeam = "The PM cannot also appear in the team members list. Remove them from members.";
+    }
+
+    return e;
+  }, [
+    projectCode,
+    name,
+    description,
+    endBeforeStart,
+    pmId,
+    secondaryEvaluatorId,
+    pmInAssignments,
+  ]);
+
+  const hasValidationErrors = Object.keys(validationErrors).length > 0;
 
   // Dropdown exclusion: secondary cannot be the PM
   const secondaryExclude: number[] = [];
@@ -346,19 +411,31 @@ export function ProjectModal({
 
   // ── Submit ──────────────────────────────────────────────────────
   const handleSubmit = async () => {
-    if (validationError) {
-      setError(validationError);
+    if (hasValidationErrors) {
+      // Surface the first field error in the top banner too so a user
+      // who clicks Save without scrolling sees the problem without
+      // having to hunt for the inline hint. Inline errors are still
+      // rendered per field — this is a secondary surface.
+      const first = Object.values(validationErrors).find(Boolean);
+      if (first) setError(first);
       return;
     }
     setIsSaving(true);
     setError("");
 
+    // Trim strings client-side before sending so the form never lets
+    // " ABC " through to the backend (the schema also strips, but
+    // sending the canonical value keeps logs + responses clean).
+    const trimmedCode = projectCode.trim();
+    const trimmedName = name.trim();
+    const trimmedDesc = description.trim();
+
     try {
       if (isEditing) {
         await projectService.updateProject(projectId, {
-          project_code: projectCode,
-          name,
-          description: description || null,
+          project_code: trimmedCode,
+          name: trimmedName,
+          description: trimmedDesc || null,
           start_date: startDate || null,
           expected_end_date: expectedEndDate || null,
           pm_id: pmId,
@@ -386,9 +463,9 @@ export function ProjectModal({
 
         // pm_id is required by backend; validation above guarantees non-null here.
         await projectService.createProject({
-          project_code: projectCode,
-          name,
-          description: description || null,
+          project_code: trimmedCode,
+          name: trimmedName,
+          description: trimmedDesc || null,
           start_date: startDate || null,
           expected_end_date: expectedEndDate || null,
           pm_id: pmId as number,
@@ -406,7 +483,7 @@ export function ProjectModal({
     }
   };
 
-  const canSubmit = !validationError && !isSaving;
+  const canSubmit = !hasValidationErrors && !isSaving;
 
   return createPortal(
     <div
@@ -451,59 +528,116 @@ export function ProjectModal({
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label htmlFor="proj-code" className={LABEL_CLS}>Project Code *</label>
-                  <input id="proj-code" className={INPUT_CLS} value={projectCode} onChange={(e) => setProjectCode(e.target.value)} placeholder="PRJ-001" />
+                  <input
+                    id="proj-code"
+                    className={validationErrors.projectCode ? INPUT_ERROR_CLS : INPUT_CLS}
+                    value={projectCode}
+                    onChange={(e) => setProjectCode(e.target.value)}
+                    placeholder="PRJ-001"
+                    maxLength={MAX_CODE_LENGTH}
+                    aria-invalid={!!validationErrors.projectCode}
+                    aria-describedby={validationErrors.projectCode ? "proj-code-error" : undefined}
+                  />
+                  <FieldError message={validationErrors.projectCode} />
                 </div>
                 <div>
                   <label htmlFor="proj-name" className={LABEL_CLS}>Project Name *</label>
-                  <input id="proj-name" className={INPUT_CLS} value={name} onChange={(e) => setName(e.target.value)} placeholder="Market Access Study Q2" />
+                  <input
+                    id="proj-name"
+                    className={validationErrors.name ? INPUT_ERROR_CLS : INPUT_CLS}
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Market Access Study Q2"
+                    maxLength={MAX_NAME_LENGTH}
+                    aria-invalid={!!validationErrors.name}
+                  />
+                  <FieldError message={validationErrors.name} />
                 </div>
               </div>
 
               <div>
-                <label htmlFor="proj-desc" className={LABEL_CLS}>Description</label>
-                <textarea id="proj-desc" rows={2} className={`${INPUT_CLS} resize-none`} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Brief description of the project scope…" />
+                <div className="flex items-center justify-between mb-1">
+                  <label htmlFor="proj-desc" className="text-xs font-medium text-text-muted">
+                    Description
+                  </label>
+                  <span
+                    className={`text-[10px] tabular-nums ${
+                      description.length > MAX_DESC_LENGTH
+                        ? "text-red-600 font-semibold"
+                        : "text-text-muted"
+                    }`}
+                  >
+                    {description.length}/{MAX_DESC_LENGTH}
+                  </span>
+                </div>
+                <textarea
+                  id="proj-desc"
+                  rows={2}
+                  className={`${
+                    validationErrors.description ? INPUT_ERROR_CLS : INPUT_CLS
+                  } resize-none`}
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Brief description of the project scope…"
+                  maxLength={MAX_DESC_LENGTH}
+                  aria-invalid={!!validationErrors.description}
+                />
+                <FieldError message={validationErrors.description} />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label htmlFor="proj-start" className={LABEL_CLS}>Start Date</label>
-                  <input id="proj-start" type="date" className={INPUT_CLS} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+                  <input
+                    id="proj-start"
+                    type="date"
+                    className={INPUT_CLS}
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    min="2000-01-01"
+                    max="2099-12-31"
+                  />
                 </div>
                 <div>
                   <label htmlFor="proj-end" className={LABEL_CLS}>End Date</label>
                   <input
                     id="proj-end"
                     type="date"
-                    className={INPUT_CLS}
+                    className={validationErrors.endDate ? INPUT_ERROR_CLS : INPUT_CLS}
                     value={expectedEndDate}
-                    min={startDate || undefined}
+                    min={startDate || "2000-01-01"}
+                    max="2099-12-31"
                     onChange={(e) => setExpectedEndDate(e.target.value)}
-                    aria-invalid={endBeforeStart}
+                    aria-invalid={!!validationErrors.endDate}
                   />
-                  {endBeforeStart && (
-                    <p className="mt-1 text-xs text-red-600">End Date cannot be before Start Date.</p>
-                  )}
+                  <FieldError message={validationErrors.endDate} />
                 </div>
               </div>
 
               {/* PM and Secondary Evaluator — both project-level fields */}
               <div className="grid grid-cols-2 gap-4">
-                <UserCombobox
-                  users={pmComboboxUsers}
-                  value={pmId}
-                  onChange={setPmId}
-                  label="Project Manager (Miltenyi)"
-                  required
-                  placeholder={pmCandidates.length === 0 ? "No PM users in directory" : "Select a PM"}
-                />
-                <UserCombobox
-                  users={secondaryComboboxUsers}
-                  value={secondaryEvaluatorId}
-                  onChange={setSecondaryEvaluatorId}
-                  label="Secondary Evaluator"
-                  placeholder="Optional — can be added later"
-                  excludeIds={secondaryExclude}
-                />
+                <div>
+                  <UserCombobox
+                    users={pmComboboxUsers}
+                    value={pmId}
+                    onChange={setPmId}
+                    label="Project Manager (Miltenyi)"
+                    required
+                    placeholder={pmCandidates.length === 0 ? "No PM users in directory" : "Select a PM"}
+                  />
+                  <FieldError message={validationErrors.pmId} />
+                </div>
+                <div>
+                  <UserCombobox
+                    users={secondaryComboboxUsers}
+                    value={secondaryEvaluatorId}
+                    onChange={setSecondaryEvaluatorId}
+                    label="Secondary Evaluator"
+                    placeholder="Optional — can be added later"
+                    excludeIds={secondaryExclude}
+                  />
+                  <FieldError message={validationErrors.secondaryId} />
+                </div>
               </div>
 
               {/* ── Team Members ───────────────────────────────── */}
@@ -517,6 +651,7 @@ export function ProjectModal({
                     Add Member
                   </button>
                 </div>
+                <FieldError message={validationErrors.pmInTeam} />
 
                 {/* Existing Assignments (Edit Mode).
                     Active rows first, then ended ones (most recently ended on top)
@@ -630,7 +765,12 @@ export function ProjectModal({
                       </div>
                     </div>
 
-                    {/* Assigned Date — below the row */}
+                    {/* Assigned Date — below the row. Bounded by the
+                        project's start/end so a member can't be marked as
+                        joined before the project starts or after it ends.
+                        Backend enforces the same window — these attrs
+                        prevent the picker from showing impossible
+                        choices in the first place. */}
                     <div className="grid grid-cols-12 gap-2">
                       <div className="col-span-3">
                         <label className={LABEL_CLS}>Joined Date</label>
@@ -639,6 +779,8 @@ export function ProjectModal({
                           className={INPUT_CLS}
                           value={draft.assigned_date}
                           onChange={(e) => updateDraft(draft.tempId, "assigned_date", e.target.value)}
+                          min={startDate || "2000-01-01"}
+                          max={expectedEndDate || "2099-12-31"}
                         />
                       </div>
                     </div>
