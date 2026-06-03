@@ -1489,10 +1489,43 @@ def update_user(
     #   - mentor assigned for the first time   (None → X)
     #   - mentor reassigned                    (X → Y)
     #   - mentor unassigned                    (X → None)
-    # The new mentor is told they got a mentee; the mentee is told who
-    # their mentor is now (or that they have none).
+    # Three audiences:
+    #   - the OLD mentor learns the mentee is off their roster
+    #     (only when there WAS an old mentor — None → X has no old
+    #     mentor to notify),
+    #   - the NEW mentor learns a mentee was assigned to them
+    #     (only when there IS a new mentor — X → None has nobody to
+    #     tell),
+    #   - the mentee is told who their mentor is now (or that they
+    #     have none).
+    #
+    # Deactivation / role-change orphaning paths go through
+    # `_orphan_mentees` instead and don't reach this block — they handle
+    # their own fan-out (mentees + HR). The departing mentor isn't
+    # notified there because they can't log in (deactivation) or the
+    # framing is "your role is gone" rather than per-mentee.
     new_mentor_id = user.mentor_id
     if "mentor_id" in update_data and new_mentor_id != old_mentor_id:
+        if old_mentor_id is not None:
+            old_mentor = db.query(User).filter(
+                User.id == old_mentor_id
+            ).first()
+            if old_mentor and not old_mentor.is_deleted:
+                notify(
+                    db,
+                    org_id=current_user.org_id,
+                    recipient_id=old_mentor.id,
+                    sender_id=current_user.id,
+                    module="admin",
+                    entity_type="user",
+                    entity_id=user.id,
+                    message=f"{user.full_name} is no longer your mentee.",
+                    entity_url="/mentees",
+                    background_tasks=background_tasks,
+                    send_email=True,
+                    email_subject="Mentee removed from your roster",
+                )
+
         if new_mentor_id is not None:
             new_mentor = db.query(User).filter(User.id == new_mentor_id).first()
             if new_mentor:
