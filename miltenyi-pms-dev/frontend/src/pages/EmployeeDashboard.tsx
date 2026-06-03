@@ -1,20 +1,22 @@
 /**
  * EmployeeDashboard — landing page for Employee, PM, and any role without
- * direct mentees. Answers the two recurring employee questions:
- *
- *   "What do I owe?"   → S1 My Action Items.
- *   "How am I doing?"  → S3 My Annual Goals (funnel + completion),
- *                        S4 My Annual Review.
+ * direct mentees. Answers the "how am I doing?" question via:
+ *   - S3 My Annual Goals (funnel + completion)
+ *   - S4 My Annual Review
  *
  * Two cycle cards anchor the page at the top so the rest of the
  * numbers read against the right time horizon:
  *   - Active Project Cycle (left)  — H1/H2/Q1..Q4, used by project reviews.
  *   - Active Goal Cycle (right)    — FY span, used by annual goals.
  *
- * PMs land here too: their pending project-review queue surfaces inside
- * ActionItemsWidget via DashboardSummary.project_reviews_pending_primary
- * — no PM-specific card is needed. A PM who also mentors gets routed to
- * MentorDashboard instead (see Dashboard.tsx).
+ * NOTE: The old "My Action Items" widget was removed product-wide —
+ * users now reach pending work through the per-feature pages (My Goals,
+ * My Reviews, Project Reviews) and the notifications dropdown. PMs
+ * accordingly see only the Active Cycles strip on their landing page;
+ * their pending project-review queue lives on /project-reviews.
+ *
+ * A PM who also mentors gets routed to MentorDashboard instead (see
+ * Dashboard.tsx).
  *
  * Owns one fetch (/dashboard/summary) and passes the result to each
  * widget. Skeletons render in place per card so the grid is stable
@@ -29,7 +31,6 @@ import { useSnackbar } from "@/hooks/useSnackbar";
 import { dashboardService } from "@/services/dashboard.service";
 import { profileService } from "@/services/profile.service";
 import { getErrorMessage } from "@/utils/errors";
-import { ActionItemsWidget } from "@/components/dashboard/ActionItemsWidget";
 import { ActiveCyclesCard } from "@/components/dashboard/ActiveCyclesCard";
 import { GoalsWidget } from "@/components/dashboard/GoalsWidget";
 import { MyAnnualReviewWidget } from "@/components/dashboard/MyAnnualReviewWidget";
@@ -95,32 +96,22 @@ export function EmployeeDashboard() {
       </div>
 
       {isPM ? (
-        /* PM layout — streamlined single row, two columns.
-           Active Cycles (FY + Project Review Cycle) on the left,
-           Action Items (their pending project reviews) on the
-           right. Goals + Annual Review rows aren't rendered for
-           PMs (Role enum: no goals, never rated), so collapsing
-           the cycle + action-items pair into one row instead of
-           two stacked full-width cards reads denser without
-           losing anything. MyMentorWidget isn't rendered for the
-           PM case — PMs typically don't have a mentor in this
-           product; the rare PM-with-mentor can read mentor info
-           on /profile. */
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          {summary ? (
-            <ActiveCyclesCard
-              activeCycle={summary.active_cycle}
-              blocks={["fy", "project"]}
-            />
-          ) : (
-            <CardSkeleton />
-          )}
-          {summary ? (
-            <ActionItemsWidget summary={summary} />
-          ) : (
-            <CardSkeleton />
-          )}
-        </div>
+        /* PM layout — just the Active Cycles strip. Goals + Annual
+           Review rows aren't rendered for PMs (Role enum: no goals,
+           never rated). The Action Items widget used to round this
+           page out for PMs but has been removed product-wide; the
+           pending project-review queue still lives on
+           /project-reviews. MyMentorWidget isn't rendered either —
+           PMs typically don't have a mentor in this product; the
+           rare PM-with-mentor can read mentor info on /profile. */
+        summary ? (
+          <ActiveCyclesCard
+            activeCycle={summary.active_cycle}
+            blocks={["fy", "project"]}
+          />
+        ) : (
+          <CardSkeleton />
+        )
       ) : (
         <>
           {/* Row 1: My Mentor (left) | Active Cycles (right). Both
@@ -143,7 +134,11 @@ export function EmployeeDashboard() {
             )}
           </div>
 
-          {/* Row 3: Annual Goals (funnel + completion) | Annual Review. */}
+          {/* Row 2: Annual Goals (funnel + completion) | Annual
+              Review. The page used to have a bottom-row Action Items
+              widget below this; both were removed together when the
+              widget was retired product-wide (users reach pending
+              work through the per-feature pages + notifications). */}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {summary ? <GoalsWidget summary={summary} /> : <CardSkeleton />}
             {summary ? (
@@ -152,13 +147,6 @@ export function EmployeeDashboard() {
               <CardSkeleton />
             )}
           </div>
-
-          {/* Row 4: full-width Action Items — the personal queue. */}
-          {summary ? (
-            <ActionItemsWidget summary={summary} />
-          ) : (
-            <CardSkeleton />
-          )}
         </>
       )}
     </div>

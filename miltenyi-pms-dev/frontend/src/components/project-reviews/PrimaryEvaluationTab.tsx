@@ -202,11 +202,10 @@ export function PrimaryEvaluationTab() {
   const [sort, setSort] = useState<SortState<EvalSortKey> | null>(null);
 
   // ── URL state ──────────────────────────────────────────────────────
-  // Read deep-link params on first mount and seed filter state. Today's
-  // senders:
-  //   • ActionItemsWidget "Project reviews to write" → ?status=pending
-  //   • Future: dashboard cards may carry ?fy_year= / ?period= or the
-  //     legacy `?cycle=` shape (still honoured for back-compat).
+  // Read deep-link params on first mount and seed filter state. Senders
+  // include shared links, email/notification deep-links, and any
+  // dashboard cards that carry ?status= / ?fy_year= / ?period= or the
+  // legacy `?cycle=` shape (still honoured for back-compat).
   // Write-back mirrors the current filter selection to URL so refresh
   // and share-link preserve the view. Both effects gated on the same
   // ref so the first render's empty/default state can't clobber URL

@@ -399,9 +399,9 @@ export function AnnualGoals() {
 
   // Employee My-Goals tab URL reader + writer. Mirrors approvalFilter
   // (-> ?status=) + yearFilter (-> ?fy=) so refresh + share-link
-  // preserves filter state, and dashboard deep-links from
-  // ActionItemsWidget ("?status=changes_requested" /
-  // "?status=draft") seed the right subset on first paint.
+  // preserves filter state, and any deep-links carrying ?status=
+  // (e.g. "?status=changes_requested" / "?status=draft" from emails or
+  // shared URLs) seed the right subset on first paint.
   // Search query is intentionally NOT URL-synced — typing-into-URL
   // would be jarring at every keystroke and the search is debounced
   // already on the data side; refresh forfeits the in-progress
