@@ -457,8 +457,40 @@ def _orphan_mentees(
             reason=reason,
         )
 
-    # Notify all HR_MyOrg users so the dashboard's new orphan bucket
-    # gets human attention. One notification per HR user, in-app + email.
+    # Shared phrasing for the mentor's exit reason — used by both the
+    # mentee notification (below) and the HR fan-out further down so
+    # the two surfaces describe the event the same way.
+    reason_phrase = (
+        "deactivated" if reason == "deactivation" else "no longer a Mentor"
+    )
+
+    # Notify the mentees themselves so they aren't left wondering why
+    # their mentor disappeared from the dashboard / why their reviews
+    # froze. Same message body for every recipient — they all lost the
+    # same mentor — so notify_many is the right primitive. In-app only
+    # to match the HR fan-out style (no send_email).
+    #
+    # `sender_id=admin.id` keeps the audit trail honest ("HR did this")
+    # rather than attributing the notification to the system or to the
+    # departing mentor.
+    mentee_ids = [m.id for m in mentees]
+    notify_many(
+        db,
+        org_id=departing_mentor.org_id,
+        recipient_ids=mentee_ids,
+        sender_id=admin.id,
+        module="admin",
+        entity_type=f"mentor_{reason}",
+        entity_id=departing_mentor.id,
+        message=(
+            f"Your mentor {departing_mentor.full_name} is {reason_phrase}. "
+            f"HR will reassign you to a new mentor soon."
+        ),
+        entity_url="/dashboard",
+    )
+
+    # Notify all HR_MyOrg users so the dashboard's orphan bucket gets
+    # human attention. One notification per HR user, in-app.
     hr_user_ids = [
         uid for (uid,) in db.query(User.id)
         .filter(
@@ -471,9 +503,6 @@ def _orphan_mentees(
     if hr_user_ids:
         count = len(mentees)
         mentee_word = "mentee" if count == 1 else "mentees"
-        reason_phrase = (
-            "deactivated" if reason == "deactivation" else "no longer a Mentor"
-        )
         notify_many(
             db,
             org_id=departing_mentor.org_id,
