@@ -1,10 +1,12 @@
 """
 Dashboard Schemas — The Dashboard Page's API Contract.
 
-Goal progress is now tracked entirely through criteria completion —
-there is no separate employee-controlled progress state.  The dashboard
-therefore summarises annual goals by APPROVAL state, which reflects
-where the goal sits in the mentor-approval workflow.
+Annual goals are summarised on the dashboard by APPROVAL state, which
+reflects where the goal sits in the mentor-approval workflow + the
+post-approval half-cycle review machinery. The per-criterion progress
+tracking was retired in the goal-criteria deprecation PR — progress
+through the cycle is now visible via approval_status transitions and
+the half-cycle review history on each goal's detail page.
 
 The payload is role-additive: every authenticated user gets the
 "Personal" fields filled in (goals, own annual review, project review
@@ -27,13 +29,16 @@ class DashboardSummary(BaseModel):
     One GET, one response, all widgets fed at once.
     """
     # ── Personal: Annual Goals ───────────────────────────────────────
+    # `approved_goals` rolls every post-approval state (APPROVED + the 8
+    # H1/H2/Q1..Q4 self/mentor-reviewed states — see POST_APPROVAL_STATES
+    # in goal_models.py) into a single bucket. The frontend dashboard
+    # labels this bucket "Active Goals" to convey "approved + still
+    # progressing through cycle reviews" without listing every state.
     total_goals: int = 0
     draft_goals: int = 0
     submitted_goals: int = 0
     approved_goals: int = 0
     changes_requested_goals: int = 0
-    # Criteria-driven average completion across approved goals (0–100).
-    completion_percent: int = 0
 
     # ── Personal: Active Cycle ───────────────────────────────────────
     active_cycle: Optional[str] = None

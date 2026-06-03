@@ -7,11 +7,9 @@ import {
 } from "lucide-react";
 import type {
   Goal,
-  Criterion,
   SelfReviewCycleHalf,
 } from "@/services/goal.service";
 import { ApprovalStatusBadge } from "@/components/goals/ApprovalStatusBadge";
-import { CriteriaChecklist } from "@/components/goals/CriteriaChecklist";
 import { SelfReviewCycleMenu } from "@/components/goals/SelfReviewCycleMenu";
 import { formatFyYearSpan } from "@/utils/fy";
 import { isPostApproved } from "@/utils/goalStatus";
@@ -21,7 +19,6 @@ interface AnnualGoalCardProps {
   readonly onEdit: (goal: Goal) => void;
   readonly onSubmit: (goal: Goal) => void;
   readonly onSelfReview: (goal: Goal, cycleHalf: SelfReviewCycleHalf) => void;
-  readonly onCriterionUpdate: (goalId: number, updated: Criterion) => void;
   /** When false, edit is blocked — admin has closed the annual-goal window. */
   readonly editGateOpen: boolean;
 }
@@ -31,7 +28,6 @@ export function AnnualGoalCard({
   onEdit,
   onSubmit,
   onSelfReview,
-  onCriterionUpdate,
   editGateOpen,
 }: AnnualGoalCardProps) {
   const isDraft = goal.approval_status === "draft";
@@ -108,18 +104,6 @@ export function AnnualGoalCard({
             <p className="text-xs text-amber-800">{goal.manager_feedback}</p>
           </div>
         </div>
-      )}
-
-      {/* Criteria checklist */}
-      {goal.criteria.length > 0 && (
-        <CriteriaChecklist
-          criteria={goal.criteria}
-          approvalStatus={goal.approval_status}
-          progressPercent={goal.progress_percent}
-          onCriterionUpdate={(updated: Criterion) =>
-            onCriterionUpdate(goal.id, updated)
-          }
-        />
       )}
 
       {/* Approval status badge */}

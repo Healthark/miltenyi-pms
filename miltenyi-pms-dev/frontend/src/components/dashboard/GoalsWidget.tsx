@@ -2,19 +2,15 @@
  * GoalsWidget — mentee-facing companion to HR's GoalApprovalFunnelCard.
  *
  * Visual treatment mirrors the HR card: legend on the left, donut on
- * callout. Where HR sees a 3-bucket public view, the mentee sees their
+ * the right. HR sees a 3-bucket public view; the mentee sees their
  * own work including drafts — four buckets total.
  *
- * Two signals coexist:
- *   1. Approval funnel (donut + legend + insight) — where each goal
- *      currently sits in the submit→approve flow.
- *   2. Criteria-driven completion bar across approved goals — how far
- *      into the actual work the mentee is, after their goals were
- *      locked in. This is the one signal HR doesn't see.
- *
- * Insight tiers (most-actionable first): revise (red) → submit drafts
- * (amber) → wait on mentor (brand) → all-clear with completion (green)
- * → empty state (neutral) when the mentee has no goals yet.
+ * The donut's centre + the "Approved" legend row both display
+ * `approved_goals`, which rolls APPROVED + every post-approval cycle-
+ * review state (h1/h2/q1..q4 self/mentor-reviewed) into one count.
+ * The legend label reads "Active Goals" rather than "Approved" to
+ * convey "approved AND progressing through cycle reviews" — see the
+ * tooltip on the legend row.
  */
 
 import { Target } from "lucide-react";
@@ -37,6 +33,9 @@ const SEGMENT_COLORS = {
   approved: "#34d399",
 } as const;
 
+const ACTIVE_GOALS_TOOLTIP =
+  "Goals past the approval gate, including those progressing through H1 / H2 reviews.";
+
 export function GoalsWidget({ summary }: GoalsWidgetProps) {
   const {
     total_goals,
@@ -44,7 +43,6 @@ export function GoalsWidget({ summary }: GoalsWidgetProps) {
     submitted_goals,
     approved_goals,
     changes_requested_goals,
-    completion_percent,
   } = summary;
 
   const hasData = total_goals > 0;
@@ -73,88 +71,59 @@ export function GoalsWidget({ summary }: GoalsWidgetProps) {
       {!hasData ? (
         <EmptyBody />
       ) : (
-        <>
-          {/* Funnel: legend (left) + donut (right) */}
-          <div className="flex items-center gap-2">
-            <ul className="flex-1 space-y-2 text-[13px]">
-              <LegendItem
-                dotColor={SEGMENT_COLORS.draft}
-                count={draft_goals}
-                label="Draft"
-              />
-              <LegendItem
-                dotColor={SEGMENT_COLORS.submitted}
-                count={submitted_goals}
-                label="Awaiting Approval"
-              />
-              <LegendItem
-                dotColor={SEGMENT_COLORS.changes_requested}
-                count={changes_requested_goals}
-                label="Changes Requested"
-              />
-              <LegendItem
-                dotColor={SEGMENT_COLORS.approved}
-                count={approved_goals}
-                label="Approved"
-              />
-            </ul>
-            <DonutChart
-              segments={[
-                {
-                  label: "Draft",
-                  value: draft_goals,
-                  color: SEGMENT_COLORS.draft,
-                },
-                {
-                  label: "Awaiting Approval",
-                  value: submitted_goals,
-                  color: SEGMENT_COLORS.submitted,
-                },
-                {
-                  label: "Changes Requested",
-                  value: changes_requested_goals,
-                  color: SEGMENT_COLORS.changes_requested,
-                },
-                {
-                  label: "Approved",
-                  value: approved_goals,
-                  color: SEGMENT_COLORS.approved,
-                },
-              ]}
-              centerPrimary={String(approved_goals)}
-              centerSecondary={`/${total_goals}`}
-              ariaLabel={`${approved_goals} of ${total_goals} annual goals approved`}
+        /* Funnel: legend (left) + donut (right) */
+        <div className="flex items-center gap-2">
+          <ul className="flex-1 space-y-2 text-[13px]">
+            <LegendItem
+              dotColor={SEGMENT_COLORS.draft}
+              count={draft_goals}
+              label="Draft"
             />
-          </div>
-
-          {/* Criteria-driven completion bar — only meaningful with
-              approved goals to measure progress against. */}
-          {approved_goals > 0 && (
-            <div>
-              <div className="mb-1 flex items-center justify-between">
-                <span className="text-[12px] text-text-muted">
-                  Progress on approved goals
-                </span>
-                <span className="text-[12px] font-medium text-text-main tabular-nums">
-                  {completion_percent}%
-                </span>
-              </div>
-              <div
-                className="h-1.5 w-full rounded-full bg-slate-100"
-                role="progressbar"
-                aria-valuenow={completion_percent}
-                aria-valuemin={0}
-                aria-valuemax={100}
-              >
-                <div
-                  className="h-1.5 rounded-full bg-brand transition-all duration-500"
-                  style={{ width: `${completion_percent}%` }}
-                />
-              </div>
-            </div>
-          )}
-
-        </>
+            <LegendItem
+              dotColor={SEGMENT_COLORS.submitted}
+              count={submitted_goals}
+              label="Awaiting Approval"
+            />
+            <LegendItem
+              dotColor={SEGMENT_COLORS.changes_requested}
+              count={changes_requested_goals}
+              label="Changes Requested"
+            />
+            <LegendItem
+              dotColor={SEGMENT_COLORS.approved}
+              count={approved_goals}
+              label="Active Goals"
+              tooltip={ACTIVE_GOALS_TOOLTIP}
+            />
+          </ul>
+          <DonutChart
+            segments={[
+              {
+                label: "Draft",
+                value: draft_goals,
+                color: SEGMENT_COLORS.draft,
+              },
+              {
+                label: "Awaiting Approval",
+                value: submitted_goals,
+                color: SEGMENT_COLORS.submitted,
+              },
+              {
+                label: "Changes Requested",
+                value: changes_requested_goals,
+                color: SEGMENT_COLORS.changes_requested,
+              },
+              {
+                label: "Active Goals",
+                value: approved_goals,
+                color: SEGMENT_COLORS.approved,
+              },
+            ]}
+            centerPrimary={String(approved_goals)}
+            centerSecondary={`/${total_goals}`}
+            ariaLabel={`${approved_goals} of ${total_goals} annual goals active`}
+          />
+        </div>
       )}
     </article>
   );
@@ -178,13 +147,18 @@ function LegendItem({
   dotColor,
   count,
   label,
+  tooltip,
 }: {
   readonly dotColor: string;
   readonly count: number;
   readonly label: string;
+  readonly tooltip?: string;
 }) {
   return (
-    <li className="flex items-center gap-2">
+    <li
+      className="flex items-center gap-2"
+      title={tooltip}
+    >
       <span
         className="h-2 w-2 shrink-0 rounded-full"
         style={{ backgroundColor: dotColor }}

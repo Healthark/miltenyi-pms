@@ -22,7 +22,6 @@ import {
   type GoalUpdatePayload,
   type GoalSelfReviewPayload,
   type SelfReviewCycleHalf,
-  type Criterion,
   type ApprovalStatus,
 } from "@/services/goal.service";
 import { useAuth } from "@/hooks/useAuth";
@@ -39,7 +38,6 @@ import { GoalReviewDetailsModal } from "@/components/goals/GoalReviewDetailsModa
 import { SelfReviewCycleMenu } from "@/components/goals/SelfReviewCycleMenu";
 import { TeamGoalsTab } from "@/components/goals/TeamGoalsTab";
 import { ApprovalStatusBadge } from "@/components/goals/ApprovalStatusBadge";
-import { CriteriaChecklist } from "@/components/goals/CriteriaChecklist";
 import { RoleExpectationsModal } from "@/components/goals/RoleExpectationsModal";
 import { StringCombobox } from "@/components/common/StringCombobox";
 import { ClearFiltersButton } from "@/components/common/ClearFiltersButton";
@@ -182,16 +180,6 @@ function buildAllGoalsGroups(goals: readonly TeamGoal[]): AllGoalsEmployeeGroup[
     if (nameCmp !== 0) return nameCmp;
     return (b.fy_year ?? 0) - (a.fy_year ?? 0);
   });
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function recomputeProgress(criteria: Criterion[]): number {
-  if (criteria.length === 0) return 0;
-  const completed = criteria.filter((c) => c.is_completed).length;
-  return Math.round((completed / criteria.length) * 100);
 }
 
 // ---------------------------------------------------------------------------
@@ -710,47 +698,6 @@ export function AnnualGoals() {
     }
   };
 
-  // Criterion toggle — preserves the original "instant client-side
-  // feedback" behaviour, but now writes to the cache directly via
-  // setQueryData instead of a local useState. CriteriaChecklist still
-  // calls goalService.updateCriterion itself; this handler just splices
-  // the response into the My Goals cache entry.
-  //
-  // Why setQueryData (not invalidateQueries) here: the criterion toggle
-  // is a HOT PATH — every checkbox click would otherwise trigger a full
-  // /goals refetch. Direct cache mutation keeps the UI responsive and
-  // saves bandwidth. The trade is: if the server normalizes the row
-  // somehow we can miss the normalization, but criterion writes are
-  // simple enough that this is safe.
-  //
-  // The dashboard summary's completion_percent ALSO depends on
-  // criterion state, so we invalidate dashboard alongside. That's a
-  // background refetch the user doesn't see (the dashboard isn't
-  // mounted while on /annual-goals).
-  const handleCriterionUpdate = useCallback(
-    (goalId: number, updated: Criterion) => {
-      queryClient.setQueryData<Goal[]>(
-        queryKeys.goals.mine("annual"),
-        (prev) => {
-          if (!prev) return prev;
-          return prev.map((g) => {
-            if (g.id !== goalId) return g;
-            const newCriteria = g.criteria.map((c) =>
-              c.id === updated.id ? updated : c,
-            );
-            return {
-              ...g,
-              criteria: newCriteria,
-              progress_percent: recomputeProgress(newCriteria),
-            };
-          });
-        },
-      );
-      void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
-    },
-    [queryClient],
-  );
-
   const availableYears = Array.from(
     new Set(goals.map((g) => g.fy_year).filter((y): y is number => y !== null)),
   ).sort((a, b) => b - a);
@@ -994,7 +941,6 @@ export function AnnualGoals() {
                       onEdit={openEdit}
                       onSubmit={handleSubmit}
                       onSelfReview={(g, half) => openSelfReview(g, half)}
-                      onCriterionUpdate={handleCriterionUpdate}
                       editGateOpen={annualGoalsEditEnabled}
                     />
                   ))}
@@ -1124,16 +1070,6 @@ export function AnnualGoals() {
                                           <p className="text-xs text-amber-800">{goal.manager_feedback}</p>
                                         </div>
                                       </div>
-                                    )}
-                                    {goal.criteria.length > 0 && (
-                                      <CriteriaChecklist
-                                        criteria={goal.criteria}
-                                        approvalStatus={goal.approval_status}
-                                        progressPercent={goal.progress_percent}
-                                        onCriterionUpdate={(updated: Criterion) =>
-                                          handleCriterionUpdate(goal.id, updated)
-                                        }
-                                      />
                                     )}
                                   </div>
                                 </td>

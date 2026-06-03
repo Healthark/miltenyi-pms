@@ -13,7 +13,7 @@
  *   - Static FY label + review status pill + "Fill Annual Review" CTA
  *   - Mentee's self review (rating + paragraph) when filed
  *   - Annual goals for the FY, each with H1 + H2 self/mentor review text
- *     side by side and criteria progress at the top
+ *     side by side in an expandable accordion
  *   - Project assignments grouped by half within the FY, each with
  *     performance group + PM eval excerpt
  *
@@ -247,9 +247,6 @@ function GoalSummaryCard({ goal }: { readonly goal: TeamGoal }) {
   const h1Mentor = goal.mentor_reviews.find((mr) => mr.cycle_half === "H1");
   const h2Mentor = goal.mentor_reviews.find((mr) => mr.cycle_half === "H2");
 
-  const completedCount = goal.criteria.filter((c) => c.is_completed).length;
-  const totalCriteria = goal.criteria.length;
-
   return (
     <article className="rounded-lg border border-border bg-surface shadow-sm">
       <button
@@ -276,25 +273,6 @@ function GoalSummaryCard({ goal }: { readonly goal: TeamGoal }) {
 
       {isExpanded && (
         <div className="px-4 pb-4 space-y-3 border-t border-border pt-3">
-          {totalCriteria > 0 && (
-            <div className="flex items-center gap-2">
-              <div className="h-1.5 w-32 rounded-full bg-slate-100 overflow-hidden">
-                <div
-                  className={`h-full rounded-full ${
-                    goal.progress_percent === 100
-                      ? "bg-green-500"
-                      : goal.progress_percent >= 50
-                        ? "bg-blue-500"
-                        : "bg-amber-500"
-                  }`}
-                  style={{ width: `${goal.progress_percent}%` }}
-                />
-              </div>
-              <span className="text-xs font-medium text-text-muted">
-                {completedCount}/{totalCriteria} key results · {goal.progress_percent}%
-              </span>
-            </div>
-          )}
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <HalfPanel half="H1" self={h1Self} mentor={h1Mentor} />
             <HalfPanel half="H2" self={h2Self} mentor={h2Mentor} />

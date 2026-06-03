@@ -15,11 +15,12 @@ import type { ProjectReviewResponse } from "@/services/project-review.service";
 
 export interface MenteeGoalsStats {
   total: number;
+  /** Rolls APPROVED + every post-approval cycle-review state into one
+   *  bucket — same semantics as DashboardSummary.approved_goals. */
   approved: number;
   submitted: number;
   draft: number;
   changes_requested: number;
-  avg_progress_percent: number;
 }
 
 export interface MenteeReviewStatus {

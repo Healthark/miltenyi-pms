@@ -30,7 +30,6 @@ from sqlalchemy.orm import aliased, joinedload
 from app.api.dependencies import DbSession, CurrentUser
 from app.models.goal_models import Goal, ApprovalStatus, GoalType, POST_APPROVAL_STATES
 from app.services.notification_service import notify
-from app.models.goal_criteria_models import GoalCriterion
 from app.models.goal_self_review_models import GoalSelfReview, SelfReviewCycleHalf
 from app.models.goal_mentor_review_models import GoalMentorReview
 from app.models.reference_models import Function, Designation
@@ -69,10 +68,10 @@ router = APIRouter()
 # ── Helpers ──────────────────────────────────────────────────────────
 
 def _get_goal_with_relations(db: DbSession, goal_id: int, org_id: int) -> Goal:
-    """Fetch a goal with eagerly loaded criteria + manager, scoped to the org."""
+    """Fetch a goal with eagerly loaded manager, scoped to the org."""
     goal = (
         db.query(Goal)
-        .options(joinedload(Goal.criteria), joinedload(Goal.manager))
+        .options(joinedload(Goal.manager))
         .filter(Goal.id == goal_id, Goal.org_id == org_id)
         .first()
     )
@@ -218,7 +217,7 @@ def list_goals(
     """
     query = (
         db.query(Goal)
-        .options(joinedload(Goal.manager), joinedload(Goal.criteria))
+        .options(joinedload(Goal.manager))
         .filter(
             Goal.org_id == current_user.org_id,
             Goal.user_id == current_user.id,
@@ -326,20 +325,6 @@ def create_goal(
         approval_status=ApprovalStatus.DRAFT.value,
     )
     db.add(new_goal)
-    db.flush()  # Generates new_goal.id required by criteria FK
-
-    if goal_in.criteria:
-        criteria_objects = [
-            GoalCriterion(
-                goal_id=new_goal.id,
-                org_id=current_user.org_id,
-                title=c.title,
-                sort_order=i,
-            )
-            for i, c in enumerate(goal_in.criteria)
-        ]
-        db.add_all(criteria_objects)
-
     db.commit()
     return _get_goal_with_relations(db, new_goal.id, current_user.org_id)
 
@@ -378,7 +363,6 @@ def list_team_goals(
             joinedload(Goal.owner).joinedload(User.function),
             joinedload(Goal.owner).joinedload(User.designation),
             joinedload(Goal.manager),
-            joinedload(Goal.criteria),
         )
         .filter(
             Goal.org_id == current_user.org_id,
@@ -725,7 +709,6 @@ def list_all_goals(
                 joinedload(Goal.owner).joinedload(User.function),
                 joinedload(Goal.owner).joinedload(User.designation),
                 joinedload(Goal.manager),
-                joinedload(Goal.criteria),
             )
             .filter(
                 Goal.org_id == current_user.org_id,
@@ -837,7 +820,7 @@ def get_goal(
     current_user: CurrentUser,
 ):
     """
-    Get a single goal by ID, including its nested criteria.
+    Get a single goal by ID, including its half-cycle review history.
     Access restricted to the owner, their mentor, or org Admins.
     """
     goal = _get_goal_with_relations(db, goal_id, current_user.org_id)

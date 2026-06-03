@@ -85,9 +85,10 @@ class Goal(Base):
     # Optional URL to a Google Drive folder or external reference document.
     attachment_url = Column(String, nullable=True)
 
-    # Approval status — controlled by the approval workflow.
-    # Progress tracking is driven entirely by criteria completion (progress_percent),
-    # so there is no separate employee-controlled progress state.
+    # Approval status — controlled by the approval workflow. Progress
+    # through the cycle is tracked via the H1/H2 self + mentor review
+    # rows attached to this goal (GoalSelfReview + GoalMentorReview);
+    # the goal's lifecycle is reflected in approval_status transitions.
     approval_status  = Column(String, default=ApprovalStatus.DRAFT.value, nullable=False)
     # Written by the manager when requesting changes; visible to the employee
     manager_feedback = Column(Text, nullable=True)
@@ -110,14 +111,6 @@ class Goal(Base):
 
     owner   = relationship("User", foreign_keys=[user_id], backref="goals")
     manager = relationship("User", foreign_keys=[manager_id])
-
-    criteria = relationship(
-        "GoalCriterion",
-        back_populates="goal",
-        cascade="all, delete-orphan",
-        order_by="GoalCriterion.sort_order",
-        lazy="joined",
-    )
 
     # 0..2 self-reviews per goal (one per fiscal-year half).
     # Always loaded together — they are small and the UI renders both rows

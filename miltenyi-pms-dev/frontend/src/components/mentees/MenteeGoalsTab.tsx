@@ -29,7 +29,6 @@ import { useConfirm } from "@/hooks/useConfirm";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
 import { TeamGoalCard } from "@/components/goals/TeamGoalCard";
 import { ApprovalStatusBadge } from "@/components/goals/ApprovalStatusBadge";
-import { CriteriaChecklist } from "@/components/goals/CriteriaChecklist";
 import { GoalSelfReviewModal } from "@/components/goals/GoalSelfReviewModal";
 import { SelfReviewCycleMenu } from "@/components/goals/SelfReviewCycleMenu";
 import { SortableHeader } from "@/components/SortableHeader";
@@ -617,14 +616,6 @@ export function MenteeGoalsTab({ goals, menteeName, menteeId }: MenteeGoalsTabPr
                                   </p>
                                 </div>
                               </div>
-                            )}
-                            {goal.criteria.length > 0 && (
-                              <CriteriaChecklist
-                                criteria={goal.criteria}
-                                approvalStatus={goal.approval_status}
-                                progressPercent={goal.progress_percent}
-                                readOnly
-                              />
                             )}
                           </div>
                         </td>

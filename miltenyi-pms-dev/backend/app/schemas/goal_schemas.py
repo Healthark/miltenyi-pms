@@ -1,11 +1,13 @@
 """
-Goal Schemas — Updated for Story 3.1 (Criteria Breakdown) and 3.3 (Progress Tracking).
+Goal Schemas — annual + regular goals + their half-cycle reviews.
 
-Changes from previous version:
-    - Added CriterionCreate, CriterionUpdate, CriterionResponse
-    - GoalCreate now accepts an optional `criteria` array for transactional insert
-    - GoalResponse now includes nested `criteria` list + computed `progress_percent`
-    - TeamGoalResponse inherits the new criteria fields automatically
+Lifecycle:
+    DRAFT → PENDING_APPROVAL → APPROVED → {H1,H2}_SELF_REVIEWED →
+    {H1,H2}_MENTOR_REVIEWED. Progress through the cycle is reflected in
+    approval_status transitions + the GoalSelfReview / GoalMentorReview
+    rows attached to each goal. The per-criterion checklist was retired
+    in the goal-criteria deprecation PR — goals now carry only the
+    parent objective text + the half-cycle review history.
 """
 
 from pydantic import BaseModel, Field, ConfigDict, computed_field
@@ -13,43 +15,6 @@ from typing import Optional
 from datetime import datetime
 from app.models.goal_models import ApprovalStatus, GoalType
 from app.models.goal_self_review_models import SelfReviewCycleHalf
-
-
-# =====================================================================
-# CRITERION SCHEMAS
-# =====================================================================
-
-class CriterionCreate(BaseModel):
-    """A single key result sent inside the GoalCreate payload."""
-    title: str = Field(..., min_length=1, max_length=500)
-    sort_order: int = 0
-
-
-class CriterionUpdate(BaseModel):
-    """
-    Update a single criterion — used for both metadata edits
-    and completion toggling (Story 3.3).
-    """
-    title: Optional[str] = Field(default=None, min_length=1, max_length=500)
-    sort_order: Optional[int] = None
-    is_completed: Optional[bool] = None
-    proof_comments: Optional[str] = None
-
-
-class CriterionResponse(BaseModel):
-    """What the frontend receives for each criterion."""
-    id: int
-    goal_id: int
-    title: str
-    sort_order: int
-    is_completed: bool
-    completed_at: Optional[datetime] = None
-    proof_comments: Optional[str] = None
-    proof_attachment_count: int = 0
-    created_at: datetime
-    updated_at: Optional[datetime] = None
-
-    model_config = ConfigDict(from_attributes=True)
 
 
 # =====================================================================
@@ -74,9 +39,6 @@ class GoalCreate(GoalBase):
     goal_type: GoalType = GoalType.REGULAR
     # Optional external reference (e.g. Google Drive folder URL).
     attachment_url: Optional[str] = None
-    # Optional criteria array — if provided, backend inserts them
-    # transactionally with the parent goal in a single commit.
-    criteria: list[CriterionCreate] = []
 
 
 class GoalUpdate(BaseModel):
@@ -229,9 +191,6 @@ class GoalResponse(GoalBase):
     # reading the mentee's self-review for that half.
     mentor_reviews: list[GoalMentorReviewResponse] = []
 
-    # Nested criteria — populated from the SQLAlchemy relationship
-    criteria: list[CriterionResponse] = []
-
     @computed_field
     @property
     def fy_year(self) -> Optional[int]:
@@ -254,19 +213,6 @@ class GoalResponse(GoalBase):
             if token.isdigit() and len(token) == 4:
                 return int(token)
         return None
-
-    @computed_field
-    @property
-    def progress_percent(self) -> int:
-        """
-        Computed progress: (completed criteria / total criteria) * 100.
-        Returns 0 if no criteria exist (avoids division by zero).
-        The frontend uses this for progress bars and the dashboard widget.
-        """
-        if not self.criteria:
-            return 0
-        completed = sum(1 for c in self.criteria if c.is_completed)
-        return round((completed / len(self.criteria)) * 100)
 
     model_config = ConfigDict(from_attributes=True)
 
