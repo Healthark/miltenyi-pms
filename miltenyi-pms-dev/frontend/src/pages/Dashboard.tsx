@@ -16,7 +16,7 @@ import { EmployeeDashboard } from "@/pages/EmployeeDashboard";
  * This avoids a layout flash from a "deciding…" intermediate state.
  *
  * PMs land on EmployeeDashboard by default (their pending project reviews
- * surface inside ActionItemsWidget); a PM who also has direct mentees
+ * are reached via /project-reviews); a PM who also has direct mentees
  * gets MentorDashboard via the has_mentees branch.
  */
 export function Dashboard() {

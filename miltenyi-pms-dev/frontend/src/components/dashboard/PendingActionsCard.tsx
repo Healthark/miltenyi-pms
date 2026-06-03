@@ -234,10 +234,10 @@ function ChaseList({
         {sublabel}
       </p>
       {/* Thin row separators match the divide-y pattern used by every
-          other in-app list (NotificationDropdown, ActionItemsWidget,
-          MentorCoverageCard). Without them five+ user rows visually
-          run together — the previous `gap-1` only gave a 4px breath
-          which wasn't enough on a cramped HR dashboard. */}
+          other in-app list (NotificationDropdown, MentorCoverageCard).
+          Without them five+ user rows visually run together — the
+          previous `gap-1` only gave a 4px breath which wasn't enough
+          on a cramped HR dashboard. */}
       <ul className="flex flex-col divide-y divide-border/50">
         {users.map((u) => {
           const rowContent = (

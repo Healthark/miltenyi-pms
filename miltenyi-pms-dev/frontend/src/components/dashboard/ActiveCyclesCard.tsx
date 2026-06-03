@@ -111,11 +111,10 @@ export function ActiveCyclesCard({
     <article className="rounded-xl border border-border bg-surface p-5 shadow-sm flex flex-col gap-4 h-full justify-center">
       {/* `justify-center` centers the cycle blocks vertically inside
           the card so when the parent grid stretches it to match a
-          taller neighbour (PendingActionsCard on HR_MyOrg's grid;
-          ActionItemsWidget on the PM dashboard), the empty space
-          distributes evenly top + bottom rather than dumping a
-          large gap at the bottom. With no stretch the card sizes to
-          content and this is a no-op. */}
+          taller neighbour (e.g. PendingActionsCard on HR_MyOrg's
+          grid), the empty space distributes evenly top + bottom
+          rather than dumping a large gap at the bottom. With no
+          stretch the card sizes to content and this is a no-op. */}
       {/* Body — N cycle blocks side-by-side with a thin vertical
           divider between them on sm+ screens. Stacks on the smallest
           viewports so values stay readable.

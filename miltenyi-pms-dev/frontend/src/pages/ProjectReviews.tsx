@@ -338,12 +338,12 @@ export function ProjectReviews() {
   // Employee My-Reviews tab URL reader + writer. Mirrors the
   // selectedCycle / statusFilter / projectFilter / pmFilter state to
   // URL so refresh + share-link preserves the view, AND honours
-  // dashboard deep-links from ActionItemsWidget
-  // ("/project-reviews?status=pending") which previously landed the
-  // Employee on an unfiltered view because no reader existed for
-  // their filter state. Search query is intentionally NOT URL-synced
-  // (typing-into-URL is jarring; debouncing happens server-side
-  // anyway).
+  // deep-links carrying ?status= (e.g.
+  // "/project-reviews?status=pending" from emails or shared URLs)
+  // which would otherwise land the Employee on an unfiltered view
+  // because no reader existed for their filter state. Search query
+  // is intentionally NOT URL-synced (typing-into-URL is jarring;
+  // debouncing happens server-side anyway).
   const myReviewsDefaultedRef = useRef(false);
   useEffect(() => {
     if (!isEmployee) return;
