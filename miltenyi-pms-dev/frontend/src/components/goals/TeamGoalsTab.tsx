@@ -96,6 +96,7 @@ function FeedbackModal({
             onChange={(e) => setFeedback(e.target.value)}
             placeholder="e.g. Please make the target more specific and measurable."
             className="w-full resize-none rounded-lg border border-border bg-white px-3 py-2 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-brand"
+            maxLength={5000}
           />
         </div>
 

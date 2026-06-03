@@ -634,7 +634,6 @@ def seed_database() -> None:
                     self_overall_review=SOLID_SELF, self_performance_rating=2,
                     mentor_overall_review=SOLID_MENTOR, mentor_performance_rating=2,
                     management_performance_rating=2, final_performance_rating=2,
-                    management_comments="Solid contribution; continue building depth.",
                     final_rating_enabled=True,
                 )
             db.commit()
@@ -1251,13 +1250,6 @@ def seed_database() -> None:
             bob_ar.mentor_performance_rating = 1
             bob_ar.management_performance_rating = 1
             bob_ar.final_performance_rating = 1
-            bob_ar.management_comments = (
-                "Calibrated at the top of the Regulatory Affairs Manager "
-                "band. Mentor rating endorsed without adjustment. "
-                "Promotion to Regulatory Affairs Lead track flagged for "
-                "the FY26-27 mid-year review. Stretch scope: lead the "
-                "FY26-27 IND filing programme end-to-end."
-            )
             bob_ar.final_rating_enabled = True
             db.commit()
             print("  [+] Bob — FY25-26 annual review upgraded to COMPLETED at rating 1 (demo-grade)")

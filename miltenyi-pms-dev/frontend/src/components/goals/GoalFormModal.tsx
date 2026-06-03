@@ -56,6 +56,11 @@ const INPUT_CLS =
   "w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-brand";
 const LABEL_CLS = "block text-xs font-medium text-text-muted mb-1";
 
+// Backend caps — keep in sync with backend/app/schemas/goal_schemas.py.
+const MAX_TITLE_LENGTH = 500;
+const MAX_DESC_LENGTH = 5000;
+const MAX_NOTES_LENGTH = 5000;
+
 /**
  * The parent conditionally mounts this component
  * (`{showModal && <GoalFormModal …>}`) so each open is a fresh React
@@ -154,14 +159,26 @@ export function GoalFormModal({
               value={form.title}
               onChange={(e) => set("title", e.target.value)}
               placeholder="e.g. Complete onboarding certification"
+              maxLength={MAX_TITLE_LENGTH}
             />
           </div>
 
           {/* Description */}
           <div>
-            <label htmlFor="goal-desc" className={LABEL_CLS}>
-              Goal Description *
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label htmlFor="goal-desc" className="text-xs font-medium text-text-muted">
+                Goal Description *
+              </label>
+              <span
+                className={`text-[10px] tabular-nums ${
+                  form.description.length > MAX_DESC_LENGTH
+                    ? "text-red-600 font-semibold"
+                    : "text-text-muted"
+                }`}
+              >
+                {form.description.length}/{MAX_DESC_LENGTH}
+              </span>
+            </div>
             <textarea
               id="goal-desc"
               rows={3}
@@ -169,6 +186,7 @@ export function GoalFormModal({
               value={form.description}
               onChange={(e) => set("description", e.target.value)}
               placeholder="What does success look like?"
+              maxLength={MAX_DESC_LENGTH}
             />
           </div>
 
@@ -220,6 +238,7 @@ export function GoalFormModal({
                 value={form.progress_notes}
                 onChange={(e) => set("progress_notes", e.target.value)}
                 placeholder='e.g. "Completed module 3 on April 9th. Certificate attached in Drive."'
+                maxLength={MAX_NOTES_LENGTH}
               />
             </div>
           )}

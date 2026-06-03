@@ -10,11 +10,21 @@ Lifecycle:
     parent objective text + the half-cycle review history.
 """
 
-from pydantic import BaseModel, Field, ConfigDict, computed_field
-from typing import Optional
+from pydantic import BaseModel, Field, ConfigDict, computed_field, field_validator
+from typing import Literal, Optional
 from datetime import datetime
 from app.models.goal_models import ApprovalStatus, GoalType
 from app.models.goal_self_review_models import SelfReviewCycleHalf
+
+
+# ── Shared validators ─────────────────────────────────────────────────
+#
+# Same `_strip_or_none` pattern PR #83 introduced in project_schemas.py.
+# Lightweight: strips whitespace from incoming strings before downstream
+# min_length / max_length checks run. Non-string values pass through so
+# Optional[int] / Optional[datetime] fields aren't disturbed.
+def _strip_or_none(v: object) -> object:
+    return v.strip() if isinstance(v, str) else v
 
 
 # =====================================================================
@@ -22,10 +32,19 @@ from app.models.goal_self_review_models import SelfReviewCycleHalf
 # =====================================================================
 
 class GoalBase(BaseModel):
-    title: str = Field(..., description="The main objective of the goal")
-    description: Optional[str] = None
+    title: str = Field(
+        ..., min_length=1, max_length=500,
+        description="The main objective of the goal",
+    )
+    description: Optional[str] = Field(default=None, max_length=5000)
     start_date: Optional[datetime] = None
     due_date: Optional[datetime] = None
+
+    # Strip whitespace before min_length / max_length checks fire so a
+    # title of "   " is rejected as empty + trailing whitespace doesn't
+    # silently bloat the stored value.
+    _strip_title = field_validator("title", mode="before")(_strip_or_none)
+    _strip_desc = field_validator("description", mode="before")(_strip_or_none)
 
 
 class GoalCreate(GoalBase):
@@ -42,21 +61,44 @@ class GoalCreate(GoalBase):
 
 
 class GoalUpdate(BaseModel):
-    title: Optional[str] = None
-    description: Optional[str] = None
+    title: Optional[str] = Field(default=None, min_length=1, max_length=500)
+    description: Optional[str] = Field(default=None, max_length=5000)
     attachment_url: Optional[str] = None
     start_date: Optional[datetime] = None
     due_date: Optional[datetime] = None
-    progress_notes: Optional[str] = None
+    progress_notes: Optional[str] = Field(default=None, max_length=5000)
+
+    _strip_title = field_validator("title", mode="before")(_strip_or_none)
+    _strip_desc = field_validator("description", mode="before")(_strip_or_none)
+    _strip_notes = field_validator("progress_notes", mode="before")(_strip_or_none)
+
+
+# Allowed `approval_status` targets on the manager-approval endpoint.
+# Used as a Pydantic `Literal[...]` so the validator rejects every
+# intermediate review state (h1/h2/q1..q4 self/mentor_reviewed) and
+# the DRAFT/PENDING_APPROVAL transient states at schema time. The
+# route's "current state must be PENDING_APPROVAL" guard handles the
+# orthogonal concern that you can't approve a goal that's already in
+# the post-approval segment.
+_GOAL_APPROVAL_TARGETS = Literal[
+    "approved",  # ApprovalStatus.APPROVED.value
+    "changes_requested",  # ApprovalStatus.CHANGES_REQUESTED.value
+]
 
 
 class GoalApprovalUpdate(BaseModel):
     """
     Payload for the manager approval endpoint.
-    Only APPROVED and CHANGES_REQUESTED are valid targets.
+
+    `approval_status` is type-locked to the two legal targets
+    (APPROVED + CHANGES_REQUESTED). Sending any other ApprovalStatus
+    value — including the half-cycle review states — gets rejected at
+    Pydantic validation, not at the route layer.
     """
-    approval_status: ApprovalStatus
-    feedback: Optional[str] = None
+    approval_status: _GOAL_APPROVAL_TARGETS
+    feedback: Optional[str] = Field(default=None, max_length=5000)
+
+    _strip_feedback = field_validator("feedback", mode="before")(_strip_or_none)
 
 
 class GoalBulkApproveRequest(BaseModel):
@@ -95,7 +137,7 @@ class GoalMentorReviewSubmit(BaseModel):
     Single freeform paragraph; the form surfaces Firm Growth and Competency &
     Skills role expectations as reference panels rather than separate fields.
     """
-    mentor_overall_review: str = Field(..., min_length=1, max_length=10000)
+    mentor_overall_review: str = Field(..., min_length=1, max_length=5000)
 
 
 class GoalMentorReviewResponse(BaseModel):
@@ -125,18 +167,18 @@ class GoalSelfReviewSubmit(BaseModel):
     shape; Firm Growth and Competency & Skills role expectations are surfaced
     on the form as reference panels.
     """
-    self_overall_review: str = Field(..., min_length=1, max_length=10000)
+    self_overall_review: str = Field(..., min_length=1, max_length=5000)
 
 
 class GoalSelfReviewDraft(BaseModel):
     """Save-draft variant. Empty body is allowed (mentee can park work
     mid-thought) — only the submit path enforces non-empty."""
-    self_overall_review: str = Field(default="", max_length=10000)
+    self_overall_review: str = Field(default="", max_length=5000)
 
 
 class GoalMentorReviewDraft(BaseModel):
     """Save-draft variant for the mentor's per-half review."""
-    mentor_overall_review: str = Field(default="", max_length=10000)
+    mentor_overall_review: str = Field(default="", max_length=5000)
 
 
 class GoalSelfReviewResponse(BaseModel):
