@@ -18,10 +18,11 @@ export interface DashboardSummary {
   total_goals: number;
   draft_goals: number;
   submitted_goals: number;
+  /** Rolls APPROVED + every post-approval cycle-review state (h1/h2/q1..q4
+   *  self-reviewed + mentor-reviewed) into one bucket. The dashboard
+   *  surfaces this as "Active Goals" — see GoalsWidget. */
   approved_goals: number;
   changes_requested_goals: number;
-  // Criteria-driven completion average across approved annual goals (0–100)
-  completion_percent: number;
 
   // ── Personal: Active Cycle ─────────────────────────────────────────
   active_cycle: string | null;

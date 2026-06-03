@@ -1,11 +1,10 @@
 /**
- * goal.service.ts — Updated for Story 3.1 (Criteria) and 3.3 (Progress).
+ * goal.service.ts — annual + regular goals.
  *
- * Changes:
- *   - Added Criterion, CriterionCreatePayload, CriterionUpdatePayload types
- *   - Goal interface now includes criteria[] and progress_percent
- *   - GoalCreatePayload now accepts optional criteria[] array
- *   - New API calls: addCriterion, updateCriterion
+ * Goal progress is reflected in `approval_status` transitions and the
+ * H1/H2 self + mentor review history; the per-criterion checklist
+ * that used to live under each goal was retired in the goal-criteria
+ * deprecation PR.
  */
 
 import apiClient from "@/services/api.client";
@@ -42,33 +41,6 @@ export type GoalType = "regular" | "annual";
  *  Q1..Q4 for quarterly orgs (the org's `cycle_type` in SystemSettings
  *  decides which family is in play). */
 export type SelfReviewCycleHalf = "H1" | "H2" | "Q1" | "Q2" | "Q3" | "Q4";
-
-// ── Criterion Types ─────────────────────────────────────────────────
-
-export interface Criterion {
-  id: number;
-  goal_id: number;
-  title: string;
-  sort_order: number;
-  is_completed: boolean;
-  completed_at: string | null;
-  proof_comments: string | null;
-  proof_attachment_count: number;
-  created_at: string;
-  updated_at: string | null;
-}
-
-export interface CriterionCreatePayload {
-  title: string;
-  sort_order?: number;
-}
-
-export interface CriterionUpdatePayload {
-  title?: string;
-  sort_order?: number;
-  is_completed?: boolean;
-  proof_comments?: string | null;
-}
 
 // ── Goal Types ──────────────────────────────────────────────────────
 
@@ -134,8 +106,6 @@ export interface Goal {
   approved_at: string | null;
   created_at: string;
   updated_at: string | null;
-  criteria: Criterion[];
-  progress_percent: number;
   /** 0–2 entries, one per FY half. Look up by `cycle_half`. */
   self_reviews: GoalSelfReview[];
   /** 0–2 mentor reviews, one per FY half. Look up by `cycle_half`. */
@@ -165,7 +135,6 @@ export interface GoalCreatePayload {
   // Ownership is server-determined from the JWT (or ?user_id= query param
   // for mentor-on-behalf-of-mentee creation, authorized server-side).
   // Intentionally not in the body to prevent client-side spoofing.
-  criteria?: CriterionCreatePayload[];
 }
 
 export interface GoalUpdatePayload {
@@ -267,29 +236,6 @@ export const goalService = {
   ): Promise<Goal> => {
     const res = await apiClient.patch<Goal>(
       `/goals/${goalId}/mentor-review/${cycleHalf}/draft`,
-      payload,
-    );
-    return res.data;
-  },
-
-  // ── Employee — Criteria ─────────────────────────────────────────
-  addCriterion: async (
-    goalId: number,
-    payload: CriterionCreatePayload,
-  ): Promise<Criterion> => {
-    const res = await apiClient.post<Criterion>(
-      `/goals/${goalId}/criteria`,
-      payload,
-    );
-    return res.data;
-  },
-
-  updateCriterion: async (
-    criterionId: number,
-    payload: CriterionUpdatePayload,
-  ): Promise<Criterion> => {
-    const res = await apiClient.patch<Criterion>(
-      `/goals/criteria/${criterionId}`,
       payload,
     );
     return res.data;

@@ -23,14 +23,17 @@ from app.schemas.project_review_schemas import ProjectReviewResponse
 # =====================================================================
 
 class MenteeGoalsStats(BaseModel):
-    """Annual-goal counts + average criteria-progress for a single mentee."""
+    """Annual-goal counts rolled up for a single mentee.
+
+    `approved` rolls every post-approval state (APPROVED +
+    H1/H2/Q1..Q4 *_self_reviewed / *_mentor_reviewed) into one bucket,
+    matching POST_APPROVAL_STATES in goal_models.py.
+    """
     total: int
     approved: int
     submitted: int
     draft: int
     changes_requested: int
-    # Average of progress_percent across APPROVED annual goals. 0 when none.
-    avg_progress_percent: int
 
 
 class MenteeReviewStatus(BaseModel):

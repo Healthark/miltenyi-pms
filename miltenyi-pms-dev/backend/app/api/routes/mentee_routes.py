@@ -115,26 +115,12 @@ def _build_goal_stats(annual_goals: list[Goal]) -> MenteeGoalsStats:
     for g in annual_goals:
         counts[g.approval_status] = counts.get(g.approval_status, 0) + 1
 
-    approved_goals = [g for g in annual_goals if g.approval_status in POST_APPROVAL_STATES]
-    if approved_goals:
-        progress_values: list[int] = []
-        for g in approved_goals:
-            if not g.criteria:
-                progress_values.append(0)
-                continue
-            done = sum(1 for c in g.criteria if c.is_completed)
-            progress_values.append(round((done / len(g.criteria)) * 100))
-        avg = round(sum(progress_values) / len(progress_values))
-    else:
-        avg = 0
-
     return MenteeGoalsStats(
         total=len(annual_goals),
         approved=sum(counts[s] for s in POST_APPROVAL_STATES),
         submitted=counts[ApprovalStatus.PENDING_APPROVAL.value],
         draft=counts[ApprovalStatus.DRAFT.value],
         changes_requested=counts[ApprovalStatus.CHANGES_REQUESTED.value],
-        avg_progress_percent=avg,
     )
 
 
@@ -266,7 +252,6 @@ def list_mentee_summaries(
     # then bucket by user_id in Python. Avoids N+1s across the mentee list.
     annual_goals_all = (
         db.query(Goal)
-        .options(joinedload(Goal.criteria))
         .filter(
             Goal.org_id == current_user.org_id,
             Goal.user_id.in_(mentee_ids),
@@ -370,7 +355,6 @@ def get_mentee_detail(
             joinedload(Goal.owner).joinedload(User.function),
             joinedload(Goal.owner).joinedload(User.designation),
             joinedload(Goal.manager),
-            joinedload(Goal.criteria),
         )
         .filter(
             Goal.org_id == current_user.org_id,

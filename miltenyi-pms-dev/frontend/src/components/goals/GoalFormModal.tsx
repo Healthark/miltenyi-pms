@@ -1,12 +1,11 @@
 /**
- * GoalFormModal.tsx — Updated for Story 3.1 (Criteria Breakdown).
+ * GoalFormModal.tsx — Create or edit a goal.
  *
- * Changes:
- *   - Added dynamic criteria array with "+ Add Key Result" button
- *   - Criteria are sent inside GoalCreatePayload on new goal creation
- *   - Edit mode shows existing criteria as read-only preview (editing
- *     individual criteria happens in the CriteriaChecklist on the goal row)
- *   - Criteria can be removed before submission via the X button
+ * The form collects the parent objective (title, description, dates,
+ * attachment) and, in edit mode for approved goals, optional progress
+ * notes for the mentor. The per-criterion checklist that used to live
+ * under each goal was retired — progress through the cycle is now
+ * tracked via the H1/H2 self + mentor review flow.
  *
  * Placement: src/components/goals/GoalFormModal.tsx
  */
@@ -17,7 +16,6 @@ import type {
   Goal,
   GoalCreatePayload,
   GoalUpdatePayload,
-  CriterionCreatePayload,
 } from "@/services/goal.service";
 import { isPostApproved } from "@/utils/goalStatus";
 
@@ -38,12 +36,6 @@ interface FormState {
   start_date: string;
   due_date: string;
   progress_notes: string;
-}
-
-interface CriterionDraft {
-  /** Temporary client-side ID for React keys */
-  tempId: string;
-  title: string;
 }
 
 const EMPTY: FormState = {
@@ -94,9 +86,6 @@ export function GoalFormModal({
         }
       : EMPTY,
   );
-  // Criteria drafts stay empty for edit mode (criteria are managed
-  // in-place via the CriteriaChecklist on the goal row).
-  const [criteria] = useState<CriterionDraft[]>([]);
 
   const set = (field: keyof FormState, value: string) =>
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -113,18 +102,12 @@ export function GoalFormModal({
         progress_notes: form.progress_notes || null,
       } satisfies GoalUpdatePayload);
     } else {
-      // Build criteria array — filter out empty titles
-      const validCriteria: CriterionCreatePayload[] = criteria
-        .filter((c) => c.title.trim().length > 0)
-        .map((c, idx) => ({ title: c.title.trim(), sort_order: idx }));
-
       await onSave({
         title: form.title,
         description: form.description || null,
         attachment_url: form.attachment_url || null,
         start_date: form.start_date || null,
         due_date: form.due_date || null,
-        criteria: validCriteria.length > 0 ? validCriteria : undefined,
       } satisfies GoalCreatePayload);
     }
   };
@@ -216,40 +199,6 @@ export function GoalFormModal({
               placeholder="https://drive.google.com/drive/folders/..."
             />
           </div>
-
-          {/* Existing criteria preview (Edit mode) */}
-          {isEditing && editingGoal.criteria.length > 0 && (
-            <div className="space-y-2">
-              <p className={LABEL_CLS}>
-                Key Results (
-                {editingGoal.criteria.filter((c) => c.is_completed).length}/
-                {editingGoal.criteria.length} complete)
-              </p>
-              <div className="rounded-lg border border-border bg-slate-50 p-3 space-y-1.5">
-                {editingGoal.criteria.map((c) => (
-                  <div key={c.id} className="flex items-center gap-2 text-sm">
-                    <span
-                      className={`shrink-0 ${c.is_completed ? "text-green-600" : "text-text-muted"}`}
-                    >
-                      {c.is_completed ? "✓" : "○"}
-                    </span>
-                    <span
-                      className={
-                        c.is_completed
-                          ? "line-through text-text-muted"
-                          : "text-text-main"
-                      }
-                    >
-                      {c.title}
-                    </span>
-                  </div>
-                ))}
-              </div>
-              <p className="text-xs text-text-muted">
-                Manage criteria from the goal card directly.
-              </p>
-            </div>
-          )}
 
           {/* Progress notes — only shown when editing an approved goal */}
           {isEditing && isApproved && (

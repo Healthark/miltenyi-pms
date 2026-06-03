@@ -10,7 +10,7 @@ fall to zero when the caller has no direct mentees. The frontend gates
 which widgets to render — we don't try to be clever here.
 
 Personal layer:
-    - Annual goal counts by approval state, plus criteria-driven completion %
+    - Annual goal counts by approval state
     - Active cycle name (for the ActiveCycleWidget)
     - Caller's own AnnualReview for the active FY (id + status, or None)
     - Caller's pending project reviews as primary or secondary evaluator
@@ -28,7 +28,7 @@ Security Layers Applied:
 from datetime import datetime, timezone
 from typing import Annotated, Optional
 
-from sqlalchemy import func, Integer, cast, or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import joinedload
 from fastapi import APIRouter, Query
 
@@ -36,7 +36,6 @@ from app.api.dependencies import DbSession, CurrentUser
 from app.api.routes.admin_routes import _require_hr_any
 from app.models.system_settings_models import SystemSettings
 from app.models.goal_models import Goal, GoalType, ApprovalStatus, POST_APPROVAL_STATES
-from app.models.goal_criteria_models import GoalCriterion
 from app.models.user_models import User, Role
 from app.models.annual_review_models import AnnualReview, ReviewStatus
 from app.models.project_review_models import (
@@ -123,31 +122,6 @@ def get_dashboard_summary(
     changes_requested_goals = counts.get(ApprovalStatus.CHANGES_REQUESTED.value, 0)
     total_goals             = sum(counts.values())
 
-    # ── Criteria-driven completion across approved annual goals ─────
-    # Progress is no longer an employee-controlled field — it falls out
-    # of (completed criteria / total criteria).  We average this over the
-    # caller's approved annual goals, because draft/submitted goals don't
-    # have meaningful progress yet.
-    criteria_totals = (
-        db.query(
-            func.count(GoalCriterion.id).label("total"),
-            func.sum(cast(GoalCriterion.is_completed, Integer)).label("done"),
-        )
-        .join(Goal, Goal.id == GoalCriterion.goal_id)
-        .filter(
-            Goal.org_id == current_user.org_id,
-            Goal.user_id == current_user.id,
-            Goal.goal_type == GoalType.ANNUAL.value,
-            Goal.approval_status.in_(POST_APPROVAL_STATES),
-        )
-        .one()
-    )
-    total_criteria = int(criteria_totals.total or 0)
-    done_criteria  = int(criteria_totals.done or 0)
-    completion_percent = (
-        round((done_criteria / total_criteria) * 100) if total_criteria > 0 else 0
-    )
-
     # ── My Annual Review (current FY) ────────────────────────────────
     # One row per (org, user, cycle_name) is enforced by unique index, so the
     # first() lookup is exact. Fields stay None when no row exists — the
@@ -233,7 +207,6 @@ def get_dashboard_summary(
         submitted_goals=submitted_goals,
         approved_goals=approved_goals,
         changes_requested_goals=changes_requested_goals,
-        completion_percent=completion_percent,
         active_cycle=active_cycle,
         annual_review_id=annual_review_id,
         annual_review_status=annual_review_status,
