@@ -990,9 +990,28 @@ def submit_goal(
             detail="Only draft goals can be submitted.",
         )
 
+    # Detect "this is a resubmit after CHANGES_REQUESTED" so the
+    # notification copy tells the mentor it's a re-evaluation rather
+    # than a fresh submission. Signal: `manager_feedback` is non-null,
+    # which only happens when a mentor previously requested changes
+    # (the approve route stamps feedback on the CHANGES_REQUESTED path).
+    # Goals that were approved are locked from employee editing
+    # (POST_APPROVAL_STATES gate in update_goal), so a DRAFT goal with
+    # non-null manager_feedback can only have come from CHANGES_REQUESTED.
+    is_resubmit = goal.manager_feedback is not None
     goal.approval_status = ApprovalStatus.PENDING_APPROVAL.value
     db.commit()
 
+    if is_resubmit:
+        message = (
+            f"{goal_owner.full_name} revised and resubmitted the goal "
+            f"'{goal.title}' for your approval."
+        )
+    else:
+        message = (
+            f"{goal_owner.full_name} submitted the goal "
+            f"'{goal.title}' for your approval."
+        )
     notify(
         db,
         org_id=current_user.org_id,
@@ -1001,7 +1020,7 @@ def submit_goal(
         module="goal",
         entity_type="goal",
         entity_id=goal.id,
-        message=f"{goal_owner.full_name} submitted a goal for your approval.",
+        message=message,
         entity_url=f"/annual-goals?goal_id={goal.id}",
     )
     db.commit()

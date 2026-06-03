@@ -1380,13 +1380,30 @@ def update_secondary_evaluation(
             detail="No existing secondary evaluation found to update.",
         )
 
+    # Lock historical Secondary edits: a previously-assigned Secondary
+    # whose row HR has since reassigned to someone else cannot keep
+    # editing their submitted impact statement. The "you own this row"
+    # check above lets a former Secondary in via their own
+    # evaluator_id, so we additionally gate on the project's CURRENT
+    # secondary_evaluator_id. Submitted statements from former
+    # Secondaries stay readable for audit history — just immutable.
+    project = db.query(Project).filter(Project.id == review.project_id).first()
+    if project is None or project.secondary_evaluator_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "You are no longer the assigned Secondary on this project. "
+                "Past impact statements are preserved as audit history; "
+                "contact HR if a correction is needed."
+            ),
+        )
+
     existing.impact_statement = payload.impact_statement
     db.commit()
     db.refresh(existing)
 
     # In-app only — edits to an already-submitted secondary eval are
     # low-signal compared with the initial submit; no email.
-    project = db.query(Project).filter(Project.id == review.project_id).first()
     notify(
         db,
         org_id=current_user.org_id,

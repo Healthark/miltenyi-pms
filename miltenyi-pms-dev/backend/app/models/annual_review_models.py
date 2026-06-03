@@ -87,7 +87,6 @@ class AnnualReview(Base):
     # ── Stage 3: Management Calibration ──────────────────────────────
     management_performance_rating = Column(Integer, nullable=True)  # Optional override
     final_performance_rating      = Column(Integer, nullable=True)  # Official rating
-    management_comments           = Column(Text, nullable=True)
     final_rating_enabled          = Column(Boolean, default=False)  # Per-row publish flag
 
     # ── Audit Trail ──────────────────────────────────────────────────
