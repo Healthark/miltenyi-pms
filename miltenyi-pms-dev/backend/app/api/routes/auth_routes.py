@@ -89,7 +89,7 @@ def _build_session(user: User, db: Session) -> dict:
 
 
 @router.post("/login", response_model=TokenResponse)
-@limiter.limit("5/5minutes")
+@limiter.limit("10/5minutes")
 def login(
     request: Request,
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
