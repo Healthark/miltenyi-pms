@@ -239,6 +239,20 @@ export const adminService = {
     return res.data;
   },
 
+  /** Preview the next employee_code the backend would assign for a
+   *  role. Used by the Create User modal to populate the (read-only)
+   *  code field as the HR picks the role. Not a reservation —
+   *  re-derived server-side at POST time. If two HRs preview at the
+   *  same time, the actual saved code may differ by +1 (handled via
+   *  a one-time toast on the modal). */
+  getNextEmployeeCode: async (role: string): Promise<string> => {
+    const res = await apiClient.get<{ code: string }>(
+      "/admin/users/next-employee-code",
+      { params: { role } },
+    );
+    return res.data.code;
+  },
+
   updateUser: async (
     userId: number,
     payload: UserUpdatePayload,

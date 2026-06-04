@@ -79,8 +79,15 @@ _ROLE_PATTERN = r"^(HR_MyOrg|HR_Miltenyi|Mentor|PM|Employee)$"
 
 
 class UserCreate(BaseModel):
-    """Payload from the 'Add New User' modal."""
-    employee_code: str = Field(..., min_length=1, max_length=20)
+    """Payload from the 'Add New User' modal.
+
+    `employee_code` is OPTIONAL and effectively advisory — the create
+    route auto-derives the canonical code from the role per the
+    convention in `admin_routes._compute_next_employee_code`. Any
+    value the client sends is ignored. Field kept on the schema so
+    existing clients that still send it don't 422.
+    """
+    employee_code: Optional[str] = Field(default=None, max_length=20)
     full_name: str = Field(..., min_length=1, max_length=100)
     email: str = Field(..., min_length=5, max_length=100)
     phone: Optional[str] = None

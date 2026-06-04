@@ -209,10 +209,25 @@ export default function AdminPanel() {
   const createUserMutation = useMutation({
     mutationFn: (payload: UserCreatePayload) =>
       adminService.createUser(payload),
-    onSuccess: (created) => {
+    onSuccess: (created, payload) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.admin.users() });
       closeUserModal();
-      toast.success(`${created.full_name} created.`);
+      // Drift signal: the modal previewed `payload.employee_code` from
+      // GET /admin/users/next-employee-code, but the backend re-derives
+      // at create time. If two HRs picked the same role in the same
+      // window, one of them gets a code +1 — surface that as info so
+      // the HR doesn't think the preview lied.
+      if (
+        payload.employee_code &&
+        payload.employee_code !== created.employee_code
+      ) {
+        toast.info(
+          `${created.full_name} created with code ${created.employee_code} ` +
+            `(${payload.employee_code} was just taken by another user).`,
+        );
+      } else {
+        toast.success(`${created.full_name} created.`);
+      }
     },
     onError: (err) => setModalError(getErrorMessage(err)),
   });

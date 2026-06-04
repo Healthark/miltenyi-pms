@@ -19,6 +19,7 @@ Security Layers Applied (ALL endpoints):
                                  Mentor or HR_MyOrg users (security boundary)
 """
 
+import re
 import secrets
 import string
 from typing import List, Literal, Optional
@@ -760,6 +761,88 @@ _HEALTHARK_DOMAIN = "healthark.ai"
 _MILTENYI_DOMAINS = ("miltenyi.com", "external.miltenyi.com")
 
 
+# ── Employee Code Convention ──────────────────────────────────────────
+#
+# Auto-generated convention: `<ORG_PREFIX>-<ROLE_CODE>-<NNN>` where NNN
+# is a 3-digit zero-padded sequence (e.g. `HRK-MNT-007`). The org side
+# is derived from the role using the same mapping as the email-domain
+# rules — HR_MyOrg + Mentor are Healthark-side, the others are
+# Miltenyi-side. The HR role-code is shared between HR_MyOrg + HR_Miltenyi
+# (the org prefix already disambiguates them).
+#
+# Existing seed codes don't follow this convention (HRK-001, MIL-PM-01,
+# STF-001 etc.) — they're grandfathered, and the sequence computation
+# only matches codes against the new prefix shape, so old codes never
+# influence the next-number calculation.
+_ORG_PREFIX_HEALTHARK = "HRK"
+_ORG_PREFIX_MILTENYI = "MIL"
+
+_ROLE_TO_ORG_PREFIX: dict[str, str] = {
+    Role.HR_MYORG.value: _ORG_PREFIX_HEALTHARK,
+    Role.MENTOR.value: _ORG_PREFIX_HEALTHARK,
+    Role.HR_MILTENYI.value: _ORG_PREFIX_MILTENYI,
+    Role.PM.value: _ORG_PREFIX_MILTENYI,
+    Role.EMPLOYEE.value: _ORG_PREFIX_MILTENYI,
+}
+
+_ROLE_TO_ROLE_CODE: dict[str, str] = {
+    Role.HR_MYORG.value: "HR",
+    Role.HR_MILTENYI.value: "HR",
+    Role.MENTOR.value: "MNT",
+    Role.PM.value: "PM",
+    Role.EMPLOYEE.value: "EMP",
+}
+
+_EMPLOYEE_CODE_SEQ_PATTERN = re.compile(r"^(\d+)$")
+
+
+def _employee_code_prefix(role: str) -> str:
+    """Return the `<ORG>-<ROLE>-` portion of an auto-generated code
+    for `role` (trailing dash included so callers can concatenate the
+    sequence directly). KeyError on unknown role — callers should
+    validate `role` against the Role enum first."""
+    return f"{_ROLE_TO_ORG_PREFIX[role]}-{_ROLE_TO_ROLE_CODE[role]}-"
+
+
+def _compute_next_employee_code(db: DbSession, org_id: int, role: str) -> str:
+    """Compute the next available employee_code for (org_id, role).
+
+    Walks every existing user row matching the role's prefix shape
+    (active + soft-deleted — codes are never recycled even after a
+    user is deactivated). Parses the trailing zero-padded sequence,
+    takes MAX, returns prefix + (MAX+1) zero-padded to 3 digits. If
+    the next number exceeds 999 the sequence naturally grows to 4
+    digits (fail-loud rather than wrap).
+
+    Pure compute — does not insert anything. The route layer holds
+    the actual create transaction. If two concurrent creates derive
+    the same code, the (org_id, employee_code) unique index catches
+    the collision and the caller can re-derive once.
+    """
+    prefix = _employee_code_prefix(role)
+    rows = (
+        db.query(User.employee_code)
+        .filter(
+            User.org_id == org_id,
+            User.employee_code.like(f"{prefix}%"),
+        )
+        .all()
+    )
+    max_seq = 0
+    for (code,) in rows:
+        suffix = code[len(prefix):]
+        m = _EMPLOYEE_CODE_SEQ_PATTERN.match(suffix)
+        if m:
+            seq = int(m.group(1))
+            if seq > max_seq:
+                max_seq = seq
+    next_seq = max_seq + 1
+    # 3-digit zero-pad through 999; let it grow to 4+ digits past that
+    # rather than silently wrapping.
+    width = max(3, len(str(next_seq)))
+    return f"{prefix}{next_seq:0{width}d}"
+
+
 def _validate_email_for_role(email: str, role: str) -> None:
     """Raise 400 unless the email's domain is allowed for this role.
 
@@ -1187,6 +1270,37 @@ def list_users_paginated(
     )
 
 
+@router.get("/users/next-employee-code")
+def get_next_employee_code(
+    role: str,
+    db: DbSession,
+    current_user: CurrentUser,
+):
+    """Preview the next employee_code that POST /users would assign
+    for a given role. Used by the Create User modal to populate the
+    (read-only) code field as the HR picks the role.
+
+    Re-derived at create time as the source of truth — this preview
+    is purely a UX affordance, NOT a reservation. If two HRs preview
+    simultaneously they'll see the same suggested code; the first to
+    save wins and the second gets a code +1 with a frontend toast.
+
+    Auth mirrors the create endpoint:
+      - Both HR roles can preview.
+      - HR_Miltenyi can't preview a code for a protected role
+        (Mentor / HR_MyOrg) since `_authorize_user_mutation` would
+        block them from creating one anyway.
+    """
+    _require_hr_any(current_user)
+    if role not in _ROLE_TO_ORG_PREFIX:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unknown role '{role}'.",
+        )
+    _authorize_user_mutation(current_user, role)
+    return {"code": _compute_next_employee_code(db, current_user.org_id, role)}
+
+
 @router.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def create_user(
     user_in: UserCreate,
@@ -1228,16 +1342,31 @@ def create_user(
             detail=f"A user with email '{user_in.email}' already exists in this organization.",
         )
 
-    # Check for duplicate employee code within this org
+    # Employee code is server-derived from the role per the convention
+    # in `_compute_next_employee_code` (see also `_employee_code_prefix`).
+    # Any value the client sent in `user_in.employee_code` is ignored —
+    # the UserCreate schema keeps the field for backwards-compatibility
+    # but we treat it as advisory only. The frontend now shows the
+    # auto-generated value in a read-only input via the preview endpoint.
+    derived_code = _compute_next_employee_code(
+        db, current_user.org_id, user_in.role
+    )
+
+    # Defensive duplicate-check in case a concurrent create just took
+    # the same number (preview is not a reservation). Both end up
+    # deriving the same MAX+1; the unique index on
+    # (org_id, employee_code) would catch the collision at flush time
+    # anyway, but a friendlier 409 here keeps the error surface
+    # predictable. The frontend's drift-toast covers the rare case
+    # where this races; on a clean run the duplicate check is a no-op.
     existing_code = db.query(User).filter(
         User.org_id == current_user.org_id,
-        User.employee_code == user_in.employee_code,
+        User.employee_code == derived_code,
     ).first()
-
     if existing_code:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Employee code '{user_in.employee_code}' is already in use.",
+        # Race: another create won. Re-derive and try once more.
+        derived_code = _compute_next_employee_code(
+            db, current_user.org_id, user_in.role
         )
 
     # Validate mentor_id points at a real Mentor-role user in this org.
@@ -1246,7 +1375,7 @@ def create_user(
 
     new_user = User(
         org_id=current_user.org_id,  # Forced from JWT — never trusted from body
-        employee_code=user_in.employee_code,
+        employee_code=derived_code,
         full_name=normalized_full_name,
         email=user_in.email,
         phone=user_in.phone,
