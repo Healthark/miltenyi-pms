@@ -60,14 +60,14 @@ export function EmployeeDashboard() {
     queryFn: dashboardService.getSummary,
   });
 
-  // Mentor info — fetched only when the caller has a mentor. CEO /
-  // founders return `has_mentor: false` in the session claims so we
-  // skip the request entirely for them (saves a round-trip plus avoids
-  // a "No mentor assigned" card flickering before data lands).
+  // Mentor info — fetched for every Employee-style dashboard view so
+  // the My Mentor card always renders. Users without a mentor (CEO /
+  // founders / unassigned mentees) get the same card with a "No
+  // mentor assigned · Contact HR if this looks wrong" empty state
+  // inside the widget rather than a missing tile.
   const { data: profile, error: profileError } = useQuery({
     queryKey: queryKeys.profile.me(),
     queryFn: profileService.getProfile,
-    enabled: user?.has_mentor === true,
   });
 
   // Surface fetch errors through the existing snackbar pattern. Kept as
@@ -116,23 +116,20 @@ export function EmployeeDashboard() {
         <>
           {/* Row 1: Active Cycles (left) | My Mentor (right). Cycle
               context anchors the dashboard ("where are we right
-              now?"); the personal mentor card follows. My Mentor only
-              renders for users with a mentor on file (CEO / founders
-              skip it). When no mentor, Active Cycles spans the full
-              row so it doesn't sit half-empty. */}
+              now?"); the personal mentor card follows. My Mentor
+              always renders — when the user has no mentor on file
+              (CEO / founders / freshly-orphaned mentees) the card
+              shows a "No mentor assigned" empty state with a Contact
+              HR nudge, rather than collapsing the grid. Keeps the
+              layout stable across user types and surfaces the missing
+              mentor as something to act on. */}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {summary ? (
-              <div
-                className={user?.has_mentor === true ? "" : "md:col-span-2"}
-              >
-                <ActiveCyclesCard activeCycle={summary.active_cycle} />
-              </div>
+              <ActiveCyclesCard activeCycle={summary.active_cycle} />
             ) : (
               <CardSkeleton />
             )}
-            {user?.has_mentor === true && (
-              <MyMentorWidget profile={profile ?? null} />
-            )}
+            <MyMentorWidget profile={profile ?? null} />
           </div>
 
           {/* Row 2: My Annual Review (left) | Annual Goals (right).
