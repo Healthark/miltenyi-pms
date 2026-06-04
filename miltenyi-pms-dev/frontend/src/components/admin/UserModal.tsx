@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import type {
-  UserResponse,
-  UserCreatePayload,
-  UserUpdatePayload,
-  FunctionBrief,
-  DesignationBrief,
+import {
+  adminService,
+  type UserResponse,
+  type UserCreatePayload,
+  type UserUpdatePayload,
+  type FunctionBrief,
+  type DesignationBrief,
 } from "@/services/admin.service";
 import { UserCombobox } from "@/components/common/UserCombobox";
 import { IdCombobox } from "@/components/common/IdCombobox";
@@ -103,6 +104,43 @@ export function UserModal({
           password: "",
         },
   );
+
+  // Tracks the in-flight preview request so a stale response from an
+  // earlier role can't clobber the field after the HR has moved on.
+  // Toggle to "loading" while the request is in flight so the input
+  // shows a placeholder instead of stale text.
+  const [codeLoading, setCodeLoading] = useState(false);
+
+  // Auto-generate the employee code as the HR picks a role. Create
+  // mode only — edit mode keeps the existing code (immutable identity
+  // stamp; see backend `_compute_next_employee_code` for the
+  // convention). Backend re-derives at POST time so this preview is
+  // never authoritative; HR sees the actual saved code via the
+  // mutation response if a race causes a drift.
+  useEffect(() => {
+    if (isEditing || !isOpen || !form.role) return;
+    let cancelled = false;
+    setCodeLoading(true);
+    adminService
+      .getNextEmployeeCode(form.role)
+      .then((code) => {
+        if (cancelled) return;
+        setForm((prev) => ({ ...prev, employee_code: code }));
+      })
+      .catch(() => {
+        // Network / 403 — fall back to blank, let user retry by
+        // re-selecting the role. Backend will still derive at create
+        // time so save isn't blocked.
+        if (cancelled) return;
+        setForm((prev) => ({ ...prev, employee_code: "" }));
+      })
+      .finally(() => {
+        if (!cancelled) setCodeLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [form.role, isEditing, isOpen]);
 
   if (!isOpen) return null;
 
@@ -220,6 +258,25 @@ export function UserModal({
           {(() => {
             const isMiltenyiLocked = isViewerMiltenyiHR && isEditing;
             const lockedInputCls = `${INPUT_CLS} ${isMiltenyiLocked ? "cursor-not-allowed opacity-50" : ""}`;
+            // In create mode the employee code is auto-generated from
+            // the role (server-derived; preview comes from
+            // GET /admin/users/next-employee-code). The input is
+            // always read-only in create mode — HR shouldn't be able
+            // to type a custom code. In edit mode the existing rule
+            // applies: Healthark HR can edit, Miltenyi HR cannot.
+            const isCodeReadOnly = !isEditing || isMiltenyiLocked;
+            const codePlaceholder = !isEditing
+              ? codeLoading
+                ? "Generating…"
+                : form.role
+                  ? ""
+                  : "Pick a role to generate code"
+              : "EMP-003";
+            const codeInputCls = `${INPUT_CLS} ${
+              !isEditing || isMiltenyiLocked
+                ? "cursor-not-allowed opacity-70 bg-slate-50 dark:bg-slate-800/40"
+                : ""
+            }`;
             return (
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -228,11 +285,17 @@ export function UserModal({
                   </label>
                   <input
                     id="emp-code"
-                    className={lockedInputCls}
+                    className={codeInputCls}
                     value={form.employee_code}
                     onChange={(e) => set("employee_code", e.target.value)}
-                    placeholder="EMP-003"
-                    readOnly={isMiltenyiLocked}
+                    placeholder={codePlaceholder}
+                    readOnly={isCodeReadOnly}
+                    aria-readonly={isCodeReadOnly}
+                    title={
+                      !isEditing
+                        ? "Auto-generated from the selected role"
+                        : undefined
+                    }
                   />
                 </div>
                 <div>
