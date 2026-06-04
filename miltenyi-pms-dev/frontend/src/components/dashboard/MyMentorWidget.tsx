@@ -13,10 +13,13 @@ interface MyMentorWidgetProps {
  * pointing at the user's own profile page (which shows the mentor row
  * in full).
  *
- * Gating: the parent should hide this card when `user.has_mentor` is
- * false (CEO / founders / soft-deleted-mentor edge cases). When the
- * fetch is in flight `profile` is null and a skeleton renders in
- * place so the grid is stable.
+ * Always renders on the Employee dashboard — even for users without a
+ * mentor on file (CEO / founders / freshly-orphaned mentees). In that
+ * case the body switches to a "No mentor assigned · Contact HR if
+ * this looks wrong" empty state so the grid stays stable and the
+ * missing mentor is surfaced as something HR can act on rather than
+ * disappearing silently. When the fetch is in flight `profile` is
+ * null and a skeleton renders in place.
  */
 export function MyMentorWidget({ profile }: MyMentorWidgetProps) {
   const isLoading = profile === null;
