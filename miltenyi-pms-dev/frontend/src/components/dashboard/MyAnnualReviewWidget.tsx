@@ -80,44 +80,85 @@ function copyForStatus(
 }
 
 export function MyAnnualReviewWidget({ summary }: MyAnnualReviewWidgetProps) {
-  const { annual_review_status, annual_review_cycle } = summary;
+  const {
+    annual_review_status,
+    annual_review_cycle,
+    active_cycle,
+    project_reviews_received_count,
+  } = summary;
   const copy = copyForStatus(annual_review_status, annual_review_cycle);
 
+  // The project-reviews strip is gated on the org having an active
+  // project cycle configured. When `active_cycle` is null the count is
+  // structurally 0 (the route returns 0 with no cycle to filter on),
+  // and "N project reviews this cycle" reads as nonsense — so hide
+  // the strip entirely in that admin-not-configured state.
+  const showProjectStrip = active_cycle !== null;
+  const projectReviewsLabel =
+    project_reviews_received_count === 1
+      ? "1 project review this cycle"
+      : `${project_reviews_received_count} project reviews this cycle`;
+
   return (
-    <div className="rounded-xl border border-border bg-surface p-5 shadow-sm flex flex-col gap-4">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-light">
-            <ClipboardCheck className="h-5 w-5 text-brand" aria-hidden="true" />
+    <div className="rounded-xl border border-border bg-surface shadow-sm flex flex-col">
+      {/* Main body */}
+      <div className="p-5 flex flex-col gap-4 flex-1">
+        {/* Header */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-light">
+              <ClipboardCheck className="h-5 w-5 text-brand" aria-hidden="true" />
+            </div>
+            <p className="text-xs font-medium text-text-muted uppercase tracking-wide">
+              My Annual Review
+            </p>
           </div>
-          <p className="text-xs font-medium text-text-muted uppercase tracking-wide">
-            My Annual Review
-          </p>
+          <span
+            className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${copy.pillClass}`}
+          >
+            {copy.pillLabel}
+          </span>
         </div>
-        <span
-          className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${copy.pillClass}`}
-        >
-          {copy.pillLabel}
-        </span>
+
+        {/* Cycle label as the headline metric, mirrors ActiveCycleWidget. */}
+        {annual_review_cycle !== null && (
+          <p className="font-display text-2xl font-semibold text-text-main">
+            {annual_review_cycle}
+          </p>
+        )}
+
+        <p className="text-sm text-text-muted -mt-2">{copy.description}</p>
+
+        {/* CTA — omitted entirely when the action is on someone else's plate. */}
+        {copy.ctaLabel !== null && (
+          <Link
+            to="/annual-reviews"
+            className="flex items-center gap-1 text-xs font-medium text-brand hover:underline mt-auto"
+          >
+            {copy.ctaLabel} <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+          </Link>
+        )}
       </div>
 
-      {/* Cycle label as the headline metric, mirrors ActiveCycleWidget. */}
-      {annual_review_cycle !== null && (
-        <p className="font-display text-2xl font-semibold text-text-main">
-          {annual_review_cycle}
-        </p>
-      )}
-
-      <p className="text-sm text-text-muted -mt-2">{copy.description}</p>
-
-      {/* CTA — omitted entirely when the action is on someone else's plate. */}
-      {copy.ctaLabel !== null && (
+      {/* Project reviews strip footer — a thin band at the bottom of
+          the card linking to /project-reviews. Shows the count of PM
+          evaluations submitted against the caller in the active
+          project cycle (per DashboardSummary docstring). Renders as
+          part of the same card surface so the Employee can glance at
+          both review streams without a second card. */}
+      {showProjectStrip && (
         <Link
-          to="/annual-reviews"
-          className="flex items-center gap-1 text-xs font-medium text-brand hover:underline mt-auto"
+          to="/project-reviews"
+          className="flex items-center justify-between gap-2 px-5 py-2.5 border-t border-border text-xs text-text-muted hover:text-brand hover:bg-slate-50/60 dark:hover:bg-slate-800/40 rounded-b-xl transition-colors"
         >
-          {copy.ctaLabel} <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+          <span>
+            <span className="font-semibold text-text-main tabular-nums">
+              {project_reviews_received_count}
+            </span>{" "}
+            project review
+            {project_reviews_received_count === 1 ? "" : "s"} this cycle
+          </span>
+          <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" aria-label={projectReviewsLabel} />
         </Link>
       )}
     </div>

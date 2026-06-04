@@ -38,6 +38,12 @@ export interface DashboardSummary {
   project_reviews_pending_primary: number;
   project_reviews_pending_secondary: number;
 
+  // ── Personal: Project Reviews RECEIVED in the active cycle ─────────
+  // Count of PM evaluations submitted against the caller in the active
+  // project cycle. Drives the compact strip footer on the Employee
+  // dashboard's Annual Review card. Always 0 for PM/Mentor/HR roles.
+  project_reviews_received_count: number;
+
   // ── Mentor: only meaningful when caller has direct mentees ─────────
   mentee_count: number;
 }

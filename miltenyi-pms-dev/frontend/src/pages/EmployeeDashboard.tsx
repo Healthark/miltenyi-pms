@@ -114,15 +114,13 @@ export function EmployeeDashboard() {
         )
       ) : (
         <>
-          {/* Row 1: My Mentor (left) | Active Cycles (right). Both
-              half-width on md+, stacked on mobile. My Mentor only
+          {/* Row 1: Active Cycles (left) | My Mentor (right). Cycle
+              context anchors the dashboard ("where are we right
+              now?"); the personal mentor card follows. My Mentor only
               renders for users with a mentor on file (CEO / founders
               skip it). When no mentor, Active Cycles spans the full
               row so it doesn't sit half-empty. */}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            {user?.has_mentor === true && (
-              <MyMentorWidget profile={profile ?? null} />
-            )}
             {summary ? (
               <div
                 className={user?.has_mentor === true ? "" : "md:col-span-2"}
@@ -132,20 +130,27 @@ export function EmployeeDashboard() {
             ) : (
               <CardSkeleton />
             )}
+            {user?.has_mentor === true && (
+              <MyMentorWidget profile={profile ?? null} />
+            )}
           </div>
 
-          {/* Row 2: Annual Goals (funnel + completion) | Annual
-              Review. The page used to have a bottom-row Action Items
-              widget below this; both were removed together when the
-              widget was retired product-wide (users reach pending
-              work through the per-feature pages + notifications). */}
+          {/* Row 2: My Annual Review (left) | Annual Goals (right).
+              Annual Review on the left mirrors row 1's left-side
+              anchor (the "where are we" surface — your active-cycle
+              review status + CTA). The Annual Review card also
+              carries a compact project-reviews strip footer so the
+              Employee can glance at both review streams without an
+              extra card. The page used to have a bottom-row Action
+              Items widget; both were removed together when that
+              widget was retired product-wide. */}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            {summary ? <GoalsWidget summary={summary} /> : <CardSkeleton />}
             {summary ? (
               <MyAnnualReviewWidget summary={summary} />
             ) : (
               <CardSkeleton />
             )}
+            {summary ? <GoalsWidget summary={summary} /> : <CardSkeleton />}
           </div>
         </>
       )}
