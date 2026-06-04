@@ -190,6 +190,36 @@ def get_dashboard_summary(
         .scalar()
     ) or 0
 
+    # ── Personal: Project Reviews RECEIVED this active cycle ─────────
+    # Inverse perspective from the two counters above (which are for
+    # users *writing* reviews). Here `user_id` is the reviewee — counts
+    # how many PM evaluations have been submitted (status=REVIEWED)
+    # against the caller in the active project cycle. Drives the
+    # compact strip footer on the Employee dashboard's Annual Review
+    # card. PMs / Mentors / HR roles never receive PM evaluations so
+    # this is naturally 0 for them — the field's there for everyone in
+    # the response either way.
+    #
+    # Scoping to `active_cycle` (not the whole FY) matches the
+    # Employee's mental model: "how am I doing right now?" rather than
+    # "what's my historical count?". Soft-deleted reviews + projects
+    # are excluded.
+    project_reviews_received_count: int = 0
+    if active_cycle is not None:
+        project_reviews_received_count = (
+            db.query(func.count(ProjectReview.id))
+            .join(Project, Project.id == ProjectReview.project_id)
+            .filter(
+                ProjectReview.org_id == current_user.org_id,
+                ProjectReview.user_id == current_user.id,
+                ProjectReview.cycle == active_cycle,
+                ProjectReview.status == ProjectReviewStatus.REVIEWED.value,
+                ProjectReview.is_deleted == False,  # noqa: E712
+                Project.is_deleted == False,  # noqa: E712
+            )
+            .scalar()
+        ) or 0
+
     # ── Mentor: mentee count (drives the My Mentees tile) ────────────
     mentee_count = (
         db.query(func.count(User.id))
@@ -213,6 +243,7 @@ def get_dashboard_summary(
         annual_review_cycle=annual_review_cycle,
         project_reviews_pending_primary=project_reviews_pending_primary,
         project_reviews_pending_secondary=project_reviews_pending_secondary,
+        project_reviews_received_count=project_reviews_received_count,
         mentee_count=mentee_count,
     )
 

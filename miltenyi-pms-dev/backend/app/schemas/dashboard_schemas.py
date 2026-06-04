@@ -56,6 +56,15 @@ class DashboardSummary(BaseModel):
     project_reviews_pending_primary: int = 0
     project_reviews_pending_secondary: int = 0
 
+    # ── Personal: Project Reviews RECEIVED in the active cycle ───────
+    # Inverse perspective from the two pending counters above — counts
+    # how many PM evaluations have been submitted (status=REVIEWED)
+    # AGAINST the caller in the active project cycle. Drives the
+    # compact "N project reviews this cycle" strip on the Employee
+    # dashboard's Annual Review card. PMs / Mentors / HR roles never
+    # receive PM evaluations so this is naturally 0 for them.
+    project_reviews_received_count: int = 0
+
     # ── Mentor: only meaningful when caller has direct mentees ───────
     mentee_count: int = 0
 

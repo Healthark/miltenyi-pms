@@ -10,9 +10,24 @@ interface MyAnnualReviewWidgetProps {
 }
 
 /**
- * One-line copy describing where the caller's review currently sits, plus a
- * matching CTA verb. Centralised here (not inline) because the same wording
- * may need to appear on the AnnualReviews page header later — easy to lift.
+ * MyAnnualReviewWidget — combined "My Reviews" card on the Employee
+ * dashboard. Two stacked sub-sections of equal visual weight:
+ *
+ *   1. Annual Review — status pill + description + CTA. Where the
+ *      caller's review currently sits in the formal annual review
+ *      flow.
+ *   2. Project Reviews — count of PM evaluations submitted against
+ *      the caller in the active project cycle + "View all" link.
+ *
+ * The FY headline that used to anchor this card was removed because
+ * the neighbouring Active Cycles card already surfaces every active
+ * cycle including the FY — duplicating it as a 2xl display number
+ * burned the most prominent slot on this card without adding signal.
+ *
+ * The card replaced an earlier "Annual Review with a tiny project-
+ * reviews strip footer" layout that gave project reviews insufficient
+ * weight for an Employee-side signal that changes throughout the
+ * cycle.
  */
 interface StatusCopy {
   readonly pillLabel: string;
@@ -80,46 +95,91 @@ function copyForStatus(
 }
 
 export function MyAnnualReviewWidget({ summary }: MyAnnualReviewWidgetProps) {
-  const { annual_review_status, annual_review_cycle } = summary;
+  const {
+    annual_review_status,
+    annual_review_cycle,
+    active_cycle,
+    project_reviews_received_count,
+  } = summary;
   const copy = copyForStatus(annual_review_status, annual_review_cycle);
 
   return (
     <div className="rounded-xl border border-border bg-surface p-5 shadow-sm flex flex-col gap-4">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-light">
-            <ClipboardCheck className="h-5 w-5 text-brand" aria-hidden="true" />
-          </div>
-          <p className="text-xs font-medium text-text-muted uppercase tracking-wide">
-            My Annual Review
-          </p>
+      {/* Card Header — title only; no headline FY (the Active Cycles
+          neighbour already surfaces every cycle). */}
+      <div className="flex items-center gap-2">
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-light">
+          <ClipboardCheck className="h-5 w-5 text-brand" aria-hidden="true" />
         </div>
-        <span
-          className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${copy.pillClass}`}
-        >
-          {copy.pillLabel}
-        </span>
+        <p className="text-xs font-medium text-text-muted uppercase tracking-wide">
+          My Reviews
+        </p>
       </div>
 
-      {/* Cycle label as the headline metric, mirrors ActiveCycleWidget. */}
-      {annual_review_cycle !== null && (
-        <p className="font-display text-2xl font-semibold text-text-main">
-          {annual_review_cycle}
-        </p>
-      )}
+      {/* Annual Review sub-section */}
+      <section className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-text-muted">
+            Annual Review
+          </p>
+          <span
+            className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${copy.pillClass}`}
+          >
+            {copy.pillLabel}
+          </span>
+        </div>
+        <p className="text-sm text-text-muted">{copy.description}</p>
+        {copy.ctaLabel !== null && (
+          <Link
+            to="/annual-reviews"
+            className="inline-flex items-center gap-1 text-xs font-medium text-brand hover:underline"
+          >
+            {copy.ctaLabel}{" "}
+            <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+          </Link>
+        )}
+      </section>
 
-      <p className="text-sm text-text-muted -mt-2">{copy.description}</p>
+      {/* Divider between sub-sections. Same visual weight on both
+          halves keeps the card readable as two parallel surfaces
+          rather than a primary + footnote layout. */}
+      <div className="border-t border-border" />
 
-      {/* CTA — omitted entirely when the action is on someone else's plate. */}
-      {copy.ctaLabel !== null && (
-        <Link
-          to="/annual-reviews"
-          className="flex items-center gap-1 text-xs font-medium text-brand hover:underline mt-auto"
-        >
-          {copy.ctaLabel} <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-        </Link>
-      )}
+      {/* Project Reviews sub-section */}
+      <section className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-text-muted">
+            Project Reviews
+          </p>
+          {active_cycle !== null && (
+            <span className="text-[11px] text-text-muted">this cycle</span>
+          )}
+        </div>
+        {active_cycle === null ? (
+          <p className="text-sm text-text-muted">
+            Ask your admin to set the active performance cycle.
+          </p>
+        ) : (
+          <p className="text-sm text-text-muted">
+            <span className="font-display text-xl font-semibold text-text-main tabular-nums">
+              {project_reviews_received_count}
+            </span>
+            <span className="ml-1.5">
+              {project_reviews_received_count === 1
+                ? "PM evaluation received."
+                : "PM evaluations received."}
+            </span>
+          </p>
+        )}
+        {active_cycle !== null && (
+          <Link
+            to="/project-reviews"
+            className="inline-flex items-center gap-1 text-xs font-medium text-brand hover:underline"
+          >
+            View all <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+          </Link>
+        )}
+      </section>
     </div>
   );
 }
