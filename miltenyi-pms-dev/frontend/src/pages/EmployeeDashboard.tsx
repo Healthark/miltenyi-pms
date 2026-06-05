@@ -35,6 +35,7 @@ import { ActiveCyclesCard } from "@/components/dashboard/ActiveCyclesCard";
 import { GoalsWidget } from "@/components/dashboard/GoalsWidget";
 import { MyAnnualReviewWidget } from "@/components/dashboard/MyAnnualReviewWidget";
 import { MyMentorWidget } from "@/components/dashboard/MyMentorWidget";
+import { ProjectReviewsStatusCard } from "@/components/dashboard/ProjectReviewsStatusCard";
 
 export function EmployeeDashboard() {
   const { user } = useAuth();
@@ -96,22 +97,31 @@ export function EmployeeDashboard() {
       </div>
 
       {isPM ? (
-        /* PM layout — just the Active Cycles strip. Goals + Annual
-           Review rows aren't rendered for PMs (Role enum: no goals,
-           never rated). The Action Items widget used to round this
-           page out for PMs but has been removed product-wide; the
-           pending project-review queue still lives on
+        /* PM layout — two-up row: Active Cycles (left, half width) +
+           Project Reviews status donut (right). Goals + Annual Review
+           rows aren't rendered for PMs (Role enum: no goals, never
+           rated). The Action Items widget used to round this page out
+           for PMs but has been removed product-wide; the pending
+           project-review queue is now summarised inside the new
+           ProjectReviewsStatusCard with a "View pending" CTA into
            /project-reviews. MyMentorWidget isn't rendered either —
            PMs typically don't have a mentor in this product; the
            rare PM-with-mentor can read mentor info on /profile. */
-        summary ? (
-          <ActiveCyclesCard
-            activeCycle={summary.active_cycle}
-            blocks={["fy", "project"]}
-          />
-        ) : (
-          <CardSkeleton />
-        )
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          {summary ? (
+            <ActiveCyclesCard
+              activeCycle={summary.active_cycle}
+              blocks={["fy", "project"]}
+            />
+          ) : (
+            <CardSkeleton />
+          )}
+          {summary ? (
+            <ProjectReviewsStatusCard summary={summary} />
+          ) : (
+            <CardSkeleton />
+          )}
+        </div>
       ) : (
         <>
           {/* Row 1: Active Cycles (left) | My Mentor (right). Cycle

@@ -51,10 +51,33 @@ class DashboardSummary(BaseModel):
     annual_review_cycle: Optional[str] = None   # bare FY label, e.g. "FY26-27"
 
     # ── Personal: Project Reviews where caller is evaluator ──────────
-    # Primary: ProjectReview.reviewer_id == me AND status in (pending, draft).
-    # Secondary: ProjectReviewEvaluator.evaluator_id == me AND status == draft.
+    # All four counters (pending pair below + done pair further down)
+    # are scoped to the ACTIVE project cycle so the PM dashboard's
+    # Project Reviews donut reads as "this cycle" — done + pending sum
+    # to the PM's total queue for the live period. Past-cycle stale
+    # rows (the rare case of an unfilled review left behind when HR
+    # advanced the cycle) are excluded so the percentage isn't diluted
+    # by historical noise; HR's org-wide ProjectReviewCompletion widget
+    # already surfaces those at the FY rollup level.
+    #
+    # Primary: Project.pm_id == me AND status in (pending, draft) — keyed
+    # off the live PM relationship so a freshly-pending row (reviewer_id
+    # is NULL until the PM saves) still counts. Cycle filter applied via
+    # ProjectReview.cycle.
+    # Secondary: ProjectReviewEvaluator.evaluator_id == me AND status ==
+    # draft, joined to ProjectReview for the cycle filter.
     project_reviews_pending_primary: int = 0
     project_reviews_pending_secondary: int = 0
+
+    # ── Personal: Project Reviews DONE in the active cycle ───────────
+    # Mirror counters to the pending pair above — reviews the caller has
+    # already submitted as Primary (ProjectReview.status == REVIEWED) or
+    # Secondary (ProjectReviewEvaluator.status == SUBMITTED) in the
+    # active cycle. The PM dashboard's Project Reviews donut combines
+    # these with the pending pair into one progress ring (Submitted vs
+    # Pending).
+    project_reviews_done_primary: int = 0
+    project_reviews_done_secondary: int = 0
 
     # ── Personal: Project Reviews RECEIVED in the active cycle ───────
     # Inverse perspective from the two pending counters above — counts
