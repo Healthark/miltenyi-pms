@@ -35,8 +35,18 @@ export interface DashboardSummary {
   annual_review_cycle: string | null;
 
   // ── Personal: Project Reviews where caller is evaluator ────────────
+  // Pending + done counts are both scoped to the active project cycle
+  // so the PM dashboard's Project Reviews donut reads as "this cycle".
+  // See backend `DashboardSummary` docstring for the exact filters.
   project_reviews_pending_primary: number;
   project_reviews_pending_secondary: number;
+  /** Primary reviews the caller has already submitted (REVIEWED) in
+   *  the active cycle. Paired with pending_primary above on the PM
+   *  dashboard's Project Reviews donut. */
+  project_reviews_done_primary: number;
+  /** Secondary impact statements the caller has already submitted
+   *  (SUBMITTED) in the active cycle. */
+  project_reviews_done_secondary: number;
 
   // ── Personal: Project Reviews RECEIVED in the active cycle ─────────
   // Count of PM evaluations submitted against the caller in the active

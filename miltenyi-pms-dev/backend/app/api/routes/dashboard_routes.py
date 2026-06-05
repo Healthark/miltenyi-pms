@@ -162,33 +162,92 @@ def get_dashboard_summary(
     # (which correctly uses `Project.pm_id`) showed 4+ pending cards.
     # Excluding deleted/completed projects mirrors the queue endpoint's
     # behaviour at project_review_routes.py:625-634.
-    project_reviews_pending_primary: int = (
-        db.query(func.count(ProjectReview.id))
-        .join(Project, Project.id == ProjectReview.project_id)
-        .filter(
-            ProjectReview.org_id == current_user.org_id,
-            Project.pm_id == current_user.id,
-            ProjectReview.is_deleted == False,  # noqa: E712
-            Project.is_deleted == False,  # noqa: E712
-            ProjectReview.status.in_(
-                [ProjectReviewStatus.PENDING.value, ProjectReviewStatus.DRAFT.value]
-            ),
-        )
-        .scalar()
-    ) or 0
+    #
+    # All four counters (pending here + done below) are scoped to the
+    # active project cycle so the PM dashboard's progress donut
+    # represents the live period. A null active_cycle leaves them at 0
+    # — defensive when HR hasn't opened the first cycle yet.
+    project_reviews_pending_primary: int = 0
+    project_reviews_pending_secondary: int = 0
+    project_reviews_done_primary: int = 0
+    project_reviews_done_secondary: int = 0
+    if active_cycle is not None:
+        project_reviews_pending_primary = (
+            db.query(func.count(ProjectReview.id))
+            .join(Project, Project.id == ProjectReview.project_id)
+            .filter(
+                ProjectReview.org_id == current_user.org_id,
+                Project.pm_id == current_user.id,
+                ProjectReview.cycle == active_cycle,
+                ProjectReview.is_deleted == False,  # noqa: E712
+                Project.is_deleted == False,  # noqa: E712
+                ProjectReview.status.in_(
+                    [
+                        ProjectReviewStatus.PENDING.value,
+                        ProjectReviewStatus.DRAFT.value,
+                    ]
+                ),
+            )
+            .scalar()
+        ) or 0
 
-    # Secondary: caller has a per-review impact statement that's still in DRAFT.
-    # Note: a Secondary slot with no row yet is created lazily when the cycle
-    # opens, so DRAFT is the canonical "owed" state.
-    project_reviews_pending_secondary: int = (
-        db.query(func.count(ProjectReviewEvaluator.id))
-        .filter(
-            ProjectReviewEvaluator.org_id == current_user.org_id,
-            ProjectReviewEvaluator.evaluator_id == current_user.id,
-            ProjectReviewEvaluator.status == EvaluatorStatus.DRAFT.value,
-        )
-        .scalar()
-    ) or 0
+        # Primary submitted in this cycle — final, locked rows where the
+        # caller is the live PM. Paired with the pending count above to
+        # drive the PM dashboard's "X of N submitted" donut.
+        project_reviews_done_primary = (
+            db.query(func.count(ProjectReview.id))
+            .join(Project, Project.id == ProjectReview.project_id)
+            .filter(
+                ProjectReview.org_id == current_user.org_id,
+                Project.pm_id == current_user.id,
+                ProjectReview.cycle == active_cycle,
+                ProjectReview.status == ProjectReviewStatus.REVIEWED.value,
+                ProjectReview.is_deleted == False,  # noqa: E712
+                Project.is_deleted == False,  # noqa: E712
+            )
+            .scalar()
+        ) or 0
+
+        # Secondary: caller has a per-review impact statement that's
+        # still in DRAFT. Joined to ProjectReview so we can apply the
+        # cycle filter (the evaluator row itself doesn't carry the
+        # cycle — it inherits it from the parent review). Also gates on
+        # the parent review not being soft-deleted; the evaluator row
+        # has no `is_deleted` of its own but it's effectively retired
+        # when its parent goes away (CASCADE on project_review_id).
+        project_reviews_pending_secondary = (
+            db.query(func.count(ProjectReviewEvaluator.id))
+            .join(
+                ProjectReview,
+                ProjectReview.id == ProjectReviewEvaluator.project_review_id,
+            )
+            .filter(
+                ProjectReviewEvaluator.org_id == current_user.org_id,
+                ProjectReviewEvaluator.evaluator_id == current_user.id,
+                ProjectReviewEvaluator.status == EvaluatorStatus.DRAFT.value,
+                ProjectReview.cycle == active_cycle,
+                ProjectReview.is_deleted == False,  # noqa: E712
+            )
+            .scalar()
+        ) or 0
+
+        # Secondary submitted in this cycle — the "done" half of the
+        # Secondary queue counter.
+        project_reviews_done_secondary = (
+            db.query(func.count(ProjectReviewEvaluator.id))
+            .join(
+                ProjectReview,
+                ProjectReview.id == ProjectReviewEvaluator.project_review_id,
+            )
+            .filter(
+                ProjectReviewEvaluator.org_id == current_user.org_id,
+                ProjectReviewEvaluator.evaluator_id == current_user.id,
+                ProjectReviewEvaluator.status == EvaluatorStatus.SUBMITTED.value,
+                ProjectReview.cycle == active_cycle,
+                ProjectReview.is_deleted == False,  # noqa: E712
+            )
+            .scalar()
+        ) or 0
 
     # ── Personal: Project Reviews RECEIVED this active cycle ─────────
     # Inverse perspective from the two counters above (which are for
@@ -243,6 +302,8 @@ def get_dashboard_summary(
         annual_review_cycle=annual_review_cycle,
         project_reviews_pending_primary=project_reviews_pending_primary,
         project_reviews_pending_secondary=project_reviews_pending_secondary,
+        project_reviews_done_primary=project_reviews_done_primary,
+        project_reviews_done_secondary=project_reviews_done_secondary,
         project_reviews_received_count=project_reviews_received_count,
         mentee_count=mentee_count,
     )
