@@ -54,7 +54,7 @@ export function ProjectReviewsStatusCard({
   const isComplete = total > 0 && pending === 0;
 
   return (
-    <article className="rounded-xl border border-border bg-surface p-5 shadow-sm flex flex-col gap-4 h-full">
+    <article className="rounded-xl border border-border bg-surface p-5 shadow-sm flex flex-col gap-3">
       {/* Header — icon tile + title + cycle subtitle. Mirrors the
           GoalsWidget header rhythm so the PM page reads as a sibling. */}
       <div className="flex items-start justify-between gap-3">
@@ -102,7 +102,13 @@ export function ProjectReviewsStatusCard({
                 label="Pending"
               />
             </ul>
+            {/* Smaller donut than GoalsWidget (96 vs 128) because this
+                card only has two legend rows — at 128 the donut towers
+                over the legend column and the card grows much taller
+                than its Active Cycles neighbour in the same row. */}
             <DonutChart
+              size={96}
+              thickness={10}
               segments={[
                 {
                   label: "Submitted",
@@ -133,21 +139,20 @@ export function ProjectReviewsStatusCard({
           {/* CTA — flips between "View pending" while there's work
               still owed and a completion confirmation when the queue
               is empty. Both link to /project-reviews; the language
-              just changes. */}
-          <div className="mt-auto pt-1">
-            {isComplete ? (
-              <p className="text-[12px] font-medium text-emerald-600">
-                All reviews submitted ✓
-              </p>
-            ) : (
-              <Link
-                to="/project-reviews"
-                className="text-[12px] font-medium text-brand hover:underline"
-              >
-                View pending →
-              </Link>
-            )}
-          </div>
+              just changes. Sits in normal flow so the card sizes to
+              its content and doesn't accumulate trailing whitespace. */}
+          {isComplete ? (
+            <p className="text-[12px] font-medium text-emerald-600">
+              All reviews submitted ✓
+            </p>
+          ) : (
+            <Link
+              to="/project-reviews"
+              className="text-[12px] font-medium text-brand hover:underline"
+            >
+              View pending →
+            </Link>
+          )}
         </>
       )}
     </article>
