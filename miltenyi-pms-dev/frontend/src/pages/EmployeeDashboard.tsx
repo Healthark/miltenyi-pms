@@ -107,10 +107,10 @@ export function EmployeeDashboard() {
            /project-reviews. MyMentorWidget isn't rendered either —
            PMs typically don't have a mentor in this product; the
            rare PM-with-mentor can read mentor info on /profile. */
-        {/* items-start so neither card stretches to match the other's
-            content height — Active Cycles is naturally shorter than
-            the Project Reviews donut card, and forcing stretch dumps a
-            large empty band into ActiveCyclesCard. */}
+        /* items-start so neither card stretches to match the other's
+           content height — Active Cycles is naturally shorter than
+           the Project Reviews donut card, and forcing stretch dumps a
+           large empty band into ActiveCyclesCard. */
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 items-start">
           {summary ? (
             <ActiveCyclesCard
