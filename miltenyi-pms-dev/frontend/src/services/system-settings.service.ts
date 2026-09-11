@@ -26,14 +26,9 @@ export interface SystemSettingsResponse {
    *  frontend currently doesn't need to act on it directly — display
    *  timestamps still rely on the browser's local zone. */
   timezone: string;
-  cycle_start_date: string | null;
-  cycle_end_date: string | null;
-  goals_submission_open: boolean;
-  reviews_submission_open: boolean;
-  goals_edit_enabled: boolean;
-  /** True when the Admin has opened the annual-goal submission window. */
+  /** The three per-FY access toggles, mirrored from the CURRENT fiscal
+   *  year's override row by GET /settings/. */
   annual_goals_edit_enabled: boolean;
-  project_ratings_visible: boolean;
   annual_reviews_enabled: boolean;
   annual_review_final_rating_visible: boolean;
   /** Demo-only escape hatch — when true, the date-based H1/H2 review-
@@ -54,26 +49,16 @@ export interface SystemSettingsCreate {
   active_cycle_name?: string;
   cycle_type?: CycleType;
   fiscal_start_month?: number;
-  cycle_start_date?: string | null;
-  cycle_end_date?: string | null;
-  goals_submission_open?: boolean;
-  reviews_submission_open?: boolean;
-  annual_goals_edit_enabled?: boolean;
 }
 
+/** PATCH /settings/ — org-wide anchors and developer escape hatches only.
+ *  Per-FY toggles go through adminService.updateYearSettings; the Project
+ *  Goals switches through goalFrameworkService.updateSettings. */
 export interface SystemSettingsUpdate {
-  active_cycle_name?: string;
-  cycle_type?: CycleType;
   fiscal_start_month?: number;
-  cycle_start_date?: string | null;
-  cycle_end_date?: string | null;
-  goals_submission_open?: boolean;
-  reviews_submission_open?: boolean;
-  goals_edit_enabled?: boolean;
-  annual_goals_edit_enabled?: boolean;
-  project_ratings_visible?: boolean;
-  annual_reviews_enabled?: boolean;
-  annual_review_final_rating_visible?: boolean;
+  timezone?: string;
+  cycle_window_override?: boolean;
+  simulated_today?: string | null;
 }
 
 // ── Service Object ──────────────────────────────────────────────────

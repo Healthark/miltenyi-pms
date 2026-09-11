@@ -20,15 +20,22 @@ What this seeds (and only this):
                        `career_level` + `career_level_label` so the
                        /me/expectations API can resolve a user's role
                        expectations.
-    - SystemSettings tuned for demo (all gates open, ratings visible)
-    - 18 users:
-        2  HR  — 1 Healthark (HR_MyOrg, Indian name) + 1 Miltenyi (HR_Miltenyi, German)
-        3  Mentors (Healthark, Indian names) — themed by function
-        4  PMs    (Miltenyi, German names) — assigned to the same
-                  functions as the Employees they will eventually review
-        9  Employee  (Miltenyi domain, Indian names — 3 mentees per
-                     mentor; clustered into 3 of the 8 GCC functions so
-                     each mentor's team sits in one function)
+    - SystemSettings tuned for demo (half-yearly; FY26-27 gates open, ratings visible)
+    - 13 users, all @healthark.ai (only Healthark staff use the app):
+        1  Admin   (Healthark HR)
+        3  Mentors (themed by function)
+        9  Staff   (3 mentees per mentor; clustered into 3 of the 8 GCC
+                   functions so each mentor's team sits in one function).
+                   Each carries the NAME of their Miltenyi reviewer — the
+                   Miltenyi manager whose project-goal comments the mentor
+                   types in; Miltenyi staff never log in.
+    - Project Goals framework: 28 rows (7 functions × 4 levels) from the
+      Miltenyi "CY 2026 INDICATIVE GOAL THEMES" PDFs (`seed_data.goal_themes`),
+      the "CY 2026" period settings (active; goal entry open; weightages
+      visible; current quarter Q3 with Q1–Q3 rolled out, ratings hidden),
+      Designation → Function links,
+      and a Miltenyi reviewer name on each Employee (their function's PM).
+      No goal sets — stakeholders create those.
     - Role expectations: 32 rows (8 functions × 4 career levels) imported
       verbatim from `seed_data.gcc.GCC_ROLE_EXPECTATIONS`. Keyed on
       (function, career_level) — the gcc_framework_replacement migration
@@ -36,9 +43,9 @@ What this seeds (and only this):
       framework with this shape.
 
 Functions with seeded users (3 of 8):
-    Regulatory Affairs        — Rahul's mentees + PMs Stefan + Brigitte
-    Pharmacovigilance         — Neha's mentees + PM Helena
-    Clinical Trial Management — Vikram's mentees + PM Markus
+    Regulatory Affairs        — Rahul's mentees (Miltenyi reviewer Stefan Bauer)
+    Pharmacovigilance         — Neha's mentees (Miltenyi reviewer Helena Vogel)
+    Clinical Trial Management — Vikram's mentees (Miltenyi reviewer Markus Krause)
 
 The remaining 5 functions (Clinical Data Management, Biostatistics,
 Medical Writing, Clinical Trial Finance, Legal) appear in every
@@ -57,7 +64,11 @@ from app.models.organization_models import Organization
 from app.models.reference_models import Function, Designation
 from app.models.user_models import User, Role
 from app.models.system_settings_models import SystemSettings, CycleType
+from app.models.system_settings_year_override_models import SystemSettingsYearOverride
 from app.models.role_expectation_models import RoleExpectation
+from app.models.project_goal_models import (
+    GoalFramework, GoalFrameworkKpi, ProjectGoalPeriodSettings, ProjectGoalQuarter, quarter_label,
+)
 
 # Shared GCC career-path content (functions, designations, role-expectation
 # prose). Same source as seed.py — edits to the framework happen in
@@ -66,6 +77,14 @@ from seed_data.gcc import (
     LEVEL_LABEL,
     GCC_DESIGNATIONS,
     GCC_ROLE_EXPECTATIONS,
+)
+from seed_data.goal_themes import GOAL_THEMES, PERIOD_LABEL
+
+# `project_reviews` is deliberately absent: the per-project PM review queue
+# is retired for the Miltenyi instance in favour of `project_goals` (Sep 2026
+# stakeholder decision). The code stays; the server-side gate hides it.
+ENABLED_FEATURES = (
+    "dashboard", "goals", "project_goals", "annual_reviews", "mentoring", "admin",
 )
 
 
@@ -83,17 +102,21 @@ def seed_test_database() -> None:
             miltenyi = Organization(
                 name="Miltenyi",
                 domain="miltenyi.com",
-                enabled_features=[
-                    "dashboard", "goals", "project_reviews",
-                    "annual_reviews", "mentoring", "admin",
-                ],
+                enabled_features=list(ENABLED_FEATURES),
             )
             db.add(miltenyi)
             db.commit()
             db.refresh(miltenyi)
             print("  [+] Organization: Miltenyi")
         else:
-            print("  [~] Organization 'Miltenyi' already exists; reusing.")
+            # Keep the feature list current on re-runs: the server-side
+            # gate reads it, so a stale list would hide Project Goals.
+            if list(miltenyi.enabled_features or []) != list(ENABLED_FEATURES):
+                miltenyi.enabled_features = list(ENABLED_FEATURES)
+                db.commit()
+                print("  [~] Organization 'Miltenyi' already exists; feature list refreshed.")
+            else:
+                print("  [~] Organization 'Miltenyi' already exists; reusing.")
 
         # ============================================================ #
         # 2. FUNCTIONS & DESIGNATIONS (GCC career-path)                 #
@@ -107,8 +130,9 @@ def seed_test_database() -> None:
             for fname in gcc_function_names:
                 db.add(Function(org_id=miltenyi.id, name=fname))
             db.flush()
+            fn_ids = {f.name: f.id for f in db.query(Function).filter_by(org_id=miltenyi.id)}
 
-            for _, lvl, titles in GCC_DESIGNATIONS:
+            for fname, lvl, titles in GCC_DESIGNATIONS:
                 for title in titles:
                     db.add(Designation(
                         org_id=miltenyi.id,
@@ -116,12 +140,27 @@ def seed_test_database() -> None:
                         level=lvl,                       # legacy sort, matches band for now
                         career_level=lvl,
                         career_level_label=LEVEL_LABEL[lvl],
+                        function_id=fn_ids.get(fname),   # Project Goals: function × level → framework row
                     ))
             db.commit()
             print(f"  [+] {len(gcc_function_names)} GCC Functions and "
                   f"{sum(len(t) for _, _, t in GCC_DESIGNATIONS)} Designations")
         else:
             print("  [~] Reference data already exists; reusing.")
+
+        # Designation → Function link (added with Project Goals). Backfill
+        # by title on databases seeded before the column existed.
+        fn_ids = {f.name: f.id for f in db.query(Function).filter_by(org_id=miltenyi.id)}
+        title_fn = {title: fname for fname, _, titles in GCC_DESIGNATIONS for title in titles}
+        linked = 0
+        for d in db.query(Designation).filter_by(org_id=miltenyi.id, function_id=None):
+            fid = fn_ids.get(title_fn.get(d.name, ""))
+            if fid:
+                d.function_id = fid
+                linked += 1
+        if linked:
+            db.commit()
+            print(f"  [~] Linked {linked} designations to their functions")
 
         # ── Resolve handles for the functions / designations we'll use ──
         def _fn(name: str) -> Function:
@@ -140,15 +179,12 @@ def seed_test_database() -> None:
         # the other functions' titles are in the DB but unused here.
         d_ra_assoc       = _desig("Regulatory Affairs Associate")          # L1
         d_ra_assoc_sr    = _desig("Senior Regulatory Affairs Associate")   # L2
-        d_ra_lead        = _desig("Regulatory Affairs Lead")               # L4
 
         d_pv_assoc       = _desig("Pharmacovigilance Associate")           # L1
         d_pv_analyst     = _desig("Pharmacovigilance Analyst")             # L2
-        d_pv_lead        = _desig("Pharmacovigilance Lead")                # L4
 
         d_ctm_assoc      = _desig("Clinical Trial Associate")              # L1
         d_ctm_mgr        = _desig("Clinical Trial Manager")                # L2
-        d_ctm_lead       = _desig("Lead - Clinical Trial Manager")         # L4
 
         # ============================================================ #
         # 3. USERS                                                      #
@@ -175,21 +211,12 @@ def seed_test_database() -> None:
         # — they don't sit in a GCC band). Matches seed.py's HR + Mentor
         # rows exactly.
 
-        # ── HR · Healthark (full super-admin) ────────────────────────
+        # ── Admin (Healthark HR) ─────────────────────────────────────
         aanya = _ensure_user(
             "aanya.sharma@healthark.ai",
             employee_code="HRK-T01", full_name="Aanya Sharma",
             phone="+91 98000 10001",
-            role=Role.HR_MYORG.value,
-            function_id=None, designation_id=None,
-        )
-
-        # ── HR · Miltenyi (limited admin) ────────────────────────────
-        werner = _ensure_user(
-            "werner@miltenyi.com",
-            employee_code="MIL-T-HR-01", full_name="Werner Fischer",
-            phone="+49 30 1234 9001",
-            role=Role.HR_MILTENYI.value,
+            role=Role.ADMIN.value,
             function_id=None, designation_id=None,
         )
 
@@ -219,139 +246,114 @@ def seed_test_database() -> None:
             function_id=None, designation_id=None,
         )
 
-        # ── PMs (Miltenyi, German names) — sit in the same GCC ──────
-        # functions as their team's mentees so the PM's review queue
-        # has actual content.
-        stefan = _ensure_user(
-            "stefan@miltenyi.com",
-            employee_code="MIL-T-PM-01", full_name="Stefan Bauer",
-            phone="+49 30 1234 1101",
-            role=Role.PM.value,
-            function_id=func_ra.id, designation_id=d_ra_lead.id,
-        )
-        helena = _ensure_user(
-            "helena@miltenyi.com",
-            employee_code="MIL-T-PM-02", full_name="Helena Vogel",
-            phone="+49 30 1234 1102",
-            role=Role.PM.value,
-            function_id=func_pv.id, designation_id=d_pv_lead.id,
-        )
-        markus = _ensure_user(
-            "markus@miltenyi.com",
-            employee_code="MIL-T-PM-03", full_name="Markus Krause",
-            phone="+49 30 1234 1103",
-            role=Role.PM.value,
-            function_id=func_ctm.id, designation_id=d_ctm_lead.id,
-        )
-        brigitte = _ensure_user(
-            "brigitte@miltenyi.com",
-            employee_code="MIL-T-PM-04", full_name="Brigitte Hoffmann",
-            phone="+49 30 1234 1104",
-            role=Role.PM.value,
-            function_id=func_ra.id, designation_id=d_ra_lead.id,
-        )
-
-        # ── Employees (Miltenyi domain, Indian names) ────────────────
+        # ── Staff (Healthark employees placed on Miltenyi work) ──────
         # 3 mentees per mentor, all sitting in their mentor's function.
 
         # Rahul's mentees → Regulatory Affairs
         _ensure_user(
-            "aarav.patel@miltenyi.com",
-            employee_code="MIL-T-S-01", full_name="Aarav Patel",
+            "aarav.patel@healthark.ai",
+            employee_code="HRK-T-S-01", full_name="Aarav Patel",
             phone="+91 98000 10101",
-            role=Role.EMPLOYEE.value, mentor_id=rahul.id,
+            role=Role.STAFF.value, mentor_id=rahul.id,
             function_id=func_ra.id, designation_id=d_ra_assoc.id,
         )
         _ensure_user(
-            "diya.mehta@miltenyi.com",
-            employee_code="MIL-T-S-02", full_name="Diya Mehta",
+            "diya.mehta@healthark.ai",
+            employee_code="HRK-T-S-02", full_name="Diya Mehta",
             phone="+91 98000 10102",
-            role=Role.EMPLOYEE.value, mentor_id=rahul.id,
+            role=Role.STAFF.value, mentor_id=rahul.id,
             function_id=func_ra.id, designation_id=d_ra_assoc_sr.id,
         )
         _ensure_user(
-            "kabir.singh@miltenyi.com",
-            employee_code="MIL-T-S-03", full_name="Kabir Singh",
+            "kabir.singh@healthark.ai",
+            employee_code="HRK-T-S-03", full_name="Kabir Singh",
             phone="+91 98000 10103",
-            role=Role.EMPLOYEE.value, mentor_id=rahul.id,
+            role=Role.STAFF.value, mentor_id=rahul.id,
             function_id=func_ra.id, designation_id=d_ra_assoc.id,
         )
 
         # Neha's mentees → Pharmacovigilance
         _ensure_user(
-            "ishaan.joshi@miltenyi.com",
-            employee_code="MIL-T-S-04", full_name="Ishaan Joshi",
+            "ishaan.joshi@healthark.ai",
+            employee_code="HRK-T-S-04", full_name="Ishaan Joshi",
             phone="+91 98000 10104",
-            role=Role.EMPLOYEE.value, mentor_id=neha.id,
+            role=Role.STAFF.value, mentor_id=neha.id,
             function_id=func_pv.id, designation_id=d_pv_analyst.id,
         )
         _ensure_user(
-            "saanvi.reddy@miltenyi.com",
-            employee_code="MIL-T-S-05", full_name="Saanvi Reddy",
+            "saanvi.reddy@healthark.ai",
+            employee_code="HRK-T-S-05", full_name="Saanvi Reddy",
             phone="+91 98000 10105",
-            role=Role.EMPLOYEE.value, mentor_id=neha.id,
+            role=Role.STAFF.value, mentor_id=neha.id,
             function_id=func_pv.id, designation_id=d_pv_assoc.id,
         )
         _ensure_user(
-            "ayaan.khan@miltenyi.com",
-            employee_code="MIL-T-S-06", full_name="Ayaan Khan",
+            "ayaan.khan@healthark.ai",
+            employee_code="HRK-T-S-06", full_name="Ayaan Khan",
             phone="+91 98000 10106",
-            role=Role.EMPLOYEE.value, mentor_id=neha.id,
+            role=Role.STAFF.value, mentor_id=neha.id,
             function_id=func_pv.id, designation_id=d_pv_assoc.id,
         )
 
         # Vikram's mentees → Clinical Trial Management
         _ensure_user(
-            "riya.nair@miltenyi.com",
-            employee_code="MIL-T-S-07", full_name="Riya Nair",
+            "riya.nair@healthark.ai",
+            employee_code="HRK-T-S-07", full_name="Riya Nair",
             phone="+91 98000 10107",
-            role=Role.EMPLOYEE.value, mentor_id=vikram.id,
+            role=Role.STAFF.value, mentor_id=vikram.id,
             function_id=func_ctm.id, designation_id=d_ctm_mgr.id,
         )
         _ensure_user(
-            "arjun.gupta@miltenyi.com",
-            employee_code="MIL-T-S-08", full_name="Arjun Gupta",
+            "arjun.gupta@healthark.ai",
+            employee_code="HRK-T-S-08", full_name="Arjun Gupta",
             phone="+91 98000 10108",
-            role=Role.EMPLOYEE.value, mentor_id=vikram.id,
+            role=Role.STAFF.value, mentor_id=vikram.id,
             function_id=func_ctm.id, designation_id=d_ctm_assoc.id,
         )
         _ensure_user(
-            "myra.desai@miltenyi.com",
-            employee_code="MIL-T-S-09", full_name="Myra Desai",
+            "myra.desai@healthark.ai",
+            employee_code="HRK-T-S-09", full_name="Myra Desai",
             phone="+91 98000 10109",
-            role=Role.EMPLOYEE.value, mentor_id=vikram.id,
+            role=Role.STAFF.value, mentor_id=vikram.id,
             function_id=func_ctm.id, designation_id=d_ctm_assoc.id,
         )
-        print("  [+] Users (HR×2, Mentors×3, PMs×4, Employee×9 across 3 of 8 GCC functions)")
+        print("  [+] Users (Admin×1, Mentors×3, Staff×9 across 3 of 8 GCC functions)")
 
         # ============================================================ #
         # 4. SYSTEM SETTINGS                                            #
         # ============================================================ #
-        # Demo posture: every gate open, every visibility flag on, and
-        # the H1/H2 review-window calendar gate bypassed so stakeholders
-        # can fill both halves' goal reviews in one session. Cycle is set
-        # to Q1 FY26-27 — to test Q2 / Q3 / Q4 project flows, HR rotates
-        # active_cycle_name through them in System Settings.
+        # Demo posture: half-yearly cadence (H1/H2 goal reviews, FY annual
+        # reviews), every per-FY gate open and every rating visible, and the
+        # H1/H2 review-window calendar gate bypassed so stakeholders can fill
+        # both halves in one session.
         if not db.query(SystemSettings).filter(SystemSettings.org_id == miltenyi.id).first():
             db.add(SystemSettings(
                 org_id=miltenyi.id,
-                active_cycle_name="Q1 FY26-27",
-                cycle_type=CycleType.QUARTERLY.value,
+                active_cycle_name="H1 FY26-27",
+                cycle_type=CycleType.HALF_YEARLY.value,
                 fiscal_start_month=4,
-                goals_submission_open=True,
-                reviews_submission_open=True,
-                goals_edit_enabled=True,
-                annual_goals_edit_enabled=True,
-                project_ratings_visible=True,
-                annual_reviews_enabled=True,
-                annual_review_final_rating_visible=True,
+                timezone="Asia/Kolkata",
                 cycle_window_override=True,
                 updated_by_id=aanya.id,
             ))
             db.commit()
-            print("  [+] System Settings (quarterly, Q1 FY26-27, all gates open, H1/H2 review window bypass on)")
+            print("  [+] System Settings (half-yearly, H1 FY26-27, Asia/Kolkata, H1/H2 review window bypass on)")
         else:
             print("  [~] System settings already exist; reusing.")
+
+        # Per-FY access toggles live on their own table (one row per FY).
+        if not db.query(SystemSettingsYearOverride).filter_by(org_id=miltenyi.id, fy_label="FY26-27").first():
+            db.add(SystemSettingsYearOverride(
+                org_id=miltenyi.id, fy_label="FY26-27",
+                annual_reviews_enabled=True,
+                annual_review_final_rating_visible=True,
+                annual_goals_edit_enabled=True,
+                updated_by_id=aanya.id,
+            ))
+            db.commit()
+            print("  [+] FY26-27 access toggles: annual reviews open, ratings visible, annual-goal editing on")
+        else:
+            print("  [~] FY26-27 access toggles already exist; reusing.")
 
         # ============================================================ #
         # 5. ROLE EXPECTATIONS                                          #
@@ -383,28 +385,89 @@ def seed_test_database() -> None:
             print("  [~] Role expectations already exist; reusing.")
 
         # ============================================================ #
+        # 6. PROJECT GOALS FRAMEWORK (CY 2026 indicative goal themes)   #
+        # ============================================================ #
+        # 7 of the 8 functions have a Miltenyi goal-themes PDF; each has
+        # 4 role/level rows (title, two illustrative paragraphs, KPIs
+        # with weightages totalling 100). Pharmacovigilance has none —
+        # its employees see a "no framework yet" notice until HR adds
+        # rows in Admin → Framework. No goal sets are seeded.
+        if db.query(GoalFramework).filter(GoalFramework.org_id == miltenyi.id).count() == 0:
+            fw_rows = 0
+            for func_name, levels in GOAL_THEMES.items():
+                fn = db.query(Function).filter_by(org_id=miltenyi.id, name=func_name).first()
+                if not fn:
+                    continue
+                for level, row in levels.items():
+                    fw = GoalFramework(
+                        org_id=miltenyi.id, function_id=fn.id, level=level, period_label=PERIOD_LABEL,
+                        title=row["title"], business_outcomes=row["business_outcomes"],
+                        functional_goals=row["functional_goals"], created_by_id=aanya.id,
+                    )
+                    db.add(fw)
+                    db.flush()
+                    for seq, (text, weight) in enumerate(row["kpis"], start=1):
+                        db.add(GoalFrameworkKpi(framework_id=fw.id, seq=seq, text=text, weightage=weight))
+                    fw_rows += 1
+            db.commit()
+            print(f"  [+] Project Goals framework: {fw_rows} rows for {PERIOD_LABEL} (7 functions × 4 levels)")
+        else:
+            print("  [~] Project Goals framework already exists; reusing.")
+
+        # The review window is the Admin-advanced current quarter (Healthark PMS
+        # roll-out model). UAT starts in Q3 CY 2026 with Q1–Q3 rolled out, so
+        # testers can backfill earlier quarters and roll Q4 out themselves.
+        CURRENT_QUARTER = 3
+        if not db.query(ProjectGoalPeriodSettings).filter_by(org_id=miltenyi.id, period_label=PERIOD_LABEL).first():
+            db.add(ProjectGoalPeriodSettings(
+                org_id=miltenyi.id, period_label=PERIOD_LABEL, is_active=True,
+                entry_open=True, weightages_visible=True, current_quarter_seq=CURRENT_QUARTER,
+                updated_by_id=aanya.id,
+            ))
+            for seq in range(1, CURRENT_QUARTER + 1):
+                db.add(ProjectGoalQuarter(
+                    org_id=miltenyi.id, period_label=PERIOD_LABEL, seq=seq,
+                    cycle_label=quarter_label(PERIOD_LABEL, seq), ratings_visible=False, opened_by_id=aanya.id,
+                ))
+            db.commit()
+            print(f"  [+] Project Goals period {PERIOD_LABEL}: active, goal entry open, weightages visible, current quarter Q{CURRENT_QUARTER} (Q1–Q{CURRENT_QUARTER} rolled out, ratings hidden)")
+        else:
+            print("  [~] Project Goals period settings already exist; reusing.")
+
+        # Miltenyi reviewer of each Staff member = the Miltenyi lead of their function.
+        # Names only — Miltenyi staff never log in for Project Goals; the
+        # mentor enters their comments. Set only where still blank so HR
+        # edits in Admin → Framework Mapping survive re-runs.
+        reviewer_by_function = {
+            func_ra.id: "Stefan Bauer", func_pv.id: "Helena Vogel", func_ctm.id: "Markus Krause",
+        }
+        named = 0
+        for u in db.query(User).filter_by(org_id=miltenyi.id, role=Role.STAFF.value, miltenyi_reviewer_name=None):
+            name = reviewer_by_function.get(u.function_id)
+            if name:
+                u.miltenyi_reviewer_name = name
+                named += 1
+        if named:
+            db.commit()
+            print(f"  [+] Miltenyi reviewer names on {named} employees")
+
+        # ============================================================ #
         # DONE                                                          #
         # ============================================================ #
         print("\n" + "=" * 64)
         print("Demo seed complete.")
         print("=" * 64)
         print("\n--- ACCOUNTS (all passwords: password123) ---")
-        print("\n  HR")
-        print("    Healthark : aanya.sharma@healthark.ai     Aanya Sharma     (HR_MyOrg / super-admin)")
-        print("    Miltenyi  : werner@miltenyi.com           Werner Fischer   (HR_Miltenyi / limited)")
+        print("\n  Admin (Healthark HR)")
+        print("    aanya.sharma@healthark.ai     Aanya Sharma     (Admin)")
         print("\n  Mentors (Healthark)")
         print("    rahul.verma@healthark.ai     Rahul Verma     (mentors Aarav, Diya, Kabir — Regulatory Affairs)")
         print("    neha.kapoor@healthark.ai     Neha Kapoor     (mentors Ishaan, Saanvi, Ayaan — Pharmacovigilance)")
         print("    vikram.iyer@healthark.ai     Vikram Iyer     (mentors Riya, Arjun, Myra — Clinical Trial Mgmt)")
-        print("\n  PMs (Miltenyi)")
-        print("    stefan@miltenyi.com          Stefan Bauer    (Regulatory Affairs)")
-        print("    brigitte@miltenyi.com        Brigitte Hoffmann (Regulatory Affairs)")
-        print("    helena@miltenyi.com          Helena Vogel    (Pharmacovigilance)")
-        print("    markus@miltenyi.com          Markus Krause   (Clinical Trial Management)")
-        print("\n  Employees (Miltenyi domain, Healthark mentees)")
-        print("    Regulatory Affairs        : aarav.patel@,    diya.mehta@,    kabir.singh@miltenyi.com")
-        print("    Pharmacovigilance         : ishaan.joshi@,   saanvi.reddy@,  ayaan.khan@miltenyi.com")
-        print("    Clinical Trial Management : riya.nair@,      arjun.gupta@,   myra.desai@miltenyi.com")
+        print("\n  Staff (Healthark employees on Miltenyi work)")
+        print("    Regulatory Affairs        : aarav.patel@,    diya.mehta@,    kabir.singh@healthark.ai")
+        print("    Pharmacovigilance         : ishaan.joshi@,   saanvi.reddy@,  ayaan.khan@healthark.ai")
+        print("    Clinical Trial Management : riya.nair@,      arjun.gupta@,   myra.desai@healthark.ai")
         print()
         print("  Other 5 GCC functions (Clinical Data Management, Biostatistics,")
         print("  Medical Writing, Clinical Trial Finance, Legal) are seeded with")
@@ -412,6 +475,11 @@ def seed_test_database() -> None:
         print("  to them while exploring the admin panel.")
         print()
         print("  No projects, goals, or reviews seeded — stakeholders create those.")
+        print()
+        print("  Project Goals (CY 2026): framework rows for 7 functions are loaded")
+        print("  from the Miltenyi goal-themes PDFs; Pharmacovigilance has none, so")
+        print("  Neha's mentees see the 'no framework yet' notice until HR adds rows")
+        print("  in Admin → Framework. No goal sets seeded — employees start their own.")
         print()
 
     except Exception as e:

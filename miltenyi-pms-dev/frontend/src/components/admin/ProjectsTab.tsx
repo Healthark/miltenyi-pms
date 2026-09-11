@@ -34,7 +34,6 @@ import { adminService } from "@/services/admin.service";
 import { queryKeys } from "@/lib/queryKeys";
 import { getErrorMessage } from "@/utils/errors";
 import { ProjectModal } from "@/components/admin/ProjectModal";
-import { ExportExcelButton } from "@/components/admin/ExportExcelButton";
 import { ClearFiltersButton } from "@/components/common/ClearFiltersButton";
 import { StringCombobox } from "@/components/common/StringCombobox";
 import { Pagination } from "@/components/common/Pagination";
@@ -478,7 +477,6 @@ export function ProjectsTab({ ref }: ProjectsTabProps = {}) {
               setStatusFilter("active");
             }}
           />
-          <ExportExcelButton kind="projects" />
         </div>
       </div>
 

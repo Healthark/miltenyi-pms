@@ -6,42 +6,30 @@ from app.core.database import Base
 
 
 class Role(str, PyEnum):
-    """User roles — controls every UI surface and every permission check.
+    """Who can log in — Healthark staff only. The Miltenyi engagement's own
+    managers and HR do not use the application.
 
-    Five distinct values:
-      HR_MyOrg     — full super-admin (the platform owner's HR)
-      HR_Miltenyi  — limited admin (the client's HR; cannot edit Mentors or HR_MyOrg users)
-      Mentor       — fixed mentor; reviews Employee goals + writes annual reviews;
-                     no own goals, never rated, never on a project
-      PM           — Miltenyi project manager; submits per-cycle project reviews
-                     on their team; no goals, never rated
-      Employee     — MyOrg employee assigned to Miltenyi work; sets goals,
-                     self-reviews on goals (H1/H2) and annual reviews,
-                     receives project reviews from PMs and annual reviews from Mentors
+      Admin   Healthark HR: users, framework, settings, every review,
+              mentor pairing, unlocks.
+      Staff   Healthark employee placed on Miltenyi work: own annual
+              goals, annual self-review, project goals + self-review.
+      Mentor  Healthark mentor: mentees' annual goals and reviews, and the
+              project-goal approval + review entry on the Miltenyi
+              reviewer's behalf.
 
-    Email-domain rules (enforced in admin_routes._validate_email_for_role):
-      HR_MyOrg, Mentor                  → @healthark.ai
-      HR_Miltenyi, PM, Employee         → @miltenyi.com OR @external.miltenyi.com
+    Every account uses an @healthark.ai address (admin_routes._validate_email).
+    A Staff member's Miltenyi reviewer is a plain name field
+    (`users.miltenyi_reviewer_name`), not a login.
 
-    The pairing is checked on user create AND on any role change (so HR
-    can't promote an @miltenyi.com Employee to Mentor without also fixing
-    the email — which is itself immutable, so role changes that cross the
-    domain boundary are effectively blocked).
-
-    Stored as plain VARCHAR in the DB for portability and human-readable raw
-    queries. The string value (not the Python name) is what hits the column.
+    Stored as plain VARCHAR for portability. History: until September 2026
+    the enum also had `PM` and `HR_Miltenyi` (Miltenyi-side logins) and
+    Admin / Staff were stored as `HR_MyOrg` / `Employee`; migration
+    b3d9f1a7c2e4 renamed the stored values and deactivated the
+    Miltenyi-side accounts.
     """
-    HR_MYORG = "HR_MyOrg"
-    HR_MILTENYI = "HR_Miltenyi"
+    ADMIN = "Admin"
+    STAFF = "Staff"
     MENTOR = "Mentor"
-    PM = "PM"
-    EMPLOYEE = "Employee"
-
-
-# Role groupings used by auth guards. Centralised so the routes stay readable
-# and the boundaries can be audited from one place.
-ADMIN_ROLES = frozenset({Role.HR_MYORG.value, Role.HR_MILTENYI.value})
-PROTECTED_USER_ROLES = frozenset({Role.HR_MYORG.value, Role.MENTOR.value})  # HR_Miltenyi cannot edit these
 
 
 class User(Base):
@@ -73,6 +61,12 @@ class User(Base):
     # Mentor via update_user. NULL on every other user. See
     # docs/policies/mentor-transition-policy.md for the full policy.
     mentor_orphaned_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Project Goals: the Miltenyi manager whose review comments this
+    # employee's Mentor transcribes into the system. Miltenyi staff have no
+    # login, so this is a plain name, set by HR in the Framework Mapping
+    # tab and copied onto each review's provenance block.
+    miltenyi_reviewer_name = Column(String, nullable=True)
 
     avatar_url = Column(String, nullable=True)
     password_hash = Column(String, nullable=False)

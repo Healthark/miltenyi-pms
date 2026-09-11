@@ -289,7 +289,7 @@ function ChaseList({
 
 // ── Section: Paused Settings ──────────────────────────────────────────
 
-/** Display list of the four org-wide gate flags, in the order they
+/** Display list of the three access gates, in the order they
  *  appear in System Settings. Each entry pairs a settings field name
  *  with the short label shown when that gate is OFF (i.e. the
  *  override is active). Kept inside this section so the section is
@@ -299,7 +299,6 @@ const PAUSED_SETTINGS: ReadonlyArray<{
     SystemSettingsResponse,
     | "annual_reviews_enabled"
     | "annual_goals_edit_enabled"
-    | "project_ratings_visible"
     | "annual_review_final_rating_visible"
   >;
   readonly label: string;
@@ -311,10 +310,6 @@ const PAUSED_SETTINGS: ReadonlyArray<{
   {
     settingKey: "annual_goals_edit_enabled",
     label: "Goal editing disabled",
-  },
-  {
-    settingKey: "project_ratings_visible",
-    label: "Project ratings hidden",
   },
   {
     settingKey: "annual_review_final_rating_visible",

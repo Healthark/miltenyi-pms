@@ -39,7 +39,7 @@ export function useOrgUsers(enabled: boolean = true) {
     const sortByName = (a: string, b: string) => a.localeCompare(b);
 
     const employees = all
-      .filter((u) => u.role === "Employee")
+      .filter((u) => u.role === "Staff")
       .map((u) => u.full_name)
       .sort(sortByName);
 

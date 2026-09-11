@@ -14,3 +14,16 @@ from app.models.project_review_models import ProjectReview, ProjectReviewEvaluat
 from app.models.role_expectation_models import RoleExpectation
 from app.models.password_reset_token_models import PasswordResetToken
 from app.models.export_audit_log_models import ExportAuditLog
+from app.models.mentor_reassignment_log_models import MentorReassignmentLog
+from app.models.project_goal_models import (
+    GoalFramework,
+    GoalFrameworkKpi,
+    ProjectGoalSet,
+    ProjectGoalItem,
+    ProjectGoalReview,
+    ProjectGoalReviewItem,
+    ProjectGoalChangeLog,
+    ProjectGoalPeriodSettings,
+    ProjectGoalQuarter,
+    ProjectGoalCycleLog,
+)

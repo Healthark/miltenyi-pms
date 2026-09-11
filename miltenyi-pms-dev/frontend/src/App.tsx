@@ -55,6 +55,9 @@ const ProjectReviews = lazy(() =>
 const MyMentees = lazy(() =>
   import("@/pages/MyMentees").then((m) => ({ default: m.MyMentees })),
 );
+const ProjectGoals = lazy(() =>
+  import("@/pages/ProjectGoals").then((m) => ({ default: m.ProjectGoals })),
+);
 const MenteeDetail = lazy(() =>
   import("@/pages/MenteeDetail").then((m) => ({ default: m.MenteeDetail })),
 );
@@ -206,7 +209,7 @@ export default function App() {
               element={
                 <ProtectedRoute
                   requiredFeature="goals"
-                  requiredRole={["Employee", "Mentor", "HR_MyOrg"]}
+                  requiredRole={["Staff", "Mentor", "Admin"]}
                 />
               }
             >
@@ -217,18 +220,18 @@ export default function App() {
               element={
                 <ProtectedRoute
                   requiredFeature="annual_reviews"
-                  requiredRole={["Employee", "Mentor", "HR_MyOrg"]}
+                  requiredRole={["Staff", "Mentor", "Admin"]}
                 />
               }
             >
               <Route path="/annual-reviews" element={<AnnualReviews />} />
             </Route>
 
-            <Route element={<ProtectedRoute requiredFeature="admin" requiredRole={["HR_MyOrg", "HR_Miltenyi"]}/>}>
+            <Route element={<ProtectedRoute requiredFeature="admin" requiredRole={["Admin"]}/>}>
               <Route path="/admin" element={<AdminPanel />} />
             </Route>
 
-            <Route element={<ProtectedRoute requiredRole={["HR_MyOrg"]}/>}>
+            <Route element={<ProtectedRoute requiredRole={["Admin"]}/>}>
               <Route path="/management-review" element={<ManagementReview />} />
             </Route>
 
@@ -236,11 +239,24 @@ export default function App() {
               element={
                 <ProtectedRoute
                   requiredFeature="project_reviews"
-                  requiredRole={["Employee", "PM", "Mentor", "HR_Miltenyi", "HR_MyOrg"]}
+                  requiredRole={["Staff", "Mentor", "Admin"]}
                 />
               }
             >
               <Route path="/project-reviews" element={<ProjectReviews />} />
+            </Route>
+
+            {/* Project Goals — employee table, mentor queue + set view, HR view */}
+            <Route
+              element={
+                <ProtectedRoute
+                  requiredFeature="project_goals"
+                  requiredRole={["Staff", "Mentor", "Admin"]}
+                />
+              }
+            >
+              <Route path="/project-goals" element={<ProjectGoals />} />
+              <Route path="/project-goals/:setId" element={<ProjectGoals />} />
             </Route>
             {/* Profile — always visible, no feature gate */}
             <Route path="/profile" element={<Profile />} />
@@ -249,7 +265,7 @@ export default function App() {
               element={
                 <ProtectedRoute
                   requiredFeature="mentoring"
-                  requiredRole={["Mentor", "HR_MyOrg"]}
+                  requiredRole={["Mentor", "Admin"]}
                 />
               }
             >

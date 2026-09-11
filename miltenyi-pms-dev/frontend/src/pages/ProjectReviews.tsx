@@ -143,16 +143,16 @@ const cardKey = (c: MyProjectCard) => `${c.project_id}-${c.cycle}`;
 export function ProjectReviews() {
   const { user } = useAuth();
   const { settings } = useSystemSettings();
-  const projectRatingsVisible = settings?.project_ratings_visible ?? false;
+  const projectRatingsVisible = false /* retired switch; ratings stay hidden in this legacy module */;
 
   // Role-based tab gating. The page used to drive everything off
   // `has_mentees`, which conflated "PM with a team" and "Mentor with
   // mentees" — wrong under the current taxonomy because Mentors are
   // not project reviewers.
-  const isEmployee = user?.role === "Employee";
+  const isEmployee = user?.role === "Staff";
   const isPM = user?.role === "PM";
   const isMentor = user?.role === "Mentor";
-  const isHR = user?.role === "HR_MyOrg" || user?.role === "HR_Miltenyi";
+  const isHR = user?.role === "Admin" || user?.role === "HR_Miltenyi";
 
   // Canonical filter option sources for the HR "All Reviews" tab. These
   // back the cycle / project / pm / employee dropdowns there so they

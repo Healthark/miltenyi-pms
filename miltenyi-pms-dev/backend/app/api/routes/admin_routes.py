@@ -35,7 +35,7 @@ from app.core.cache import (
 )
 from app.core.config import settings
 from app.core.security import get_password_hash
-from app.models.user_models import User, Role, ADMIN_ROLES, PROTECTED_USER_ROLES
+from app.models.user_models import User, Role
 from app.models.reference_models import Function, Designation
 from app.models.project_models import (
     Project,
@@ -101,26 +101,12 @@ router = APIRouter()
 
 # ── Reusable Role Guards ─────────────────────────────────────────────
 
-def _require_hr_any(current_user: User) -> None:
-    """Raise 403 unless the caller is HR_MyOrg or HR_Miltenyi.
-
-    Both HR roles can hit the read endpoints + most write endpoints; the
-    target-protection check below adds the extra constraint on which rows
-    HR_Miltenyi may mutate.
-    """
-    if current_user.role not in ADMIN_ROLES:
+def _require_admin(current_user: User) -> None:
+    """Raise 403 unless the caller is an Admin (Healthark HR)."""
+    if current_user.role != Role.ADMIN.value:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only HR users can access this resource.",
-        )
-
-
-def _require_hr_myorg(current_user: User) -> None:
-    """Raise 403 unless the caller is HR_MyOrg (the full super-admin)."""
-    if current_user.role != Role.HR_MYORG.value:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the Healthark HR can access this resource.",
+            detail="Only Admins can access this resource.",
         )
 
 
@@ -496,7 +482,7 @@ def _orphan_mentees(
         uid for (uid,) in db.query(User.id)
         .filter(
             User.org_id == departing_mentor.org_id,
-            User.role == Role.HR_MYORG.value,
+            User.role == Role.ADMIN.value,
             User.is_deleted == False,  # noqa: E712
         )
         .all()
@@ -604,94 +590,6 @@ def _cascade_pm_reassignment(
         )
 
 
-def _orphan_pm_projects(
-    db: DbSession,
-    *,
-    admin: User,
-    departing_pm: User,
-    reason: str,
-) -> int:
-    """Sweep every active project where `pm_id == departing_pm.id` and
-    mark them orphaned. Used when the PM is deactivated OR their role
-    is changed away from PM.
-
-    For each project:
-      - `Project.pm_id = NULL`
-      - `Project.pm_orphaned_at = NOW()`
-      - In-flight `ProjectReview.reviewer_id` rows nulled via
-        `_cascade_pm_reassignment(..., new_pm_id=None)`.
-
-    Soft-deleted + completed projects are skipped — the cascade is for
-    operational ("act on me") state. A completed project that happened
-    to be PM'd by the departing user doesn't need reassignment; its
-    reviews are already closed.
-
-    After the per-project work, fire ONE notification per HR_MyOrg
-    user with the orphan count so they can chase the reassignment.
-    Returns the count for the caller's response payload (if any).
-
-    Caller owns the surrounding db.commit().
-    """
-    projects = (
-        db.query(Project)
-        .filter(
-            Project.org_id == departing_pm.org_id,
-            Project.pm_id == departing_pm.id,
-            Project.is_deleted == False,  # noqa: E712
-            Project.status == PROJECT_STATUS_ACTIVE,
-        )
-        .all()
-    )
-    if not projects:
-        return 0
-
-    now = datetime.now(timezone.utc)
-
-    for project in projects:
-        _cascade_pm_reassignment(
-            db,
-            project=project,
-            old_pm_id=departing_pm.id,
-            new_pm_id=None,
-        )
-        project.pm_id = None
-        project.pm_orphaned_at = now
-
-    # Notify all HR_MyOrg users so the dashboard's new orphan bucket
-    # gets human attention. One in-app + email per HR user.
-    hr_user_ids = [
-        uid for (uid,) in db.query(User.id)
-        .filter(
-            User.org_id == departing_pm.org_id,
-            User.role == Role.HR_MYORG.value,
-            User.is_deleted == False,  # noqa: E712
-        )
-        .all()
-    ]
-    if hr_user_ids:
-        count = len(projects)
-        project_word = "project" if count == 1 else "projects"
-        reason_phrase = (
-            "deactivated" if reason == "deactivation" else "no longer a PM"
-        )
-        notify_many(
-            db,
-            org_id=departing_pm.org_id,
-            recipient_ids=hr_user_ids,
-            sender_id=admin.id,
-            module="admin",
-            entity_type=f"pm_{reason}",
-            entity_id=departing_pm.id,
-            message=(
-                f"PM {departing_pm.full_name} is {reason_phrase}. "
-                f"{count} {project_word} now need a new PM."
-            ),
-            entity_url="/dashboard",
-        )
-
-    return len(projects)
-
-
 def _clear_secondary_drafts(
     db: DbSession,
     *,
@@ -719,30 +617,6 @@ def _clear_secondary_drafts(
     return deleted
 
 
-def _authorize_user_mutation(current_user: User, target_role: str | None) -> None:
-    """Enforce the security boundary on user-mutating endpoints.
-
-    HR_MyOrg may create/edit/deactivate any user.
-    HR_Miltenyi may NOT touch a row whose role is Mentor or HR_MyOrg —
-    that's the boundary the user defined: "Miltenyi HR can't edit the 3
-    mentors or the HR from MyOrg as a security measure."
-
-    Also blocks HR_Miltenyi from *promoting* a user TO a protected role
-    (e.g. flipping an Employee row's role to Mentor).
-
-    Pass `target_role=None` when the operation doesn't change the role
-    (e.g. deactivate); we look up the row's existing role at the call site.
-    """
-    if current_user.role == Role.HR_MYORG.value:
-        return  # Healthark HR has full powers
-    if target_role and target_role in PROTECTED_USER_ROLES:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=(
-                "Miltenyi HR cannot create or modify Mentors or Healthark HR users."
-            ),
-        )
-
 
 # ── Identity Field Validators ─────────────────────────────────────────
 #
@@ -751,57 +625,40 @@ def _authorize_user_mutation(current_user: User, target_role: str | None) -> Non
 # The frontend mirrors them in `utils/text.ts` for UX feedback, but the
 # backend is the hard gate — never assume the client validated.
 #
-# Domain map (kept in lock-step with Role docstring):
-#   HR_MyOrg, Mentor                       → @healthark.ai
-#   HR_Miltenyi, PM, Employee              → @miltenyi.com OR @external.miltenyi.com
-
-_HEALTHARK_ROLES = frozenset({Role.HR_MYORG.value, Role.MENTOR.value})
-_MILTENYI_ROLES = frozenset({Role.HR_MILTENYI.value, Role.PM.value, Role.EMPLOYEE.value})
+# Every account belongs to a Healthark employee (the Miltenyi side does not
+# log in), so there is one rule for every role: the address must be
+# @healthark.ai.
 _HEALTHARK_DOMAIN = "healthark.ai"
-_MILTENYI_DOMAINS = ("miltenyi.com", "external.miltenyi.com")
 
 
 # ── Employee Code Convention ──────────────────────────────────────────
 #
-# Auto-generated convention: `<ORG_PREFIX>-<ROLE_CODE>-<NNN>` where NNN
-# is a 3-digit zero-padded sequence (e.g. `HRK-MNT-007`). The org side
-# is derived from the role using the same mapping as the email-domain
-# rules — HR_MyOrg + Mentor are Healthark-side, the others are
-# Miltenyi-side. The HR role-code is shared between HR_MyOrg + HR_Miltenyi
-# (the org prefix already disambiguates them).
+# Auto-generated convention: `HRK-<ROLE_CODE>-<NNN>` where NNN is a
+# 3-digit zero-padded sequence (e.g. `HRK-MNT-007`). Everyone is a
+# Healthark employee, so the org part is constant; the role code is the
+# only thing that varies.
 #
-# Existing seed codes don't follow this convention (HRK-001, MIL-PM-01,
-# STF-001 etc.) — they're grandfathered, and the sequence computation
-# only matches codes against the new prefix shape, so old codes never
+# Older seed codes don't follow this convention (HRK-001, MIL-T-S-09
+# etc.) — they're grandfathered, and the sequence computation only
+# matches codes against the current prefix shape, so old codes never
 # influence the next-number calculation.
-_ORG_PREFIX_HEALTHARK = "HRK"
-_ORG_PREFIX_MILTENYI = "MIL"
-
-_ROLE_TO_ORG_PREFIX: dict[str, str] = {
-    Role.HR_MYORG.value: _ORG_PREFIX_HEALTHARK,
-    Role.MENTOR.value: _ORG_PREFIX_HEALTHARK,
-    Role.HR_MILTENYI.value: _ORG_PREFIX_MILTENYI,
-    Role.PM.value: _ORG_PREFIX_MILTENYI,
-    Role.EMPLOYEE.value: _ORG_PREFIX_MILTENYI,
-}
+_ORG_PREFIX = "HRK"
 
 _ROLE_TO_ROLE_CODE: dict[str, str] = {
-    Role.HR_MYORG.value: "HR",
-    Role.HR_MILTENYI.value: "HR",
+    Role.ADMIN.value: "ADM",
     Role.MENTOR.value: "MNT",
-    Role.PM.value: "PM",
-    Role.EMPLOYEE.value: "EMP",
+    Role.STAFF.value: "STF",
 }
 
 _EMPLOYEE_CODE_SEQ_PATTERN = re.compile(r"^(\d+)$")
 
 
 def _employee_code_prefix(role: str) -> str:
-    """Return the `<ORG>-<ROLE>-` portion of an auto-generated code
-    for `role` (trailing dash included so callers can concatenate the
+    """Return the `HRK-<ROLE>-` portion of an auto-generated code for
+    `role` (trailing dash included so callers can concatenate the
     sequence directly). KeyError on unknown role — callers should
     validate `role` against the Role enum first."""
-    return f"{_ROLE_TO_ORG_PREFIX[role]}-{_ROLE_TO_ROLE_CODE[role]}-"
+    return f"{_ORG_PREFIX}-{_ROLE_TO_ROLE_CODE[role]}-"
 
 
 def _compute_next_employee_code(db: DbSession, org_id: int, role: str) -> str:
@@ -843,8 +700,8 @@ def _compute_next_employee_code(db: DbSession, org_id: int, role: str) -> str:
     return f"{prefix}{next_seq:0{width}d}"
 
 
-def _validate_email_for_role(email: str, role: str) -> None:
-    """Raise 400 unless the email's domain is allowed for this role.
+def _validate_email(email: str) -> None:
+    """Raise 400 unless the address is an @healthark.ai one.
 
     Domain match is case-insensitive (per RFC 5321 the domain part is
     case-insensitive even though the local part technically isn't — but
@@ -857,23 +714,11 @@ def _validate_email_for_role(email: str, role: str) -> None:
             detail="Email must contain '@'.",
         )
     domain = email.rsplit("@", 1)[1].lower()
-    if role in _HEALTHARK_ROLES:
-        if domain != _HEALTHARK_DOMAIN:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=(
-                    f"{role} accounts must use a @{_HEALTHARK_DOMAIN} email address."
-                ),
-            )
-    elif role in _MILTENYI_ROLES:
-        if domain not in _MILTENYI_DOMAINS:
-            allowed = " or ".join(f"@{d}" for d in _MILTENYI_DOMAINS)
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"{role} accounts must use {allowed} email addresses.",
-            )
-    # Unknown roles fall through silently — the role guard upstream will
-    # have rejected anything not in the enum before we get here.
+    if domain != _HEALTHARK_DOMAIN:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Accounts must use a @{_HEALTHARK_DOMAIN} email address.",
+        )
 
 
 def _validate_name_chars(name: str) -> None:
@@ -931,7 +776,7 @@ def list_users(
     names for each Employee row are stitched in via a single batched query
     below — also N+1-safe.
     """
-    _require_hr_any(current_user)
+    _require_admin(current_user)
 
     users = (
         db.query(User)
@@ -944,41 +789,6 @@ def list_users(
         .all()
     )
 
-    # Resolve each user's active project managers in one batched query.
-    # An "active" assignment is one where end_date IS NULL. Joins:
-    #   ProjectAssignment → Project (to find pm_id)
-    #   Project → User (to get the PM's full_name)
-    # Soft-deleted PMs and projects are excluded. Distinct() here makes
-    # the SQL emit DISTINCT so we don't double-count when an Employee has
-    # multiple active rows under the same project.
-    pm_rows = (
-        db.query(ProjectAssignment.user_id, User.full_name)
-        .join(Project, Project.id == ProjectAssignment.project_id)
-        .join(User, User.id == Project.pm_id)
-        .filter(
-            ProjectAssignment.org_id == current_user.org_id,
-            ProjectAssignment.end_date.is_(None),
-            Project.is_deleted.is_(False),
-            User.is_deleted == False,  # noqa: E712
-        )
-        .distinct()
-        .all()
-    )
-    pm_names_by_user: dict[int, set[str]] = {}
-    for user_id, pm_name in pm_rows:
-        pm_names_by_user.setdefault(user_id, set()).add(pm_name)
-
-    # Pydantic builds UserResponse instances directly from the SQLAlchemy
-    # models via `from_attributes`; we need to surface the computed PM
-    # list on each row before serialisation. Setting it as a plain
-    # attribute on the ORM instance is the lightest path — Pydantic's
-    # `model_validate` picks it up the same way as the joined columns.
-    for u in users:
-        names = sorted(pm_names_by_user.get(u.id, set()))
-        # Attach as a transient attribute; the model doesn't have a
-        # column for it. SQLAlchemy doesn't try to persist this.
-        u.project_manager_names = names  # type: ignore[attr-defined]
-
     return users
 
 
@@ -989,9 +799,9 @@ def list_users(
 #
 # Sort map mirrors the frontend's `UsersSortKey` for the columns the
 # server can sort directly (User-attribute + joined reference-table
-# columns). `mentor_name` and `project_manager_names` involve correlated
-# subqueries / set aggregations — those columns stay rendered as plain
-# (non-sortable) headers; same deferral the goal_routes `/all` endpoint
+# columns). `mentor_name` needs a correlated subquery — that column stays
+# rendered as a plain (non-sortable) header; same deferral the goal_routes
+# `/all` endpoint
 # uses for `latest_fy_year` / `latest_manager_name`.
 _USERS_SORT_COLUMNS = {
     "full_name":        User.full_name,
@@ -1072,16 +882,6 @@ def list_users_paginated(
             "dropdown uses."
         ),
     ),
-    pm_name: Optional[str] = Query(
-        None,
-        description=(
-            "Exact match: row passes when at least one active "
-            "ProjectAssignment ties the user to a Project whose PM "
-            "has the supplied full_name. Active means the assignment's "
-            "end_date IS NULL — same definition used by the "
-            "project_manager_names column."
-        ),
-    ),
     sort_by: Optional[
         Literal[
             "full_name", "email", "role", "created_at",
@@ -1091,8 +891,8 @@ def list_users_paginated(
         None,
         description=(
             "Sort column. Direct user-attribute + reference-table "
-            "columns only; mentor_name and project_manager_names sorts "
-            "are deferred (would need correlated subqueries)."
+            "columns only; the mentor_name sort is deferred (would need "
+            "a correlated subquery)."
         ),
     ),
     sort_dir: Literal["asc", "desc"] = Query(
@@ -1124,7 +924,7 @@ def list_users_paginated(
     rows are returned alongside live ones (matching the unpaginated
     endpoint's behaviour).
     """
-    _require_hr_any(current_user)
+    _require_admin(current_user)
 
     # ── Base query + filters ────────────────────────────────────────────
     users_q = db.query(User).filter(User.org_id == current_user.org_id)
@@ -1178,27 +978,6 @@ def list_users_paginated(
                 MentorAlias, MentorAlias.id == User.mentor_id,
             ).filter(MentorAlias.full_name == mentor_name)
 
-    if pm_name:
-        # The user passes the `pm_name` filter when an active assignment
-        # ties them to a project whose PM has the given name. EXISTS
-        # subquery keeps the join from multiplying user rows by
-        # assignment count. Active = end_date IS NULL.
-        PMUserAlias = aliased(User)
-        pm_exists = (
-            db.query(ProjectAssignment.id)
-            .join(Project, Project.id == ProjectAssignment.project_id)
-            .join(PMUserAlias, PMUserAlias.id == Project.pm_id)
-            .filter(
-                ProjectAssignment.user_id == User.id,
-                ProjectAssignment.org_id == current_user.org_id,
-                ProjectAssignment.end_date.is_(None),
-                Project.is_deleted.is_(False),
-                PMUserAlias.full_name == pm_name,
-                PMUserAlias.is_deleted == False,  # noqa: E712
-            )
-            .exists()
-        )
-        users_q = users_q.filter(pm_exists)
 
     # ── Sort ────────────────────────────────────────────────────────────
     if sort_by is None:
@@ -1228,38 +1007,6 @@ def list_users_paginated(
         .all()
     )
 
-    # ── Step 4: attach project_manager_names for the page slice only —
-    # the unpaginated endpoint resolves this for the whole org; we
-    # restrict to the returned user_ids so the join cost scales with
-    # the page size, not the org size.
-    page_user_ids = [u.id for u in page_users]
-    if page_user_ids:
-        pm_rows = (
-            db.query(ProjectAssignment.user_id, User.full_name)
-            .join(Project, Project.id == ProjectAssignment.project_id)
-            .join(User, User.id == Project.pm_id)
-            .filter(
-                ProjectAssignment.org_id == current_user.org_id,
-                ProjectAssignment.user_id.in_(page_user_ids),
-                ProjectAssignment.end_date.is_(None),
-                Project.is_deleted.is_(False),
-                User.is_deleted == False,  # noqa: E712
-            )
-            .distinct()
-            .all()
-        )
-        pm_names_by_user: dict[int, set[str]] = {}
-        for user_id, full_name in pm_rows:
-            pm_names_by_user.setdefault(user_id, set()).add(full_name)
-        for u in page_users:
-            u.project_manager_names = sorted(  # type: ignore[attr-defined]
-                pm_names_by_user.get(u.id, set())
-            )
-    else:
-        # No users on this page — still set the transient attribute so
-        # Pydantic doesn't complain about missing fields when items=[].
-        for u in page_users:
-            u.project_manager_names = []  # type: ignore[attr-defined]
 
     return Paginated[UserResponse](
         items=page_users,
@@ -1285,19 +1032,14 @@ def get_next_employee_code(
     simultaneously they'll see the same suggested code; the first to
     save wins and the second gets a code +1 with a frontend toast.
 
-    Auth mirrors the create endpoint:
-      - Both HR roles can preview.
-      - HR_Miltenyi can't preview a code for a protected role
-        (Mentor / HR_MyOrg) since `_authorize_user_mutation` would
-        block them from creating one anyway.
+    Admin only, like the create endpoint.
     """
-    _require_hr_any(current_user)
-    if role not in _ROLE_TO_ORG_PREFIX:
+    _require_admin(current_user)
+    if role not in _ROLE_TO_ROLE_CODE:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Unknown role '{role}'.",
         )
-    _authorize_user_mutation(current_user, role)
     return {"code": _compute_next_employee_code(db, current_user.org_id, role)}
 
 
@@ -1319,16 +1061,14 @@ def create_user(
     delivery does NOT roll back the creation — the user row is already
     persisted and the admin can relay the credentials manually.
     """
-    _require_hr_any(current_user)
-    _authorize_user_mutation(current_user, user_in.role)
-
+    _require_admin(current_user)
     # Identity-field rules: validate before any DB lookup so a malformed
     # payload returns 400 cheaply instead of touching the duplicate-check
     # indexes. The Role enum docstring + helpers above are the single
     # source of truth for what's allowed.
     _validate_name_chars(user_in.full_name)
     normalized_full_name = _normalize_full_name(user_in.full_name)
-    _validate_email_for_role(user_in.email, user_in.role)
+    _validate_email(user_in.email)
 
     # Check for duplicate email within this org
     existing = db.query(User).filter(
@@ -1383,6 +1123,7 @@ def create_user(
         function_id=user_in.function_id,
         designation_id=user_in.designation_id,
         mentor_id=user_in.mentor_id,
+        miltenyi_reviewer_name=user_in.miltenyi_reviewer_name,
         password_hash=get_password_hash(user_in.password),
         # Initial `password_changed_at` value is the row's birth time.
         # Required so the user's first JWT (when they log in with the
@@ -1448,7 +1189,7 @@ def update_user(
     Email is intentionally NOT updatable — the frontend makes the field
     read-only during edit mode to prevent orphaned JWT tokens.
     """
-    _require_hr_any(current_user)
+    _require_admin(current_user)
 
     user = db.query(User).filter(
         User.id == user_id,
@@ -1461,35 +1202,7 @@ def update_user(
             detail="User not found.",
         )
 
-    # Security boundary: HR_Miltenyi can't edit a Mentor or HR_MyOrg row
-    # (block based on the existing role) and can't promote anyone TO a
-    # protected role (block based on the incoming role, if changing).
-    _authorize_user_mutation(current_user, user.role)
-    if user_in.role and user_in.role != user.role:
-        _authorize_user_mutation(current_user, user_in.role)
-
-    # HR_Miltenyi can only edit Function and Designation on existing
-    # rows. Identity fields (employee_code, full_name), system role,
-    # phone, and mentor assignment all belong to Healthark HR. We
-    # compare incoming values to stored ones so a no-op payload (same
-    # value resubmitted) still passes — only real changes raise 403.
-    # The new-user creation path is untouched: HR_Miltenyi may still
-    # provision an Employee/PM/HR_Miltenyi row with full field control.
     update_data = user_in.model_dump(exclude_unset=True)
-    if current_user.role == Role.HR_MILTENYI.value:
-        HR_MILTENYI_EDITABLE_FIELDS = {"function_id", "designation_id"}
-        for field, incoming in update_data.items():
-            if field in HR_MILTENYI_EDITABLE_FIELDS:
-                continue
-            if incoming != getattr(user, field):
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=(
-                        "Miltenyi HR can only change Function and "
-                        "Designation. Ask Healthark HR to update "
-                        "other fields."
-                    ),
-                )
 
     if "employee_code" in update_data and update_data["employee_code"] != user.employee_code:
         existing_code = db.query(User).filter(
@@ -1504,20 +1217,12 @@ def update_user(
                 detail=f"Employee code '{update_data['employee_code']}' is already in use.",
             )
 
-    # Identity-field rules on update:
-    #   - If full_name is in the payload, validate chars and normalize
-    #     casing in place so the persisted row + the response both reflect
-    #     the canonical form.
-    #   - Email isn't editable (see docstring), but role IS — when role
-    #     changes we re-validate the *existing* email against the new role
-    #     so HR can't sidestep the domain rule by flipping the role of an
-    #     already-created account (e.g. promote an @miltenyi.com Employee
-    #     to Mentor, which requires @healthark.ai).
+    # If full_name is in the payload, validate chars and normalize casing
+    # in place so the persisted row + the response both reflect the
+    # canonical form. Email isn't editable (see docstring).
     if "full_name" in update_data and update_data["full_name"] is not None:
         _validate_name_chars(update_data["full_name"])
         update_data["full_name"] = _normalize_full_name(update_data["full_name"])
-    if "role" in update_data and update_data["role"] and update_data["role"] != user.role:
-        _validate_email_for_role(user.email, update_data["role"])
 
     # Snapshot the old mentor_id BEFORE applying the update so we can
     # detect a true mentor reassignment after commit. A PATCH that
@@ -1550,27 +1255,6 @@ def update_user(
             db,
             admin=current_user,
             departing_mentor=user,
-            reason="role_change",
-        )
-
-    # Role-change-away-from-PM cascade: parallel to the Mentor branch
-    # above. Without this, a user demoted from PM to Employee keeps
-    # appearing as the PM on every project they ran (Project.pm_id
-    # still points at them) but their PM-role permissions are gone, so
-    # in-flight ProjectReviews freeze and HR has no signal that the
-    # projects need a new PM. Run BEFORE the setattr loop so the
-    # cascade sees `user.role` as PM.
-    is_pm_role_demotion = (
-        "role" in update_data
-        and update_data["role"]
-        and update_data["role"] != user.role
-        and user.role == Role.PM.value
-    )
-    if is_pm_role_demotion:
-        _orphan_pm_projects(
-            db,
-            admin=current_user,
-            departing_pm=user,
             reason="role_change",
         )
 
@@ -1714,7 +1398,7 @@ def reactivate_user(
     in with their old password immediately. If admin wants a clean slate,
     they should follow up with a password reset.
     """
-    _require_hr_any(current_user)
+    _require_admin(current_user)
 
     user = db.query(User).filter(
         User.id == user_id,
@@ -1726,8 +1410,6 @@ def reactivate_user(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found.",
         )
-
-    _authorize_user_mutation(current_user, user.role)
 
     if not user.is_deleted:
         raise HTTPException(
@@ -1774,7 +1456,7 @@ def deactivate_user(
     it expires, but the CurrentUser dependency checks is_deleted on
     every request, so they are blocked immediately.
     """
-    _require_hr_any(current_user)
+    _require_admin(current_user)
 
     user = db.query(User).filter(
         User.id == user_id,
@@ -1786,8 +1468,6 @@ def deactivate_user(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found.",
         )
-
-    _authorize_user_mutation(current_user, user.role)
 
     # Guard: Admin should not deactivate themselves
     if user.id == current_user.id:
@@ -1807,28 +1487,17 @@ def deactivate_user(
     # semantics: in-flight work moves to NULL (so HR can reassign),
     # closed work preserves stamped attribution.
     #
-    #   1. PM    → projects orphaned + in-flight ProjectReview.reviewer_id
-    #              nulled; HR_MyOrg notified.
     #   2. Mentor→ mentees orphaned + in-flight goal/review stamped
     #              mentor nulled; HR_MyOrg notified.
     #   3. Secondary → in-flight ProjectReviewEvaluator drafts deleted
     #              (each row is uniquely owned; can't be transferred).
     #
-    # The PM and Mentor branches gate on `user.role` because role
-    # invariants on the FK fields are airtight (only role=PM can be a
-    # Project.pm_id; only role=Mentor can be a User.mentor_id). The
-    # secondary branch + Project.secondary_evaluator_id null run
-    # unconditionally because the secondary can be any role except
-    # PM/Mentor — gating would miss cases.
+    # The Mentor branch gates on `user.role` because only role=Mentor can
+    # be a User.mentor_id. The secondary branch + Project.secondary_evaluator_id
+    # null run unconditionally (legacy project-review data may still
+    # reference this user).
 
-    if user.role == Role.PM.value:
-        _orphan_pm_projects(
-            db,
-            admin=current_user,
-            departing_pm=user,
-            reason="deactivation",
-        )
-    elif user.role == Role.MENTOR.value:
+    if user.role == Role.MENTOR.value:
         _orphan_mentees(
             db,
             admin=current_user,
@@ -1861,7 +1530,7 @@ def list_functions(
     current_user: CurrentUser,
 ):
     """Return all active functions for the org (powers the <select> dropdown)."""
-    _require_hr_any(current_user)
+    _require_admin(current_user)
 
     def _query() -> List[FunctionBrief]:
         rows = (
@@ -1886,7 +1555,7 @@ def list_designations(
     current_user: CurrentUser,
 ):
     """Return all active designations for the org, sorted by hierarchy level."""
-    _require_hr_any(current_user)
+    _require_admin(current_user)
 
     def _query() -> List[DesignationBrief]:
         rows = (
@@ -1919,7 +1588,7 @@ def get_admin_settings(
     the /api/v1/settings/ endpoints. The frontend field name 'active_cycle'
     maps to the database column 'active_cycle_name'.
     """
-    _require_hr_any(current_user)
+    _require_admin(current_user)
 
     def _query() -> AdminSettingsResponse:
         row = db.query(SystemSettings).filter(
@@ -1950,7 +1619,7 @@ def get_admin_settings(
         # Lazy-create the current-FY override row, then read flags off
         # it so legacy consumers continue to see consistent values.
         override = ensure_year_override_row(
-            db, current_user.org_id, live_fy, seed_from_settings=row,
+            db, current_user.org_id, live_fy,
         )
         return AdminSettingsResponse(
             id=row.id,
@@ -1959,9 +1628,7 @@ def get_admin_settings(
             cycle_type=row.cycle_type,
             fiscal_start_month=row.fiscal_start_month,
             timezone=row.timezone or "UTC",
-            goals_edit_enabled=row.goals_edit_enabled,
             annual_goals_edit_enabled=override.annual_goals_edit_enabled,
-            project_ratings_visible=override.project_ratings_visible,
             annual_reviews_enabled=override.annual_reviews_enabled,
             annual_review_final_rating_visible=override.annual_review_final_rating_visible,
             simulated_today=row.simulated_today,
@@ -1986,7 +1653,7 @@ def update_admin_settings(
     Cycle cadence and fiscal month are editable; active_cycle_name is
     recomputed automatically from those two values + today's date.
     """
-    _require_hr_any(current_user)
+    _require_admin(current_user)
 
     # Snapshot the env flag before the local `settings` variable shadows
     # the imported config-settings module.
@@ -2018,11 +1685,9 @@ def update_admin_settings(
             ),
         )
 
-    # Apply cadence / fiscal / timezone / simulated_today changes —
-    # these stay org-wide. The four access-control toggles below now
-    # route to the per-FY override table.
-    if settings_in.cycle_type is not None:
-        settings_row.cycle_type = settings_in.cycle_type
+    # Apply fiscal / timezone / simulated_today changes — these stay
+    # org-wide. The cadence is fixed (half-yearly). The access toggles
+    # below route to the per-FY override table.
     if settings_in.fiscal_start_month is not None:
         settings_row.fiscal_start_month = settings_in.fiscal_start_month
     if settings_in.timezone is not None:
@@ -2056,9 +1721,6 @@ def update_admin_settings(
     settings_row.active_cycle_name = fresh_cycle
     fresh_fy = extract_fy_label(fresh_cycle)
 
-    if settings_in.goals_edit_enabled is not None:
-        settings_row.goals_edit_enabled = settings_in.goals_edit_enabled
-
     settings_row.updated_by_id = current_user.id
 
     # Route the four access toggles to the current-FY override row when
@@ -2069,12 +1731,10 @@ def update_admin_settings(
         db,
         current_user.org_id,
         fresh_fy,
-        seed_from_settings=settings_row,
         updated_by_id=current_user.id,
     )
     legacy_year_writes = {
         "annual_goals_edit_enabled": settings_in.annual_goals_edit_enabled,
-        "project_ratings_visible": settings_in.project_ratings_visible,
         "annual_reviews_enabled": settings_in.annual_reviews_enabled,
         "annual_review_final_rating_visible": settings_in.annual_review_final_rating_visible,
     }
@@ -2098,9 +1758,7 @@ def update_admin_settings(
         cycle_type=settings_row.cycle_type,
         fiscal_start_month=settings_row.fiscal_start_month,
         timezone=settings_row.timezone or "UTC",
-        goals_edit_enabled=settings_row.goals_edit_enabled,
         annual_goals_edit_enabled=override.annual_goals_edit_enabled,
-        project_ratings_visible=override.project_ratings_visible,
         annual_reviews_enabled=override.annual_reviews_enabled,
         annual_review_final_rating_visible=override.annual_review_final_rating_visible,
         simulated_today=settings_row.simulated_today,
@@ -2129,7 +1787,7 @@ def settings_preflight(
     (`annual_goals_edit_enabled`, `annual_reviews_enabled`) compute real
     counts so the UI can name exactly who would be stranded.
     """
-    _require_hr_any(current_user)
+    _require_admin(current_user)
 
     settings_row = db.query(SystemSettings).filter(
         SystemSettings.org_id == current_user.org_id,
@@ -2139,7 +1797,6 @@ def settings_preflight(
         return {
             "annual_goals_edit_enabled":          {"in_flight_count": 0, "warning": None},
             "annual_reviews_enabled":             {"in_flight_count": 0, "warning": None},
-            "project_ratings_visible":            {"in_flight_count": 0, "warning": None},
             "annual_review_final_rating_visible": {"in_flight_count": 0, "warning": None},
         }
 
@@ -2158,7 +1815,7 @@ def settings_preflight(
         db.query(User.id)
         .filter(
             User.org_id == current_user.org_id,
-            User.role == Role.EMPLOYEE.value,
+            User.role == Role.STAFF.value,
             User.is_deleted == False,  # noqa: E712
         )
         .subquery()
@@ -2242,7 +1899,6 @@ def settings_preflight(
         },
         # Visibility-only — flipping off doesn't lock anyone out, so no
         # preflight warning is needed.
-        "project_ratings_visible":            {"in_flight_count": 0, "warning": None},
         "annual_review_final_rating_visible": {"in_flight_count": 0, "warning": None},
     }
 
@@ -2252,9 +1908,9 @@ def settings_preflight(
 # =====================================================================
 #
 # These endpoints back the Year dropdown in the Admin Panel's System
-# Settings tab. The four toggles (annual_reviews_enabled,
-# annual_review_final_rating_visible, annual_goals_edit_enabled,
-# project_ratings_visible) are configured per FY rather than as
+# Settings tab. The three toggles (annual_reviews_enabled,
+# annual_review_final_rating_visible, annual_goals_edit_enabled) are
+# configured per FY rather than as
 # org-wide singletons — so HR can re-open FY26-27 review submissions
 # while FY27-28 is the system-computed active cycle.
 
@@ -2278,7 +1934,6 @@ def _build_year_settings_response(
         annual_reviews_enabled=row.annual_reviews_enabled,
         annual_review_final_rating_visible=row.annual_review_final_rating_visible,
         annual_goals_edit_enabled=row.annual_goals_edit_enabled,
-        project_ratings_visible=row.project_ratings_visible,
         is_current=(row.fy_label == current_fy),
         updated_at=row.updated_at,
     )
@@ -2302,7 +1957,7 @@ def list_settings_years(
     years; the toggles will reflect default-deny values on years that
     haven't been saved yet.
     """
-    _require_hr_any(current_user)
+    _require_admin(current_user)
 
     settings_row = db.query(SystemSettings).filter(
         SystemSettings.org_id == current_user.org_id,
@@ -2388,7 +2043,7 @@ def get_year_settings(
 ):
     """Return the per-FY override row, lazy-creating from the latest
     existing override (or legacy SystemSettings flags) if missing."""
-    _require_hr_any(current_user)
+    _require_admin(current_user)
 
     settings_row = db.query(SystemSettings).filter(
         SystemSettings.org_id == current_user.org_id,
@@ -2410,7 +2065,6 @@ def get_year_settings(
         db,
         current_user.org_id,
         canonical,
-        seed_from_settings=settings_row,
     )
     return _build_year_settings_response(row, _current_fy_label(settings_row))
 
@@ -2423,7 +2077,7 @@ def update_year_settings(
     current_user: CurrentUser,
 ):
     """Update the four access toggles for a specific FY."""
-    _require_hr_any(current_user)
+    _require_admin(current_user)
 
     settings_row = db.query(SystemSettings).filter(
         SystemSettings.org_id == current_user.org_id,
@@ -2445,7 +2099,6 @@ def update_year_settings(
         db,
         current_user.org_id,
         canonical,
-        seed_from_settings=settings_row,
         updated_by_id=current_user.id,
     )
     for flag in YEAR_OVERRIDE_FLAGS:
@@ -2471,11 +2124,11 @@ def year_settings_preflight(
     Year-scoped variant of `/settings/preflight`. Counts users who would
     be stranded if the toggle flipped off, filtered to the requested FY.
 
-    Visibility-only flags (project_ratings_visible,
-    annual_review_final_rating_visible) always return 0 — flipping them
+    The visibility-only flag (annual_review_final_rating_visible) always
+    returns 0 — flipping them
     off doesn't lock anyone out, it just hides numbers.
     """
-    _require_hr_any(current_user)
+    _require_admin(current_user)
 
     canonical = extract_fy_label(fy_label)
     if not canonical.upper().startswith("FY"):
@@ -2488,7 +2141,7 @@ def year_settings_preflight(
         db.query(User.id)
         .filter(
             User.org_id == current_user.org_id,
-            User.role == Role.EMPLOYEE.value,
+            User.role == Role.STAFF.value,
             User.is_deleted == False,  # noqa: E712
         )
         .subquery()
@@ -2568,7 +2221,6 @@ def year_settings_preflight(
             in_flight_count=review_in_flight,
             warning=_msg(review_in_flight, "reviews"),
         ),
-        project_ratings_visible=YearPreflightEntry(in_flight_count=0, warning=None),
         annual_review_final_rating_visible=YearPreflightEntry(in_flight_count=0, warning=None),
     )
 
@@ -2584,11 +2236,6 @@ def _load_user_with_relations(db: DbSession, user_id: int) -> User:
     Called after create/update to ensure the response includes nested
     function and designation objects, not just their IDs.
 
-    `project_manager_names` is set to an empty list here. The mutation
-    responses don't strictly need the field populated — the frontend
-    invalidates `admin.users()` after success and refetches `list_users`,
-    which computes the real PM names via a single batched query. The
-    empty-list default keeps Pydantic happy without an extra round-trip.
     """
     user = (
         db.query(User)
@@ -2599,6 +2246,4 @@ def _load_user_with_relations(db: DbSession, user_id: int) -> User:
         .filter(User.id == user_id)
         .first()
     )
-    if user is not None:
-        user.project_manager_names = []  # type: ignore[attr-defined]
     return user

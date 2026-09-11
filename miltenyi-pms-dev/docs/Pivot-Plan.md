@@ -145,3 +145,51 @@ After all slices land:
    - PM opens pm-queue → submits evaluation → Staff sees reviewed status
    - HR_MyOrg finalizes Staff annual review with management rating
 6. **Visual verification:** open the app in a browser, confirm Sidebar nav matches the role table, confirm UserModal role dropdown shows all 5 options for HR_MyOrg and only the 4 non-MyOrg-HR options for HR_Miltenyi (TBD — flag for user).
+
+---
+
+## Revision — September 2026: Project Goals replace project reviews for Miltenyi
+
+Decision 5 above ("Project reviews remain PM-only") no longer describes the Miltenyi instance. In the 2 Sep 2026 stakeholder meeting Miltenyi asked for a single tabular view per employee — KPI · Goal · Self review · PM review — built on their own "CY 2026 Indicative Goal Themes" documents, with weightages per KPI and no comment loop. The approved wireframes and the implementation plan are in [`docs/plans/2026-09-09-project-goals-implementation-plan.md`](plans/2026-09-09-project-goals-implementation-plan.md); the gap analysis is in [`docs/meetings/2026-09-02-miltenyi-goals-gap-review.md`](meetings/2026-09-02-miltenyi-goals-gap-review.md).
+
+What changed:
+
+1. **New module `project_goals`.** One goal set per employee per period (`CY 2026`), rows snapshotted from the framework row for the employee's function × designation level. Lifecycle: Draft → Submitted → Approved (agreed offline) → Self-reviewed → Reviewed → acknowledged. Routes live under `/api/v1/project-goals` and `/api/v1/admin/goal-frameworks`; UI under `/project-goals` and the Admin Panel's **Framework Mapping** and **Framework** tabs.
+2. **Reviewer of record is the employee's Mentor.** Miltenyi managers have no login; the mentor records the offline approval and transcribes the Miltenyi reviewer's comments with provenance (name, received-on date, optional link). The Miltenyi reviewer's name is a plain field on the user (`users.miltenyi_reviewer_name`), editable in the user modal and in Framework Mapping.
+3. **`project_reviews` is retired for Miltenyi, not deleted.** It is simply absent from the organisation's `enabled_features`. The gate is now enforced server-side too (`require_feature`, [`backend/app/core/features.py`](../backend/app/core/features.py)) on the project-review router and its export, and the frontend hides the nav item, the dashboard cards, the topbar project-cycle pill, the mentee Projects tab and the export button when the feature is off. The PM role keeps only Dashboard / Profile / Support.
+4. **Seeds.** Both `seed.py` and `miltenyi-test-seed.py` load the 7 goal-theme documents (28 framework rows, 144 KPIs) from `seed_data/goal_themes.py`, link designations to functions, set the `CY 2026` period switches and put a Miltenyi reviewer name on each employee. Pharmacovigilance has no document yet; HR adds its rows in Admin → Framework.
+5. **Role table.** The `PM` row's "Can do" column is effectively empty on the Miltenyi instance until a future use for the role is agreed; `Staff` is the `Employee` role in code.
+
+Open items still with the stakeholders are listed at the end of the implementation plan.
+
+---
+
+## Revision — 10 September 2026: Healthark-only roles
+
+Nobody from Miltenyi logs in for now — the application is used by Healthark staff for their own evaluation. The five-role taxonomy above is therefore reduced to three roles, and the code was cleaned of everything that existed only for the other two:
+
+| Role | Stored value | Was |
+|---|---|---|
+| Admin | `Admin` | `HR_MyOrg` |
+| Staff | `Staff` | `Employee` |
+| Mentor | `Mentor` | `Mentor` |
+
+Migration `b3d9f1a7c2e4` renames the stored values and deactivates any `PM` / `HR_Miltenyi` account (they are deleted by the seeds). Removed with them: the per-role email-domain rule (every account is `@healthark.ai`), the `MIL`/`HRK` employee-code prefixes (now `HRK-ADM|MNT|STF-NNN`), the protected-role authorisation, the Miltenyi HR export workbook and user-list restrictions, the "Project Manager" column and filter on the Users tab, the PM dashboard layout and the PM headcount bucket.
+
+Migration `c8e2f4b6d9a1` consolidates System Settings: the org-wide copies of the per-FY toggles, the never-read submission gates and cycle dates, and the project-review rating switch are dropped; the cadence is fixed at half-yearly; the Project Goals period switches moved from the Framework tab into System Settings, which is now the only place with switches. Details: [`docs/plans/2026-09-10-admin-panel-and-role-audit.md`](plans/2026-09-10-admin-panel-and-role-audit.md).
+
+---
+
+## Revision — 10 September 2026: quarterly reviews against yearly goals; Projects removed
+
+Later the same day the stakeholder (Shreshta Anantha) confirmed the cadence: **goals are set once at the start of the year and do not change; reviews happen every quarter against those same goals**; annual (competency) goal reviews stay half-yearly and separate; **nothing is tracked per trial or project**. The plan and status are in [`docs/plans/2026-09-10-quarterly-project-goals-plan.md`](plans/2026-09-10-quarterly-project-goals-plan.md).
+
+What changed (migration `d4a7b2c9e1f3`):
+
+1. **Goals lifecycle shrinks to Draft → Submitted → Approved (agreed offline)** — once a year. The self-review / Miltenyi review states moved to a **review row per quarter** (`project_goal_reviews.cycle_label` = `Q3 CY 2026`, shown as `Q3 · CY 2026`), each with its own draft/submitted flags, self rating, final rating, provenance and acknowledgement.
+2. **The review window is the quarter, not a switch.** Modelled on the Healthark PMS cycle roll-out: the Admin advances the **current quarter** in System Settings → Project Goals (roll out / set manually / roll back, logged in `project_goal_cycle_logs`, announced in-app to everyone). The current quarter is writable, earlier quarters of the year stay open for backfill, later quarters are locked. Q4 → Q1 starts the next goal year (typed confirmation; frameworks carried over; goal entry reopens). The "self-review window" and period-wide "ratings visible" switches are gone; **ratings are released per quarter** (`project_goal_quarters.ratings_visible`). The yearly switches that remain: goal entry open, weightages visible.
+3. **Screens.** A quarter selector on the staff page, the mentor/Admin queue (`GET /project-goals/team?cycle=`) and the set page; the two right-hand table columns always show the selected quarter. Unlocking goals is refused once any quarter's self-review or review has been submitted; a quarter's review can be unlocked on its own.
+4. **Notifications** are bell + email for goals submitted, approved, self-review submitted, review submitted, review edited and unlocks; the quarter roll-out is a bell-only announcement to every active user. Weightages are informational: one self rating and one final rating per quarter, never per KPI.
+5. **Projects removed (audit D1 settled).** The Admin Projects tab, the HR dashboard Project Coverage card, the Projects export sheet/endpoint and the "Trials" line are gone; `project_routes.py` is gated behind `require_feature("projects")` and its tables stay dormant like project reviews.
+
+Follow-ups agreed but not built: an HR tracker with "Remind" digests (first), an Admin Notify tab, a Project Goals export / reviewer packet, a link from the annual-review tab, automated reminders.

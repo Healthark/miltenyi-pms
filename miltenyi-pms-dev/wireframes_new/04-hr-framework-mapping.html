@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin Panel · Framework — PMS wireframe</title>
+<link rel="icon" href="../frontend/public/miltenyi-biotech-small.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="assets/tailwind-config.js"></script>
+<link rel="stylesheet" href="assets/style.css">
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+</head>
+<body>
+<div id="page" class="space-y-6"></div>
+
+<div id="modals">
+  <!-- Mapping: edit Reviewer (Mentor) and Miltenyi Reviewer -->
+  <div id="map-edit" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" role="dialog" aria-modal="true">
+    <div class="w-full max-w-lg rounded-xl bg-surface shadow-xl">
+      <div class="flex items-center justify-between border-b border-border px-6 py-4">
+        <div><h2 class="font-display text-base font-semibold text-text-main">Edit mapping</h2><p class="mt-0.5 text-xs text-text-muted" id="edit-sub"></p></div>
+        <button type="button" data-close="map-edit" class="rounded-md p-1.5 text-text-muted hover:bg-slate-50 transition-colors" aria-label="Close"><i data-lucide="x" class="h-5 w-5"></i></button>
+      </div>
+      <div class="px-6 py-5 space-y-4 text-sm">
+        <div class="grid gap-3 rounded-lg border border-border bg-slate-50 px-4 py-3 text-[13px] sm:grid-cols-3">
+          <div><p class="text-[11px] font-bold uppercase tracking-wider text-text-muted">Function</p><p class="text-text-main" id="edit-fn"></p></div>
+          <div><p class="text-[11px] font-bold uppercase tracking-wider text-text-muted">GCC designation</p><p class="text-text-main" id="edit-desig"></p></div>
+          <div><p class="text-[11px] font-bold uppercase tracking-wider text-text-muted">Level</p><p class="text-text-main" id="edit-level"></p></div>
+        </div>
+        <label class="block"><span class="mb-1 block text-xs font-semibold text-text-main">Reviewer (Mentor)</span><select id="edit-mentor" class="w-full rounded-lg border border-border bg-white px-3 py-2 text-[13px] text-text-main outline-none focus:border-brand"></select><span class="mt-0.5 block text-[11px] text-text-muted">The mentor is the Healthark reviewer of record and enters the Miltenyi reviewer's inputs. Changing it here changes the mentor assignment.</span></label>
+        <label class="block"><span class="mb-1 block text-xs font-semibold text-text-main">Miltenyi reviewer</span><input id="edit-mrev" class="w-full rounded-lg border border-border bg-white px-3 py-2 text-[13px] text-text-main outline-none focus:border-brand" placeholder="Name of the Miltenyi manager whose comments are entered"></label>
+      </div>
+      <div class="flex justify-end gap-3 border-t border-border px-6 py-4">
+        <button type="button" data-close="map-edit" class="rounded-lg border border-border px-4 py-2 text-sm font-medium text-text-muted hover:bg-slate-50 transition-colors">Cancel</button>
+        <button type="button" data-close="map-edit" class="flex items-center gap-2 rounded-lg bg-brand px-5 py-2 text-sm font-medium text-white hover:opacity-90 transition-opacity"><i data-lucide="save" class="h-4 w-4"></i>Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Framework: Add Function (a role/level row), two steps -->
+  <div id="add-row" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" role="dialog" aria-modal="true">
+    <div class="w-full max-w-3xl rounded-xl bg-surface shadow-xl max-h-[92vh] flex flex-col">
+      <div class="flex items-center justify-between border-b border-border px-6 py-4 shrink-0">
+        <div>
+          <div class="flex items-center gap-2"><h2 class="font-display text-base font-semibold text-text-main">Add Function</h2><span class="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-600" id="add-step-pill">Step 1 of 2</span></div>
+          <p class="mt-0.5 text-xs text-text-muted">One row of the framework: the role at a level, its two illustrative paragraphs, then its KPIs and weightages.</p>
+        </div>
+        <button type="button" data-close="add-row" class="rounded-md p-1.5 text-text-muted hover:bg-slate-50 transition-colors" aria-label="Close"><i data-lucide="x" class="h-5 w-5"></i></button>
+      </div>
+      <div class="flex-1 overflow-y-auto px-6 py-5">
+        <div id="add-step-1" class="space-y-4 text-sm">
+          <div class="grid gap-4 sm:grid-cols-3">
+            <label class="block sm:col-span-1"><span class="mb-1 block text-xs font-semibold text-text-main">Function (department)</span><select id="add-fn" class="w-full rounded-lg border border-border bg-white px-3 py-2 text-[13px] text-text-main outline-none focus:border-brand"></select></label>
+            <label class="block sm:col-span-1"><span class="mb-1 block text-xs font-semibold text-text-main">Level</span><select id="add-level" class="w-full rounded-lg border border-border bg-white px-3 py-2 text-[13px] text-text-main outline-none focus:border-brand"></select></label>
+            <label class="block sm:col-span-1"><span class="mb-1 block text-xs font-semibold text-text-main">Function <span class="font-normal text-text-muted">(role title, as in the PDF)</span></span><input id="add-title" class="w-full rounded-lg border border-border bg-white px-3 py-2 text-[13px] text-text-main outline-none focus:border-brand" placeholder="e.g. Pharmacovigilance Analyst"></label>
+          </div>
+          <label class="block"><span class="mb-1 block text-xs font-semibold text-text-main">Illustrative Business &amp; Strategic Outcomes *</span><textarea id="add-outcomes" rows="3" class="w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-brand resize-none" placeholder="What this role exists to deliver for the business."></textarea></label>
+          <label class="block"><span class="mb-1 block text-xs font-semibold text-text-main">Illustrative Functional / Operational Excellence Goals *</span><textarea id="add-functional" rows="3" class="w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-brand resize-none" placeholder="How the role delivers it: activities, standards, collaboration."></textarea></label>
+          <p class="text-xs text-text-muted">The KPI table opens after this step.</p>
+        </div>
+        <div id="add-step-2" class="hidden space-y-4 text-sm">
+          <div class="rounded-lg border border-blue-100 bg-blue-50 px-4 py-2.5 text-[13px] text-blue-800" id="add-summary"></div>
+          <div class="rounded-lg border border-border overflow-hidden">
+            <div class="grid grid-cols-[40px_1fr_120px_44px] gap-3 border-b border-border bg-slate-50 px-4 py-2.5"><span class="text-[11px] font-bold uppercase tracking-wider text-text-muted">#</span><span class="text-[11px] font-bold uppercase tracking-wider text-text-muted">Illustrative KPI / success measure</span><span class="text-[11px] font-bold uppercase tracking-wider text-text-muted text-right">Weightage %</span><span></span></div>
+            <div id="add-kpi-rows"></div>
+            <div class="flex items-center justify-between bg-slate-50 px-4 py-2.5">
+              <button type="button" id="add-kpi-btn" class="flex items-center gap-1.5 text-xs font-medium text-brand-accent hover:underline"><i data-lucide="plus" class="h-3.5 w-3.5"></i>Add KPI</button>
+              <div class="flex items-center gap-2 text-xs"><span class="text-text-muted">Total</span><span id="add-total" class="font-mono text-sm font-semibold">0%</span></div>
+            </div>
+          </div>
+          <p class="text-xs text-text-muted">Weightages must total 100 before the row can be saved.</p>
+        </div>
+      </div>
+      <div class="flex items-center justify-between gap-3 border-t border-border px-6 py-4 shrink-0">
+        <p class="text-xs text-text-muted" id="add-foot">Fields marked * are required.</p>
+        <div class="flex items-center gap-3">
+          <button type="button" id="add-back" class="hidden rounded-lg border border-border px-4 py-2 text-sm font-medium text-text-muted hover:bg-slate-50 transition-colors">Back</button>
+          <button type="button" data-close="add-row" class="rounded-lg border border-border px-4 py-2 text-sm font-medium text-text-muted hover:bg-slate-50 transition-colors">Cancel</button>
+          <button type="button" id="add-next" class="flex items-center gap-2 rounded-lg bg-brand px-5 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50 transition-opacity">Next: KPIs<i data-lucide="arrow-right" class="h-4 w-4"></i></button>
+          <button type="button" id="add-save" class="hidden flex items-center gap-2 rounded-lg bg-brand px-5 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50 transition-opacity"><i data-lucide="save" class="h-4 w-4"></i>Save row</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="assets/data.js"></script>
+<script src="assets/shell.js"></script>
+<script>
+/* ── Prototype persistence for framework edits ───────────────────────── */
+const FW_KEY = "pms-wf-framework-extra";
+function loadExtra() { try { return JSON.parse(localStorage.getItem(FW_KEY) || "{}"); } catch (e) { return {}; } }
+function saveExtra(x) { localStorage.setItem(FW_KEY, JSON.stringify(x)); }
+function functionRows(fn) {
+  const base = WF.FUNCTIONS[fn] ? WF.FUNCTIONS[fn].rows : {};
+  const extra = (loadExtra()[fn] || {});
+  return Object.assign({}, base, extra);
+}
+
+function renderAdmin() {
+  const { state, esc, icon, cls } = PMS;
+  const TH = cls.TH;
+  const tab = (id, label, active) => `<button type="button" data-tab="${id}" class="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${active ? "border-brand text-brand" : "border-transparent text-text-muted hover:text-text-main"}">${label}</button>`;
+
+  /* ── Framework Mapping tab ───────────────────────────────────────── */
+  const rows = WF.MAPPING.map((m) => {
+    const hasFramework = !!functionRows(m.functionName)[m.level];
+    return Object.assign({}, m, { status: hasFramework ? "mapped" : "unmapped" });
+  });
+  const counts = rows.reduce((a, r) => { a[r.status] = (a[r.status] || 0) + 1; return a; }, {});
+  const statusPill = (s) => s === "mapped"
+    ? `<span class="inline-flex items-center gap-1.5 text-xs font-medium text-green-600"><span class="h-1.5 w-1.5 rounded-full bg-green-500"></span>Mapped</span>`
+    : `<span class="inline-flex items-center gap-1.5 text-xs font-medium text-red-600"><span class="h-1.5 w-1.5 rounded-full bg-red-500"></span>No framework</span>`;
+  const grid = "grid-cols-[minmax(200px,1.5fr)_minmax(160px,1.1fr)_minmax(200px,1.3fr)_minmax(120px,0.8fr)_minmax(150px,1fr)_minmax(160px,1.1fr)_minmax(120px,0.8fr)_60px]";
+  const head = `<div class="grid ${grid} gap-3 border-b border-border bg-slate-50 px-4 py-2.5">
+    <span class="${TH}">Employee</span><span class="${TH}">Function</span><span class="${TH}">GCC designation</span><span class="${TH}">Designation level</span><span class="${TH}">Reviewer (Mentor)</span><span class="${TH}">Miltenyi reviewer</span><span class="${TH}">Status</span><span></span></div>`;
+  const body = rows.map((r, i) => `<div class="grid ${grid} items-center gap-3 border-b border-border px-4 py-3 hover:bg-slate-50 last:border-b-0">
+      <div class="min-w-0"><div class="text-sm font-medium text-text-main">${esc(r.name)}</div><div class="truncate text-xs text-text-muted">${esc(r.email)}</div></div>
+      <div class="text-sm text-text-main">${esc(r.functionName)}</div>
+      <div class="text-sm text-text-main">${esc(r.designation)}</div>
+      <div><span class="inline-flex items-center rounded-full bg-brand-light px-2 py-0.5 text-[11px] font-semibold text-brand-accent">L${r.level} · ${esc(WF.BAND[r.level])}</span></div>
+      <div class="text-sm text-text-main">${esc(r.mentor)}</div>
+      <div class="text-sm ${r.miltenyiReviewer ? "text-text-main" : "text-text-muted italic"}">${esc(r.miltenyiReviewer) || "Not set"}</div>
+      <div>${statusPill(r.status)}</div>
+      <div class="text-right"><button type="button" data-open="map-edit" data-i="${i}" class="edit-btn rounded-md p-1.5 text-text-muted hover:bg-brand-light hover:text-brand transition-colors" title="Edit reviewer">${icon("pencil", "h-4 w-4")}</button></div>
+    </div>`).join("");
+  const chip = (label, n, dot) => `<span class="inline-flex items-center gap-1.5 rounded-full border border-border bg-white px-2.5 py-1 text-xs text-text-main"><span class="h-1.5 w-1.5 rounded-full ${dot}"></span>${label} <span class="font-semibold">${n || 0}</span></span>`;
+
+  const mappingPanel = `
+<div id="panel-mapping" class="p-5 space-y-4">
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <div class="flex flex-wrap items-center gap-3">
+      <div class="relative min-w-[220px] max-w-xs flex-1">${icon("search", "absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-text-muted pointer-events-none")}<input type="text" placeholder="Search employees..." class="w-full rounded-lg border border-border bg-white pl-9 pr-3 py-1.5 text-[13px] text-text-main placeholder:text-text-muted outline-none focus:border-brand"></div>
+      <div class="flex items-center gap-2"><label class="${TH}">Function</label><select class="${cls.SELECT} min-w-[170px]"><option>All functions</option>${Object.keys(WF.FUNCTIONS).map((f) => `<option>${esc(f)}</option>`).join("")}</select></div>
+      <div class="flex items-center gap-2"><label class="${TH}">Status</label><select class="${cls.SELECT} min-w-[140px]"><option>All</option><option>Mapped</option><option>No framework</option></select></div>
+    </div>
+    <div class="flex items-center gap-2">${chip("Mapped", counts.mapped, "bg-green-500")}${chip("No framework", counts.unmapped, "bg-red-500")}</div>
+  </div>
+  <div class="overflow-x-auto rounded-lg border border-border"><div class="min-w-[1180px]">${head}${body}</div></div>
+  <p class="text-xs text-text-muted">Function, GCC designation and its level come from the user record. The designation's level decides which framework row the employee sees; set designation levels in the Framework tab. HR edits only the reviewer and the Miltenyi reviewer here.</p>
+</div>`;
+
+  /* ── Framework tab (matrix) ──────────────────────────────────────── */
+  const fnNames = Object.keys(WF.FUNCTIONS);
+  const fn = state.fwFn && WF.FUNCTIONS[state.fwFn] ? state.fwFn : "Biostatistics";
+  const def = WF.FUNCTIONS[fn];
+  const frows = functionRows(fn);
+  const levels = [1, 2, 3, 4];
+  const kpiCount = levels.reduce((a, l) => a + ((frows[l] || { kpis: [] }).kpis.length), 0);
+  const definedLevels = levels.filter((l) => frows[l]).length;
+
+  const desigStrip = `<section class="rounded-lg border border-border bg-surface p-4">
+    <p class="${TH}">Designations → levels</p>
+    <p class="mt-0.5 text-xs text-text-muted">Map each GCC designation in ${esc(fn)} to a level. The matrix below has one column per level.</p>
+    <div class="mt-3 flex flex-wrap gap-2">${levels.flatMap((l) => (def.designations[l] || []).map((d) => `<label class="flex items-center gap-2 rounded-lg border border-border bg-white px-3 py-1.5 text-sm text-text-main"><span>${esc(d)}</span><span class="text-xs text-text-muted">L</span><input type="number" min="1" max="4" value="${l}" class="w-12 rounded-md border border-border bg-white px-1.5 py-0.5 text-center text-[13px] outline-none focus:border-brand fw-dirty"></label>`)).join("")}</div>
+  </section>`;
+
+  const colHead = (l) => {
+    const r = frows[l];
+    const ds = (def.designations[l] || []).join(", ");
+    return `<th scope="col" class="border-b border-border px-3 py-2.5 text-left align-top min-w-[300px]">
+      <div class="${TH}">Level ${l} <span class="font-normal normal-case tracking-normal text-text-muted">· ${esc(WF.BAND[l])}</span></div>
+      ${r ? `<div class="mt-0.5 flex items-center gap-1.5"><span class="text-[13px] font-semibold text-text-main">${esc(r.title)}</span><button type="button" class="rounded p-0.5 text-text-muted hover:text-brand" title="Edit role title">${icon("pencil", "h-3 w-3")}</button></div>` : `<div class="mt-0.5 text-[13px] italic text-text-muted">Not defined</div>`}
+      <div class="mt-0.5 text-[11px] text-text-muted">${ds ? esc(ds) : "No designation at this level"}</div>
+    </th>`;
+  };
+  /* Paragraph cells: auto-growing textareas, no inner scrollbars. */
+  const ta = (val, ph) => `<textarea rows="3" class="${cls.TEXTAREA} fw-dirty auto overflow-hidden text-[13px] leading-relaxed" placeholder="${esc(ph)}">${esc(val || "")}</textarea>`;
+  const emptyCell = (l) => `<div class="flex h-full min-h-[96px] items-center justify-center rounded-lg border border-dashed border-border text-center"><button type="button" data-open="add-row" data-level="${l}" class="add-here flex items-center gap-1.5 text-xs font-medium text-brand-accent hover:underline">${icon("plus", "h-3.5 w-3.5")}Add level ${l}</button></div>`;
+
+  /* KPI cells: readable list by default; "Edit KPIs" switches one level into
+     edit mode with full-width auto-growing boxes. */
+  const editing = new Set();
+  const weightBadge = (w) => `<span class="inline-flex shrink-0 items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800">${w}%</span>`;
+  const totalBadge = (total) => `<span class="fw-total rounded-md px-1.5 py-0.5 font-mono text-[12px] font-semibold ${total === 100 ? "bg-emerald-100 text-emerald-700" : "bg-red-50 text-red-700"}">Total ${total}%</span>`;
+  const kpiCellHtml = (l) => {
+    const r = frows[l];
+    if (!r) return emptyCell(l);
+    const total = r.kpis.reduce((a, k) => a + Number(k.weight || 0), 0);
+    if (!editing.has(String(l))) {
+      return `<ol class="space-y-2.5">${r.kpis.map((k, i) => `<li class="flex items-start gap-2.5">${PMS.kpiNumber(i + 1)}<p class="flex-1 text-[13px] leading-snug text-text-main">${esc(k.text) || "<span class='italic text-text-muted'>Untitled KPI</span>"}</p>${weightBadge(k.weight)}</li>`).join("")}</ol>
+        <div class="mt-3 flex items-center justify-between border-t border-border pt-2">
+          <button type="button" data-edit-level="${l}" class="flex items-center gap-1 text-[12px] font-medium text-brand-accent hover:underline">${icon("pencil", "h-3 w-3")}Edit KPIs</button>
+          ${totalBadge(total)}
+        </div>`;
+    }
+    return `<div class="space-y-2.5">
+      ${r.kpis.map((k, i) => `<div class="rounded-lg border border-border bg-white p-2.5">
+        <div class="mb-1 flex items-center justify-between"><span class="${TH}">KPI ${i + 1}</span><button type="button" data-rm-kpi="${l}:${i}" class="rounded p-0.5 text-text-muted hover:text-red-600" title="Remove KPI">${icon("x", "h-3.5 w-3.5")}</button></div>
+        <textarea rows="3" data-kpi="${l}:${i}" data-f="text" class="${cls.TEXTAREA} fw-dirty auto overflow-hidden text-[13px] leading-relaxed" placeholder="KPI / success measure">${esc(k.text)}</textarea>
+        <div class="mt-1.5 flex items-center gap-2"><label class="text-[11px] text-text-muted">Weightage</label><input type="number" min="0" max="100" value="${k.weight}" data-kpi="${l}:${i}" data-f="weight" class="w-20 rounded-lg border border-border bg-white px-2 py-1 text-right font-mono text-[13px] outline-none focus:border-brand fw-dirty fw-weight"><span class="text-[11px] text-text-muted">%</span></div>
+      </div>`).join("")}
+      <div class="flex items-center justify-between pt-1">
+        <div class="flex items-center gap-3">
+          <button type="button" data-add-kpi="${l}" class="flex items-center gap-1 text-[12px] font-medium text-brand-accent hover:underline">${icon("plus", "h-3 w-3")}Add KPI</button>
+          <button type="button" data-edit-level="${l}" class="flex items-center gap-1 rounded-md bg-brand-light px-2 py-0.5 text-[12px] font-medium text-brand-accent hover:bg-brand hover:text-white transition-colors">${icon("check", "h-3 w-3")}Done</button>
+        </div>
+        ${totalBadge(total)}
+      </div>
+    </div>`;
+  };
+  const rowLabel = (title, sub) => `<th scope="row" class="border-b border-border bg-slate-50 px-3 py-3 text-left align-top w-[190px]"><div class="text-[13px] font-semibold text-text-main">${title}</div><div class="mt-0.5 text-[11px] font-normal text-text-muted">${sub}</div></th>`;
+
+  const matrix = definedLevels === 0 && !def.note && Object.keys(frows).length === 0 ? "" : `
+<div class="overflow-x-auto rounded-lg border border-border">
+  <table class="w-full min-w-[1420px] border-collapse">
+    <thead class="bg-slate-50"><tr><th class="border-b border-border px-3 py-2.5 text-left w-[190px]"><span class="${TH}">Framework · ${esc(WF.PERIOD)}</span></th>${levels.map(colHead).join("")}</tr></thead>
+    <tbody class="align-top">
+      <tr>${rowLabel("Illustrative Business &amp; Strategic Outcomes", "one paragraph per level")}${levels.map((l) => `<td class="border-b border-border px-3 py-3">${frows[l] ? ta(frows[l].outcomes, "Business & strategic outcomes for this level") : emptyCell(l)}</td>`).join("")}</tr>
+      <tr>${rowLabel("Illustrative Functional / Operational Excellence Goals", "one paragraph per level")}${levels.map((l) => `<td class="border-b border-border px-3 py-3">${frows[l] ? ta(frows[l].functional, "Functional / operational excellence goals for this level") : emptyCell(l)}</td>`).join("")}</tr>
+      <tr>${rowLabel("Illustrative KPI / Success Measures · Weightage", "4–7 KPIs per level, weightages total 100%")}${levels.map((l) => `<td class="kpi-cell px-3 py-3 align-top" data-level="${l}">${kpiCellHtml(l)}</td>`).join("")}</tr>
+    </tbody>
+  </table>
+</div>`;
+
+  const emptyState = definedLevels === 0 ? `<div class="flex flex-col items-center justify-center rounded-lg border border-dashed border-border px-6 py-10 text-center">
+      ${icon("file-question", "h-8 w-8 text-text-muted")}
+      <p class="mt-3 font-medium text-text-main">No framework rows for ${esc(fn)} yet.</p>
+      <p class="mt-1 max-w-md text-sm text-text-muted">${esc(def.note || "Add the first role/level row to start.")} Employees in this function see a notice instead of goal boxes until rows exist.</p>
+      <button type="button" data-open="add-row" data-level="1" class="add-here mt-4 ${cls.BTN_PRIMARY}">${icon("plus", "h-4 w-4")}Add Function</button>
+    </div>` : "";
+
+  const frameworkPanel = `
+<div id="panel-framework" class="hidden p-5 space-y-4">
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <div class="flex flex-wrap items-center gap-3">
+      <div class="flex items-center gap-2"><label class="${TH}">Framework for</label><select id="fw-fn" class="${cls.SELECT} min-w-[240px]">${fnNames.map((n) => `<option ${n === fn ? "selected" : ""}>${esc(n)}</option>`).join("")}</select></div>
+      <span class="inline-flex items-center rounded-full border border-border bg-slate-100 px-2.5 py-0.5 text-xs text-text-main">${kpiCount} KPIs · ${definedLevels} of 4 levels defined · ${esc(WF.PERIOD)}</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <button type="button" id="fw-discard" disabled class="${cls.BTN_SECONDARY}">${icon("rotate-ccw", "h-4 w-4")}Discard</button>
+      <button type="button" id="fw-save" disabled class="${cls.BTN_PRIMARY}">${icon("save", "h-4 w-4")}Save</button>
+      <button type="button" data-open="add-row" data-level="" class="add-here ${cls.BTN_PRIMARY}">${icon("plus", "h-4 w-4")}Add Function</button>
+    </div>
+  </div>
+  <p class="text-xs text-text-muted">Define the framework each employee is evaluated against: per level, the two illustrative paragraphs and the KPIs with their weightages. Edits are staged; click Save to apply them all at once. "Add Function" adds one role/level row, as in the first column of Miltenyi's document.</p>
+  ${desigStrip}
+  ${emptyState || matrix}
+  <div id="fw-saved" class="hidden rounded-lg border border-emerald-200 bg-emerald-100 px-4 py-2.5 text-[13px] text-emerald-700">Saved. Employees see the updated framework text the next time they open their goals; goal sets already created keep the text they were created with.</div>
+</div>`;
+
+  document.getElementById("page").innerHTML = `
+<div class="flex items-center justify-between">
+  <div>
+    <h1 class="font-display text-xl font-semibold text-text-main">Admin Panel</h1>
+    <p class="mt-0.5 text-sm text-text-muted">Users, projects, framework mapping and the framework content for the Miltenyi instance.</p>
+  </div>
+</div>
+<div class="rounded-xl border border-border bg-surface shadow-sm overflow-hidden">
+  <div class="flex overflow-x-auto border-b border-border px-2">
+    ${tab("users", `${icon("users", "h-4 w-4")}Users`, false)}
+    ${tab("projects", `${icon("briefcase", "h-4 w-4")}Projects`, false)}
+    ${tab("mapping", `${icon("git-branch", "h-4 w-4")}Framework Mapping`, true)}
+    ${tab("framework", `${icon("book-open", "h-4 w-4")}Framework`, false)}
+    ${tab("settings", `${icon("settings", "h-4 w-4")}Settings`, false)}
+    ${tab("exports", `${icon("download", "h-4 w-4")}Exports`, false)}
+  </div>
+  ${mappingPanel}
+  ${frameworkPanel}
+</div>`;
+
+  /* Tabs */
+  const tabs = document.querySelectorAll("[data-tab]");
+  const showTab = (id) => {
+    tabs.forEach((x) => { const on = x.dataset.tab === id; x.className = `flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${on ? "border-brand text-brand" : "border-transparent text-text-muted hover:text-text-main"}`; });
+    document.getElementById("panel-mapping").classList.toggle("hidden", id !== "mapping");
+    document.getElementById("panel-framework").classList.toggle("hidden", id !== "framework");
+    state.adminTab = id; localStorage.setItem("pms-wf-state", JSON.stringify(state));
+  };
+  tabs.forEach((b) => b.addEventListener("click", () => { if (b.dataset.tab === "mapping" || b.dataset.tab === "framework") showTab(b.dataset.tab); }));
+  if (state.adminTab === "framework") showTab("framework");
+
+  /* Mapping edit modal */
+  const mentorSel = document.getElementById("edit-mentor");
+  mentorSel.innerHTML = WF.MENTORS.map((m) => `<option>${esc(m)}</option>`).join("");
+  document.querySelectorAll(".edit-btn").forEach((b) => b.addEventListener("click", () => {
+    const r = rows[Number(b.dataset.i)];
+    document.getElementById("edit-sub").textContent = `${r.name} · ${r.email}`;
+    document.getElementById("edit-fn").textContent = r.functionName;
+    document.getElementById("edit-desig").textContent = r.designation;
+    document.getElementById("edit-level").textContent = `L${r.level} · ${WF.BAND[r.level]}`;
+    mentorSel.value = r.mentor;
+    document.getElementById("edit-mrev").value = r.miltenyiReviewer;
+  }));
+
+  /* Framework: function switch, staged edits */
+  document.getElementById("fw-fn").addEventListener("change", (e) => { state.fwFn = e.target.value; state.adminTab = "framework"; localStorage.setItem("pms-wf-state", JSON.stringify(state)); location.reload(); });
+  const saveBtn = document.getElementById("fw-save"), discardBtn = document.getElementById("fw-discard");
+  const markDirty = () => { saveBtn.disabled = false; discardBtn.disabled = false; };
+  const autosize = (t) => { t.style.height = "auto"; t.style.height = (t.scrollHeight + 2) + "px"; };
+  const refreshTotal = (td) => {
+    const total = frows[td.dataset.level].kpis.reduce((a, k) => a + Number(k.weight || 0), 0);
+    const badge = td.querySelector(".fw-total");
+    if (badge) { badge.textContent = `Total ${total}%`; badge.className = `fw-total rounded-md px-1.5 py-0.5 font-mono text-[12px] font-semibold ${total === 100 ? "bg-emerald-100 text-emerald-700" : "bg-red-50 text-red-700"}`; }
+  };
+  function rerenderCell(l) {
+    const td = document.querySelector(`td.kpi-cell[data-level="${l}"]`);
+    if (!td) return;
+    td.innerHTML = kpiCellHtml(l);
+    bindCell(td);
+    PMS.refreshIcons();
+  }
+  function bindCell(root) {
+    root.querySelectorAll("textarea.auto").forEach((t) => { autosize(t); t.addEventListener("input", () => autosize(t)); });
+    root.querySelectorAll(".fw-dirty").forEach((el) => el.addEventListener("input", () => {
+      markDirty();
+      if (el.dataset.kpi) {
+        const [l, i] = el.dataset.kpi.split(":");
+        const k = frows[l].kpis[Number(i)];
+        if (el.dataset.f === "weight") k.weight = Number(el.value); else k.text = el.value;
+      }
+      if (el.classList.contains("fw-weight")) refreshTotal(el.closest("td"));
+    }));
+    root.querySelectorAll("[data-edit-level]").forEach((b) => b.addEventListener("click", () => {
+      const l = b.dataset.editLevel;
+      if (editing.has(l)) editing.delete(l); else editing.add(l);
+      rerenderCell(l);
+    }));
+    root.querySelectorAll("[data-add-kpi]").forEach((b) => b.addEventListener("click", () => {
+      const l = b.dataset.addKpi; frows[l].kpis.push({ text: "", weight: 0 }); markDirty(); rerenderCell(l);
+      const boxes = document.querySelectorAll(`td.kpi-cell[data-level="${l}"] textarea`); if (boxes.length) boxes[boxes.length - 1].focus();
+    }));
+    root.querySelectorAll("[data-rm-kpi]").forEach((b) => b.addEventListener("click", () => {
+      const [l, i] = b.dataset.rmKpi.split(":"); frows[l].kpis.splice(Number(i), 1); markDirty(); rerenderCell(l);
+    }));
+  }
+  bindCell(document.getElementById("panel-framework"));
+  const resizeAll = () => document.querySelectorAll("textarea.auto").forEach(autosize);
+  window.addEventListener("load", resizeAll);
+  setTimeout(resizeAll, 400);
+  setTimeout(resizeAll, 1200);
+  saveBtn.addEventListener("click", () => { saveBtn.disabled = true; discardBtn.disabled = true; document.getElementById("fw-saved").classList.remove("hidden"); });
+  discardBtn.addEventListener("click", () => { state.adminTab = "framework"; localStorage.setItem("pms-wf-state", JSON.stringify(state)); location.reload(); });
+
+  /* Add Function modal (two steps) */
+  const addFn = document.getElementById("add-fn"), addLevel = document.getElementById("add-level");
+  addFn.innerHTML = fnNames.map((n) => `<option ${n === fn ? "selected" : ""}>${esc(n)}</option>`).join("");
+  const fillLevels = (presetLevel) => {
+    const used = functionRows(addFn.value);
+    addLevel.innerHTML = levels.map((l) => `<option value="${l}" ${used[l] ? "disabled" : ""} ${String(presetLevel) === String(l) ? "selected" : ""}>Level ${l} · ${WF.BAND[l]}${used[l] ? " (defined)" : ""}</option>`).join("");
+    const free = Array.from(addLevel.options).filter((o) => !o.disabled);
+    if (!presetLevel && free.length) free[0].selected = true;
+    const next = document.getElementById("add-next"), foot = document.getElementById("add-foot");
+    next.disabled = free.length === 0;
+    foot.textContent = free.length ? "Fields marked * are required." : `All four levels are already defined for ${addFn.value}. Pick another function, or edit the existing rows in the matrix.`;
+  };
+  addFn.addEventListener("change", () => fillLevels());
+  let kpiDraft = [];
+  const kpiRowsEl = document.getElementById("add-kpi-rows"), totalEl = document.getElementById("add-total"), addSave = document.getElementById("add-save");
+  const renderKpiDraft = () => {
+    kpiRowsEl.innerHTML = kpiDraft.map((k, i) => `<div class="grid grid-cols-[40px_1fr_120px_44px] items-center gap-3 border-b border-border px-4 py-2 last:border-b-0">
+      <span class="text-sm text-text-muted">${i + 1}</span>
+      <input data-k="${i}" data-f="text" value="${esc(k.text)}" placeholder="KPI / success measure" class="w-full rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand">
+      <input data-k="${i}" data-f="weight" type="number" min="0" max="100" value="${k.weight}" class="w-full rounded-lg border border-border bg-white px-3 py-1.5 text-right font-mono text-[13px] text-text-main outline-none focus:border-brand">
+      <button type="button" data-rm="${i}" class="rounded-md p-1.5 text-text-muted hover:text-red-600" title="Remove">${icon("x", "h-4 w-4")}</button>
+    </div>`).join("");
+    const total = kpiDraft.reduce((a, k) => a + Number(k.weight || 0), 0);
+    totalEl.textContent = `${total}%`;
+    totalEl.className = `font-mono text-sm font-semibold ${total === 100 ? "text-emerald-700" : "text-red-700"}`;
+    addSave.disabled = !(total === 100 && kpiDraft.length && kpiDraft.every((k) => k.text.trim()));
+    kpiRowsEl.querySelectorAll("input").forEach((inp) => inp.addEventListener("input", () => { kpiDraft[Number(inp.dataset.k)][inp.dataset.f] = inp.dataset.f === "weight" ? Number(inp.value) : inp.value; renderKpiDraft(); }));
+    kpiRowsEl.querySelectorAll("[data-rm]").forEach((b) => b.addEventListener("click", () => { kpiDraft.splice(Number(b.dataset.rm), 1); renderKpiDraft(); }));
+    PMS.refreshIcons();
+  };
+  const step = (n) => {
+    document.getElementById("add-step-1").classList.toggle("hidden", n !== 1);
+    document.getElementById("add-step-2").classList.toggle("hidden", n !== 2);
+    document.getElementById("add-step-pill").textContent = `Step ${n} of 2`;
+    document.getElementById("add-next").classList.toggle("hidden", n !== 1);
+    addSave.classList.toggle("hidden", n !== 2);
+    document.getElementById("add-back").classList.toggle("hidden", n !== 2);
+    document.getElementById("add-foot").textContent = n === 1 ? "Fields marked * are required." : "Weightages must total 100%.";
+  };
+  document.querySelectorAll(".add-here").forEach((b) => b.addEventListener("click", () => { addFn.value = fn; fillLevels(b.dataset.level); step(1); kpiDraft = [{ text: "", weight: 30 }, { text: "", weight: 25 }, { text: "", weight: 20 }, { text: "", weight: 15 }, { text: "", weight: 10 }]; }));
+  document.getElementById("add-next").addEventListener("click", () => {
+    const title = document.getElementById("add-title").value.trim(), o = document.getElementById("add-outcomes").value.trim(), f = document.getElementById("add-functional").value.trim();
+    if (!title || !o || !f) { document.getElementById("add-foot").textContent = "Role title and both paragraphs are required."; return; }
+    document.getElementById("add-summary").innerHTML = `<b>${esc(title)}</b> · ${esc(addFn.value)} · Level ${addLevel.value}. Now add the KPIs and their weightages.`;
+    step(2); renderKpiDraft();
+  });
+  document.getElementById("add-back").addEventListener("click", () => step(1));
+  document.getElementById("add-kpi-btn").addEventListener("click", () => { kpiDraft.push({ text: "", weight: 0 }); renderKpiDraft(); });
+  addSave.addEventListener("click", () => {
+    const extra = loadExtra(); const f = addFn.value; const l = addLevel.value;
+    extra[f] = extra[f] || {};
+    extra[f][l] = { title: document.getElementById("add-title").value.trim(), outcomes: document.getElementById("add-outcomes").value.trim(), functional: document.getElementById("add-functional").value.trim(), kpis: kpiDraft.map((k) => ({ text: k.text.trim(), weight: Number(k.weight) })) };
+    saveExtra(extra);
+    state.fwFn = f; state.adminTab = "framework"; localStorage.setItem("pms-wf-state", JSON.stringify(state));
+    location.reload();
+  });
+}
+PMS.init({ role: "hr", active: "admin", render: renderAdmin });
+</script>
+</body>
+</html>

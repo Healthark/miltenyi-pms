@@ -2,7 +2,7 @@
 
 > **Audience:** Manual QA tester, non-technical.
 > **Prerequisite:** You have completed Module 1 (Foundational). Refer back to Module 1 §1.7 for the cross-cutting UI checklist — apply it on every screen here too.
-> **Test accounts needed:** Staff (with mentor), Staff (no mentor), Mentor (with mentees), HR_MyOrg.
+> **Test accounts needed:** Staff (with mentor), Staff (no mentor), Mentor (with mentees), Admin.
 > **Vocab:** A *goal* moves through these states — **Draft → Pending Approval → Approved → H1/H2 Self-Reviewed → H1/H2 Mentor-Reviewed** (or Q1..Q4 in quarterly orgs). It can also be sent back as **Changes Requested**.
 
 ---
@@ -47,7 +47,7 @@
 
 ### TC-GOAL-003 — Add Goal button hidden when edit gate closed
 
-**Pre-condition:** HR_MyOrg toggles **Annual goals edit enabled** to OFF in Settings.
+**Pre-condition:** Admin toggles **Annual goals edit enabled** to OFF in Settings.
 **Login as:** Staff (with a mentor)
 **Steps:**
 1. Open Annual Goals → My Goals.
@@ -422,11 +422,11 @@
 
 ---
 
-## 2.3 All Goals tab (HR_MyOrg)
+## 2.3 All Goals tab (Admin)
 
 ### TC-ALLGOAL-001 — Open All Goals tab
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Open Annual Goals → All Goals.
 
@@ -443,7 +443,7 @@
 
 ### TC-ALLGOAL-002 — Expand an employee row
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Click on an employee row.
 
@@ -461,7 +461,7 @@
 
 ### TC-ALLGOAL-003 — Filters
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Try each filter individually: Employee (typeable combobox), Year, Function, Designation, Status.
 2. Combine filters → AND logic applies.
@@ -477,7 +477,7 @@
 ### TC-ALLGOAL-004 — View modal for a goal with reviews
 
 **Pre-condition:** At least one goal has a submitted self-review and/or mentor review.
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Expand the employee.
 2. On a goal with reviews, click **View**.
@@ -503,7 +503,7 @@
 
 ### TC-ALLGOAL-005 — Goal without reviews shows dash
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Expand an employee; find a goal that's only in Draft/Pending/Approved (no reviews yet).
 
@@ -514,7 +514,7 @@
 
 ### TC-ALLGOAL-006 — Export Goals to Excel
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Click the **Export** button on the All Goals tab.
 2. Excel file downloads.
@@ -599,7 +599,7 @@
 - H1 is enabled.
 - H2 is hidden or shows "Available after Oct 1" (or similar).
 
-**Then:** HR_MyOrg toggles **cycle_window_override** ON; Staff refreshes → both H1 and H2 are now available.
+**Then:** Admin toggles **cycle_window_override** ON; Staff refreshes → both H1 and H2 are now available.
 
 ---
 

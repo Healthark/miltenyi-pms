@@ -58,19 +58,15 @@ class UserResponse(BaseModel):
     function_id: Optional[int] = None
     designation_id: Optional[int] = None
     mentor_id: Optional[int] = None
+    # Project Goals: the Miltenyi manager whose comments this employee's
+    # mentor transcribes. Plain text — Miltenyi staff have no login.
+    miltenyi_reviewer_name: Optional[str] = None
     is_deleted: bool
     created_at: datetime
 
     # Nested objects — populated from SQLAlchemy relationships
     function: Optional[FunctionBrief] = None
     designation: Optional[DesignationBrief] = None
-
-    # Project Manager names — derived from each Employee's active project
-    # assignments (end_date IS NULL). Empty list for non-Employee users
-    # or for Employees with no active assignments. Sorted alphabetically
-    # and deduplicated. Computed in one batched query by the list_users
-    # handler so the response isn't N+1.
-    project_manager_names: list[str] = []
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -95,6 +91,7 @@ class UserCreate(BaseModel):
     function_id: Optional[int] = None
     designation_id: Optional[int] = None
     mentor_id: Optional[int] = None
+    miltenyi_reviewer_name: Optional[str] = Field(default=None, max_length=200)
     password: str = Field(..., min_length=8, max_length=128)
 
 
@@ -107,6 +104,7 @@ class UserUpdate(BaseModel):
     function_id: Optional[int] = None
     designation_id: Optional[int] = None
     mentor_id: Optional[int] = None
+    miltenyi_reviewer_name: Optional[str] = Field(default=None, max_length=200)
 
 
 # ── Admin Settings (Simplified View) ─────────────────────────────────
@@ -116,7 +114,7 @@ class AdminSettingsResponse(BaseModel):
     Full settings payload for the Admin Panel's SystemSettingsTab.
 
     'active_cycle' is the computed cycle name (read-only, system-calculated).
-    cycle_type and fiscal_start_month are the editable inputs that drive it.
+    cycle_type is fixed (half-yearly); fiscal_start_month drives it.
     """
     id: int
     org_id: int
@@ -128,9 +126,7 @@ class AdminSettingsResponse(BaseModel):
     # Defaults to "UTC" so existing rows keep current behavior until HR
     # picks an actual zone.
     timezone: str = "UTC"
-    goals_edit_enabled: bool
     annual_goals_edit_enabled: bool
-    project_ratings_visible: bool
     annual_reviews_enabled: bool
     annual_review_final_rating_visible: bool
     # Dev / QA escape hatch. When set, the system treats this as today
@@ -145,16 +141,13 @@ class AdminSettingsResponse(BaseModel):
 
 class AdminSettingsUpdate(BaseModel):
     """Payload from the SystemSettingsTab save button. All fields optional (PATCH semantics)."""
-    cycle_type: Optional[str] = Field(default=None, pattern=r"^(annual|half_yearly|quarterly)$")
     fiscal_start_month: Optional[int] = Field(default=None, ge=1, le=12)
     # IANA timezone (e.g. "Asia/Kolkata", "Europe/Berlin"). Validated
     # at runtime by ZoneInfo — bad strings are tolerated at read time
     # (cycle_utils falls back to UTC) so a typo can't brick the cycle
     # path, but admins should still pick a valid zone here.
     timezone: Optional[str] = Field(default=None, min_length=1, max_length=64)
-    goals_edit_enabled: Optional[bool] = None
     annual_goals_edit_enabled: Optional[bool] = None
-    project_ratings_visible: Optional[bool] = None
     annual_reviews_enabled: Optional[bool] = None
     annual_review_final_rating_visible: Optional[bool] = None
     # Use the sentinel `Optional[date]` plus the per-request `clear`
@@ -190,17 +183,15 @@ class YearSettingsResponse(BaseModel):
     annual_reviews_enabled: bool
     annual_review_final_rating_visible: bool
     annual_goals_edit_enabled: bool
-    project_ratings_visible: bool
     is_current: bool
     updated_at: Optional[datetime] = None
 
 
 class YearSettingsUpdate(BaseModel):
-    """PATCH payload — all four toggles required (HR sees them together)."""
+    """PATCH payload — all three toggles required (HR sees them together)."""
     annual_reviews_enabled: bool
     annual_review_final_rating_visible: bool
     annual_goals_edit_enabled: bool
-    project_ratings_visible: bool
 
 
 class YearPreflightEntry(BaseModel):
@@ -214,5 +205,4 @@ class YearPreflightResponse(BaseModel):
     fy_label: str
     annual_goals_edit_enabled: YearPreflightEntry
     annual_reviews_enabled: YearPreflightEntry
-    project_ratings_visible: YearPreflightEntry
     annual_review_final_rating_visible: YearPreflightEntry

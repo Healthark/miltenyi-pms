@@ -2,7 +2,7 @@
  * HeadcountCard — first HR-dashboard widget.
  *
  * Shows the org's current active-employee count plus a per-role
- * breakdown (Employee / Mentor / PM / HR). Pure snapshot — the dashboard's
+ * breakdown (Staff / Mentor / Admin). Pure snapshot — the dashboard's
  * FY filter doesn't affect this card (an FY picker scoping headcount
  * would conflate "live roster" with "joined-in-FY", which is a
  * separate analytic).
@@ -22,35 +22,27 @@ import { DonutChart } from "./DonutChart";
 // off the theme tokens so the chart doesn't fight the rest of the
 // dashboard with the saturated brand purple.
 const ROLE_COLORS = {
-  employee: "#60a5fa",
+  staff: "#60a5fa",
   mentor: "#fbbf24",
-  pm: "#34d399",
-  hr: "#94a3b8",
+  admin: "#94a3b8",
 } as const;
 
 const ROLE_LABELS = {
-  employee: "Employee",
+  staff: "Staff",
   mentor: "Mentor",
-  pm: "Project Manager",
-  hr: "HR",
+  admin: "Admin",
 } as const;
 
 // Mapping from donut-segment key to the UsersTab role-filter wire
-// value. UsersTab's RoleFilter type accepts single literal roles
-// ("Employee" / "Mentor" / "PM" / "HR_MyOrg" / "HR_Miltenyi") — the
-// "hr" donut bucket aggregates two roles, so a single deep-link can't
-// represent it. We leave that one as plain text rather than picking
-// one HR flavor over the other; the bucket usually holds 1-2 rows so
-// the cost of "View all → filter manually" is small.
+// value, so each legend row can deep-link to /admin?tab=users&role=….
 const ROLE_FILTER_VALUE: Record<RoleKey, string | null> = {
-  employee: "Employee",
+  staff: "Staff",
   mentor: "Mentor",
-  pm: "PM",
-  hr: null,
+  admin: "Admin",
 };
 
 type RoleKey = keyof typeof ROLE_COLORS;
-const ROLE_ORDER: readonly RoleKey[] = ["employee", "mentor", "pm", "hr"];
+const ROLE_ORDER: readonly RoleKey[] = ["staff", "mentor", "admin"];
 
 interface HeadcountCardProps {
   /** Null while the parent's fetch is in flight. */
@@ -109,10 +101,8 @@ function LoadedBody({
 }) {
   const total = data.total_active;
 
-  // Only show buckets that have at least one user. Empty buckets
-  // (e.g. `mentor: 0` for HR_Miltenyi viewers, where Healthark
-  // mentors are filtered out by the backend) would otherwise render
-  // as zero-width donut slices and "0 Mentor" legend rows.
+  // Only show buckets that have at least one user; empty buckets would
+  // render as zero-width donut slices and "0 …" legend rows.
   const visibleRoles = ROLE_ORDER.filter((key) => data.by_role[key] > 0);
 
   const segments = visibleRoles.map((key) => ({

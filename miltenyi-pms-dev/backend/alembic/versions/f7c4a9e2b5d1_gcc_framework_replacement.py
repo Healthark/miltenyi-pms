@@ -11,7 +11,9 @@ career-path framework throughout the schema. Three tables change:
 2. role_expectations
    - DROP designation_id FK (re-key the table from per-designation to per-career-level)
    - ADD career_level (Integer, NOT NULL)
-   - DROP unique index ix_role_exp_org_func_desig
+   - DROP the pre-GCC composite unique index, whose live name is
+     ix_role_exp_org_func_desig on Postgres and
+     ix_role_exp_org_dept_desig on SQLite (see _legacy_role_exp_index)
    - ADD unique index ix_role_exp_org_func_level on (org_id, function_id, career_level)
    - DROP 8 PMS expectation columns:
        exp_task_execution, exp_ownership, exp_project_management,
@@ -98,6 +100,32 @@ NEW_PROJECT_REVIEW_COMMENTS = (
 )
 
 
+def _is_postgres() -> bool:
+    return op.get_bind().dialect.name == "postgresql"
+
+
+def _legacy_role_exp_index() -> Union[str, None]:
+    """Live name of the pre-GCC composite unique index on
+    ``role_expectations``, or None if it is already gone.
+
+    full_schema_v2 created it as ``ix_role_exp_org_dept_desig``.
+    rename_departments_to_functions renames it to
+    ``ix_role_exp_org_func_desig``, but only under ``_is_postgres()`` --
+    ALTER INDEX RENAME has no SQLite equivalent, so SQLite databases
+    still carry the original ``_dept_`` name even though the indexed
+    column is now ``function_id``. Reflect the name instead of assuming
+    either one.
+    """
+    existing = {
+        ix["name"]
+        for ix in sa.inspect(op.get_bind()).get_indexes("role_expectations")
+    }
+    for name in ("ix_role_exp_org_func_desig", "ix_role_exp_org_dept_desig"):
+        if name in existing:
+            return name
+    return None
+
+
 def upgrade() -> None:
     # ── 1. designations: add GCC career-level columns ─────────────────
     with op.batch_alter_table("designations") as batch_op:
@@ -108,15 +136,16 @@ def upgrade() -> None:
     #       add career_level + new content columns + new index ─────────
     # The old data is wiped — RoleExpectation is reference data and the
     # local DB is being reseeded. No data preservation required.
+    # Reflect the old index name up front: batch_alter_table operates on
+    # its own snapshot of the table metadata, so the lookup has to happen
+    # before the batch block opens.
+    legacy_index = _legacy_role_exp_index()
+
     with op.batch_alter_table("role_expectations") as batch_op:
         # Drop the old unique index first so the FK / column drops don't
-        # trip over it during the batch recreate. The original index
-        # was created as "ix_role_exp_org_dept_desig" (full_schema_v2)
-        # and renamed to "ix_role_exp_org_func_desig" by the
-        # rename_departments_to_functions migration (ALTER INDEX
-        # RENAME), so the live name on every DB that ran the rename
-        # migration is the `_func_` form.
-        batch_op.drop_index("ix_role_exp_org_func_desig")
+        # trip over it during the batch recreate.
+        if legacy_index is not None:
+            batch_op.drop_index(legacy_index)
 
         for col in OLD_ROLE_EXPECTATION_COLUMNS:
             batch_op.drop_column(col)
@@ -162,6 +191,7 @@ def downgrade() -> None:
             batch_op.add_column(sa.Column(col, sa.Text(), nullable=True))
 
     # ── 2-rev. role_expectations: rebuild old shape ─────────────────
+    legacy_index_name_is_func = _is_postgres()
     with op.batch_alter_table("role_expectations") as batch_op:
         batch_op.drop_index("ix_role_exp_org_func_level")
         for col in NEW_ROLE_EXPECTATION_COLUMNS:
@@ -178,7 +208,12 @@ def downgrade() -> None:
         for col in OLD_ROLE_EXPECTATION_COLUMNS:
             batch_op.add_column(sa.Column(col, sa.Text(), nullable=True))
         batch_op.create_index(
-            "ix_role_exp_org_func_desig",
+            # Recreate it under the name rename_departments_to_functions
+            # leaves behind on this dialect, so a downgrade -> upgrade
+            # round-trip still finds the index.
+            "ix_role_exp_org_func_desig"
+            if legacy_index_name_is_func
+            else "ix_role_exp_org_dept_desig",
             ["org_id", "function_id", "designation_id"],
             unique=True,
         )

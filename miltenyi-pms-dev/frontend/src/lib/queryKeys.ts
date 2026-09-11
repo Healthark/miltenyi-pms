@@ -70,6 +70,35 @@ export const queryKeys = {
      *  Configuration diff modal. */
     settingsYearPreflight: (fyLabel: string) =>
       [...queryKeys.admin.all, "settings", "year", fyLabel, "preflight"] as const,
+    /** Project Goals framework matrix for one period (HR_MyOrg). */
+    goalFrameworks: (period: string | undefined = undefined) =>
+      [...queryKeys.admin.all, "goal-frameworks", period ?? "active"] as const,
+    /** Employee → framework-level mapping table (HR_MyOrg). */
+    goalMapping: (period: string | undefined = undefined) =>
+      [...queryKeys.admin.all, "goal-mapping", period ?? "active"] as const,
+    /** Per-period Project Goals switches (Admin). */
+    goalPeriodSettings: (period: string | undefined = undefined) =>
+      [...queryKeys.admin.all, "goal-period-settings", period ?? "active"] as const,
+    /** Project Goals quarter roll-out status (Admin). */
+    goalCycle: () => [...queryKeys.admin.all, "goal-cycle"] as const,
+    /** Recent roll-out / set / roll-back entries (Admin). */
+    goalCycleLog: () => [...queryKeys.admin.all, "goal-cycle", "log"] as const,
+  },
+
+  // ── Project Goals (one set per staff member per year, reviewed quarterly) ──
+  // `period` is the active period + started quarters (any role). `mine` is
+  // the staff member's own page payload (period + framework + set). `team`
+  // is the mentor's / Admin's queue for one quarter. `set(id)` is one full
+  // set (every quarter's review) as seen by a mentor or Admin; `log(id)` its
+  // change log.
+  projectGoals: {
+    all: ["project-goals"] as const,
+    period: () => [...queryKeys.projectGoals.all, "period"] as const,
+    mine: () => [...queryKeys.projectGoals.all, "mine"] as const,
+    team: (cycle: string | null | undefined = undefined) =>
+      [...queryKeys.projectGoals.all, "team", cycle ?? "current"] as const,
+    set: (id: number) => [...queryKeys.projectGoals.all, "set", id] as const,
+    log: (id: number) => [...queryKeys.projectGoals.all, "set", id, "log"] as const,
   },
 
   // ── Dashboard summaries ────────────────────────────────────────────

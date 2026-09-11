@@ -74,12 +74,13 @@ export function AnnualReviews() {
   // Role-based detection. Replaces the previous `has_mentees` shortcut so
   // HR_MyOrg gets their view-only "All Reviews" tab instead of falling
   // through to the Employee layout.
-  const isEmployee = user?.role === "Employee";
+  const isEmployee = user?.role === "Staff";
   const isMentor = user?.role === "Mentor";
-  const isHRMyOrg = user?.role === "HR_MyOrg";
+  const isHRMyOrg = user?.role === "Admin";
 
   const activeCycle = settings?.active_cycle_name ?? "";
-  const submissionsOpen = settings?.reviews_submission_open ?? false;
+  // Per-FY switch (mirrored for the current FY on /settings/).
+  const submissionsOpen = settings?.annual_reviews_enabled ?? false;
 
   const fyLabel = settings?.active_cycle_name
     ? formatFyLabel(settings.active_cycle_name)

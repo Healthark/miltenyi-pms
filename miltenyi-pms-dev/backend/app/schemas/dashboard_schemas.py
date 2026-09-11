@@ -101,11 +101,10 @@ class DashboardSummary(BaseModel):
 # split into role-specific endpoints if the payloads grow apart.
 
 class HeadcountByRole(BaseModel):
-    """Active-user breakdown by role. HR combines HR_MyOrg + HR_Miltenyi."""
-    employee: int = 0
+    """Active-user breakdown by role (Staff / Mentor / Admin)."""
+    staff: int = 0
     mentor: int = 0
-    pm: int = 0
-    hr: int = 0
+    admin: int = 0
 
 
 class HeadcountSummary(BaseModel):
@@ -290,44 +289,6 @@ class MentorCoverage(BaseModel):
     top_mentors: list[MentorLoad] = []
 
 
-class OrphanedProject(BaseModel):
-    """One row in the orphaned-projects list.
-
-    Surfaces on the HR dashboard's ProjectCoverage card when a
-    Project's PM is deactivated or role-changed away from PM and the
-    cascade nulled `pm_id`. Mirrors `OrphanedEmployee` — same shape,
-    same "act on me" semantics (HR should reassign promptly because
-    in-flight ProjectReview rows are stranded until a new PM is set).
-
-    `orphaned_at` is set by the cascade (admin_routes._orphan_pm_projects)
-    and cleared when HR assigns a new PM via the project edit form.
-    Backed by `projects.pm_orphaned_at`.
-    """
-    project_id: int
-    project_code: str
-    name: str
-    secondary_evaluator_name: str | None = None
-    orphaned_at: datetime
-
-
-class ProjectCoverage(BaseModel):
-    """Org-wide project pairing health snapshot — the PM-side analog
-    of `MentorCoverage`.
-
-    Surfaces orphaned projects (PM left, project hasn't been
-    re-assigned yet). Not FY-scoped: this is a "right now" view of
-    operational state, like MentorCoverage. Soft-deleted + completed
-    projects are excluded from the orphan list — a completed project
-    that finished with the original PM doesn't need rescuing even if
-    that PM was later deactivated.
-
-    See docs/policies/mentor-transition-policy.md for the original
-    Option-C policy context; this is the same pattern applied to the
-    PM-and-project axis.
-    """
-    orphaned_projects: list[OrphanedProject] = []
-
-
 class HrDashboardSummary(BaseModel):
     """Aggregated HR dashboard payload — one GET, every widget fed.
 
@@ -340,7 +301,6 @@ class HrDashboardSummary(BaseModel):
     missing_annual_reviews: MissingAnnualReviewsSummary = MissingAnnualReviewsSummary()
     stalled_goals: StalledGoalsSummary = StalledGoalsSummary()
     mentor_coverage: MentorCoverage = MentorCoverage()
-    project_coverage: ProjectCoverage = ProjectCoverage()
     # Distinct 4-digit FY start years that have any annual review or
     # annual goal row in the caller's org, plus the active FY (so the
     # picker always offers the current cycle even when no data exists

@@ -1,6 +1,6 @@
 import {
   LayoutDashboard,
-  Briefcase,
+  ClipboardList,
   Target,
   Users,
   FileText,
@@ -79,34 +79,38 @@ const NavItem = ({
 //   Dashboard       — every role (placeholder for now; real per-role
 //                     surfaces are coming. Always show so each user has a
 //                     home page when they land.)
-//   Project Reviews — Employee, PM, HR_Miltenyi, HR_MyOrg
-//   Annual Goals    — Employee, Mentor, HR_MyOrg
-//   Annual Reviews  — Employee, Mentor, HR_MyOrg
-//   My Mentees      — Mentor, HR_MyOrg     (gated on has_mentees)
-//   Management Review — HR_MyOrg only (Healthark admin)
-//   Admin Panel     — HR_Miltenyi, HR_MyOrg
+//   Project Reviews — Employee, PM, Admin
+//   Annual Goals    — Staff, Mentor, Admin
+//   Annual Reviews  — Staff, Mentor, Admin
+//   My Mentees      — Mentor, Admin     (gated on has_mentees)
+//   Management Review — Admin only
+//   Admin Panel     — Admin
 const MAIN_NAV: NavItemData[] = [
   { id: "dashboard", path: "/dashboard", label: "Dashboard", icon: LayoutDashboard,
     feature: "dashboard",
-    requiredRole: ["Employee", "Mentor", "PM", "HR_Miltenyi", "HR_MyOrg"] },
-  { id: "project-reviews", path: "/project-reviews", label: "Project Reviews", icon: Briefcase,
-    feature: "project_reviews",
-    requiredRole: ["Employee", "PM", "Mentor", "HR_Miltenyi", "HR_MyOrg"] },
+    requiredRole: ["Staff", "Mentor", "Admin"] },
+  // Project Goals — the Miltenyi goal-themes flow (one goal set per
+  // employee per period; mentor is the reviewer of record). Replaces the
+  // per-project PM review queue for the Miltenyi org, which now leaves
+  // `project_reviews` out of enabled_features.
+  { id: "project-goals", path: "/project-goals", label: "Project Goals", icon: ClipboardList,
+    feature: "project_goals",
+    requiredRole: ["Staff", "Mentor", "Admin"] },
   { id: "annual-goals", path: "/annual-goals", label: "Annual Goals", icon: Target,
     feature: "goals",
-    requiredRole: ["Employee", "Mentor", "HR_MyOrg"] },
+    requiredRole: ["Staff", "Mentor", "Admin"] },
   { id: "annual-reviews", path: "/annual-reviews", label: "Annual Reviews", icon: FileText,
     feature: "annual_reviews",
-    requiredRole: ["Employee", "Mentor", "HR_MyOrg"] },
+    requiredRole: ["Staff", "Mentor", "Admin"] },
   { id: "my-mentees", path: "/my-mentees", label: "My Mentees", icon: Users,
     feature: "mentoring",
-    requiredRole: ["Mentor", "HR_MyOrg"],
+    requiredRole: ["Mentor", "Admin"],
     requiresMentees: true },
   { id: "management-review", path: "/management-review", label: "Management Review", icon: ShieldCheck,
-    requiredRole: ["HR_MyOrg"] },
+    requiredRole: ["Admin"] },
   { id: "admin", path: "/admin", label: "Admin Panel", icon: Settings,
     feature: "admin",
-    requiredRole: ["HR_Miltenyi", "HR_MyOrg"] },
+    requiredRole: ["Admin"] },
 ];
 
 const BOTTOM_NAV: NavItemData[] = [

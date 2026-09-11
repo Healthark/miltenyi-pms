@@ -257,7 +257,7 @@ def create_goal(
         if not target_user:
             raise HTTPException(status_code=404, detail="Target user not found.")
 
-        if current_user.role != "HR_MyOrg" and target_user.mentor_id != current_user.id:
+        if current_user.role != "Admin" and target_user.mentor_id != current_user.id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You are not authorized to create goals for this user.",
@@ -615,7 +615,7 @@ def list_all_goals(
     Returns `Paginated[TeamGoalResponse]` where `items` carries goal
     rows (not user rows) and `total` is the FILTERED employee count.
     """
-    if current_user.role != Role.HR_MYORG.value:
+    if current_user.role != Role.ADMIN.value:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only the Healthark HR can view all goals.",
@@ -772,7 +772,7 @@ def list_distinct_goal_years(
     to the 4-digit start year using the same logic as
     `GoalResponse.fy_year`. Returns sorted descending (newest first).
     """
-    if current_user.role != Role.HR_MYORG.value:
+    if current_user.role != Role.ADMIN.value:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only the Healthark HR can list distinct goal years.",
@@ -826,7 +826,7 @@ def get_goal(
     goal = _get_goal_with_relations(db, goal_id, current_user.org_id)
     goal_owner = db.query(User).filter(User.id == goal.user_id).first()
 
-    is_manager = current_user.role == "HR_MyOrg" or (
+    is_manager = current_user.role == "Admin" or (
         goal_owner and goal_owner.mentor_id == current_user.id
     )
     is_owner = goal.user_id == current_user.id
@@ -860,7 +860,7 @@ def update_goal(
     goal = _get_goal_with_relations(db, goal_id, current_user.org_id)
     goal_owner = db.query(User).filter(User.id == goal.user_id).first()
 
-    is_manager = current_user.role == "HR_MyOrg" or (
+    is_manager = current_user.role == "Admin" or (
         goal_owner and goal_owner.mentor_id == current_user.id
     )
     is_owner = goal.user_id == current_user.id
@@ -920,7 +920,7 @@ def delete_goal(
 
     goal_owner = db.query(User).filter(User.id == goal.user_id).first()
 
-    is_manager = current_user.role == "HR_MyOrg" or (
+    is_manager = current_user.role == "Admin" or (
         goal_owner and goal_owner.mentor_id == current_user.id
     )
     is_owner = goal.user_id == current_user.id
@@ -965,7 +965,7 @@ def submit_goal(
     goal = _get_goal_with_relations(db, goal_id, current_user.org_id)
     goal_owner = db.query(User).filter(User.id == goal.user_id).first()
 
-    is_manager = current_user.role == "HR_MyOrg" or (
+    is_manager = current_user.role == "Admin" or (
         goal_owner and goal_owner.mentor_id == current_user.id
     )
     is_owner = goal.user_id == current_user.id

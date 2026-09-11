@@ -28,12 +28,12 @@ Security Layers Applied:
 from datetime import datetime, timezone
 from typing import Annotated, Optional
 
-from sqlalchemy import func, or_
+from sqlalchemy import func
 from sqlalchemy.orm import joinedload
 from fastapi import APIRouter, Query
 
 from app.api.dependencies import DbSession, CurrentUser
-from app.api.routes.admin_routes import _require_hr_any
+from app.api.routes.admin_routes import _require_admin
 from app.models.system_settings_models import SystemSettings
 from app.models.goal_models import Goal, GoalType, ApprovalStatus, POST_APPROVAL_STATES
 from app.models.user_models import User, Role
@@ -60,14 +60,11 @@ from app.schemas.dashboard_schemas import (
     MissingAnnualReviewUser,
     MissingAnnualReviewsSummary,
     OrphanedEmployee,
-    OrphanedProject,
-    ProjectCoverage,
     ProjectReviewCompletion,
     StalledGoal,
     StalledGoalsSummary,
     UnmentoredEmployee,
 )
-from app.models.project_models import PROJECT_STATUS_ACTIVE
 
 
 # How many top-loaded mentors to surface in the mentor-coverage widget.
@@ -320,15 +317,14 @@ def get_hr_dashboard_summary(
     """
     Aggregated HR dashboard payload — one GET, every widget fed at once.
 
-    Both HR roles (HR_MyOrg + HR_Miltenyi) can call this; gated by
-    `_require_hr_any`. The `fy` query parameter (4-digit fiscal start
+    Admin only; gated by `_require_admin`. The `fy` query parameter (4-digit fiscal start
     year) is accepted today but only consumed by cycle-bound widgets
     that will be added in later iterations — the headcount widget is a
     point-in-time org snapshot and ignores it.
 
     Tenant isolation: every aggregate filters by `current_user.org_id`.
     """
-    _require_hr_any(current_user)
+    _require_admin(current_user)
 
     # ── Available FYs — derived from actual data, not a fixed window ──
     # Take the union of FYs that have any annual review or annual goal
@@ -379,12 +375,6 @@ def get_hr_dashboard_summary(
     # Single GROUP BY scoped to the caller's org, skipping soft-deleted
     # rows. Roles outside the 5-value taxonomy (shouldn't exist but cheap
     # to guard) fall through silently.
-    #
-    # HR_Miltenyi viewers see the Miltenyi-only slice: Healthark's
-    # Mentor and HR_MyOrg users are excluded from the counts entirely,
-    # so `total_active` and `by_role.hr` reflect only the Miltenyi
-    # population. The Mentor bucket falls to zero and is dropped from
-    # the donut/legend on the frontend.
     role_query = (
         db.query(User.role, func.count(User.id))
         .filter(
@@ -392,27 +382,15 @@ def get_hr_dashboard_summary(
             User.is_deleted == False,  # noqa: E712
         )
     )
-    if current_user.role == Role.HR_MILTENYI.value:
-        role_query = role_query.filter(
-            User.role.notin_([Role.MENTOR.value, Role.HR_MYORG.value])
-        )
     role_rows = role_query.group_by(User.role).all()
     role_counts: dict[str, int] = dict(role_rows)
 
     headcount = HeadcountSummary(
         total_active=sum(role_counts.values()),
         by_role=HeadcountByRole(
-            employee=role_counts.get(Role.EMPLOYEE.value, 0),
+            staff=role_counts.get(Role.STAFF.value, 0),
             mentor=role_counts.get(Role.MENTOR.value, 0),
-            pm=role_counts.get(Role.PM.value, 0),
-            # HR chip is HR_MyOrg + HR_Miltenyi combined for HR_MyOrg
-            # viewers. For HR_Miltenyi viewers the HR_MyOrg row was
-            # filtered out above, so this sum collapses to just the
-            # HR_Miltenyi count (themselves and their HR peers).
-            hr=(
-                role_counts.get(Role.HR_MYORG.value, 0)
-                + role_counts.get(Role.HR_MILTENYI.value, 0)
-            ),
+            admin=role_counts.get(Role.ADMIN.value, 0),
         ),
     )
 
@@ -601,7 +579,7 @@ def get_hr_dashboard_summary(
             )
             .filter(
                 User.org_id == current_user.org_id,
-                User.role == Role.EMPLOYEE.value,
+                User.role == Role.STAFF.value,
                 User.is_deleted == False,  # noqa: E712
             )
             .order_by(User.full_name.asc())
@@ -719,7 +697,7 @@ def get_hr_dashboard_summary(
         )
         .filter(
             User.org_id == current_user.org_id,
-            User.role == Role.EMPLOYEE.value,
+            User.role == Role.STAFF.value,
             User.is_deleted == False,  # noqa: E712
         )
         .order_by(User.full_name.asc())
@@ -779,7 +757,7 @@ def get_hr_dashboard_summary(
         db.query(User.mentor_id, func.count(User.id))
         .filter(
             User.org_id == current_user.org_id,
-            User.role == Role.EMPLOYEE.value,
+            User.role == Role.STAFF.value,
             User.is_deleted == False,  # noqa: E712
             User.mentor_id.isnot(None),
         )
@@ -816,54 +794,6 @@ def get_hr_dashboard_summary(
         top_mentors=top_mentors,
     )
 
-    # ── Project Coverage (orphaned projects) ─────────────────────────
-    # PM-side analog of the unmentored/orphaned split above. We only
-    # surface ACTIVE, non-deleted projects whose PM left without
-    # reassignment — those are the "act on me" rows that have in-flight
-    # ProjectReview work stranded. Completed projects are filtered out:
-    # if a project finished and its old PM was later deactivated, the
-    # closed reviews preserve their stamped reviewer for audit and there
-    # is nothing operational to fix. Mirrors the MentorCoverage shape
-    # so the frontend card can share the same visual language.
-    #
-    # Defensive: include a project even when `pm_orphaned_at IS NULL`
-    # but `pm_id IS NULL` — that catches any pre-cascade legacy row the
-    # migration's data backfill missed (e.g. a project created with
-    # NULL pm_id directly via SQL outside the API). Today the schema
-    # requires pm_id at create time so this case shouldn't exist, but
-    # the OR makes the bucket resilient.
-    orphan_project_rows = (
-        db.query(Project)
-        .options(joinedload(Project.secondary_evaluator))
-        .filter(
-            Project.org_id == current_user.org_id,
-            Project.is_deleted == False,  # noqa: E712
-            Project.status == PROJECT_STATUS_ACTIVE,
-            or_(
-                Project.pm_orphaned_at.isnot(None),
-                Project.pm_id.is_(None),
-            ),
-        )
-        .order_by(Project.pm_orphaned_at.desc().nullslast())
-        .all()
-    )
-    orphaned_projects = [
-        OrphanedProject(
-            project_id=p.id,
-            project_code=p.project_code,
-            name=p.name,
-            secondary_evaluator_name=(
-                p.secondary_evaluator.full_name
-                if p.secondary_evaluator is not None
-                and not p.secondary_evaluator.is_deleted
-                else None
-            ),
-            orphaned_at=p.pm_orphaned_at or datetime.now(timezone.utc),
-        )
-        for p in orphan_project_rows
-    ]
-    project_coverage = ProjectCoverage(orphaned_projects=orphaned_projects)
-
     return HrDashboardSummary(
         headcount=headcount,
         annual_review_funnel=review_funnel,
@@ -872,6 +802,5 @@ def get_hr_dashboard_summary(
         missing_annual_reviews=missing_reviews,
         stalled_goals=stalled_goals,
         mentor_coverage=mentor_coverage,
-        project_coverage=project_coverage,
         available_fys=available_fys,
     )

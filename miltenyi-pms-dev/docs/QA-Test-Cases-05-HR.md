@@ -2,7 +2,7 @@
 
 > **Audience:** Manual QA tester, non-technical.
 > **Prerequisite:** Module 1 reviewed. Apply Module 1 §1.7 UI checklist on every screen.
-> **Test accounts needed:** HR_MyOrg (primary), Staff/Mentor/PM (for cross-checks that HR pages are blocked from them).
+> **Test accounts needed:** Admin (primary), Staff/Mentor/PM (for cross-checks that HR pages are blocked from them).
 
 ---
 
@@ -10,9 +10,9 @@
 
 ### TC-HRD-001 — Open the dashboard
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
-1. Open **HR Dashboard** from the sidebar (this should be the default landing page for HR_MyOrg).
+1. Open **HR Dashboard** from the sidebar (this should be the default landing page for Admin).
 
 **Expected:**
 - 7 widgets render in a grid layout:
@@ -34,7 +34,7 @@
 
 ### TC-HRD-002 — Loading skeletons
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Open the dashboard (force a slow connection in browser DevTools → Network → Throttle to Slow 3G if needed).
 
@@ -50,7 +50,7 @@
 
 ### TC-HRD-003 — Headcount widget
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Locate the Headcount widget.
 
@@ -66,7 +66,7 @@
 
 ### TC-HRD-004 — Annual Review Funnel widget
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Locate the Annual Review Funnel widget.
 
@@ -82,7 +82,7 @@
 
 ### TC-HRD-005 — Goal Approval Funnel widget
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Locate the Goal Approval Funnel widget.
 
@@ -93,7 +93,7 @@
 
 ### TC-HRD-006 — Project Review Completion widget
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Locate the Project Review Completion widget.
 
@@ -107,7 +107,7 @@
 
 ### TC-HRD-007 — Missing Annual Reviews widget
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Locate the widget.
 
@@ -119,7 +119,7 @@
 
 ### TC-HRD-008 — Stalled Goals widget
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Locate the Stalled Goals widget.
 
@@ -130,7 +130,7 @@
 
 ### TC-HRD-009 — Mentor Coverage widget
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Locate the Mentor Coverage widget.
 
@@ -142,7 +142,7 @@
 
 ### TC-HRD-010 — FY picker switches all widgets
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Note the current values across all widgets.
 2. Change the FY picker to a different FY.
@@ -159,7 +159,7 @@
 
 ### TC-HRD-011 — Widget click-through (if implemented)
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. On widgets that link to detail lists (e.g. Missing Annual Reviews), click an item or "View all".
 
@@ -171,7 +171,7 @@
 ### TC-HRD-012 — Empty-state dashboard
 
 **Pre-condition:** A brand-new test org with no users/goals/reviews.
-**Login as:** HR_MyOrg of that org
+**Login as:** Admin of that org
 **Steps:**
 1. Open the dashboard.
 
@@ -187,7 +187,7 @@ There are 8 export surfaces. Test each one.
 
 ### TC-EXP-001 — Export Users
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Open the Users page.
 2. Click **Export to Excel** (in the toolbar).
@@ -204,7 +204,7 @@ There are 8 export surfaces. Test each one.
 
 ### TC-EXP-002 — Export Goals
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Open Annual Goals → All Goals.
 2. Apply at least one filter (e.g. Year = current FY).
@@ -218,7 +218,7 @@ There are 8 export surfaces. Test each one.
 
 ### TC-EXP-003 — Export Annual Reviews
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Open Annual Reviews → All Reviews.
 2. Click Export.
@@ -229,7 +229,7 @@ There are 8 export surfaces. Test each one.
 
 ### TC-EXP-004 — Export Project Reviews
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Open Project Reviews → All Reviews.
 2. Click Export.
@@ -240,7 +240,7 @@ There are 8 export surfaces. Test each one.
 
 ### TC-EXP-005 — Export Secondary Evaluations
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Find the Secondary Evaluations export entry point (may be on Project Reviews → All Reviews or a dedicated page).
 2. Export.
@@ -251,7 +251,7 @@ There are 8 export surfaces. Test each one.
 
 ### TC-EXP-006 — Export Mentor Coverage
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. From HR Dashboard's Mentor Coverage widget (or an admin page), click Export.
 
@@ -261,7 +261,7 @@ There are 8 export surfaces. Test each one.
 
 ### TC-EXP-007 — Export Missing Annual Reviews
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. From the Missing Annual Reviews widget or All Reviews tab, click Export of the filtered subset.
 
@@ -271,7 +271,7 @@ There are 8 export surfaces. Test each one.
 
 ### TC-EXP-008 — Export Stalled Goals
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. From the Stalled Goals widget or All Goals (filtered to Pending Approval older than N days), click Export.
 
@@ -281,7 +281,7 @@ There are 8 export surfaces. Test each one.
 
 ### TC-EXP-009 — Export with no rows
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Apply a filter that returns zero rows.
 2. Click Export.
@@ -296,7 +296,7 @@ There are 8 export surfaces. Test each one.
 
 ### TC-EXP-010 — Export with very large dataset (if applicable)
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. With a large dataset (1000+ rows), click Export.
 
@@ -312,7 +312,7 @@ There are 8 export surfaces. Test each one.
 
 ### TC-EXP-011 — Export button placement
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Walk through every page that has an export button.
 
@@ -326,7 +326,7 @@ There are 8 export surfaces. Test each one.
 
 ### TC-AUDIT-001 — Open audit log
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Navigate to the Audit Log page (may be under Admin → Audit, or its own sidebar item).
 
@@ -336,7 +336,7 @@ There are 8 export surfaces. Test each one.
 
 ### TC-AUDIT-002 — Export action is recorded
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Perform an export (e.g. TC-EXP-001 Users export).
 2. Refresh the audit log.
@@ -348,7 +348,7 @@ There are 8 export surfaces. Test each one.
 
 ### TC-AUDIT-003 — Filter audit log
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Use Actor / Action / Date filters.
 
@@ -358,7 +358,7 @@ There are 8 export surfaces. Test each one.
 
 ### TC-AUDIT-004 — Audit log cannot be edited
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Try to delete or edit an audit log row.
 

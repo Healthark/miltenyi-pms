@@ -3,7 +3,6 @@ import type {
   MyProjectCard,
   RoleExpectation,
 } from "@/services/project-review.service";
-import { useSystemSettings } from "@/hooks/useSystemSettings";
 import { useReviewDetails } from "@/hooks/useReviewDetails";
 import { CompetencyBlock } from "@/components/project-reviews/CompetencyBlock";
 import { ImpactBlock } from "@/components/project-reviews/ImpactBlock";
@@ -27,8 +26,7 @@ export function ReviewDetailPanel({
   readonly expectations: RoleExpectation[];
   readonly onClose: () => void;
 }) {
-  const { settings } = useSystemSettings();
-  const projectRatingsVisible = settings?.project_ratings_visible ?? false;
+  const projectRatingsVisible = false /* retired switch; ratings stay hidden in this legacy module */;
 
   const isPending = card.review_status !== "reviewed";
   const { details, isFetching, error } = useReviewDetails(

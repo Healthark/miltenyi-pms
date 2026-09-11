@@ -33,16 +33,13 @@ export interface UserResponse {
   function_id: number | null;
   designation_id: number | null;
   mentor_id: number | null;
+  /** Project Goals: the Miltenyi manager whose review comments this
+   *  employee's mentor transcribes. Plain text; Miltenyi staff have no login. */
+  miltenyi_reviewer_name: string | null;
   is_deleted: boolean;
   created_at: string;
   function: FunctionBrief | null;
   designation: DesignationBrief | null;
-  /** Active project managers for this user — sorted, deduplicated full
-   *  names of every PM running a project the user is currently assigned
-   *  to (assignment.end_date IS NULL). Empty for non-Employee or for Employee
-   *  with no active assignments. Drives the Project Manager column in
-   *  the Users tab for HR_Miltenyi viewers. */
-  project_manager_names: string[];
 }
 
 export interface SystemSettings {
@@ -55,9 +52,7 @@ export interface SystemSettings {
    *  every calendar-day decision on the backend so users near midnight
    *  in non-UTC zones don't hit off-by-one cycle rollovers. */
   timezone: string;
-  goals_edit_enabled: boolean;
   annual_goals_edit_enabled: boolean;
-  project_ratings_visible: boolean;
   annual_reviews_enabled: boolean;
   annual_review_final_rating_visible: boolean;
   /** ISO date string. Non-null when HR has pinned a simulated "today"
@@ -71,13 +66,10 @@ export interface SystemSettings {
 }
 
 export interface AdminSettingsUpdatePayload {
-  cycle_type?: string;
   fiscal_start_month?: number;
   /** IANA timezone string. Backend rejects values ZoneInfo can't load. */
   timezone?: string;
-  goals_edit_enabled?: boolean;
   annual_goals_edit_enabled?: boolean;
-  project_ratings_visible?: boolean;
   annual_reviews_enabled?: boolean;
   annual_review_final_rating_visible?: boolean;
   /** ISO date string to set as the simulated "today". Send null + the
@@ -98,7 +90,6 @@ export interface SettingsPreflightEntry {
 export interface SettingsPreflight {
   annual_goals_edit_enabled: SettingsPreflightEntry;
   annual_reviews_enabled: SettingsPreflightEntry;
-  project_ratings_visible: SettingsPreflightEntry;
   annual_review_final_rating_visible: SettingsPreflightEntry;
 }
 
@@ -122,7 +113,6 @@ export interface YearSettings {
   annual_reviews_enabled: boolean;
   annual_review_final_rating_visible: boolean;
   annual_goals_edit_enabled: boolean;
-  project_ratings_visible: boolean;
   is_current: boolean;
   updated_at: string | null;
 }
@@ -131,7 +121,6 @@ export interface YearSettingsUpdatePayload {
   annual_reviews_enabled: boolean;
   annual_review_final_rating_visible: boolean;
   annual_goals_edit_enabled: boolean;
-  project_ratings_visible: boolean;
 }
 
 export interface YearPreflightEntry {
@@ -143,7 +132,6 @@ export interface YearPreflight {
   fy_label: string;
   annual_goals_edit_enabled: YearPreflightEntry;
   annual_reviews_enabled: YearPreflightEntry;
-  project_ratings_visible: YearPreflightEntry;
   annual_review_final_rating_visible: YearPreflightEntry;
 }
 
@@ -160,6 +148,7 @@ export interface UserCreatePayload {
   function_id?: number | null;
   designation_id?: number | null;
   mentor_id?: number | null;
+  miltenyi_reviewer_name?: string | null;
   password: string;
 }
 
@@ -171,6 +160,7 @@ export interface UserUpdatePayload {
   function_id?: number | null;
   designation_id?: number | null;
   mentor_id?: number | null;
+  miltenyi_reviewer_name?: string | null;
 }
 
 /** Sort columns the server can ORDER BY on the paginated users
@@ -202,9 +192,6 @@ export interface GetUsersPaginatedParams {
    *  (matches rows whose mentor_id IS NULL — same wire value the
    *  frontend dropdown uses). */
   mentor_name?: string;
-  /** Exact PM full_name — passes rows the user has an active
-   *  ProjectAssignment for under a Project whose PM matches. */
-  pm_name?: string;
   sort_by?: UsersPaginatedSortBy;
   sort_dir?: "asc" | "desc";
 }

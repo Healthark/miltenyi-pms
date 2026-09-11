@@ -241,9 +241,9 @@ export function AnnualGoals() {
   // Role-based detection (replaces the old `has_mentees` shortcut).
   // Employee → "My Goals" tab, Mentor → "Team Goals" tab,
   // HR_MyOrg → view-only "All Goals" tab.
-  const isEmployee = user?.role === "Employee";
+  const isEmployee = user?.role === "Staff";
   const isMentor = user?.role === "Mentor";
-  const isHRMyOrg = user?.role === "HR_MyOrg";
+  const isHRMyOrg = user?.role === "Admin";
   const annualGoalsEditEnabled = settings?.annual_goals_edit_enabled ?? false;
 
   // Extract bare FY label ("H1 FY26" → "FY26") for the page header.

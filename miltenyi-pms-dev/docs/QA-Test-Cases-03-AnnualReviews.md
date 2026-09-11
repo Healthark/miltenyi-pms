@@ -2,7 +2,7 @@
 
 > **Audience:** Manual QA tester, non-technical.
 > **Prerequisite:** Module 1 & 2 reviewed. Apply Module 1 §1.7 UI checklist on every screen.
-> **Test accounts needed:** Staff, Mentor (with mentees who have draft+pending+completed reviews), HR_MyOrg.
+> **Test accounts needed:** Staff, Mentor (with mentees who have draft+pending+completed reviews), Admin.
 > **Vocab:** Annual reviews flow through stages: **Draft → Pending Mentor → Pending Management → Completed**. Each stage has its own actor (Staff, Mentor, HR/Management).
 
 ---
@@ -245,7 +245,7 @@
 
 ### TC-MGMTREV-001 — HR/Management sees pending-management queue
 
-**Login as:** HR_MyOrg (acting as management)
+**Login as:** Admin (acting as management)
 **Steps:**
 1. Open Annual Reviews → All Reviews (or a "Pending Management" tab).
 2. Filter Status = "Pending Management".
@@ -256,7 +256,7 @@
 
 ### TC-MGMTREV-002 — Finalise a review
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Open a Pending Management review.
 2. Set final rating(s) (per the org's rating system).
@@ -273,7 +273,7 @@
 
 ### TC-MGMTREV-003 — Cannot revert completed review (or has restricted unlock)
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Open a Completed review.
 
@@ -289,7 +289,7 @@
 
 ### TC-ALLREV-001 — Open All Reviews
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Open Annual Reviews → All Reviews.
 
@@ -303,7 +303,7 @@
 
 ### TC-ALLREV-002 — Filter combinations
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Combine: Employee combobox + FY filter + Function + Designation + Mentor + Status.
 
@@ -313,7 +313,7 @@
 
 ### TC-ALLREV-003 — Search
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Type part of an employee name in the search box.
 
@@ -325,7 +325,7 @@
 
 ### TC-ALLREV-004 — Sort columns
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Click Employee header → A-Z sort.
 2. Click Status header → status-alphabetical sort.
@@ -336,7 +336,7 @@
 
 ### TC-ALLREV-005 — Export
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Click **Export** on All Reviews.
 
@@ -346,7 +346,7 @@
 
 ### TC-ALLREV-006 — Open a review from HR view
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Click on a review row in All Reviews.
 

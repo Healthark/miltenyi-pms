@@ -150,7 +150,7 @@ export function ProjectModal({
   const secondaryCandidates = activeUsers.filter((u) =>
     SECONDARY_ALLOWED_ROLES.has(u.role),
   );
-  const memberCandidates = activeUsers.filter((u) => u.role === "Employee");
+  const memberCandidates = activeUsers.filter((u) => u.role === "Staff");
 
   // The combobox uses its `users` prop both for the suggestion list and
   // for resolving the currently-selected id back to a label. If the
@@ -176,11 +176,11 @@ export function ProjectModal({
     function_id: null,
     designation_id: null,
     mentor_id: null,
+    miltenyi_reviewer_name: null,
     is_deleted: false,
     created_at: "",
     function: null,
     designation: null,
-    project_manager_names: [],
   });
   const augmentWithCurrent = (
     pool: UserResponse[],

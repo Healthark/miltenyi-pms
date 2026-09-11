@@ -11,7 +11,7 @@ import { NotificationDropdown } from "@/components/layout/NotificationDropdown";
 import { hasActiveAnnouncements } from "@/components/layout/announcements";
 
 export function Topbar() {
-  const { user, refreshSession } = useAuth();
+  const { user, refreshSession, hasFeature } = useAuth();
   const { isDark, toggleTheme } = useTheme();
 
   // ── Active Cycle — from the dedicated SystemSettings context ──────
@@ -114,6 +114,7 @@ export function Topbar() {
       <CycleBadges
         settingsLoading={settingsLoading}
         activeCycleName={settings?.active_cycle_name ?? null}
+        showProjectCycle={hasFeature("project_reviews")}
       />
 
       {/* Right — theme toggle + bell + avatar */}
@@ -139,7 +140,9 @@ export function Topbar() {
           className="relative p-2 text-text-muted hover:text-brand-accent transition-colors rounded-full hover:bg-brand-light"
           aria-label={
             hasNotifications
-              ? `Notifications (${summary?.notifications.length} new)`
+              ? `Notifications (${
+                  (summary?.notifications.length ?? 0) + unreadUserCount
+                } new)`
               : "Notifications"
           }
           aria-expanded={anchorRect !== null}
@@ -207,9 +210,12 @@ function extractFyLabel(cycleName: string | null): string | null {
 function CycleBadges({
   settingsLoading,
   activeCycleName,
+  showProjectCycle,
 }: {
   readonly settingsLoading: boolean;
   readonly activeCycleName: string | null;
+  /** False for orgs that retired project reviews — only the FY pill shows. */
+  readonly showProjectCycle: boolean;
 }) {
   if (settingsLoading) {
     return (
@@ -234,7 +240,7 @@ function CycleBadges({
           {fyLabel}
         </span>
       )}
-      {activeCycleName && (
+      {showProjectCycle && activeCycleName && (
         <span
           className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-border bg-brand-light px-2.5 py-0.5 text-xs font-medium text-brand-accent"
           title="Project review cycle"

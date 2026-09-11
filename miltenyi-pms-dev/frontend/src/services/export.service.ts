@@ -18,8 +18,7 @@ export type ExportKind =
   | "users"
   | "goals"
   | "annual-reviews"
-  | "project-reviews"
-  | "projects";
+  | "project-reviews";
 
 /** Read the server-supplied filename from Content-Disposition. Browsers
  *  don't surface this for blob-typed XHR responses, so we parse it
@@ -64,7 +63,7 @@ export const exportService = {
 
   /** Download the combined 5-sheet workbook. `fyYears` narrows scope
    *  on goals / annual reviews / project reviews; pass `[]` or omit
-   *  for "all time". Users and Projects sheets are always full org-wide. */
+   *  for "all time". The Users sheet is always full org-wide. */
   async downloadWorkbook(fyYears: number[] = []): Promise<void> {
     const params: Record<string, string> = {};
     if (fyYears.length > 0) {
@@ -78,26 +77,6 @@ export const exportService = {
     triggerDownload(res.data as Blob, filename);
   },
 
-  /** Download the Miltenyi HR workbook — three sheets (Users, Projects,
-   *  Project Reviews). Annual goals / annual reviews are intentionally
-   *  excluded since Miltenyi HR's scope doesn't include those flows.
-   *  `fyYears` narrows Project Reviews; Users and Projects sheets are
-   *  always full org-wide. Backend gates on role == HR_Miltenyi. */
-  async downloadMiltenyiWorkbook(fyYears: number[] = []): Promise<void> {
-    const params: Record<string, string> = {};
-    if (fyYears.length > 0) {
-      params.fy = fyYears.join(",");
-    }
-    const res = await apiClient.get(`/export/miltenyi.xlsx`, {
-      responseType: "blob",
-      params,
-    });
-    const filename = filenameFromResponse(
-      res,
-      `pms-miltenyi-workbook.xlsx`,
-    );
-    triggerDownload(res.data as Blob, filename);
-  },
 
   /** Download a single employee's complete record — five sheets covering
    *  profile, goals, annual reviews, project assignments, project

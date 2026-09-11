@@ -50,8 +50,11 @@ class SystemSettings(Base):
     # reviews/goals created during this period.
     active_cycle_name = Column(String, nullable=False)  # e.g. "H1 FY26"
 
-    # The machine-readable cadence — used by the utility to calculate
-    # current Q1/Q2 or H1/H2 periods.
+    # The cadence the active-cycle label is derived from. Fixed at
+    # half-yearly for this instance: annual goals run H1/H2 and annual
+    # reviews per FY, and the quarterly cadence only ever served the
+    # retired per-project reviews, so it is no longer exposed in the UI
+    # or accepted by the settings API.
     cycle_type = Column(String, nullable=False, default=CycleType.HALF_YEARLY.value)
 
     # NEW: Anchors the fiscal year. 4 = April, 1 = January, etc.
@@ -67,36 +70,14 @@ class SystemSettings(Base):
     # zones don't see off-by-one rollovers. Defaults to "UTC".
     timezone = Column(String, nullable=False, default="UTC", server_default="UTC")
 
-    # Optional date boundaries for reporting and deadline enforcement.
-    cycle_start_date = Column(Date, nullable=True)
-    cycle_end_date = Column(Date, nullable=True)
-
-    # ── Submission Gates ─────────────────────────────────────────────
-    # HR flips these flags to open/close submission windows org-wide.
-    # This is simpler and more auditable than date-based auto-gating.
-    goals_submission_open = Column(Boolean, default=False)
-    reviews_submission_open = Column(Boolean, default=False)
-
-    # ── Goal & Review Access Controls ────────────────────────────────
-    # Org-wide toggles surfaced in the Admin Panel's Goal Settings card.
-    goals_edit_enabled = Column(Boolean, default=True, nullable=False)
-    # Admin opens this gate at the start of each FY to allow employees to
-    # create and edit their annual goals. Closed by default; must be
-    # explicitly enabled each cycle. Annual goals are blocked at the API
-    # layer when this is False — regardless of approval_status.
-    annual_goals_edit_enabled = Column(Boolean, default=False, nullable=False)
-    project_ratings_visible = Column(Boolean, default=False, nullable=False)
-    # Admin gate to pause Annual Review submissions org-wide. When False,
-    # the page and history stay viewable, but every state-changing
-    # endpoint (self-review submit/draft, mentor evaluation, management
-    # rating) returns 403. The frontend renders a banner so the pause is
-    # visible to anyone who arrives at the page.
-    annual_reviews_enabled = Column(Boolean, default=False, nullable=False)
-    # When False, the Ratings column is hidden in the Mentor's Mentee Review /
-    # Team Review tabs and the employee cannot see the final rating on past
-    # reviews. Mentors still see their own mentor_performance_rating while
-    # evaluating (that's required for the workflow).
-    annual_review_final_rating_visible = Column(Boolean, default=False, nullable=False)
+    # ── Access toggles live elsewhere ────────────────────────────────
+    # The per-fiscal-year switches (annual reviews open, final-rating
+    # visibility, annual-goal editing) are rows of
+    # `system_settings_year_overrides`; the Project Goals period switches
+    # are rows of `project_goal_period_settings`. This singleton keeps
+    # only the calendar anchors above and the developer escape hatches
+    # below. (September 2026: the duplicate org-wide copies, the never-read
+    # submission gates and the project-review rating switch were dropped.)
     # Demo-only escape hatch. When True, the date-based H1/H2 review-window
     # gate (`cycle_utils.is_review_window_open`) is skipped, so a Staff /
     # Mentor pair can submit BOTH the H1 and the H2 reviews in the same

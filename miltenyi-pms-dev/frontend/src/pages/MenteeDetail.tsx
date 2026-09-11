@@ -32,6 +32,7 @@ import { usePageTitleOverride } from "@/hooks/usePageTitleOverride";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
 import { useConfirm } from "@/hooks/useConfirm";
 import { useToast } from "@/hooks/useToast";
+import { useAuth } from "@/hooks/useAuth";
 import { getErrorMessage } from "@/utils/errors";
 import {
   extractFyToken,
@@ -72,9 +73,20 @@ export function MenteeDetail() {
   const { id } = useParams<{ id: string }>();
   const menteeId = Number(id);
 
+  // The Projects tab is the per-project PM review history. Orgs that run
+  // Project Goals instead have retired that feature, so the tab is hidden
+  // and a stale ?tab=projects link falls back to the summary.
+  const { hasFeature } = useAuth();
+  const visibleTabs = hasFeature("project_reviews")
+    ? TABS
+    : TABS.filter((t) => t.key !== "projects");
+
   const [searchParams, setSearchParams] = useSearchParams();
   const tabFromUrl = searchParams.get("tab");
-  const activeTab: TabKey = isTabKey(tabFromUrl) ? tabFromUrl : "summary";
+  const requestedTab: TabKey = isTabKey(tabFromUrl) ? tabFromUrl : "summary";
+  const activeTab: TabKey = visibleTabs.some((t) => t.key === requestedTab)
+    ? requestedTab
+    : "summary";
 
   const queryClient = useQueryClient();
 
@@ -511,7 +523,7 @@ export function MenteeDetail() {
           {/* Tabs */}
           <div className="rounded-xl border border-border bg-surface shadow-sm">
             <div className="flex overflow-x-auto border-b border-border px-2">
-              {TABS.map((tab) => {
+              {visibleTabs.map((tab) => {
                 const Icon = tab.icon;
                 const isActive = tab.key === activeTab;
                 return (

@@ -16,7 +16,6 @@ import { SortableHeader } from "@/components/SortableHeader";
 import { StringCombobox } from "@/components/common/StringCombobox";
 import { ClearFiltersButton } from "@/components/common/ClearFiltersButton";
 import { Pagination } from "@/components/common/Pagination";
-import { useAuth } from "@/hooks/useAuth";
 import {
   type SortState,
 } from "@/utils/sort";
@@ -32,7 +31,7 @@ interface UsersTabProps {
 }
 
 // Sort keys the SERVER can ORDER BY (mirrors backend `_USERS_SORT_COLUMNS`).
-// mentor_name + project_manager_names sorts are intentionally deferred —
+// the mentor_name sort is intentionally deferred —
 // they'd need correlated subqueries. Status column sort is also dropped
 // (frontend can derive it from is_deleted but the backend doesn't expose
 // a corresponding column); HR can use the Status filter instead.
@@ -43,7 +42,7 @@ type UsersSortKey =
   | "function_name"
   | "designation_name";
 
-type RoleFilter = "all" | "HR_MyOrg" | "HR_Miltenyi" | "Mentor" | "PM" | "Employee";
+type RoleFilter = "all" | "Admin" | "Mentor" | "Staff";
 type StatusFilter = "all" | "active" | "inactive";
 
 // ── Virtualised-table layout constants ────────────────────────────────
@@ -90,11 +89,9 @@ const NO_MENTOR_SENTINEL = "(No mentor)";
 
 const ROLE_OPTIONS: { value: RoleFilter; label: string }[] = [
   { value: "all", label: "All Roles" },
-  { value: "HR_MyOrg", label: "HR · Healthark" },
-  { value: "HR_Miltenyi", label: "HR · Miltenyi" },
+  { value: "Admin", label: "Admin" },
   { value: "Mentor", label: "Mentor" },
-  { value: "PM", label: "PM" },
-  { value: "Employee", label: "Employee" },
+  { value: "Staff", label: "Staff" },
 ];
 
 const STATUS_OPTIONS: { value: StatusFilter; label: string }[] = [
@@ -102,9 +99,6 @@ const STATUS_OPTIONS: { value: StatusFilter; label: string }[] = [
   { value: "active", label: "Active" },
   { value: "inactive", label: "Deactivated" },
 ];
-
-// HR_Miltenyi cannot edit or deactivate Mentor / HR_MyOrg rows (security boundary).
-const PROTECTED_ROLES = new Set<string>(["Mentor", "HR_MyOrg"]);
 
 // USERS_SORT_CONFIG removed (PR #74). Sort now flows to the server via
 // `sort_by` / `sort_dir` query params; the per-column comparators are
@@ -134,10 +128,6 @@ export function UsersTab({
   const [functionFilter, setFunctionFilter] = useState<string>("all");
   const [designationFilter, setDesignationFilter] = useState<string>("all");
   const [mentorFilter, setMentorFilter] = useState<string>("all");
-  // Parallel filter for HR_Miltenyi viewers — the Mentor column is
-  // replaced with Project Manager for them, so the relation filter
-  // beside it tracks PM names instead.
-  const [pmFilter, setPmFilter] = useState<string>("all");
 
   // Read deep-link params on first mount and seed the filters. Today's
   // known senders: HeadcountCard legend rows could deep-link to
@@ -154,13 +144,11 @@ export function UsersTab({
     // sentinel meaning unmentored. MentorCoverageCard's "View all"
     // uses this to land HR directly on the unmentored-Employee list.
     const urlMentor = searchParams.get("mentor");
-    const urlPm = searchParams.get("pm");
     const urlFunction = searchParams.get("function");
     const urlDesignation = searchParams.get("designation");
     if (urlRole) setRoleFilter(urlRole as RoleFilter);
     if (urlStatus) setStatusFilter(urlStatus as StatusFilter);
     if (urlMentor) setMentorFilter(urlMentor);
-    if (urlPm) setPmFilter(urlPm);
     if (urlFunction) setFunctionFilter(urlFunction);
     if (urlDesignation) setDesignationFilter(urlDesignation);
     usersTabDefaultedRef.current = true;
@@ -179,7 +167,6 @@ export function UsersTab({
     setOrDeleteParam(next, "function", functionFilter);
     setOrDeleteParam(next, "designation", designationFilter);
     setOrDeleteParam(next, "mentor", mentorFilter);
-    setOrDeleteParam(next, "pm", pmFilter);
     if (searchParamsChanged(searchParams, next)) {
       setSearchParams(next, { replace: true });
     }
@@ -189,7 +176,6 @@ export function UsersTab({
     functionFilter,
     designationFilter,
     mentorFilter,
-    pmFilter,
     searchParams,
     setSearchParams,
   ]);
@@ -229,20 +215,6 @@ export function UsersTab({
       ),
     ).sort();
   }, [users]);
-  // Available PMs = the union of every Employee's project_manager_names.
-  // Drives the Project Manager filter dropdown for HR_Miltenyi viewers.
-  const availableProjectManagers = useMemo(() => {
-    const names = new Set<string>();
-    for (const u of users) {
-      for (const name of u.project_manager_names) {
-        names.add(name);
-      }
-    }
-    return Array.from(names).sort();
-  }, [users]);
-
-  const { user: currentUser } = useAuth();
-  const isViewerMiltenyiHR = currentUser?.role === "HR_Miltenyi";
 
   // True when any filter (or the search box) is narrowing the result
   // set. `statusFilter` defaults to "all" — same as every other filter
@@ -253,8 +225,7 @@ export function UsersTab({
     statusFilter !== "all" ||
     functionFilter !== "all" ||
     designationFilter !== "all" ||
-    mentorFilter !== "all" ||
-    pmFilter !== "all";
+    mentorFilter !== "all";
 
   const clearFilters = () => {
     onSearchChange("");
@@ -263,14 +234,6 @@ export function UsersTab({
     setFunctionFilter("all");
     setDesignationFilter("all");
     setMentorFilter("all");
-    setPmFilter("all");
-  };
-
-  /** True if the current viewer is allowed to edit/deactivate this row.
-   *  HR_MyOrg can touch any user; HR_Miltenyi cannot touch Mentor or HR_MyOrg rows. */
-  const canMutateRow = (target: UserResponse): boolean => {
-    if (!isViewerMiltenyiHR) return true;
-    return !PROTECTED_ROLES.has(target.role);
   };
 
   // ── Server-side paginated query (PR #74) ────────────────────────────
@@ -295,7 +258,6 @@ export function UsersTab({
     if (functionFilter !== "all") params.function_name = functionFilter;
     if (designationFilter !== "all") params.designation_name = designationFilter;
     if (mentorFilter !== "all") params.mentor_name = mentorFilter;
-    if (pmFilter !== "all") params.pm_name = pmFilter;
     if (sort) {
       params.sort_by = sort.key;
       params.sort_dir = sort.direction;
@@ -308,7 +270,6 @@ export function UsersTab({
     functionFilter,
     designationFilter,
     mentorFilter,
-    pmFilter,
     sort,
   ]);
 
@@ -337,25 +298,9 @@ export function UsersTab({
 
   // Page-slice rows + server total. `visibleUsers` keeps the same name
   // the old client-side code used so downstream JSX is unchanged.
-  // Viewer-role scope filter still runs client-side on the page slice:
-  // HR_Miltenyi shouldn't see Mentor/HR_MyOrg rows. The server doesn't
-  // know about that viewer-role projection (it's a UI concern), so we
-  // strip them after the page lands. The `total` shown by the
-  // Pagination toolbar still reflects the SERVER total — slightly
-  // overstated for HR_Miltenyi when Mentor/HR_MyOrg rows exist. Per
-  // the plan that's an acceptable trade-off (the protection lives at
-  // the mutation layer; HR_Miltenyi never sees actionable buttons on
-  // those rows anyway). Future: push the viewer-role projection
-  // server-side so the count agrees.
   const pageItems = paginatedQuery.data?.items ?? [];
   const totalCount = paginatedQuery.data?.total ?? 0;
-  const visibleUsers = useMemo(
-    () =>
-      isViewerMiltenyiHR
-        ? pageItems.filter((u) => !PROTECTED_ROLES.has(u.role))
-        : pageItems,
-    [pageItems, isViewerMiltenyiHR],
-  );
+  const visibleUsers = pageItems;
 
   // Loading state — `isPending` is only true on the very first fetch.
   // Subsequent page changes keep previous rows visible while the new
@@ -364,15 +309,7 @@ export function UsersTab({
   // both arrive at once).
   const isPaginatedLoading = paginatedQuery.isPending || isLoading;
 
-  // Role-filter dropdown: HR_Miltenyi never sees Mentor or HR_MyOrg
-  // options (those buckets would always read zero for them).
-  const visibleRoleOptions = useMemo(
-    () =>
-      isViewerMiltenyiHR
-        ? ROLE_OPTIONS.filter((o) => !PROTECTED_ROLES.has(o.value))
-        : ROLE_OPTIONS,
-    [isViewerMiltenyiHR],
-  );
+  const visibleRoleOptions = ROLE_OPTIONS;
 
   // Virtualizer dropped (PR #74). At max 50 rows per page the
   // virtualization overhead isn't paying off. Plain .map() renders
@@ -437,11 +374,7 @@ export function UsersTab({
             />
           </div>
         )}
-        {/* Relation filter: HR_MyOrg picks a Mentor; HR_Miltenyi picks
-            a Project Manager. Same dropdown slot, different relationship
-            and different name source. The other filter's state stays
-            on "all" (it's not rendered for the off-side role anyway). */}
-        {!isViewerMiltenyiHR && availableMentors.length > 0 && (
+        {availableMentors.length > 0 && (
           <div className="flex items-center gap-2">
             <label htmlFor="user-mentor-filter" className={FILTER_LABEL_CLS}>
               Mentor
@@ -460,20 +393,6 @@ export function UsersTab({
               value={mentorFilter === "all" ? "" : mentorFilter}
               onChange={(v) => setMentorFilter(v === "" ? "all" : v)}
               placeholder="All Mentors"
-            />
-          </div>
-        )}
-        {isViewerMiltenyiHR && availableProjectManagers.length > 0 && (
-          <div className="flex items-center gap-2">
-            <label htmlFor="user-pm-filter" className={FILTER_LABEL_CLS}>
-              Project Manager
-            </label>
-            <StringCombobox
-              id="user-pm-filter"
-              options={availableProjectManagers}
-              value={pmFilter === "all" ? "" : pmFilter}
-              onChange={(v) => setPmFilter(v === "" ? "all" : v)}
-              placeholder="All Project Managers"
             />
           </div>
         )}
@@ -554,16 +473,15 @@ export function UsersTab({
                 <div role="columnheader" className="px-5 py-3">
                   <SortableHeader label="Designation" columnKey="designation_name" sort={sort} onSort={setSort} />
                 </div>
-                {/* Mentor / Project Manager — not sortable in this PR
-                    (PR #74 plan: derived columns deferred; would need
-                    correlated subqueries). Rendered as plain headers
-                    so the visual style matches the others without the
+                {/* Mentor — not sortable (derived column; would need a
+                    correlated subquery). Rendered as a plain header so
+                    the visual style matches the others without the
                     chevron affordance. */}
                 <div
                   role="columnheader"
                   className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-text-muted"
                 >
-                  {isViewerMiltenyiHR ? "Project Manager" : "Mentor"}
+                  Mentor
                 </div>
                 <div
                   role="columnheader"
@@ -599,7 +517,7 @@ export function UsersTab({
             ) : (
               <div role="rowgroup">
                   {visibleUsers.map((user, idx) => {
-                    const mutable = canMutateRow(user);
+                    const mutable = true;
                     return (
                       <div
                         key={user.id}
@@ -641,12 +559,7 @@ export function UsersTab({
                           {user.designation?.name ?? "—"}
                         </div>
                         <div role="cell" className="px-5 text-text-muted truncate">
-                          {isViewerMiltenyiHR
-                            ? user.project_manager_names.length > 0
-                              ? user.project_manager_names.join(", ")
-                              : "—"
-                            : users.find((u) => u.id === user.mentor_id)
-                                ?.full_name ?? "—"}
+                          {users.find((u) => u.id === user.mentor_id)?.full_name ?? "—"}
                         </div>
                         <div role="cell" className="px-5 text-text-muted truncate">
                           {user.phone ?? "—"}

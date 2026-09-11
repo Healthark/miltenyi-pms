@@ -50,7 +50,7 @@ function CardSkeleton() {
 
 export function MyMentees() {
   const { user } = useAuth();
-  const isHRMyOrg = user?.role === "HR_MyOrg";
+  const isHRMyOrg = user?.role === "Admin";
 
   // HR_MyOrg branch — render the org-wide grouped pairings view.
   if (isHRMyOrg) {

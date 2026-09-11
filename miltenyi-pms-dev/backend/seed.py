@@ -9,7 +9,6 @@ Accounts (all passwords: password123):
     sarah.patel@healthark.ai      Sarah Patel       (HR_MyOrg, super-admin)
 
   HR · Miltenyi:
-    karin.weber@miltenyi.com      Karin Weber       (HR_Miltenyi, limited admin)
 
   Mentors (Healthark — fixed pool of 3):
     anjali.rao@healthark.ai       Anjali Rao        (mentors Bob, Charlie, Dana)
@@ -17,15 +16,11 @@ Accounts (all passwords: password123):
     priya.mehta@healthark.ai      Priya Mehta       (mentors Klaus, Mia, Nils)
 
   PMs (Miltenyi):
-    hans@miltenyi.com             Hans Müller       (PM)
-    greta@miltenyi.com            Greta Schmidt     (PM)
-    lukas@miltenyi.com            Lukas Lange       (PM)
-    dieter@miltenyi.com           Dieter Becker     (PM, reserve)
 
   Employee (Healthark employees with Miltenyi-issued accounts):
-    bob@, charlie@, dana@, iris@miltenyi.com               (R&D)
-    evan@, fiona@, klaus@miltenyi.com                       (Manufacturing)
-    mia@, nils@miltenyi.com                                 (Commercial)
+    bob@, charlie@, dana@, iris@healthark.ai               (R&D)
+    evan@, fiona@, klaus@healthark.ai                       (Manufacturing)
+    mia@, nils@healthark.ai                                 (Commercial)
 
 Run:
   python seed.py
@@ -37,8 +32,20 @@ from app.core.database import SessionLocal
 from app.core.security import get_password_hash
 from app.models.organization_models import Organization
 from app.models.reference_models import Function, Designation
+from app.models.project_goal_models import (
+    GoalFramework,
+    GoalFrameworkKpi,
+    ProjectGoalItem,
+    ProjectGoalPeriodSettings,
+    ProjectGoalQuarter,
+    ProjectGoalReview,
+    ProjectGoalReviewItem,
+    ProjectGoalSet,
+)
+from seed_data.goal_themes import GOAL_THEMES, PERIOD_LABEL
 from app.models.user_models import User, Role
 from app.models.system_settings_models import SystemSettings, CycleType
+from app.models.system_settings_year_override_models import SystemSettingsYearOverride
 from app.models.project_models import (
     Project, ProjectAssignment,
     PROJECT_STATUS_ACTIVE, PROJECT_STATUS_COMPLETED,
@@ -97,8 +104,12 @@ def seed_database() -> None:
             miltenyi = Organization(
                 name="Miltenyi",
                 domain="miltenyi.com",
+                # `project_reviews` is deliberately absent: the per-project
+                # PM review queue is retired for the Miltenyi instance in
+                # favour of `project_goals` (Sep 2026 stakeholder decision).
+                # The code stays; the server-side feature gate hides it.
                 enabled_features=[
-                    "dashboard", "goals", "project_reviews",
+                    "dashboard", "goals", "project_goals",
                     "annual_reviews", "mentoring", "admin",
                 ],
             )
@@ -131,8 +142,14 @@ def seed_database() -> None:
 
             # Designations — each title gets its own row. `level` (legacy
             # int) is left at the default of 1; `career_level` carries the
-            # GCC band that everything actually keys on.
-            for _, lvl, titles in GCC_DESIGNATIONS:
+            # GCC band that everything actually keys on. `function_id`
+            # links the title to its department so the Project Goals
+            # framework editor can list titles under each level column.
+            fn_ids = {
+                f.name: f.id
+                for f in db.query(Function).filter(Function.org_id == miltenyi.id).all()
+            }
+            for fname, lvl, titles in GCC_DESIGNATIONS:
                 for title in titles:
                     db.add(Designation(
                         org_id=miltenyi.id,
@@ -140,6 +157,7 @@ def seed_database() -> None:
                         level=lvl,                  # legacy sort, matches band for now
                         career_level=lvl,
                         career_level_label=LEVEL_LABEL[lvl],
+                        function_id=fn_ids.get(fname),
                     ))
             db.commit()
             print(f"  [+] Created {len(gcc_function_names)} GCC Functions and "
@@ -206,16 +224,7 @@ def seed_database() -> None:
             "sarah.patel@healthark.ai",
             employee_code="HRK-001", full_name="Sarah Patel",
             phone="+91 98000 00001",
-            role=Role.HR_MYORG.value,
-            function_id=None, designation_id=None,
-        )
-
-        # ── HR · Miltenyi (limited admin) ─────────────────────────────
-        karin = _ensure_user(
-            "karin.weber@miltenyi.com",
-            employee_code="MIL-HR-001", full_name="Karin Weber",
-            phone="+49 30 1234 0001",
-            role=Role.HR_MILTENYI.value,
+            role=Role.ADMIN.value,
             function_id=None, designation_id=None,
         )
 
@@ -242,36 +251,6 @@ def seed_database() -> None:
             function_id=None, designation_id=None,
         )
 
-        # ── PMs (Miltenyi — each sits in a GCC function at Lead band) ─
-        hans = _ensure_user(
-            "hans@miltenyi.com",
-            employee_code="MIL-PM-01", full_name="Hans Müller",
-            phone="+49 30 1234 1001",
-            role=Role.PM.value,
-            function_id=func_ra.id, designation_id=d_ra_lead.id,
-        )
-        greta = _ensure_user(
-            "greta@miltenyi.com",
-            employee_code="MIL-PM-02", full_name="Greta Schmidt",
-            phone="+49 30 1234 1002",
-            role=Role.PM.value,
-            function_id=func_ctm.id, designation_id=d_ctm_lead.id,
-        )
-        lukas = _ensure_user(
-            "lukas@miltenyi.com",
-            employee_code="MIL-PM-03", full_name="Lukas Lange",
-            phone="+49 30 1234 1003",
-            role=Role.PM.value,
-            function_id=func_mw.id, designation_id=d_mw_lead.id,
-        )
-        dieter = _ensure_user(
-            "dieter@miltenyi.com",
-            employee_code="MIL-PM-04", full_name="Dieter Becker",
-            phone="+49 30 1234 1004",
-            role=Role.PM.value,
-            function_id=func_pv.id, designation_id=d_pv_lead.id,
-        )
-
         # ── Employees ─────────────────────────────────────────────────
         # Mentor pairings (preserved from the original seed):
         #   Anjali → Bob, Charlie, Dana    (all Regulatory Affairs)
@@ -281,69 +260,69 @@ def seed_database() -> None:
         # Bob is the demo-grade mentee for "My Mentees" walkthroughs and
         # is intentionally pinned to Regulatory Affairs Manager (L3).
         bob = _ensure_user(
-            "bob@miltenyi.com",
+            "bob@healthark.ai",
             employee_code="STF-001", full_name="Bob Builder",
             phone="+49 30 1234 2001",
-            role=Role.EMPLOYEE.value, mentor_id=anjali.id,
+            role=Role.STAFF.value, mentor_id=anjali.id,
             function_id=func_ra.id, designation_id=d_ra_manager.id,
         )
         charlie = _ensure_user(
-            "charlie@miltenyi.com",
+            "charlie@healthark.ai",
             employee_code="STF-002", full_name="Charlie Chemist",
             phone="+49 30 1234 2002",
-            role=Role.EMPLOYEE.value, mentor_id=anjali.id,
+            role=Role.STAFF.value, mentor_id=anjali.id,
             function_id=func_ra.id, designation_id=d_ra_specialist.id,
         )
         dana = _ensure_user(
-            "dana@miltenyi.com",
+            "dana@healthark.ai",
             employee_code="STF-003", full_name="Dana DNA",
             phone="+49 30 1234 2003",
-            role=Role.EMPLOYEE.value, mentor_id=anjali.id,
+            role=Role.STAFF.value, mentor_id=anjali.id,
             function_id=func_ra.id, designation_id=d_ra_assoc_sr.id,
         )
         iris = _ensure_user(
-            "iris@miltenyi.com",
+            "iris@healthark.ai",
             employee_code="STF-004", full_name="Iris Immel",
             phone="+49 30 1234 2004",
-            role=Role.EMPLOYEE.value, mentor_id=mark.id,
+            role=Role.STAFF.value, mentor_id=mark.id,
             function_id=func_cdm.id, designation_id=d_cdm_sr.id,
         )
         evan = _ensure_user(
-            "evan@miltenyi.com",
+            "evan@healthark.ai",
             employee_code="STF-005", full_name="Evan Engineer",
             phone="+49 30 1234 2005",
-            role=Role.EMPLOYEE.value, mentor_id=mark.id,
+            role=Role.STAFF.value, mentor_id=mark.id,
             function_id=func_ctm.id, designation_id=d_ctm_mgr.id,
         )
         fiona = _ensure_user(
-            "fiona@miltenyi.com",
+            "fiona@healthark.ai",
             employee_code="STF-006", full_name="Fiona Factory",
             phone="+49 30 1234 2006",
-            role=Role.EMPLOYEE.value, mentor_id=mark.id,
+            role=Role.STAFF.value, mentor_id=mark.id,
             function_id=func_pv.id, designation_id=d_pv_analyst.id,
         )
         klaus = _ensure_user(
-            "klaus@miltenyi.com",
+            "klaus@healthark.ai",
             employee_code="STF-007", full_name="Klaus Köhler",
             phone="+49 30 1234 2007",
-            role=Role.EMPLOYEE.value, mentor_id=priya.id,
+            role=Role.STAFF.value, mentor_id=priya.id,
             function_id=func_pv.id, designation_id=d_pv_sr_analyst.id,
         )
         mia = _ensure_user(
-            "mia@miltenyi.com",
+            "mia@healthark.ai",
             employee_code="STF-008", full_name="Mia Markt",
             phone="+49 30 1234 2008",
-            role=Role.EMPLOYEE.value, mentor_id=priya.id,
+            role=Role.STAFF.value, mentor_id=priya.id,
             function_id=func_mw.id, designation_id=d_mw_sr_writer.id,
         )
         nils = _ensure_user(
-            "nils@miltenyi.com",
+            "nils@healthark.ai",
             employee_code="STF-009", full_name="Nils Niedermeier",
             phone="+49 30 1234 2009",
-            role=Role.EMPLOYEE.value, mentor_id=priya.id,
+            role=Role.STAFF.value, mentor_id=priya.id,
             function_id=func_mw.id, designation_id=d_mw_writer.id,
         )
-        print("  [+] Users (HR×2, Mentors×3, PMs×4, Employee×9 across 5 GCC functions)")
+        print("  [+] Users (Admin×1, Mentors×3, Staff×9 across 5 GCC functions)")
 
         # ============================================================ #
         # 4. SYSTEM SETTINGS                                            #
@@ -351,13 +330,10 @@ def seed_database() -> None:
         if not db.query(SystemSettings).filter(SystemSettings.org_id == miltenyi.id).first():
             db.add(SystemSettings(
                 org_id=miltenyi.id,
-                active_cycle_name="Q1 FY26-27",
-                cycle_type=CycleType.QUARTERLY.value,
+                active_cycle_name="H1 FY26-27",
+                cycle_type=CycleType.HALF_YEARLY.value,
                 fiscal_start_month=4,
-                goals_submission_open=True,
-                reviews_submission_open=True,
-                annual_goals_edit_enabled=True,
-                annual_reviews_enabled=True,
+                timezone="Asia/Kolkata",
                 # Dev convenience: bypass the H1/H2 calendar gate so we can
                 # test both halves' goal reviews in one session without
                 # waiting for October. Production should leave this False.
@@ -365,107 +341,21 @@ def seed_database() -> None:
                 updated_by_id=sarah.id,
             ))
             db.commit()
-            print("  [+] System Settings (quarterly, Q1 FY26-27, Healthark HR as updater, H1/H2 review window bypass on)")
+            print("  [+] System Settings (half-yearly, H1 FY26-27, Asia/Kolkata, H1/H2 review window bypass on)")
         else:
             print("  [~] System settings already exist; reusing.")
 
-        # ============================================================ #
-        # 5. PROJECTS                                                   #
-        # ============================================================ #
-        # PM = Miltenyi PM. Secondary = a non-PM/non-Mentor user (HR or other).
-        # Members are Employee only — the PM is NOT in `assignments`.
-        def _ensure_project(
-            code: str, name: str, description: str,
-            pm: User, secondary: User | None,
-            start: date, end: date,
-            members: list[tuple[User, Designation, Function, date]],
-        ) -> Project:
-            proj = db.query(Project).filter_by(org_id=miltenyi.id, project_code=code).first()
-            if proj:
-                return proj
-            proj = Project(
-                org_id=miltenyi.id,
-                project_code=code, name=name, description=description,
-                start_date=start, expected_end_date=end,
-                pm_id=pm.id,
-                secondary_evaluator_id=secondary.id if secondary else None,
-            )
-            db.add(proj)
-            db.flush()
-            for user, desig, func_, joined in members:
-                db.add(ProjectAssignment(
-                    org_id=miltenyi.id,
-                    project_id=proj.id,
-                    user_id=user.id,
-                    assignment_role=desig.name,
-                    function_id=func_.id,
-                    assigned_date=joined,
+        # Per-FY access toggles live on their own table (one row per FY).
+        for fy in ("FY25-26", "FY26-27"):
+            if not db.query(SystemSettingsYearOverride).filter_by(org_id=miltenyi.id, fy_label=fy).first():
+                db.add(SystemSettingsYearOverride(
+                    org_id=miltenyi.id, fy_label=fy,
+                    annual_reviews_enabled=True,
+                    annual_review_final_rating_visible=True,
+                    annual_goals_edit_enabled=True,
+                    updated_by_id=sarah.id,
                 ))
-            db.commit()
-            db.refresh(proj)
-            return proj
-
-        # Bob's flagship — full FY25-26 span; underwrites the demo data in §11.
-        # Reframed as a Regulatory Affairs programme to match Bob's
-        # Regulatory Affairs Manager designation under the GCC framework.
-        proj_bob_flagship = _ensure_project(
-            "MIL-PRJ-100",
-            "FY25-26 Global Regulatory Submissions Programme",
-            "Year-long Regulatory Affairs programme covering EMA + FDA submissions across the cell-therapy portfolio — Bob's flagship engagement.",
-            pm=hans, secondary=sarah,
-            start=date(2025, 4, 1), end=date(2026, 3, 31),
-            members=[
-                (bob, d_ra_manager, func_ra, date(2025, 4, 1)),
-            ],
-        )
-        proj_cell = _ensure_project(
-            "MIL-PRJ-101",
-            "Next-Gen CAR-T Regulatory Strategy",
-            "Build the regulatory submission strategy for the next-gen CAR-T platform ahead of EMA + FDA filings.",
-            pm=hans, secondary=sarah,
-            start=date(2025, 1, 15), end=date(2025, 8, 15),
-            members=[
-                (bob,     d_ra_manager,    func_ra, date(2025, 1, 15)),
-                (charlie, d_ra_specialist, func_ra, date(2025, 1, 22)),
-                (dana,    d_ra_assoc_sr,   func_ra, date(2025, 2, 1)),
-            ],
-        )
-        proj_macs = _ensure_project(
-            "MIL-PRJ-102",
-            "MACS Quant Clinical Trial Program",
-            "Multi-site clinical trial programme for the next-gen MACS Quant platform — operations, monitoring, safety.",
-            pm=greta, secondary=karin,
-            start=date(2025, 3, 5), end=date(2025, 11, 30),
-            members=[
-                (evan,  d_ctm_mgr,       func_ctm, date(2025, 3, 5)),
-                (fiona, d_pv_analyst,    func_pv,  date(2025, 3, 5)),
-                (klaus, d_pv_sr_analyst, func_pv,  date(2025, 3, 18)),
-            ],
-        )
-        proj_validation = _ensure_project(
-            "MIL-PRJ-103",
-            "Cell Therapy Submission Readiness",
-            "Coordinated CDM + RA workstream preparing the submission package for the cell-therapy pipeline ahead of clinical hand-off.",
-            pm=hans, secondary=sarah,
-            start=date(2026, 1, 8), end=date(2026, 9, 30),
-            members=[
-                (iris,    d_cdm_sr,        func_cdm, date(2026, 1, 8)),
-                (charlie, d_ra_specialist, func_ra,  date(2026, 1, 8)),
-                (dana,    d_ra_assoc_sr,   func_ra,  date(2026, 1, 22)),
-            ],
-        )
-        proj_launch = _ensure_project(
-            "MIL-PRJ-104",
-            "Medical Writing — Launch Documentation 2026",
-            "End-to-end medical-writing deliverables (study reports, regulatory dossier sections, launch collateral) for the 2026 launches.",
-            pm=lukas, secondary=karin,
-            start=date(2026, 1, 5), end=date(2026, 12, 31),
-            members=[
-                (mia,  d_mw_sr_writer, func_mw, date(2026, 1, 5)),
-                (nils, d_mw_writer,    func_mw, date(2026, 1, 5)),
-            ],
-        )
-        print("  [+] Projects: MIL-PRJ-100..104")
+        db.commit()
 
         # ============================================================ #
         # 6. ROLE EXPECTATIONS (Miltenyi GCC career-path content)       #
@@ -493,6 +383,142 @@ def seed_database() -> None:
             print(f"  [+] Role Expectations: {inserted} rows (one per function × career level)")
         else:
             print("  [~] Role expectations already exist; reusing.")
+
+        # ============================================================ #
+        # 6b. PROJECT GOALS (Miltenyi CY 2026 goal themes)               #
+        # ============================================================ #
+        # Framework rows from seed_data.goal_themes (the seven documents
+        # Gautham shared on 2 Sep 2026), one active period with the HR
+        # switches, the Miltenyi reviewer name per employee, and sample
+        # goal sets in different stages so every role has something to
+        # look at. Pharmacovigilance has no document, so Fiona and Klaus
+        # show up as "No framework" in the mapping tab on purpose.
+        if db.query(GoalFramework).filter(GoalFramework.org_id == miltenyi.id).count() == 0:
+            from datetime import datetime as _dt, timezone as _tz
+
+            fw_rows = 0
+            for func_name, levels in GOAL_THEMES.items():
+                fn = db.query(Function).filter_by(org_id=miltenyi.id, name=func_name).first()
+                if not fn:
+                    continue
+                for level, row in levels.items():
+                    fw = GoalFramework(
+                        org_id=miltenyi.id, function_id=fn.id, level=level, period_label=PERIOD_LABEL,
+                        title=row["title"], business_outcomes=row["business_outcomes"],
+                        functional_goals=row["functional_goals"], created_by_id=sarah.id,
+                    )
+                    db.add(fw)
+                    db.flush()
+                    for seq, (text, weight) in enumerate(row["kpis"], start=1):
+                        db.add(GoalFrameworkKpi(framework_id=fw.id, seq=seq, text=text, weightage=weight))
+                    fw_rows += 1
+            # Goals are set once a year; reviews run every quarter. The demo
+            # sits in Q3 CY 2026 with Q1–Q3 rolled out (Q3 = the writable window,
+            # Q1/Q2 open for backfill, Q4 locked until the Admin rolls it out).
+            CURRENT_QUARTER = 3
+            CURRENT_CYCLE = f"Q{CURRENT_QUARTER} {PERIOD_LABEL}"
+            db.add(ProjectGoalPeriodSettings(
+                org_id=miltenyi.id, period_label=PERIOD_LABEL, is_active=True,
+                entry_open=True, weightages_visible=True, current_quarter_seq=CURRENT_QUARTER,
+                updated_by_id=sarah.id,
+            ))
+            for seq in range(1, CURRENT_QUARTER + 1):
+                db.add(ProjectGoalQuarter(
+                    org_id=miltenyi.id, period_label=PERIOD_LABEL, seq=seq, cycle_label=f"Q{seq} {PERIOD_LABEL}",
+                    ratings_visible=False, opened_by_id=sarah.id,
+                ))
+            db.commit()
+            print(f"  [+] Project Goals: {fw_rows} framework rows for {PERIOD_LABEL}; period active (goal entry open, current quarter Q{CURRENT_QUARTER}, ratings hidden)")
+
+            # Miltenyi reviewers are names only — Miltenyi staff have no login.
+            miltenyi_reviewers = {
+                "bob@healthark.ai": "Stefan Bauer", "charlie@healthark.ai": "Stefan Bauer", "dana@healthark.ai": "Stefan Bauer",
+                "iris@healthark.ai": "Dr. Ute Krämer", "evan@healthark.ai": "Marc Dubois",
+                "fiona@healthark.ai": "Dr. Lena Vogel", "klaus@healthark.ai": "Dr. Lena Vogel",
+                "mia@healthark.ai": "Dr. Elena Rossi", "nils@healthark.ai": "Dr. Elena Rossi",
+            }
+            for email, name in miltenyi_reviewers.items():
+                u = db.query(User).filter_by(org_id=miltenyi.id, email=email).first()
+                if u:
+                    u.miltenyi_reviewer_name = name
+            db.commit()
+
+            def _pg_framework_for(u):
+                lvl = u.designation.career_level if u.designation else None
+                if not u.function_id or not lvl:
+                    return None
+                return db.query(GoalFramework).filter_by(
+                    org_id=miltenyi.id, function_id=u.function_id, level=lvl, period_label=PERIOD_LABEL,
+                ).first()
+
+            def _pg_set(email, status, self_rating=None, final_rating=None, partial=False):
+                """`status` is the goals lifecycle (draft/submitted/approved) or one
+                of the demo stages "self_reviewed" / "reviewed", which mean: goals
+                approved + the current quarter's self-review (and review) submitted."""
+                u = db.query(User).filter_by(org_id=miltenyi.id, email=email).first()
+                fw = _pg_framework_for(u) if u else None
+                if fw is None:
+                    return None
+                first = u.full_name.split()[0]
+                goals_status = "approved" if status in ("self_reviewed", "reviewed") else status
+                s = ProjectGoalSet(org_id=miltenyi.id, user_id=u.id, period_label=PERIOD_LABEL, framework_id=fw.id, status=goals_status)
+                if status != "draft":
+                    s.submitted_at = _dt(2026, 1, 12, 9, 0, tzinfo=_tz.utc)
+                if status in ("approved", "self_reviewed", "reviewed"):
+                    s.approved_at = _dt(2026, 1, 20, 11, 0, tzinfo=_tz.utc)
+                    s.approved_by_id = u.mentor_id
+                    s.approved_agreed_with = u.miltenyi_reviewer_name
+                    s.approved_agreed_on = date(2026, 1, 19)
+                    s.approval_note = "Confirmed by email; no wording changes."
+                db.add(s)
+                db.flush()
+                items = []
+                for k in fw.kpis:
+                    goal = None
+                    if not (partial and k.seq > 2):
+                        goal = (f"{first}'s {PERIOD_LABEL} commitment on this KPI: deliver against the agreed study plan, "
+                                f"with evidence reviewed at each quarterly checkpoint and no critical findings attributable to this work.")
+                    it = ProjectGoalItem(set_id=s.id, seq=k.seq, kpi_id=k.id, kpi_text=k.text, weightage=k.weightage, goal_text=goal)
+                    db.add(it)
+                    items.append(it)
+                db.flush()
+                if status in ("self_reviewed", "reviewed"):
+                    # The current quarter's review (Q3). Earlier quarters are left
+                    # empty so the demo shows backfill.
+                    rv = ProjectGoalReview(
+                        org_id=miltenyi.id, set_id=s.id, cycle_label=CURRENT_CYCLE,
+                        self_rating=self_rating, self_is_draft=False, self_submitted_at=_dt(2026, 9, 8, 10, 0, tzinfo=_tz.utc),
+                        reviewer_id=u.mentor_id, miltenyi_reviewer_name=u.miltenyi_reviewer_name, final_rating_by="miltenyi",
+                    )
+                    if status == "reviewed":
+                        rv.entered_by_id = u.mentor_id
+                        rv.source_received_on = date(2026, 9, 19)
+                        rv.final_rating = final_rating
+                        rv.review_is_draft = False
+                        rv.review_submitted_at = _dt(2026, 9, 22, 15, 0, tzinfo=_tz.utc)
+                    db.add(rv)
+                    db.flush()
+                    for it in items:
+                        db.add(ProjectGoalReviewItem(
+                            review_id=rv.id, item_id=it.id,
+                            self_text=(f"Delivered as planned this quarter; the July slippage on this item was recovered by August "
+                                       f"and the Q3 evidence is filed with the study documentation."),
+                            primary_comment=(f"Met expectations on this KPI in Q3 — consistent quality and timeliness."
+                                             if status == "reviewed" else None),
+                            healthark_note=("Consistent with the H1 mentor review." if (status == "reviewed" and it.seq == 1) else None),
+                        ))
+                db.flush()
+                return s
+
+            _pg_set("bob@healthark.ai", "reviewed", self_rating=1, final_rating=1)      # Regulatory Affairs Manager — Q3 reviewed
+            _pg_set("evan@healthark.ai", "self_reviewed", self_rating=2)                # Clinical Trial Manager — Q3 self-review in, waiting for Marc Dubois's comments
+            _pg_set("iris@healthark.ai", "approved")                                    # Senior CDM — goals approved, Q3 self-review open
+            _pg_set("charlie@healthark.ai", "submitted")                                # RA Specialist — mentor to mark approved
+            _pg_set("mia@healthark.ai", "draft", partial=True)                          # Senior Medical Writer — two goals written
+            db.commit()
+            print("  [+] Project Goals: sample sets — bob Q3 reviewed, evan Q3 self-reviewed, iris approved, charlie submitted, mia draft; dana/nils not started; fiona/klaus have no PV framework")
+        else:
+            print("  [~] Project Goals framework already exists; reusing.")
 
         # ============================================================ #
         # 7. ANNUAL GOALS + H1 SELF-REVIEWS (Employee only)                #
@@ -673,144 +699,9 @@ def seed_database() -> None:
             print("  [~] Annual reviews already exist; reusing.")
 
         # ============================================================ #
-        # 9. PROJECT REVIEWS (Q1 FY26-27, PM-driven)                    #
-        # ============================================================ #
-        active_cycle = "Q1 FY26-27"
-
-        def _ensure_pr(
-            employee: User, project: Project, pm: User,
-            status: str = ProjectReviewStatus.PENDING.value, pg: str | None = None,
-            impact: str | None = None, **comments,
-        ) -> None:
-            existing = db.query(ProjectReview).filter_by(
-                org_id=miltenyi.id, user_id=employee.id, project_id=project.id, cycle=active_cycle,
-            ).first()
-            if existing:
-                return
-            db.add(ProjectReview(
-                org_id=miltenyi.id, user_id=employee.id, project_id=project.id,
-                reviewer_id=pm.id if status != ProjectReviewStatus.PENDING.value else None,
-                cycle=active_cycle, status=status,
-                performance_group=pg, impact_statement=impact, **comments,
-            ))
-
-        if db.query(ProjectReview).filter(ProjectReview.org_id == miltenyi.id).count() == 0:
-            # MIL-PRJ-101 (Hans) — Charlie reviewed, Bob/Dana pending
-            _ensure_pr(
-                charlie, proj_cell, hans, ProjectReviewStatus.REVIEWED.value, pg="4",
-                impact="Charlie owned the Module 3 quality dossier section and the IND submission preparatory work.",
-                comment_scope_of_role="Operated solidly inside the Regulatory Affairs Specialist remit — submission prep + cross-functional coordination.",
-                comment_key_responsibilities="Owned Module 3 quality content end-to-end; drove the agency response tracker for two HA query cycles.",
-                comment_technical_competencies="Strong eCTD discipline and submission-systems fluency; deepening regulatory intelligence on cell-therapy precedent.",
-                comment_delivery_ownership="Reliable on functional deliverables; willing to step into program-level coordination when asked.",
-                comment_regulatory_compliance="Submissions tracked cleanly; documentation management is audit-clean.",
-                comment_project_resource_management="Light project coordination across the Module 3 contributors — kept the tracker live.",
-            )
-            _ensure_pr(bob,  proj_cell, hans)
-            _ensure_pr(dana, proj_cell, hans)
-
-            # MIL-PRJ-102 (Greta) — Fiona reviewed, others pending
-            _ensure_pr(
-                fiona, proj_macs, greta, ProjectReviewStatus.REVIEWED.value, pg="4",
-                impact="Fiona stood up the PV reconciliation framework for the trial and drove signal-monitoring discipline.",
-                comment_scope_of_role="Operated firmly inside the Pharmacovigilance Analyst remit — case processing + signal monitoring + aggregate report support.",
-                comment_key_responsibilities="Independently QC'd AE/SAE cases and contributed to two aggregate report inputs; reconciliation discipline tightened across the quarter.",
-                comment_technical_competencies="Strong case processing and safety-database fluency; signal monitoring instincts growing.",
-                comment_delivery_ownership="Owned functional deliverables; partnered well with the Clinical Trial Manager.",
-                comment_regulatory_compliance="Quality review of cases is clean; reconciliation activities are well-documented.",
-                comment_project_resource_management="Coordinated effectively on shared safety deliverables across the trial sites.",
-            )
-            _ensure_pr(evan,  proj_macs, greta)
-            _ensure_pr(klaus, proj_macs, greta)
-
-            # MIL-PRJ-103 (Hans) — all pending
-            _ensure_pr(iris,    proj_validation, hans)
-            _ensure_pr(charlie, proj_validation, hans)
-            _ensure_pr(dana,    proj_validation, hans)
-
-            # MIL-PRJ-104 (Lukas) — all pending
-            _ensure_pr(mia,  proj_launch, lukas)
-            _ensure_pr(nils, proj_launch, lukas)
-
-            db.commit()
-            print(f"  [+] Project reviews ({active_cycle}): mix of pending + reviewed")
-        else:
-            print("  [~] Project reviews already exist; reusing.")
-
-        # ============================================================ #
-        # 10. LIFECYCLE TEST DATA                                       #
-        # ============================================================ #
-        # Pre-populate at least one of each new state so the dev env
-        # exercises the Project completion + Assignment soft-end paths.
-        # Each block is idempotent: re-running the seed is a no-op once
-        # the target state is reached.
-        #
-        #   10a. MIL-PRJ-101 → Completed (all 3 assignments end-dated).
-        #        Demonstrates the Completed pill, Re-open button, and
-        #        the PM queue's exclusion of completed projects.
-        #   10b. Charlie's MIL-PRJ-103 stint → ended 2026-04-30 (mid-Q1).
-        #        Demonstrates "PM keeps the in-flight review" — his Q1
-        #        PENDING row stays in Hans's queue so Hans can still
-        #        write up the partial period.
-        #   10c. Charlie re-joins MIL-PRJ-103 with a new active stint
-        #        starting 2026-06-01. Demonstrates two-row coexistence
-        #        per (project, user) after the unique-index drop.
-
-        # 10a — Mark MIL-PRJ-101 completed.
-        if proj_cell.status != PROJECT_STATUS_COMPLETED:
-            proj_cell.status = PROJECT_STATUS_COMPLETED
-            proj_cell.completed_at = datetime(2025, 9, 1, tzinfo=timezone.utc)
-            proj_cell.completed_by_id = sarah.id
-            for a in db.query(ProjectAssignment).filter(
-                ProjectAssignment.project_id == proj_cell.id,
-                ProjectAssignment.end_date.is_(None),
-            ).all():
-                a.end_date = date(2025, 8, 31)
-                a.ended_by_id = sarah.id
-            db.commit()
-            print("  [+] MIL-PRJ-101 marked Completed (3 assignments auto-end-dated)")
-        else:
-            print("  [~] MIL-PRJ-101 already Completed; skipping.")
-
-        # 10b — End Charlie's MIL-PRJ-103 stint mid-Q1.
-        charlie_103_active = db.query(ProjectAssignment).filter(
-            ProjectAssignment.project_id == proj_validation.id,
-            ProjectAssignment.user_id == charlie.id,
-            ProjectAssignment.end_date.is_(None),
-            ProjectAssignment.assigned_date == date(2026, 1, 8),
-        ).first()
-        if charlie_103_active:
-            charlie_103_active.end_date = date(2026, 4, 30)
-            charlie_103_active.ended_by_id = hans.id
-            db.commit()
-            print("  [+] Charlie's MIL-PRJ-103 stint ended 2026-04-30 (Hans)")
-        else:
-            print("  [~] Charlie's original MIL-PRJ-103 stint already ended; skipping.")
-
-        # 10c — Re-join Charlie on MIL-PRJ-103 as a new active stint.
-        charlie_103_rejoin = db.query(ProjectAssignment).filter(
-            ProjectAssignment.project_id == proj_validation.id,
-            ProjectAssignment.user_id == charlie.id,
-            ProjectAssignment.end_date.is_(None),
-        ).first()
-        if not charlie_103_rejoin:
-            db.add(ProjectAssignment(
-                org_id=miltenyi.id,
-                project_id=proj_validation.id,
-                user_id=charlie.id,
-                assignment_role=d_ra_specialist.name,
-                function_id=func_ra.id,
-                assigned_date=date(2026, 6, 1),
-            ))
-            db.commit()
-            print("  [+] Charlie re-joined MIL-PRJ-103 (new active stint from 2026-06-01)")
-        else:
-            print("  [~] Charlie already has an active MIL-PRJ-103 stint; skipping re-join.")
-
-        # ============================================================ #
         # 11. FULL-YEAR DEMO DATA — Bob Builder, FY25-26                #
         # ============================================================ #
-        # Loads Bob (bob@miltenyi.com, mentor Anjali Rao) with a
+        # Loads Bob (bob@healthark.ai, mentor Anjali Rao) with a
         # demo-quality "complete fiscal year" view for FY25-26:
         #   • 3 annual goals — every one walked end-to-end through
         #     APPROVED → H1 self → H1 mentor → H2 self → H2 mentor
@@ -823,7 +714,7 @@ def seed_database() -> None:
         #     rich self + mentor + management calibration content.
         #
         # When demoing the "My Mentees → mentee detail" page,
-        # open this account: bob@miltenyi.com (password123).
+        # open this account: bob@healthark.ai (password123).
         # Log in as anjali.rao@healthark.ai to see the mentor view.
 
         # ── Narrative blocks for goal self-reviews / mentor reviews ──
@@ -1008,203 +899,6 @@ def seed_database() -> None:
         )
         print("  [+] Bob — 3 FY25-26 annual goals, each fully lifecycle-completed (H2_MENTOR_REVIEWED)")
 
-        # 11b. Project reviews — Q1..Q4 FY25-26 on MIL-PRJ-100
-        # Q1 FY25-26 — regulatory strategy kickoff (Apr-Jun 2025).
-        # Bob's flagship is reframed as a Regulatory Affairs programme:
-        # planning EMA + FDA submissions for the cell-therapy portfolio.
-        BOB_PR_Q1 = dict(
-            cycle="Q1 FY25-26", pg="2",
-            impact=(
-                "Anchored the Q1 regulatory strategy: HA landscape map, "
-                "submission timeline architecture, and the first draft of "
-                "the Module 1 admin content for the EMA pre-submission."
-            ),
-            comment_scope_of_role=(
-                "Owned the Regulatory Affairs Manager remit end-to-end — "
-                "submission planning, HA interaction strategy, and "
-                "cross-functional coordination with CDM and Clinical Ops."
-            ),
-            comment_key_responsibilities=(
-                "Drafted the FY25-26 submissions plan with full timeline + "
-                "dependency map. Initiated the Module 1 admin file. "
-                "Established the agency-response tracker that the whole team "
-                "now uses."
-            ),
-            comment_technical_competencies=(
-                "Strong fluency in regulatory submission preparation and "
-                "regulatory intelligence. Brought eCTD discipline to the "
-                "team workflow from week one. Risk-assessment thinking is "
-                "operating at the senior band."
-            ),
-            comment_delivery_ownership=(
-                "Took clear program ownership of the submissions workstream "
-                "without me needing to chase. Stepped beyond the strict "
-                "Regulatory Affairs Manager scope when the timeline "
-                "demanded coordination across CDM."
-            ),
-            comment_regulatory_compliance=(
-                "HA interaction strategy is well-grounded in ICH guidance. "
-                "Submission governance discipline is exemplary — every "
-                "artifact has a traceable owner and audit log."
-            ),
-            comment_project_resource_management=(
-                "Started light team coordination from week three — Charlie "
-                "and Dana have a clear sub-workstream allocation. Resource "
-                "tracking is live."
-            ),
-        )
-        # Q2 FY25-26 — first submission cycle (Jul-Sep 2025)
-        BOB_PR_Q2 = dict(
-            cycle="Q2 FY25-26", pg="2",
-            impact=(
-                "Drove the EMA pre-submission package to first filing. "
-                "Successfully managed two HA query rounds with on-time, "
-                "on-quality responses."
-            ),
-            comment_scope_of_role=(
-                "Operating firmly at the Regulatory Affairs Manager band — "
-                "led the submission, owned HA interactions, and coordinated "
-                "the cross-functional Module 3 inputs."
-            ),
-            comment_key_responsibilities=(
-                "Closed Module 1 + Module 2.7 + Module 3 quality content. "
-                "Filed on schedule. Managed two HA query rounds without "
-                "escalation — clean, on-time, on-quality responses."
-            ),
-            comment_technical_competencies=(
-                "eCTD submission management is at the senior band. "
-                "Regulatory intelligence on EMA precedent for the therapeutic "
-                "area is genuinely deep. Risk assessment on HA query strategy "
-                "was sharp."
-            ),
-            comment_delivery_ownership=(
-                "Owned the program through the submission window. Held the "
-                "line on quality when timeline pressure tried to compress "
-                "the QC step — the right call, and the data backs it."
-            ),
-            comment_regulatory_compliance=(
-                "HA interactions handled with appropriate gravitas and "
-                "precision. Documentation governance is audit-ready."
-            ),
-            comment_project_resource_management=(
-                "Resource allocation across the submission workstream was "
-                "well-judged — Charlie carried Module 3 cleanly, Dana "
-                "carried the response tracker. Both are growing under his "
-                "coordination."
-            ),
-        )
-        # Q3 FY25-26 — response cycles + FDA pre-IND (Oct-Dec 2025)
-        BOB_PR_Q3 = dict(
-            cycle="Q3 FY25-26", pg="1",
-            impact=(
-                "Closed the EMA response cycle and opened the FDA pre-IND "
-                "track. Quality response narrative was specifically called "
-                "out by the agency as exemplary."
-            ),
-            comment_scope_of_role=(
-                "Operating at the top of the Regulatory Affairs Manager band "
-                "and starting to demonstrate Lead-band scope on the "
-                "FDA workstream — defining strategy, not just executing."
-            ),
-            comment_key_responsibilities=(
-                "Closed all outstanding EMA queries with one round-trip. "
-                "Opened the FDA pre-IND meeting request and authored the "
-                "briefing document. Negotiated the agency meeting agenda."
-            ),
-            comment_technical_competencies=(
-                "Regulatory strategy development is genuinely senior-level. "
-                "Submission management discipline is becoming a team "
-                "standard. Cross-agency regulatory intelligence is sharp."
-            ),
-            comment_delivery_ownership=(
-                "Owns the full submission portfolio. Took ownership of the "
-                "pre-IND briefing scope beyond the original ask — recognized "
-                "the strategic value of the broader narrative and made the "
-                "right call."
-            ),
-            comment_regulatory_compliance=(
-                "EMA agency feedback on the quality narrative was unusually "
-                "positive. Submission governance is rock-solid. Inspection "
-                "readiness mindset is fully in place."
-            ),
-            comment_project_resource_management=(
-                "Resource allocation across the EMA close + FDA opening is "
-                "well-balanced. The team is operating well under his "
-                "coordination — Charlie is now independently leading Module "
-                "3 for the FDA track."
-            ),
-        )
-        # Q4 FY25-26 — FDA pre-IND + program close (Jan-Mar 2026)
-        BOB_PR_Q4 = dict(
-            cycle="Q4 FY25-26", pg="1",
-            impact=(
-                "Successful FDA pre-IND meeting outcome with agreed pathway "
-                "for the IND filing. Closed FY25-26 program with full "
-                "audit-readiness across all submission packages."
-            ),
-            comment_scope_of_role=(
-                "Demonstrated Lead-band scope across the FDA workstream and "
-                "the program close. Strategic regulatory leadership is "
-                "clearly in evidence."
-            ),
-            comment_key_responsibilities=(
-                "Led the pre-IND meeting with a positive outcome. Authored "
-                "the post-meeting minutes that the agency adopted with no "
-                "amendments. Closed the FY25-26 program with full "
-                "audit-traceable artifact set."
-            ),
-            comment_technical_competencies=(
-                "Health-authority negotiation in evidence — meeting "
-                "outcome reflects real skill. Regulatory policy "
-                "interpretation is at the senior + level. Governance "
-                "frameworks are mature."
-            ),
-            comment_delivery_ownership=(
-                "Owned the program close end-to-end. Audit-readiness mindset "
-                "drove every artifact decision in Q4. Set the team up for "
-                "FY26-27 IND filing success."
-            ),
-            comment_regulatory_compliance=(
-                "FDA interaction quality was outstanding. Submission "
-                "governance is the team standard. Audit readiness is "
-                "complete and verified."
-            ),
-            comment_project_resource_management=(
-                "Resource allocation through the program close was excellent. "
-                "Team performed at the top of its range under his "
-                "coordination. Recommend stretch scope at Lead band in FY26-27."
-            ),
-        )
-
-        existing_bob_prs = (
-            db.query(ProjectReview)
-            .filter(
-                ProjectReview.user_id == bob.id,
-                ProjectReview.project_id == proj_bob_flagship.id,
-            )
-            .count()
-        )
-        if existing_bob_prs == 0:
-            for spec in (BOB_PR_Q1, BOB_PR_Q2, BOB_PR_Q3, BOB_PR_Q4):
-                cycle = spec.pop("cycle")
-                pg = spec.pop("pg")
-                impact = spec.pop("impact")
-                db.add(ProjectReview(
-                    org_id=miltenyi.id,
-                    user_id=bob.id,
-                    project_id=proj_bob_flagship.id,
-                    reviewer_id=hans.id,
-                    cycle=cycle,
-                    status=ProjectReviewStatus.REVIEWED.value,
-                    performance_group=pg,
-                    impact_statement=impact,
-                    **spec,
-                ))
-            db.commit()
-            print("  [+] Bob — 4 project reviews on MIL-PRJ-100 (Q1..Q4 FY25-26), all REVIEWED")
-        else:
-            print("  [~] Bob's project reviews on MIL-PRJ-100 already exist; skipping.")
-
         # 11c. Upgrade Bob's existing FY25-26 annual review to demo-grade
         bob_ar = db.query(AnnualReview).filter_by(
             org_id=miltenyi.id, user_id=bob.id, cycle_name="FY25-26",
@@ -1263,33 +957,21 @@ def seed_database() -> None:
         print("Database seeding completed.")
         print("=" * 64)
         print("\n--- ACCOUNTS (all passwords: password123) ---")
-        print("  HR · Healthark : sarah.patel@healthark.ai   Sarah Patel")
-        print("  HR · Miltenyi: karin.weber@miltenyi.com     Karin Weber")
+        print("  Admin (Healthark HR): sarah.patel@healthark.ai   Sarah Patel")
         print("\n  Mentors (Healthark):")
         print("    anjali.rao@healthark.ai     Anjali Rao    (Bob, Charlie, Dana)")
         print("    mark.singh@healthark.ai     Mark Singh    (Iris, Evan, Fiona)")
         print("    priya.mehta@healthark.ai    Priya Mehta   (Klaus, Mia, Nils)")
-        print("\n  PMs (Miltenyi — each Lead band in a GCC function):")
-        print("    hans@miltenyi.com           Hans Müller   (Regulatory Affairs Lead)")
-        print("    greta@miltenyi.com          Greta Schmidt (Clinical Trial Management Lead)")
-        print("    lukas@miltenyi.com          Lukas Lange   (Medical Writing Lead)")
-        print("    dieter@miltenyi.com         Dieter Becker (Pharmacovigilance Lead, reserve)")
-        print("\n  Employees (across GCC functions):")
+        print("\n  Staff (across GCC functions):")
         print("    Regulatory Affairs:        bob@ (Manager), charlie@ (Specialist), dana@ (Sr Associate)")
         print("    Clinical Data Management:  iris@ (Sr CDM)")
         print("    Clinical Trial Management: evan@ (CTM)")
         print("    Pharmacovigilance:         fiona@ (PV Analyst), klaus@ (Sr PV Analyst)")
         print("    Medical Writing:           mia@ (Sr Med Writer), nils@ (Med Writer)")
-        print("\n--- LIFECYCLE TEST DATA ---")
-        print("  MIL-PRJ-101 -> Completed (Sarah, 2025-09-01); 3 historical assignments")
-        print("  MIL-PRJ-103 -> Charlie has TWO stints: ended 2026-04-30 + active 2026-06-01")
-        print("    His Q1 PENDING review stays in Hans's queue (in-flight finish).")
         print("\n--- DEMO-READY MENTEE (FULL FY25-26 HISTORY) ---")
-        print("  Bob Builder  ->  bob@miltenyi.com          (Regulatory Affairs Manager)")
+        print("  Bob Builder  ->  bob@healthark.ai           (Regulatory Affairs Manager)")
         print("    Mentor    : Anjali Rao (anjali.rao@healthark.ai)")
-        print("    Project   : MIL-PRJ-100 (FY25-26 Global Regulatory Submissions Programme)")
         print("    Goals     : 3 annual goals (RA-themed), all H2_MENTOR_REVIEWED (full lifecycle)")
-        print("    Project Rv: 4 reviews on MIL-PRJ-100 — Q1..Q4 FY25-26, all REVIEWED")
         print("    Annual Rv : FY25-26 COMPLETED at rating 1, final published")
         print("  -> Demo: log in as anjali.rao@healthark.ai; My Mentees -> Bob.")
         print()

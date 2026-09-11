@@ -33,7 +33,7 @@ const MILTENYI_ASSETS = {
   name: "Miltenyi Biotec",
   logo: "/miltenyi-biotec-logo.svg",
   logoClass: "h-14 w-auto object-contain drop-shadow-sm",
-  placeholder: "david@miltenyi.com",
+  placeholder: "you@healthark.ai",
 } as const;
 
 // ─── Component ────────────────────────────────────────────────────────────────

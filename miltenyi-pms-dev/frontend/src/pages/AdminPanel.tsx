@@ -1,9 +1,11 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/queryKeys";
 import {
-  UserPlus, Users, Settings, FolderOpen, Plus, Download,
+  UserPlus, Users, Settings, Download, GitBranch, BookOpen,
 } from "lucide-react";
+import { FrameworkMappingTab } from "@/components/admin/FrameworkMappingTab";
+import { FrameworkTab } from "@/components/admin/FrameworkTab";
 
 import {
   adminService,
@@ -12,11 +14,9 @@ import {
   type UserUpdatePayload,
   type AdminSettingsUpdatePayload,
 } from "@/services/admin.service";
-import type { CycleType } from "@/services/system-settings.service";
 import { getErrorMessage } from "@/utils/errors";
 import { UsersTab } from "@/components/admin/UsersTab";
 import { SystemSettingsTab } from "@/components/admin/SystemSettingsTab";
-import { ProjectsTab, type ProjectsTabHandle } from "@/components/admin/ProjectsTab";
 import { UserModal } from "@/components/admin/UserModal";
 import { ExportsTab } from "@/components/admin/ExportsTab";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
@@ -25,10 +25,15 @@ import { useSnackbar } from "@/hooks/useSnackbar";
 import { useConfirm } from "@/hooks/useConfirm";
 import { useAuth } from "@/hooks/useAuth";
 
+// Projects (trial rosters with a Miltenyi PM) were retired on 10 Sep 2026:
+// nothing is tracked per trial or project any more. The components stay in
+// src/components/admin/ProjectsTab.tsx behind the "projects" feature flag
+// for an org that wants them back.
 
 type ActiveTab =
   | "users"
-  | "projects"
+  | "mapping"
+  | "framework"
   | "exports"
   | "settings";
 
@@ -39,8 +44,6 @@ export default function AdminPanel() {
   const confirm = useConfirm();
   const queryClient = useQueryClient();
 
-  const projectsTabRef = useRef<ProjectsTabHandle>(null);
-
   const { user } = useAuth();
   // Exports tab is open to both HR roles. The tab body branches on role
   // internally: HR_MyOrg gets the full Exports surface (combined workbook
@@ -50,15 +53,14 @@ export default function AdminPanel() {
   //
   // Role — not Function/Department — is the access check because Miltenyi
   // org has no "HR" function row to key off.
-  const canSeeExports =
-    user?.role === "HR_MyOrg" || user?.role === "HR_Miltenyi";
+  const canSeeExports = user?.role === "Admin";
 
   // System Settings tab is HR_MyOrg-only. HR_Miltenyi has no controls
   // they can flip there (cycle cadence, fiscal anchor, timezone,
   // per-FY toggles, date simulation are all Healthark-owned), so the
   // tab is hidden entirely rather than shown read-only. Same role-gate
   // pattern as canSeeExports above.
-  const canSeeSystemSettings = user?.role === "HR_MyOrg";
+  const canSeeSystemSettings = user?.role === "Admin";
 
   // ── Server state ──────────────────────────────────────────────────────────
   // Four independent queries that fire in parallel on mount. Each owns
@@ -107,7 +109,7 @@ export default function AdminPanel() {
   const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
     const params = new URLSearchParams(window.location.search);
     const requested = params.get("tab");
-    const valid: ActiveTab[] = ["users", "projects", "exports", "settings"];
+    const valid: ActiveTab[] = ["users", "mapping", "framework", "exports", "settings"];
     return (valid as readonly string[]).includes(requested ?? "")
       ? (requested as ActiveTab)
       : "users";
@@ -117,13 +119,12 @@ export default function AdminPanel() {
   const [editingUser, setEditingUser] = useState<UserResponse | null>(null);
   const [modalError, setModalError] = useState("");
 
-  // Settings form state — only the org-wide knobs live here now
-  // (cadence, fiscal month, simulated_today). The four per-FY access
+  // Settings form state — only the org-wide knobs live here
+  // (fiscal month, timezone, simulated_today). The per-FY access
   // toggles are owned by SystemSettingsTab via the year-scoped
-  // /admin/settings/year endpoints. Cadence + fiscal month are
-  // currently read-only in the UI but their values still flow to the
-  // tab so it can render the read-only display.
-  const [cycleType, setCycleType] = useState<CycleType>("half_yearly");
+  // /admin/settings/year endpoints; the Project Goals switches by the
+  // goal-framework settings endpoint. Fiscal month and timezone are
+  // read-only in the UI but still flow to the tab for display.
   const [fiscalStartMonth, setFiscalStartMonth] = useState(4);
   // IANA timezone string. Anchors every backend calendar-day decision
   // (cycle rollover, FY-end gates, assignment end dates). Defaults to
@@ -146,7 +147,6 @@ export default function AdminPanel() {
   // never re-sync because `hasInitializedForm` flips on the first run.
   const [hasInitializedForm, setHasInitializedForm] = useState(false);
   if (settings && !hasInitializedForm) {
-    setCycleType((settings.cycle_type as CycleType) ?? "half_yearly");
     setFiscalStartMonth(settings.fiscal_start_month ?? 4);
     setTimezone(settings.timezone ?? "UTC");
     setSimulatedToday(settings.simulated_today ?? "");
@@ -164,16 +164,9 @@ export default function AdminPanel() {
   // also enforces role=Mentor on the mentor_id assignment now (see
   // admin_routes._validate_mentor_role); this filter keeps the UI in
   // sync so non-Mentor candidates never appear in the dropdown.
-  //
-  // HR_Miltenyi viewers separately can't see Mentor or HR_MyOrg rows
-  // (security boundary). That filter is a no-op now since the Mentor
-  // narrowing above already excludes every option for HR_Miltenyi —
-  // and UserModal hides the mentor field entirely for them anyway.
-  const isViewerMiltenyiHR = user?.role === "HR_Miltenyi";
   const mentorOptions = users.filter((u) => {
     if (u.is_deleted) return false;
     if (u.role !== "Mentor") return false;
-    if (isViewerMiltenyiHR) return false;
     return true;
   });
 
@@ -357,7 +350,6 @@ export default function AdminPanel() {
       adminService.updateSettings(payload),
     onSuccess: (fresh) => {
       queryClient.setQueryData(queryKeys.admin.settings(), fresh);
-      setCycleType((fresh.cycle_type as CycleType) ?? "half_yearly");
       setFiscalStartMonth(fresh.fiscal_start_month ?? 4);
       setTimezone(fresh.timezone ?? "UTC");
       setSimulatedToday(fresh.simulated_today ?? "");
@@ -370,11 +362,9 @@ export default function AdminPanel() {
   });
 
   const handleSaveOrgWide = () => {
-    // Org-wide PATCH: only the cadence/fiscal/simulation fields. The
-    // four access toggles save through their own per-FY mutation in
-    // SystemSettingsTab.
+    // Org-wide PATCH: only the fiscal/timezone/simulation fields. The
+    // access toggles save through their own mutations in SystemSettingsTab.
     const payload: AdminSettingsUpdatePayload = {
-      cycle_type: cycleType,
       fiscal_start_month: fiscalStartMonth,
       timezone: timezone,
     };
@@ -404,7 +394,7 @@ export default function AdminPanel() {
             Admin Panel
           </h1>
           <p className="mt-0.5 text-sm text-text-muted">
-            Manage users, projects, and system configuration for your organization.
+            Manage users, the goals framework, exports and system configuration.
           </p>
         </div>
         {activeTab === "users" && (
@@ -415,16 +405,6 @@ export default function AdminPanel() {
           >
             <UserPlus className="h-4 w-4" aria-hidden="true" />
             Add User
-          </button>
-        )}
-        {activeTab === "projects" && (
-          <button
-            type="button"
-            onClick={() => projectsTabRef.current?.openCreate()}
-            className="flex items-center gap-2 rounded-lg bg-brand px-4 py-2.5 text-sm font-medium text-white hover:opacity-90 transition-opacity"
-          >
-            <Plus className="h-4 w-4" aria-hidden="true" />
-            Add Project
           </button>
         )}
       </div>
@@ -439,14 +419,6 @@ export default function AdminPanel() {
           >
             <Users className="h-4 w-4" aria-hidden="true" />
             Users
-          </button>
-          <button
-            type="button"
-            className={tabCls("projects")}
-            onClick={() => setActiveTab("projects")}
-          >
-            <FolderOpen className="h-4 w-4" aria-hidden="true" />
-            Projects
           </button>
           {canSeeExports && (
             <button
@@ -468,6 +440,30 @@ export default function AdminPanel() {
               System Settings
             </button>
           )}
+          {/* Project Goals administration — Healthark HR only. Mapping shows
+              each employee's function, designation level, mentor (reviewer of
+              record) and Miltenyi reviewer; Framework edits the goal-themes
+              content per function × level. */}
+          {canSeeSystemSettings && (
+            <button
+              type="button"
+              className={tabCls("mapping")}
+              onClick={() => setActiveTab("mapping")}
+            >
+              <GitBranch className="h-4 w-4" aria-hidden="true" />
+              Framework Mapping
+            </button>
+          )}
+          {canSeeSystemSettings && (
+            <button
+              type="button"
+              className={tabCls("framework")}
+              onClick={() => setActiveTab("framework")}
+            >
+              <BookOpen className="h-4 w-4" aria-hidden="true" />
+              Framework
+            </button>
+          )}
         </div>
 
         {activeTab === "users" && (
@@ -482,14 +478,17 @@ export default function AdminPanel() {
           />
         )}
 
-        {activeTab === "projects" && <ProjectsTab ref={projectsTabRef} />}
-
         {activeTab === "exports" && canSeeExports && <ExportsTab />}
+
+        {activeTab === "mapping" && canSeeSystemSettings && (
+          <FrameworkMappingTab users={users} />
+        )}
+
+        {activeTab === "framework" && canSeeSystemSettings && <FrameworkTab />}
 
         {activeTab === "settings" && canSeeSystemSettings && (
           <SystemSettingsTab
             activeCycleName={settings?.active_cycle ?? ""}
-            cycleType={cycleType}
             fiscalStartMonth={fiscalStartMonth}
             timezone={timezone}
             onTimezoneChange={setTimezone}

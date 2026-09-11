@@ -1,3 +1,4 @@
+import { useAuth } from "@/hooks/useAuth";
 import { ClipboardCheck, ArrowRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import type {
@@ -95,6 +96,10 @@ function copyForStatus(
 }
 
 export function MyAnnualReviewWidget({ summary }: MyAnnualReviewWidgetProps) {
+  // Orgs that run Project Goals instead have retired project reviews;
+  // the sub-section (and its /project-reviews link) is dropped for them.
+  const { hasFeature } = useAuth();
+  const showProjectReviews = hasFeature("project_reviews");
   const {
     annual_review_status,
     annual_review_cycle,
@@ -143,6 +148,8 @@ export function MyAnnualReviewWidget({ summary }: MyAnnualReviewWidgetProps) {
       {/* Divider between sub-sections. Same visual weight on both
           halves keeps the card readable as two parallel surfaces
           rather than a primary + footnote layout. */}
+      {showProjectReviews && (
+        <>
       <div className="border-t border-border" />
 
       {/* Project Reviews sub-section */}
@@ -180,6 +187,8 @@ export function MyAnnualReviewWidget({ summary }: MyAnnualReviewWidgetProps) {
           </Link>
         )}
       </section>
+        </>
+      )}
     </div>
   );
 }

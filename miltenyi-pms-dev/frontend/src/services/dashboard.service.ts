@@ -66,11 +66,9 @@ export interface DashboardSummary {
 // payload for now; widgets that diverge get gated on the frontend.
 
 export interface HeadcountByRole {
-  employee: number;
+  staff: number;
   mentor: number;
-  pm: number;
-  // Combined HR_MyOrg + HR_Miltenyi.
-  hr: number;
+  admin: number;
 }
 
 export interface HeadcountSummary {
@@ -201,25 +199,6 @@ export interface MentorCoverage {
   top_mentors: MentorLoad[];
 }
 
-/** One project surfaced on the HR dashboard's ProjectCoverage card.
- *  Surfaces when a project's PM was deactivated or role-changed away
- *  from PM and the cascade nulled `pm_id`. Backed by
- *  `projects.pm_orphaned_at`. Mirrors OrphanedEmployee in shape. See
- *  docs/policies/mentor-transition-policy.md for the policy this
- *  extends to the PM-and-project axis. */
-export interface OrphanedProject {
-  project_id: number;
-  project_code: string;
-  name: string;
-  secondary_evaluator_name: string | null;
-  /** ISO datetime stamped when the cascade ran. */
-  orphaned_at: string;
-}
-
-export interface ProjectCoverage {
-  orphaned_projects: OrphanedProject[];
-}
-
 export interface HrDashboardSummary {
   headcount: HeadcountSummary;
   annual_review_funnel: AnnualReviewFunnel;
@@ -228,7 +207,6 @@ export interface HrDashboardSummary {
   missing_annual_reviews: MissingAnnualReviewsSummary;
   stalled_goals: StalledGoalsSummary;
   mentor_coverage: MentorCoverage;
-  project_coverage: ProjectCoverage;
   /** Distinct fiscal start years that have annual-review or annual-goal
    *  data in the caller's org, sorted newest-first. The active FY is
    *  always included so the dashboard's picker can offer the current

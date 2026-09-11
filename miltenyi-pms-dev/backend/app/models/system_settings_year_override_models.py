@@ -3,13 +3,12 @@ SystemSettingsYearOverride — Per-Fiscal-Year Access Configuration.
 
 Where `SystemSettings` holds one row per org for cadence / fiscal start
 month / dev escape hatches, this table holds one row per `(org_id,
-fy_label)` for the four access-control toggles that previously lived
+fy_label)` for the three access-control toggles that previously lived
 on `SystemSettings`:
 
     - annual_reviews_enabled
     - annual_review_final_rating_visible
     - annual_goals_edit_enabled
-    - project_ratings_visible
 
 Why per-year: the singleton model couldn't express "FY26-27 is still
 open" while FY27-28 was beginning. With per-year rows, HR can configure
@@ -56,9 +55,6 @@ class SystemSettingsYearOverride(Base):
     annual_review_final_rating_visible = Column(Boolean, default=False, nullable=False)
     # Gate: annual goal create/edit endpoints check this for the goal's FY.
     annual_goals_edit_enabled = Column(Boolean, default=False, nullable=False)
-    # Visibility: project_review.performance_group exposure to non-HR /
-    # non-authoring viewers. Past-FY reads always pass through.
-    project_ratings_visible = Column(Boolean, default=False, nullable=False)
 
     # ── Audit Trail ──────────────────────────────────────────────────
     updated_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)

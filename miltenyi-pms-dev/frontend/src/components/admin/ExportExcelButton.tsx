@@ -36,22 +36,8 @@ export function ExportExcelButton({
   const snackbar = useSnackbar();
   const [isExporting, setIsExporting] = useState(false);
 
-  // HR_MyOrg sees the button on every kind. HR_Miltenyi sees it on the
-  // kinds within their scope: users + projects (Admin tabs) and
-  // project-reviews (Project Reviews page). Annual goals and annual
-  // reviews stay HR_MyOrg-only since those flows are out of Miltenyi
-  // HR's scope. Role — not Function/Department — is the gate because
-  // Miltenyi org has no "HR" function row to key off.
-  const role = user?.role;
-  const miltenyiAllowedKinds: ReadonlySet<ExportKind> = new Set([
-    "users",
-    "projects",
-    "project-reviews",
-  ]);
-  const canExport =
-    role === "HR_MyOrg" ||
-    (role === "HR_Miltenyi" && miltenyiAllowedKinds.has(kind));
-  if (!canExport) return null;
+  // Admin-only surface.
+  if (user?.role !== "Admin") return null;
 
   const handleClick = async () => {
     setIsExporting(true);
