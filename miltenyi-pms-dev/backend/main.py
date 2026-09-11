@@ -20,6 +20,8 @@ from app.api.routes import project_routes
 from app.api.routes import project_review_routes
 from app.api.routes import mentee_routes
 from app.api.routes import export_routes
+from app.api.routes import project_goal_routes
+from app.api.routes import goal_framework_routes
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -102,6 +104,8 @@ app.include_router(project_routes.router,        prefix=f"{settings.API_V1_STR}/
 app.include_router(project_review_routes.router, prefix=f"{settings.API_V1_STR}/project-reviews", tags=["Project Reviews"])
 app.include_router(mentee_routes.router,         prefix=f"{settings.API_V1_STR}/mentees",         tags=["Mentees"])
 app.include_router(export_routes.router,         prefix=f"{settings.API_V1_STR}/export",          tags=["Exports"])
+app.include_router(project_goal_routes.router,   prefix=f"{settings.API_V1_STR}/project-goals",   tags=["Project Goals"])
+app.include_router(goal_framework_routes.router, prefix=f"{settings.API_V1_STR}/admin/goal-frameworks", tags=["Project Goals · Framework"])
 
 @app.get("/")
 def root():

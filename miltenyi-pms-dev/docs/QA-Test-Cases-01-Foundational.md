@@ -2,7 +2,7 @@
 
 > **Audience:** Manual QA tester, non-technical.
 > **Scope of this document:** the parts of the app that touch every other module — Login & Session, Role Access, Profile, Notifications, System Settings, and User Admin.
-> **Prerequisite:** you have the hosted application URL and a set of test accounts (Staff, Mentor, PM, HR_MyOrg, HR_Miltenyi). Use the credentials provided to you separately.
+> **Prerequisite:** you have the hosted application URL and a set of test accounts (Staff, Mentor, Admin). Use the credentials provided to you separately.
 
 ---
 
@@ -108,7 +108,7 @@ Resize the browser window to test 3 widths each time: **narrow (≈ 600 px wide)
 
 ### TC-AUTH-005 — Login as a deactivated user
 
-**Login as:** _a deactivated test account (ask HR_MyOrg to deactivate one, or use a pre-prepared one)_
+**Login as:** _a deactivated test account (ask Admin to deactivate one, or use a pre-prepared one)_
 **Steps:**
 1. Type the deactivated account's email and password.
 2. Click **Sign In**.
@@ -227,7 +227,7 @@ Resize the browser window to test 3 widths each time: **narrow (≈ 600 px wide)
 
 **Login as:** Staff (in browser A)
 **Steps:**
-1. While logged in as the Staff user in browser A, ask HR_MyOrg (in browser B) to deactivate that Staff user via Admin → Users.
+1. While logged in as the Staff user in browser A, ask Admin (in browser B) to deactivate that Staff user via Admin → Users.
 2. In browser A, click anything that loads data (navigate to a different page).
 
 **Expected:**
@@ -309,6 +309,8 @@ Resize the browser window to test 3 widths each time: **narrow (≈ 600 px wide)
 
 ### TC-RBAC-003 — PM sees PM-specific entry points
 
+> **Retired (September 2026).** The PM role no longer exists — only Healthark staff use the application (roles: Admin, Staff, Mentor). Skip this case.
+
 **Login as:** PM (project manager)
 **Steps:**
 1. Open Project Reviews.
@@ -320,14 +322,14 @@ Resize the browser window to test 3 widths each time: **narrow (≈ 600 px wide)
 
 ---
 
-### TC-RBAC-004 — HR_MyOrg sees admin features
+### TC-RBAC-004 — Admin sees admin features
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Confirm sidebar shows: **HR Dashboard**, **Annual Goals (All Goals tab)**, **Annual Reviews (All Reviews tab)**, **Project Reviews (All Reviews tab)**, **Settings**, **Users**.
 2. Confirm exports and dashboard widgets render.
 
-**Expected:** All HR-specific tabs and widgets are visible. No "My Goals" / "My Reviews" for HR_MyOrg unless test data has them as a staff too.
+**Expected:** All HR-specific tabs and widgets are visible. No "My Goals" / "My Reviews" for Admin unless test data has them as a staff too.
 
 ---
 
@@ -518,9 +520,9 @@ Resize the browser window to test 3 widths each time: **narrow (≈ 600 px wide)
 
 ---
 
-## 1.5 System Settings (HR_MyOrg only)
+## 1.5 System Settings (Admin only)
 
-### TC-SETTINGS-001 — Only HR_MyOrg can open Settings
+### TC-SETTINGS-001 — Only Admin can open Settings
 
 **Login as:** Staff
 **Steps:**
@@ -528,7 +530,7 @@ Resize the browser window to test 3 widths each time: **narrow (≈ 600 px wide)
 
 **Expected:** Forbidden / redirected (per TC-RBAC-005).
 
-**Then login as:** HR_MyOrg
+**Then login as:** Admin
 **Steps:**
 1. Open Settings from the sidebar.
 
@@ -538,7 +540,7 @@ Resize the browser window to test 3 widths each time: **narrow (≈ 600 px wide)
 
 ### TC-SETTINGS-002 — Cycle type display
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Open Settings.
 
@@ -554,7 +556,7 @@ Resize the browser window to test 3 widths each time: **narrow (≈ 600 px wide)
 
 ### TC-SETTINGS-003 — Toggle "Annual goals edit enabled"
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Open Settings.
 2. Locate the "Annual goals edit enabled" toggle.
@@ -576,7 +578,7 @@ Resize the browser window to test 3 widths each time: **narrow (≈ 600 px wide)
 
 ### TC-SETTINGS-004 — Toggle "Project ratings visible"
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. In Settings, locate the "Project ratings visible" toggle.
 2. Switch it OFF.
@@ -590,7 +592,7 @@ Resize the browser window to test 3 widths each time: **narrow (≈ 600 px wide)
 
 ### TC-SETTINGS-005 — Toggle "Cycle window override"
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Open Settings.
 2. Toggle "Cycle window override" ON.
@@ -601,7 +603,7 @@ Resize the browser window to test 3 widths each time: **narrow (≈ 600 px wide)
 
 ### TC-SETTINGS-006 — Settings page UI
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Open Settings.
 
@@ -613,11 +615,11 @@ Resize the browser window to test 3 widths each time: **narrow (≈ 600 px wide)
 
 ---
 
-## 1.6 Users / Org Admin (HR_MyOrg)
+## 1.6 Users / Org Admin (Admin)
 
 ### TC-ADMIN-001 — Open the Users page
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Open the Users page from the sidebar.
 
@@ -634,7 +636,7 @@ Resize the browser window to test 3 widths each time: **narrow (≈ 600 px wide)
 
 ### TC-ADMIN-002 — Search / filter the user list
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. On the Users page, type part of a name in the search box.
 
@@ -647,7 +649,7 @@ Resize the browser window to test 3 widths each time: **narrow (≈ 600 px wide)
 
 ### TC-ADMIN-003 — Filter by role and function
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Use the Role filter dropdown → select "Mentor".
 
@@ -663,7 +665,7 @@ Resize the browser window to test 3 widths each time: **narrow (≈ 600 px wide)
 
 ### TC-ADMIN-004 — Invite a new user
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Click **Invite User** (or **Add User**).
 2. A modal/form opens.
@@ -684,7 +686,7 @@ Resize the browser window to test 3 widths each time: **narrow (≈ 600 px wide)
 
 ### TC-ADMIN-005 — Duplicate email is blocked
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Click Invite User.
 2. Type an email that already exists in the users table.
@@ -698,7 +700,7 @@ Resize the browser window to test 3 widths each time: **narrow (≈ 600 px wide)
 
 ### TC-ADMIN-006 — Edit a user's role
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. In the users table, find a Staff user.
 2. Click their row (or click the row's edit icon).
@@ -714,7 +716,7 @@ Resize the browser window to test 3 widths each time: **narrow (≈ 600 px wide)
 
 ### TC-ADMIN-007 — Assign / change mentor for a user
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Find a Staff with no mentor.
 2. Edit; in the Mentor field, pick a Mentor from the dropdown.
@@ -728,7 +730,7 @@ Resize the browser window to test 3 widths each time: **narrow (≈ 600 px wide)
 
 ### TC-ADMIN-008 — Deactivate a user
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Find an active user.
 2. Click the deactivate action (toggle, button, or kebab menu → Deactivate).
@@ -745,7 +747,7 @@ Resize the browser window to test 3 widths each time: **narrow (≈ 600 px wide)
 
 ### TC-ADMIN-009 — Reactivate a user
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Filter the users table to Deactivated.
 2. Find the user from TC-ADMIN-008.
@@ -759,7 +761,7 @@ Resize the browser window to test 3 widths each time: **narrow (≈ 600 px wide)
 
 ### TC-ADMIN-010 — Function management (add / rename)
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Open Functions / Designations admin (if exposed; may be on Settings or its own page).
 2. Add a new function "QA & Validation".
@@ -774,14 +776,14 @@ Resize the browser window to test 3 widths each time: **narrow (≈ 600 px wide)
 
 ### TC-ADMIN-011 — Designation management
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:** Same as TC-ADMIN-010 but for Designations.
 
 ---
 
 ### TC-ADMIN-012 — Users table sort
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. On the Users page, click the **Name** column header.
 

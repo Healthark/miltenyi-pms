@@ -26,19 +26,20 @@ Notes:
 
 from datetime import date, datetime, timezone
 from typing import List, Literal, Optional
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy import extract, func, or_
 from sqlalchemy.orm import aliased
 
 from app.api.dependencies import DbSession, CurrentUser
 from app.services.notification_service import notify, notify_many
 from app.core.cycle_utils import resolve_today
+from app.core.features import require_feature
 from app.models.project_models import (
     Project, ProjectAssignment,
     PROJECT_STATUS_ACTIVE, PROJECT_STATUS_COMPLETED,
 )
 from app.models.system_settings_models import SystemSettings
-from app.models.user_models import User, Role, ADMIN_ROLES
+from app.models.user_models import User, Role
 from app.models.reference_models import Function
 from app.schemas.project_schemas import (
     ProjectCreate, ProjectUpdate, ProjectResponse, ProjectDetail,
@@ -52,16 +53,31 @@ from app.schemas.pagination import Paginated
 # deactivate_user + update_user.
 from app.api.routes.admin_routes import _cascade_pm_reassignment
 
-router = APIRouter()
+# Projects (trial rosters with a Miltenyi PM) are retired for this instance:
+# nothing is tracked per trial any more (stakeholders, 10 Sep 2026). The
+# code and tables stay, gated off like project reviews — an org that lists
+# "projects" in enabled_features gets them back.
+router = APIRouter(dependencies=[Depends(require_feature("projects"))])
 
 
-def _require_hr_any(current_user: User) -> None:
-    """Both HR roles can manage projects (Miltenyi HR has explicit project edit access)."""
-    if current_user.role not in ADMIN_ROLES:
+def _require_admin(current_user: User) -> None:
+    """Admins manage projects."""
+    if current_user.role != Role.ADMIN.value:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only HR users can manage projects.",
+            detail="Only Admins can manage projects.",
         )
+
+
+# Projects were built around a Miltenyi project manager (role `PM`) who
+# wrote per-project reviews. Those logins no longer exist (September 2026,
+# Healthark-only instance) and the Projects tab is hidden pending the
+# stakeholders' decision on whether a PM-less trial roster is wanted
+# (docs/plans/2026-09-10-admin-panel-and-role-audit.md, D1). Until then
+# the validators keep their historical behaviour against these legacy
+# role strings, which no active user carries.
+_LEGACY_PM_ROLE = "PM"
+_LEGACY_SECONDARY_ROLES = ("PM", "HR_Miltenyi")
 
 
 # ── Validators ──────────────────────────────────────────────────────
@@ -79,7 +95,7 @@ def _validate_pm_role(db: DbSession, org_id: int, pm_id: int) -> None:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="PM user not found in this org.",
         )
-    if pm_user.role != Role.PM.value:
+    if pm_user.role != _LEGACY_PM_ROLE:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="The selected PM user is not a Miltenyi PM (role=PM).",
@@ -107,7 +123,7 @@ def _validate_secondary_role(db: DbSession, org_id: int, secondary_id: int) -> N
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Secondary evaluator user not found in this org.",
         )
-    if user.role not in (Role.PM.value, Role.HR_MILTENYI.value):
+    if user.role not in _LEGACY_SECONDARY_ROLES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="The Secondary evaluator must be a PM or a Miltenyi HR user.",
@@ -162,10 +178,10 @@ def _validate_member_role(db: DbSession, org_id: int, user_id: int) -> None:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Assignment user {user_id} not found in this org.",
         )
-    if user.role in (Role.PM.value, Role.MENTOR.value):
+    if user.role != Role.STAFF.value:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="PMs and Mentors cannot be project members.",
+            detail="Only Staff can be project members.",
         )
 
 
@@ -269,7 +285,7 @@ def list_projects(
     archived projects (HR can use this when reviewing or re-opening).
     `is_deleted` (hard-wipe) rows are always excluded.
     """
-    _require_hr_any(current_user)
+    _require_admin(current_user)
 
     q = db.query(Project).filter(
         Project.org_id == current_user.org_id,
@@ -399,7 +415,7 @@ def list_projects_paginated(
          only — the unpaginated endpoint resolves these org-wide; we
          scope to the returned project_ids.
     """
-    _require_hr_any(current_user)
+    _require_admin(current_user)
 
     projects_q = db.query(Project).filter(
         Project.org_id == current_user.org_id,
@@ -497,7 +513,7 @@ def create_project(
     current_user: CurrentUser,
 ):
     """Create a project with an assigned PM and optional team members."""
-    _require_hr_any(current_user)
+    _require_admin(current_user)
 
     # Case-insensitive uniqueness — "PRJ-001" and "prj-001" must not
     # coexist. Whitespace was already stripped by the Pydantic
@@ -608,7 +624,7 @@ def get_project_detail(
     current_user: CurrentUser,
 ):
     """Get a project with all team assignments."""
-    _require_hr_any(current_user)
+    _require_admin(current_user)
 
     project = db.query(Project).filter(
         Project.id == project_id,
@@ -657,7 +673,7 @@ def update_project(
     current_user: CurrentUser,
 ):
     """Update project metadata. Can swap PM or Secondary."""
-    _require_hr_any(current_user)
+    _require_admin(current_user)
 
     project = db.query(Project).filter(
         Project.id == project_id,
@@ -825,7 +841,7 @@ def delete_project(
     current_user: CurrentUser,
 ):
     """Soft-delete a project."""
-    _require_hr_any(current_user)
+    _require_admin(current_user)
 
     project = db.query(Project).filter(
         Project.id == project_id,
@@ -853,7 +869,7 @@ def add_assignment(
     background_tasks: BackgroundTasks,
 ):
     """Add a team member to a project. Auto-fills role and function from user profile."""
-    _require_hr_any(current_user)
+    _require_admin(current_user)
 
     project = db.query(Project).filter(
         Project.id == project_id,
@@ -941,7 +957,7 @@ def update_assignment(
     current_user: CurrentUser,
 ):
     """Update a member's project role, function, or assigned date."""
-    _require_hr_any(current_user)
+    _require_admin(current_user)
 
     assignment = db.query(ProjectAssignment).filter(
         ProjectAssignment.id == assignment_id,
@@ -1010,7 +1026,7 @@ def end_assignment(
     and the PM can still finish in-flight reviews for the cycle the
     person was removed in.
     """
-    _require_hr_any(current_user)
+    _require_admin(current_user)
 
     assignment = db.query(ProjectAssignment).filter(
         ProjectAssignment.id == assignment_id,
@@ -1051,7 +1067,7 @@ def restore_assignment(
     first), or if a different active assignment for the same user already
     exists (avoids two simultaneous active rows for one (project, user)).
     """
-    _require_hr_any(current_user)
+    _require_admin(current_user)
 
     assignment = db.query(ProjectAssignment).filter(
         ProjectAssignment.id == assignment_id,
@@ -1127,7 +1143,7 @@ def complete_project(
     Idempotent: already-completed projects return their current state
     without re-end-dating anything.
     """
-    _require_hr_any(current_user)
+    _require_admin(current_user)
 
     project = db.query(Project).filter(
         Project.id == project_id,
@@ -1203,7 +1219,7 @@ def reopen_project(
     assignments — HR re-adds team members explicitly via the assignment
     endpoint. Idempotent for already-active projects.
     """
-    _require_hr_any(current_user)
+    _require_admin(current_user)
 
     project = db.query(Project).filter(
         Project.id == project_id,

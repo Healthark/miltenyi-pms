@@ -10,30 +10,22 @@ import {
 } from "@/services/admin.service";
 import { UserCombobox } from "@/components/common/UserCombobox";
 import { IdCombobox } from "@/components/common/IdCombobox";
-import { useAuth } from "@/hooks/useAuth";
 import {
   normalizeFullName,
   isValidNameChars,
-  isValidEmailForRole,
-  emailDomainHintForRole,
+  isValidEmail,
+  emailDomainHint,
 } from "@/utils/text";
 
 // Role choices in the dropdown — must match the backend Role enum exactly.
 // Labels are display-only; the value is what gets persisted.
 const ROLE_OPTIONS: { value: string; label: string }[] = [
-  { value: "Employee", label: "Employee" },
-  { value: "PM", label: "PM (Miltenyi)" },
-  { value: "Mentor", label: "Mentor (Healthark)" },
-  { value: "HR_Miltenyi", label: "HR · Miltenyi" },
-  { value: "HR_MyOrg", label: "HR · Healthark" },
+  { value: "Staff", label: "Staff" },
+  { value: "Mentor", label: "Mentor" },
+  { value: "Admin", label: "Admin" },
 ];
 
 const ALL_ROLE_VALUES = ROLE_OPTIONS.map((r) => r.value);
-
-// HR_Miltenyi cannot create/edit Mentor or HR_MyOrg users (security boundary).
-// Backend enforces this; the UI hides the options too so the constraint is
-// visible up-front instead of as a 403 after submit.
-const PROTECTED_ROLES = new Set(["Mentor", "HR_MyOrg"]);
 
 interface UserModalProps {
   readonly isOpen: boolean;
@@ -65,13 +57,8 @@ export function UserModal({
   error,
 }: UserModalProps) {
   const isEditing = editingUser !== null;
-  const { user: currentUser } = useAuth();
 
-  // HR_Miltenyi can only see/select non-protected roles. HR_MyOrg sees all.
-  const isViewerMiltenyiHR = currentUser?.role === "HR_Miltenyi";
-  const visibleRoleOptions = isViewerMiltenyiHR
-    ? ROLE_OPTIONS.filter((r) => !PROTECTED_ROLES.has(r.value))
-    : ROLE_OPTIONS;
+  const visibleRoleOptions = ROLE_OPTIONS;
 
   // Initialize form state once on mount. AdminPanel passes
   // `key={editingUser?.id ?? "new"}`, so React remounts this modal
@@ -86,10 +73,11 @@ export function UserModal({
           phone: editingUser.phone ?? "",
           // Map any legacy/unknown role value back to Employee so the dropdown
           // doesn't render a value that isn't in ROLE_OPTIONS.
-          role: ALL_ROLE_VALUES.includes(editingUser.role) ? editingUser.role : "Employee",
+          role: ALL_ROLE_VALUES.includes(editingUser.role) ? editingUser.role : "Staff",
           function_id: editingUser.function_id?.toString() ?? "",
           designation_id: editingUser.designation_id?.toString() ?? "",
           mentor_id: editingUser.mentor_id?.toString() ?? "",
+          miltenyi_reviewer_name: editingUser.miltenyi_reviewer_name ?? "",
           password: "",
         }
       : {
@@ -97,10 +85,11 @@ export function UserModal({
           full_name: "",
           email: "",
           phone: "",
-          role: "Employee",
+          role: "Staff",
           function_id: "",
           designation_id: "",
           mentor_id: "",
+          miltenyi_reviewer_name: "",
           password: "",
         },
   );
@@ -169,9 +158,9 @@ export function UserModal({
   const emailDomainValid =
     emailToCheck.length === 0
       ? true
-      : isValidEmailForRole(emailToCheck, form.role);
+      : isValidEmail(emailToCheck);
   const showEmailError = emailToCheck.length > 0 && !emailDomainValid;
-  const emailHint = emailDomainHintForRole(form.role);
+  const emailHint = emailDomainHint();
 
   // Snap the displayed name to canonical title-case once the user
   // tabs away — matches the backend's normalization so what they see
@@ -201,6 +190,7 @@ export function UserModal({
           ? Number(form.designation_id)
           : null,
         mentor_id: form.mentor_id ? Number(form.mentor_id) : null,
+        miltenyi_reviewer_name: form.miltenyi_reviewer_name.trim() || null,
       } satisfies UserUpdatePayload);
     } else {
       await onSave({
@@ -214,6 +204,7 @@ export function UserModal({
           ? Number(form.designation_id)
           : null,
         mentor_id: form.mentor_id ? Number(form.mentor_id) : null,
+        miltenyi_reviewer_name: form.miltenyi_reviewer_name.trim() || null,
         password: form.password,
       } satisfies UserCreatePayload);
     }
@@ -242,29 +233,14 @@ export function UserModal({
               {error}
             </p>
           )}
-
-          {/* For HR_Miltenyi editing an existing row, only Function and
-              Designation are editable; every other field is locked.
-              Healthark HR owns the identity columns (employee_code,
-              full_name), the system role, the phone number, and the
-              mentor assignment. The lock applies regardless of the
-              target's role since HR_Miltenyi has the same authority
-              over any row they're allowed to touch (Employee / PM /
-              HR_Miltenyi — Mentor and HR_MyOrg rows are blocked
-              entirely upstream). Mirrors the backend 403 guard in
-              admin_routes.update_user. Add-user flow stays
-              unrestricted: HR_Miltenyi can still provision new users
-              with full field access. */}
           {(() => {
-            const isMiltenyiLocked = isViewerMiltenyiHR && isEditing;
-            const lockedInputCls = `${INPUT_CLS} ${isMiltenyiLocked ? "cursor-not-allowed opacity-50" : ""}`;
             // In create mode the employee code is auto-generated from
             // the role (server-derived; preview comes from
             // GET /admin/users/next-employee-code). The input is
             // always read-only in create mode — HR shouldn't be able
             // to type a custom code. In edit mode the existing rule
             // applies: Healthark HR can edit, Miltenyi HR cannot.
-            const isCodeReadOnly = !isEditing || isMiltenyiLocked;
+            const isCodeReadOnly = !isEditing;
             const codePlaceholder = !isEditing
               ? codeLoading
                 ? "Generating…"
@@ -273,7 +249,7 @@ export function UserModal({
                   : "Pick a role to generate code"
               : "EMP-003";
             const codeInputCls = `${INPUT_CLS} ${
-              !isEditing || isMiltenyiLocked
+              !isEditing
                 ? "cursor-not-allowed opacity-70 bg-slate-50 dark:bg-slate-800/40"
                 : ""
             }`;
@@ -304,12 +280,11 @@ export function UserModal({
                   </label>
                   <input
                     id="full-name"
-                    className={lockedInputCls}
+                    className={INPUT_CLS}
                     value={form.full_name}
                     onChange={(e) => set("full_name", e.target.value)}
                     onBlur={handleFullNameBlur}
                     placeholder="Jane Smith"
-                    readOnly={isMiltenyiLocked}
                   />
                   {showNameError && (
                     <p className="mt-1 text-xs text-red-600">
@@ -331,7 +306,7 @@ export function UserModal({
               className={`${INPUT_CLS} ${isEditing ? "cursor-not-allowed opacity-50" : ""}`}
               value={form.email}
               onChange={(e) => set("email", e.target.value)}
-              placeholder="jane@miltenyi.com"
+              placeholder="jane@healthark.ai"
               readOnly={isEditing}
             />
             {isEditing && (
@@ -346,15 +321,7 @@ export function UserModal({
               <p className="mt-1 text-xs text-text-muted">{emailHint}</p>
             )}
           </div>
-
-          {/* Phone and System Role share the same HR_Miltenyi edit lock
-              as the identity fields above. `disabled` on the <select>
-              produces the right native styling and blocks both keyboard
-              and click input; we mirror the read-only opacity treatment
-              from the text inputs for visual consistency. */}
           {(() => {
-            const isMiltenyiLocked = isViewerMiltenyiHR && isEditing;
-            const lockedInputCls = `${INPUT_CLS} ${isMiltenyiLocked ? "cursor-not-allowed opacity-50" : ""}`;
             return (
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -363,11 +330,10 @@ export function UserModal({
                   </label>
                   <input
                     id="phone"
-                    className={lockedInputCls}
+                    className={INPUT_CLS}
                     value={form.phone}
                     onChange={(e) => set("phone", e.target.value)}
                     placeholder="+91 98765 43210"
-                    readOnly={isMiltenyiLocked}
                   />
                 </div>
                 <div>
@@ -376,20 +342,21 @@ export function UserModal({
                   </label>
                   <select
                     id="role"
-                    className={lockedInputCls}
+                    className={INPUT_CLS}
                     value={form.role}
                     onChange={(e) => {
                       const nextRole = e.target.value;
-                      // Only Employees have a mentor — flipping to any other role
+                      // Only Staff have a mentor — flipping to any other role
                       // clears the previous selection so it can't be saved
                       // against a role that shouldn't carry one.
                       setForm((prev) => ({
                         ...prev,
                         role: nextRole,
-                        mentor_id: nextRole === "Employee" ? prev.mentor_id : "",
+                        mentor_id: nextRole === "Staff" ? prev.mentor_id : "",
+                        miltenyi_reviewer_name:
+                          nextRole === "Staff" ? prev.miltenyi_reviewer_name : "",
                       }));
                     }}
-                    disabled={isMiltenyiLocked}
                   >
                     {visibleRoleOptions.map((r) => (
                       <option key={r.value} value={r.value}>
@@ -437,25 +404,42 @@ export function UserModal({
               />
             </div>
           </div>
+          <UserCombobox
+            users={managers}
+            value={form.mentor_id ? Number(form.mentor_id) : null}
+            onChange={(id) => set("mentor_id", id !== null ? String(id) : "")}
+            label="Assigned Mentor"
+            placeholder={
+              form.role === "Staff"
+                ? "Search by name, email, or role…"
+                : "Only Staff can be assigned a mentor"
+            }
+            disabled={form.role !== "Staff"}
+            excludeIds={editingUser ? [editingUser.id] : undefined}
+          />
 
-          {/* Mentor assignment is hidden from HR_Miltenyi viewers — that
-              workflow belongs to HR_MyOrg (Healthark). For HR_Miltenyi
-              the form just leaves `mentor_id` untouched, so the existing
-              mentor_id on edited rows is preserved through the save. */}
-          {!isViewerMiltenyiHR && (
-            <UserCombobox
-              users={managers}
-              value={form.mentor_id ? Number(form.mentor_id) : null}
-              onChange={(id) => set("mentor_id", id !== null ? String(id) : "")}
-              label="Assigned Mentor"
-              placeholder={
-                form.role === "Employee"
-                  ? "Search by name, email, or role…"
-                  : "Only Employees can be assigned a mentor"
-              }
-              disabled={form.role !== "Employee"}
-              excludeIds={editingUser ? [editingUser.id] : undefined}
-            />
+          {/* Project Goals: the Miltenyi manager whose review comments the
+              mentor transcribes. Plain text — Miltenyi staff have no login.
+              Staff only. */}
+          {form.role === "Staff" && (
+            <div>
+              <label htmlFor="miltenyi_reviewer" className={LABEL_CLS}>
+                Miltenyi Reviewer
+              </label>
+              <input
+                id="miltenyi_reviewer"
+                type="text"
+                className={INPUT_CLS}
+                value={form.miltenyi_reviewer_name}
+                onChange={(e) => set("miltenyi_reviewer_name", e.target.value)}
+                placeholder="Name of the Miltenyi manager for Project Goals"
+                maxLength={200}
+              />
+              <p className="mt-1 text-xs text-text-muted">
+                Shown on the employee's Project Goals review as the source of the
+                reviewer comments.
+              </p>
+            </div>
           )}
 
           {!isEditing && (

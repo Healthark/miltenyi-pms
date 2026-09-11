@@ -2,27 +2,24 @@
  * RoleBadge — small pill rendering a user's role with role-specific color.
  *
  * Roles align with the backend `Role` enum in user_models.py:
- *   HR_MyOrg     — full super-admin (Healthark HR)
- *   HR_Miltenyi  — limited admin (Miltenyi HR)
- *   Mentor       — fixed mentor (reviews mentee goals + annual reviews)
- *   PM           — Miltenyi project manager
- *   Employee     — Miltenyi employee (default)
+ *   Admin   — Healthark HR (full admin)
+ *   Mentor  — Healthark mentor (mentees' goals, reviews, project-goal entry)
+ *   Staff   — Healthark employee placed on Miltenyi work (default)
+ *
+ * Unknown values (deactivated accounts from the retired PM / Miltenyi-HR
+ * roles) fall back to the raw string in a neutral style.
  */
 
 const ROLE_LABELS: Record<string, string> = {
-  HR_MyOrg: "HR · Healthark",
-  HR_Miltenyi: "HR · Miltenyi",
+  Admin: "Admin",
   Mentor: "Mentor",
-  PM: "PM",
-  Employee: "Employee",
+  Staff: "Staff",
 };
 
 const ROLE_STYLES: Record<string, string> = {
-  HR_MyOrg: "bg-blue-100 text-blue-700",
-  HR_Miltenyi: "bg-purple-100 text-purple-700",
+  Admin: "bg-blue-100 text-blue-700",
   Mentor: "bg-emerald-100 text-emerald-700",
-  PM: "bg-amber-100 text-amber-700",
-  Employee: "bg-slate-100 text-slate-600",
+  Staff: "bg-slate-100 text-slate-600",
 };
 
 interface RoleBadgeProps {
@@ -35,7 +32,7 @@ export function RoleBadge({ role }: RoleBadgeProps) {
   return (
     // Compact pill: text-[11px] + px-1.5 saves ~15% horizontal space
     // vs the previous text-xs + px-2.5 layout, so the longest labels
-    // ("HR · Healthark" / "HR · Miltenyi") fit in the narrowed Role
+    // ("Mentor") fit in the narrowed Role
     // column without wrapping. `whitespace-nowrap` is the safety net —
     // if the column is ever tight enough that even the compact pill
     // would wrap, it instead overflows horizontally into the table's

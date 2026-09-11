@@ -536,7 +536,7 @@ def list_all_mentor_pairings(
     `mentor_id`. Mentors with no mentees are still included so HR can spot
     unassigned coaches.
     """
-    if current_user.role != Role.HR_MYORG.value:
+    if current_user.role != Role.ADMIN.value:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only the Healthark HR can view org-wide mentor pairings.",

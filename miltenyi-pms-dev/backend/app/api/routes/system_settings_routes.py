@@ -82,9 +82,7 @@ def get_system_settings(
     # Lazily ensure an override row exists for the active FY so the
     # next admin-panel read finds it ready (seeded from the most recent
     # prior override for this org, or all-False if none exists yet).
-    override = ensure_year_override_row(
-        db, current_user.org_id, fresh_fy, seed_from_settings=row,
-    )
+    override = ensure_year_override_row(db, current_user.org_id, fresh_fy)
 
     response = SystemSettingsResponse.model_validate(row, from_attributes=True)
     response.active_cycle_name = fresh_cycle
@@ -112,8 +110,8 @@ def initialize_system_settings(
     This is a one-time operation — the unique index on org_id prevents duplicates.
     If settings already exist, we return 409 Conflict rather than silently overwriting.
     """
-    # Layer 3 — Role Authorization (both HRs may manage settings)
-    if current_user.role not in ("HR_MyOrg", "HR_Miltenyi"):
+    # Layer 3 — Role Authorization (Admin only)
+    if current_user.role != "Admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only HR users can initialize system settings."
@@ -135,10 +133,6 @@ def initialize_system_settings(
         active_cycle_name=settings_in.active_cycle_name,
         cycle_type=settings_in.cycle_type.value,  # Enum → string for DB storage
         fiscal_start_month=getattr(settings_in, 'fiscal_start_month', 4), # Fallback to 4 if not in schema
-        cycle_start_date=settings_in.cycle_start_date,
-        cycle_end_date=settings_in.cycle_end_date,
-        goals_submission_open=settings_in.goals_submission_open,
-        reviews_submission_open=settings_in.reviews_submission_open,
         updated_by_id=current_user.id,
     )
 
@@ -157,15 +151,13 @@ def update_system_settings(
     current_user: CurrentUser,
 ):
     """
-    Update the active cycle, submission gates, or date boundaries.
-
-    This is the endpoint HR Admins use from the Admin Panel to:
-    - Rotate the active cycle (e.g. "H1 FY26" → "H2 FY26")
-    - Open/close goal submission windows
-    - Open/close annual review submission windows
+    Update the org-wide anchors and developer escape hatches
+    (fiscal start month, timezone, H1/H2 window bypass, simulated date).
+    The per-FY access toggles are written through /admin/settings/year/{fy}
+    and the Project Goals period switches through /admin/goal-frameworks/settings.
     """
-    # Layer 3 — Role Authorization (both HRs may manage settings)
-    if current_user.role not in ("HR_MyOrg", "HR_Miltenyi"):
+    # Layer 3 — Role Authorization (Admin only)
+    if current_user.role != "Admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only HR users can modify system settings."

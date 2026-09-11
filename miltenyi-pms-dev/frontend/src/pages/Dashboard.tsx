@@ -22,7 +22,7 @@ import { EmployeeDashboard } from "@/pages/EmployeeDashboard";
 export function Dashboard() {
   const { user } = useAuth();
 
-  if (user?.role === "HR_MyOrg" || user?.role === "HR_Miltenyi") {
+  if (user?.role === "Admin") {
     return <HrDashboard />;
   }
 

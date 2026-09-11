@@ -1,24 +1,41 @@
+Seeding Miltenyi demo / test instance…
+  [~] Organization 'Miltenyi' already exists; reusing.
+  [~] Reference data already exists; reusing.
+  [+] Users (Admin×1, Mentors×3, Staff×9 across 3 of 8 GCC functions)
+  [~] System settings already exist; reusing.
+  [~] FY26-27 access toggles already exist; reusing.
+  [~] Role expectations already exist; reusing.
+  [~] Project Goals framework already exists; reusing.
+  [~] Project Goals period settings already exist; reusing.
+
+================================================================
+Demo seed complete.
+================================================================
+
 --- ACCOUNTS (all passwords: password123) ---
-  HR · Healthark : sarah.patel@healthark.ai   Sarah Patel
-  HR · Miltenyi: karin.weber@miltenyi.com     Karin Weber
 
-  Mentors (Healthark):
-    anjali.rao@healthark.ai     Anjali Rao    (Bob, Charlie, Dana)
-    mark.singh@healthark.ai     Mark Singh    (Iris, Evan, Fiona)
-    priya.mehta@healthark.ai    Priya Mehta   (Klaus, Mia, Nils)
+  Admin (Healthark HR)
+    aanya.sharma@healthark.ai     Aanya Sharma     (Admin)
 
-  PMs (Miltenyi):
-    hans@miltenyi.com           Hans Müller   (PRJ-101, PRJ-103)
-    greta@miltenyi.com          Greta Schmidt (PRJ-102)
-    lukas@miltenyi.com          Lukas Lange   (PRJ-104)
-    dieter@miltenyi.com         Dieter Becker (reserve)
+  Mentors (Healthark)
+    rahul.verma@healthark.ai     Rahul Verma     (mentors Aarav, Diya, Kabir — Regulatory Affairs)
+    neha.kapoor@healthark.ai     Neha Kapoor     (mentors Ishaan, Saanvi, Ayaan — Pharmacovigilance)
+    vikram.iyer@healthark.ai     Vikram Iyer     (mentors Riya, Arjun, Myra — Clinical Trial Mgmt)
 
-  Staff (Healthark @ Miltenyi):
-    R&D:        bob@, charlie@, dana@, iris@miltenyi.com
-    Mfg:        evan@, fiona@, klaus@miltenyi.com
-    Commercial: mia@, nils@miltenyi.com
+  Staff (Healthark employees on Miltenyi work)
+    Regulatory Affairs        : aarav.patel@,    diya.mehta@,    kabir.singh@healthark.ai
+    Pharmacovigilance         : ishaan.joshi@,   saanvi.reddy@,  ayaan.khan@healthark.ai
+    Clinical Trial Management : riya.nair@,      arjun.gupta@,   myra.desai@healthark.ai
 
---- LIFECYCLE TEST DATA ---
-  MIL-PRJ-101 → Completed (Sarah, 2025-09-01); 3 historical assignments
-  MIL-PRJ-103 → Charlie has TWO stints: ended 2026-04-30 + active 2026-06-01
-    His Q1 PENDING review stays in Hans's queue (in-flight finish).
+  Other 5 GCC functions (Clinical Data Management, Biostatistics,
+  Medical Writing, Clinical Trial Finance, Legal) are seeded with
+  designations + expectations but no users — stakeholders add users
+  to them while exploring the admin panel.
+
+  No projects, goals, or reviews seeded — stakeholders create those.
+
+  Project Goals (CY 2026): framework rows for 7 functions are loaded
+  from the Miltenyi goal-themes PDFs; Pharmacovigilance has none, so
+  Neha's mentees see the 'no framework yet' notice until HR adds rows
+  in Admin → Framework. No goal sets seeded — employees start their own.
+

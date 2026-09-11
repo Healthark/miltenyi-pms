@@ -3,11 +3,11 @@
  *
  * HR_MyOrg picks zero or more fiscal years from a row of checkboxes
  * (default: nothing checked = "All time"), then hits a single button
- * to download a 4-sheet .xlsx containing Users / Annual Goals /
- * Annual Reviews / Project Reviews.
+ * to download a 3-sheet .xlsx containing Users / Annual Goals /
+ * Annual Reviews.
  *
  * The Users sheet is never narrowed by FY (it's a directory snapshot).
- * The other three sheets respect whichever years are checked.
+ * The other two sheets respect whichever years are checked.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -20,7 +20,6 @@ import {
 } from "lucide-react";
 import { exportService } from "@/services/export.service";
 import { adminService, type UserResponse } from "@/services/admin.service";
-import { useAuth } from "@/hooks/useAuth";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
 import { useToast } from "@/hooks/useToast";
 import { useSnackbar } from "@/hooks/useSnackbar";
@@ -33,18 +32,7 @@ import { StringCombobox } from "@/components/common/StringCombobox";
  *  without overwhelming the picker. */
 const PRIOR_FY_OFFSETS = [0, 1, 2, 3];
 
-// Thin role-gated dispatcher. Branching here (rather than inside the
-// implementation component) keeps each variant's hooks unconditional —
-// hooks must run in the same order on every render, so an early return
-// in the same component above hook calls is a rules-of-hooks violation.
-//
-// Role — not Function/Department — is the gate because Miltenyi org has
-// no "HR" function row to key off.
 export function ExportsTab() {
-  const { user } = useAuth();
-  if (user?.role === "HR_Miltenyi") {
-    return <MiltenyiExportsView />;
-  }
   return <MyOrgExportsView />;
 }
 
@@ -177,9 +165,9 @@ function MyOrgExportsView() {
           Export Workbook
         </h2>
         <p className="mt-1 text-sm text-text-muted">
-          Download a single Excel file with four sheets — Users, Annual
-          Goals, Annual Reviews, and Project Reviews — covering every row
-          you can view. Each download is logged for compliance.
+          Download a single Excel file with Users, Annual Goals and Annual
+          Reviews sheets — covering every row you can view. Each download
+          is logged for compliance.
         </p>
       </div>
 
@@ -236,10 +224,10 @@ function MyOrgExportsView() {
               <span className="font-medium text-text-main">{scopeSummary}</span>
             </p>
             <p className="mt-0.5 text-[12px]">
-              Every sheet honors the FY filter: Users + Projects show
-              only entries active during the selected year(s); Goals,
-              Annual Reviews, and Project Reviews show only rows tagged
-              to those years. Leave all unchecked for an all-time dump.
+              Every sheet honors the FY filter: Users show only entries
+              active during the selected year(s); Annual Goals and Annual
+              Reviews show only rows tagged to those years. Leave all
+              unchecked for an all-time dump.
             </p>
           </div>
         </div>
@@ -258,10 +246,10 @@ function MyOrgExportsView() {
         </button>
       </div>
 
-      {/* Per-employee deep-dive export — five sheets covering one
-          employee's profile, goals, annual reviews, project history,
-          and project reviews. Useful for offboarding, transfers, and
-          compliance asks ("send us everything about this person"). */}
+      {/* Per-employee deep-dive export — one employee's profile, annual
+          goals, annual reviews and project history. Useful for
+          offboarding, transfers, and compliance asks ("send us everything
+          about this person"). */}
       <div className="rounded-lg border border-border bg-surface p-4">
         <div className="flex items-center gap-2 mb-3">
           <UserCircle
@@ -274,9 +262,9 @@ function MyOrgExportsView() {
         </div>
         <p className="text-[12px] text-text-muted mb-3">
           Search an employee and download a workbook with their profile,
-          annual goals, annual reviews, every project assignment (active
-          and ended), and every project review received. Deactivated
-          ex-employees stay in the picker for forensic exports.
+          annual goals, annual reviews and every project assignment (active
+          and ended). Deactivated ex-employees stay in the picker for
+          forensic exports.
         </p>
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2 min-w-[260px]">
@@ -330,8 +318,6 @@ function MyOrgExportsView() {
           <QuickButton kind="users" label="Users" />
           <QuickButton kind="goals" label="Annual Goals" />
           <QuickButton kind="annual-reviews" label="Annual Reviews" />
-          <QuickButton kind="projects" label="Projects" />
-          <QuickButton kind="project-reviews" label="Project Reviews" />
         </div>
       </div>
     </div>
@@ -348,8 +334,7 @@ function QuickButton({
     | "users"
     | "goals"
     | "annual-reviews"
-    | "project-reviews"
-    | "projects";
+    | "project-reviews";
   readonly label: string;
 }) {
   const toast = useToast();
@@ -385,180 +370,3 @@ function QuickButton({
   );
 }
 
-// ── Miltenyi HR variant ──────────────────────────────────────────────
-//
-// Three-sheet workbook (Users / Projects / Project Reviews). Annual
-// goals and annual reviews are intentionally absent — they're out of
-// Miltenyi HR's scope (mirrors the HrDashboard widgets that hide for
-// HR_Miltenyi for the same reason). Backend gate on `/export/miltenyi.xlsx`
-// keys off role == HR_Miltenyi rather than a function/department lookup
-// because Miltenyi org has no "HR" function row.
-
-function MiltenyiExportsView() {
-  const { settings } = useSystemSettings();
-  const toast = useToast();
-  const snackbar = useSnackbar();
-
-  const [selectedFys, setSelectedFys] = useState<Set<number>>(new Set());
-  const [isExporting, setIsExporting] = useState(false);
-
-  // No Per-Employee Export panel here — that surface is intentionally
-  // omitted for HR_Miltenyi. Healthark HR owns deep per-employee
-  // exports; Miltenyi HR's scope is the combined org workbook plus the
-  // per-sheet quick downloads below.
-
-  const activeFyStart = useMemo(() => {
-    if (!settings?.active_cycle_name) return null;
-    return fyTokenToStartYear(settings.active_cycle_name);
-  }, [settings?.active_cycle_name]);
-
-  const availableYears = useMemo(() => {
-    if (activeFyStart === null) return [];
-    return PRIOR_FY_OFFSETS.map((offset) => activeFyStart - offset);
-  }, [activeFyStart]);
-
-  const toggleYear = (year: number) => {
-    setSelectedFys((prev) => {
-      const next = new Set(prev);
-      if (next.has(year)) {
-        next.delete(year);
-      } else {
-        next.add(year);
-      }
-      return next;
-    });
-  };
-
-  const handleExport = async () => {
-    setIsExporting(true);
-    try {
-      await exportService.downloadMiltenyiWorkbook(Array.from(selectedFys));
-      toast.success("Workbook downloaded.");
-    } catch (err) {
-      snackbar.error(getErrorMessage(err));
-    } finally {
-      setIsExporting(false);
-    }
-  };
-
-  const scopeSummary =
-    selectedFys.size === 0
-      ? "All time"
-      : Array.from(selectedFys)
-          .sort((a, b) => b - a)
-          .map(formatFyYearSpan)
-          .join(", ");
-
-  return (
-    <div className="p-5 space-y-6">
-      <div>
-        <h2 className="font-display text-lg font-semibold text-text-main">
-          Export Workbook
-        </h2>
-        <p className="mt-1 text-sm text-text-muted">
-          Download a single Excel file with three sheets — Users,
-          Projects, and Project Reviews — covering every row you can
-          view. Each download is logged for compliance.
-        </p>
-      </div>
-
-      {/* FY filter — only narrows Project Reviews; Users and Projects
-          sheets are point-in-time snapshots and always full. */}
-      <div className="rounded-lg border border-border bg-surface p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-text-muted">
-            Filter by Fiscal Year
-          </span>
-          <span className="text-[11px] text-text-muted italic">
-            (leave all unchecked for all-time)
-          </span>
-        </div>
-
-        {availableYears.length === 0 ? (
-          <p className="text-sm text-text-muted italic">
-            Loading available years…
-          </p>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {availableYears.map((year) => {
-              const isChecked = selectedFys.has(year);
-              return (
-                <label
-                  key={year}
-                  className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-[13px] cursor-pointer transition-colors ${
-                    isChecked
-                      ? "border-brand bg-brand/5 text-brand"
-                      : "border-border bg-white text-text-main hover:bg-slate-50"
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={isChecked}
-                    onChange={() => toggleYear(year)}
-                    className="h-3.5 w-3.5 accent-brand"
-                  />
-                  {formatFyYearSpan(year)}
-                </label>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border bg-slate-50/40 px-4 py-3">
-        <div className="flex items-start gap-2 text-sm text-text-muted">
-          <Info className="h-4 w-4 mt-0.5 shrink-0" aria-hidden="true" />
-          <div>
-            <p>
-              Scope:{" "}
-              <span className="font-medium text-text-main">{scopeSummary}</span>
-            </p>
-            <p className="mt-0.5 text-[12px]">
-              Every sheet honors the FY filter: Users + Projects show
-              only entries active during the selected year(s); Project
-              Reviews show only rows tagged to those years. Leave all
-              unchecked for an all-time dump.
-            </p>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={handleExport}
-          disabled={isExporting}
-          className="flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50 transition-opacity shrink-0"
-        >
-          {isExporting ? (
-            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-          ) : (
-            <Download className="h-4 w-4" aria-hidden="true" />
-          )}
-          {isExporting ? "Exporting…" : "Export Workbook (.xlsx)"}
-        </button>
-      </div>
-
-      {/* Per-sheet quick downloads — same single-sheet endpoints as the
-          per-tab toolbar buttons. Goals and Annual Reviews are absent
-          since those flows are out of Miltenyi HR's scope. */}
-      <div className="rounded-lg border border-border bg-surface p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <FileSpreadsheet
-            className="h-4 w-4 text-text-muted"
-            aria-hidden="true"
-          />
-          <span className="text-[11px] font-bold uppercase tracking-wider text-text-muted">
-            Per-sheet quick downloads
-          </span>
-        </div>
-        <p className="text-[12px] text-text-muted mb-3">
-          These ignore the FY filter above — each one always dumps the
-          full authorised dataset.
-        </p>
-        <div className="flex flex-wrap gap-2">
-          <QuickButton kind="users" label="Users" />
-          <QuickButton kind="projects" label="Projects" />
-          <QuickButton kind="project-reviews" label="Project Reviews" />
-        </div>
-      </div>
-    </div>
-  );
-}

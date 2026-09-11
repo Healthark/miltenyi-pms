@@ -175,7 +175,7 @@ def build_users_sheet(
     """One row per user, including soft-deleted ones (with Is Active = No).
 
     `exclude_roles` is the role-scoping hook used by the HR_Miltenyi
-    export: pass `{"Mentor", "HR_MyOrg"}` and those rows never make it
+    export: pass `{"Mentor", "Admin"}` and those rows never make it
     into the workbook. Mentor names that appear as references on other
     sheets (e.g. an Employee's mentor in the Mentor column) are not
     affected — only the directory rows themselves are filtered out.

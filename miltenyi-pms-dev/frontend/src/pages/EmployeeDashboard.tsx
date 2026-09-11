@@ -11,7 +11,6 @@
  *
  * NOTE: The old "My Action Items" widget was removed product-wide —
  * users now reach pending work through the per-feature pages (My Goals,
- * My Reviews, Project Reviews) and the notifications dropdown. PMs
  * accordingly see only the Active Cycles strip on their landing page;
  * their pending project-review queue lives on /project-reviews.
  *
@@ -35,16 +34,15 @@ import { ActiveCyclesCard } from "@/components/dashboard/ActiveCyclesCard";
 import { GoalsWidget } from "@/components/dashboard/GoalsWidget";
 import { MyAnnualReviewWidget } from "@/components/dashboard/MyAnnualReviewWidget";
 import { MyMentorWidget } from "@/components/dashboard/MyMentorWidget";
-import { ProjectReviewsStatusCard } from "@/components/dashboard/ProjectReviewsStatusCard";
 
 export function EmployeeDashboard() {
-  const { user } = useAuth();
+  const { user, hasFeature } = useAuth();
   const snackbar = useSnackbar();
-  // PM-specific gating. Drives the Goals/Annual-Review row visibility
-  // below — both surface concepts (goals, annual self-review) that
-  // the role model explicitly excludes for PMs (see
-  // backend/app/models/user_models.py Role enum docstring).
-  const isPM = user?.role === "PM";
+  // Project Reviews is retired for orgs that run Project Goals instead
+  // (Miltenyi, Sep 2026). Everything that points at /project-reviews
+  // falls away when the feature is off; the route itself is gated by
+  // ProtectedRoute and the nav item by Sidebar.
+  const projectReviewsOn = hasFeature("project_reviews");
 
   // useQuery replaces the useEffect + useState ceremony:
   //   - The cache is keyed by ['dashboard', 'summary'], so MentorDashboard
@@ -96,38 +94,6 @@ export function EmployeeDashboard() {
         </p>
       </div>
 
-      {isPM ? (
-        /* PM layout — two-up row: Active Cycles (left, half width) +
-           Project Reviews status donut (right). Goals + Annual Review
-           rows aren't rendered for PMs (Role enum: no goals, never
-           rated). The Action Items widget used to round this page out
-           for PMs but has been removed product-wide; the pending
-           project-review queue is now summarised inside the new
-           ProjectReviewsStatusCard with a "View pending" CTA into
-           /project-reviews. MyMentorWidget isn't rendered either —
-           PMs typically don't have a mentor in this product; the
-           rare PM-with-mentor can read mentor info on /profile. */
-        /* items-start so neither card stretches to match the other's
-           content height — Active Cycles is naturally shorter than
-           the Project Reviews donut card, and forcing stretch dumps a
-           large empty band into ActiveCyclesCard. */
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 items-start">
-          {summary ? (
-            <ActiveCyclesCard
-              activeCycle={summary.active_cycle}
-              blocks={["fy", "project"]}
-            />
-          ) : (
-            <CardSkeleton />
-          )}
-          {summary ? (
-            <ProjectReviewsStatusCard summary={summary} />
-          ) : (
-            <CardSkeleton />
-          )}
-        </div>
-      ) : (
-        <>
           {/* Row 1: Active Cycles (left) | My Mentor (right). Cycle
               context anchors the dashboard ("where are we right
               now?"); the personal mentor card follows. My Mentor
@@ -139,7 +105,10 @@ export function EmployeeDashboard() {
               mentor as something to act on. */}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {summary ? (
-              <ActiveCyclesCard activeCycle={summary.active_cycle} />
+              <ActiveCyclesCard
+                activeCycle={summary.active_cycle}
+                blocks={projectReviewsOn ? undefined : ["fy", "goal"]}
+              />
             ) : (
               <CardSkeleton />
             )}
@@ -163,8 +132,6 @@ export function EmployeeDashboard() {
             )}
             {summary ? <GoalsWidget summary={summary} /> : <CardSkeleton />}
           </div>
-        </>
-      )}
     </div>
   );
 }

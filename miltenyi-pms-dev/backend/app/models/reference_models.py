@@ -33,6 +33,12 @@ class Designation(Base):
     career_level = Column(Integer, nullable=True)            # 1..4 in the GCC framework
     career_level_label = Column(String, nullable=True)       # "Entry" / "Mid" / "Senior" / "Lead"
 
+    # The function (department) this title belongs to. Nullable so legacy
+    # titles stay valid; the GCC seed sets it for every title, and the
+    # Project Goals framework editor groups designations under each level
+    # column by it.
+    function_id = Column(Integer, ForeignKey("functions.id"), nullable=True)
+
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

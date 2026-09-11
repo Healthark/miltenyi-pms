@@ -195,11 +195,11 @@ def _get_active_cycle(db: DbSession, org_id: int) -> str:
     return _active_fy_label(_get_settings(db, org_id))
 
 
-def _require_hr_myorg(current_user: User) -> None:
+def _require_admin(current_user: User) -> None:
     """HR_MyOrg-only gate. Used by the management-review override endpoints
     that finalize/adjust ratings — Miltenyi HR has no business in annual
     reviews because annual reviews are a MyOrg/Mentor concern."""
-    if current_user.role != "HR_MyOrg":
+    if current_user.role != "Admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only the Healthark HR can perform this action.",
@@ -209,7 +209,7 @@ def _require_hr_myorg(current_user: User) -> None:
 def _require_management(current_user: User) -> None:
     """Alias kept for callers that previously required management override —
     in the new role model this is exactly HR_MyOrg."""
-    _require_hr_myorg(current_user)
+    _require_admin(current_user)
 
 
 def _require_submissions_open(
@@ -671,7 +671,7 @@ def get_all_annual_reviews(
     batched lookups (no N+1). Total count is a single COUNT(*) over
     the filtered base query.
     """
-    _require_hr_myorg(current_user)
+    _require_admin(current_user)
 
     # Filtered base query — shared between the count() and the windowed
     # fetch so the totals match exactly what the windowed rows are
@@ -831,7 +831,7 @@ def list_distinct_annual_review_cycles(
 
     Sorted descending so the most recent cycle reads first.
     """
-    _require_hr_myorg(current_user)
+    _require_admin(current_user)
 
     # Match the All Reviews listing's active-user gate so the dropdown
     # cannot surface a cycle that, once selected, would render an empty
@@ -1173,7 +1173,7 @@ def submit_mentor_evaluation(
             for (uid,) in db.query(User.id)
             .filter(
                 User.org_id == current_user.org_id,
-                User.role == Role.HR_MYORG.value,
+                User.role == Role.ADMIN.value,
                 User.is_deleted == False,  # noqa: E712 — SQLAlchemy needs ==
             )
             .all()
@@ -1445,7 +1445,7 @@ def get_calibration_grid(
             .filter(
                 AnnualReview.org_id == current_user.org_id,
                 User.org_id == current_user.org_id,
-                User.role == Role.EMPLOYEE.value,
+                User.role == Role.STAFF.value,
                 User.is_deleted == False,  # noqa: E712
             )
         )
@@ -1591,7 +1591,7 @@ def get_calibration_grid(
     # wasted work).
     base_q = db.query(User).filter(
         User.org_id == current_user.org_id,
-        User.role == Role.EMPLOYEE.value,
+        User.role == Role.STAFF.value,
         User.is_deleted == False,  # noqa: E712
     )
 
@@ -1896,7 +1896,7 @@ def get_review(
 
     is_owner = review.user_id == current_user.id
     is_mentor = review.mentor_id == current_user.id
-    is_admin = current_user.role == "HR_MyOrg"
+    is_admin = current_user.role == "Admin"
 
     if not (is_owner or is_mentor or is_admin):
         raise HTTPException(

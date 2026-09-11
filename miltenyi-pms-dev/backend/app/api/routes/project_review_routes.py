@@ -24,10 +24,11 @@ Endpoints:
 
 from dataclasses import dataclass, field
 from typing import Iterable, List, Literal, Optional
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import aliased, joinedload
 
 from app.api.dependencies import DbSession, CurrentUser
+from app.core.features import require_feature
 from app.services.notification_service import notify
 from app.core.user_filters import active_user_ids_query
 from app.core.cycle_utils import (
@@ -46,7 +47,7 @@ from app.models.project_review_models import (
     ProjectReviewEvaluator, EvaluatorStatus,
 )
 from app.models.system_settings_models import SystemSettings, CycleType
-from app.models.user_models import User, ADMIN_ROLES
+from app.models.user_models import User, Role
 from app.models.reference_models import Function, Designation
 from app.models.role_expectation_models import RoleExpectation
 from app.schemas.project_review_schemas import (
@@ -59,7 +60,26 @@ from app.schemas.project_review_schemas import (
 )
 from app.schemas.pagination import Paginated
 
-router = APIRouter()
+# Server-side feature gate: orgs that run Project Goals instead (Miltenyi,
+# Sep 2026) have `project_reviews` absent from enabled_features, so every
+# endpoint here answers 403 for them. The frontend hides the nav item,
+# dashboard cards, mentee Projects tab and the export button as well.
+router = APIRouter(dependencies=[Depends(require_feature("project_reviews"))])
+
+# Retired: the per-FY "project ratings visible" switch was removed together
+# with the Project Goals module (September 2026). Ratings in this legacy
+# module therefore stay hidden from non-HR viewers.
+_PROJECT_RATINGS_VISIBLE = False
+
+# Retired: the per-FY "project ratings visible" switch was removed together
+# with the Project Goals module (September 2026). Ratings in this legacy
+# module therefore stay hidden from non-HR viewers.
+_PROJECT_RATINGS_VISIBLE = False
+
+# Retired: the per-FY "project ratings visible" switch was removed together
+# with the Project Goals module (September 2026). Ratings in this legacy
+# module therefore stay hidden from non-HR viewers.
+_PROJECT_RATINGS_VISIBLE = False
 
 
 # ── Module-level User alias for the "project PM" join (PR #48, doc 31)
@@ -204,7 +224,7 @@ def _redacted_rating(
         # Past (or future-via-override) cycle — toggle never applies.
         return review.performance_group
 
-    is_admin = viewer.role in ADMIN_ROLES
+    is_admin = viewer.role == Role.ADMIN.value
     is_reviewer = review.reviewer_id == viewer.id
     if is_admin or is_reviewer:
         return review.performance_group
@@ -215,7 +235,7 @@ def _redacted_rating(
             settings.org_id,
             _fy_label_of_project_review(review),
         )
-        if override is not None and override.project_ratings_visible:
+        if override is not None and _PROJECT_RATINGS_VISIBLE:
             return review.performance_group
     return None
 
@@ -1565,7 +1585,7 @@ def get_all_reviews(
     stable order for OFFSET/LIMIT. We add `id.desc()` as a tiebreaker
     so two rows created in the same second don't reorder across pages.
     """
-    if current_user.role not in ADMIN_ROLES:
+    if current_user.role != Role.ADMIN.value:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only HR users can view all reviews.",
@@ -1714,7 +1734,7 @@ def list_distinct_project_review_cycles(
     Sorted descending so the most recent cycle reads first (matches
     the table's default ORDER BY).
     """
-    if current_user.role not in ADMIN_ROLES:
+    if current_user.role != Role.ADMIN.value:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only HR users may list distinct project-review cycles.",
@@ -1757,7 +1777,7 @@ def get_management_overview(
     N+1 queries — all project/assignment/user/function data is fetched
     in a single query, and a review_map dict provides O(1) lookups.
     """
-    if current_user.role not in ADMIN_ROLES:
+    if current_user.role != Role.ADMIN.value:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="HR only.",
@@ -1875,7 +1895,7 @@ def update_review(
             detail="Review not found.",
         )
 
-    is_admin = current_user.role == "HR_MyOrg"  # HR_Miltenyi is read-only on reviews
+    is_admin = current_user.role == "Admin"  # HR_Miltenyi is read-only on reviews
     is_reviewer = review.reviewer_id == current_user.id
 
     if not (is_reviewer or is_admin):
@@ -1943,7 +1963,7 @@ def get_review(
         )
 
     # Both HR roles may read any review (Miltenyi HR has explicit project-review visibility).
-    is_admin = current_user.role in ADMIN_ROLES
+    is_admin = current_user.role == Role.ADMIN.value
     is_owner = review.user_id == current_user.id
     # `reviewer_id` is only set once the PM submits the review — on
     # PENDING rows it stays NULL. The canonical PM authority is

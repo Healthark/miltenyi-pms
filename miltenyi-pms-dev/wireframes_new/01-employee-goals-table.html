@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Project Goals · My Goals — PMS wireframe</title>
+<link rel="icon" href="../frontend/public/miltenyi-biotech-small.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="assets/tailwind-config.js"></script>
+<link rel="stylesheet" href="assets/style.css">
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+</head>
+<body>
+<div id="page" class="space-y-6"></div>
+
+<div id="modals">
+  <div id="confirm-goals" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" role="dialog" aria-modal="true">
+    <div class="w-full max-w-md rounded-xl bg-surface shadow-xl">
+      <div class="border-b border-border px-6 py-4"><h2 class="font-display text-base font-semibold text-text-main">Submit your CY 2026 goals?</h2><p class="mt-0.5 text-xs text-text-muted">This records the goals you agreed offline with your Miltenyi reviewer.</p></div>
+      <div class="px-6 py-5 space-y-3 text-sm text-text-main">
+        <p>The Goal column becomes read-only. Your Healthark reviewer marks the set approved once the offline agreement is confirmed. There is no approval round-trip or comment thread.</p>
+        <div class="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"><i data-lucide="alert-triangle" class="h-3.5 w-3.5 mt-0.5 shrink-0"></i><span>Every KPI row has a goal. <span class="wf-tag">to confirm</span> whether an empty row should block submission.</span></div>
+      </div>
+      <div class="flex justify-end gap-3 border-t border-border px-6 py-4">
+        <button type="button" data-close="confirm-goals" class="rounded-lg border border-border px-4 py-2 text-sm font-medium text-text-muted hover:bg-slate-50 transition-colors">Cancel</button>
+        <button type="button" data-stage="submitted" class="advance flex items-center gap-2 rounded-lg bg-brand px-5 py-2 text-sm font-medium text-white hover:opacity-90 transition-opacity"><i data-lucide="send" class="h-4 w-4"></i>Submit Goals</button>
+      </div>
+    </div>
+  </div>
+  <div id="confirm-self" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" role="dialog" aria-modal="true">
+    <div class="w-full max-w-md rounded-xl bg-surface shadow-xl">
+      <div class="border-b border-border px-6 py-4"><h2 class="font-display text-base font-semibold text-text-main">Submit your self-review?</h2><p class="mt-0.5 text-xs text-text-muted">CY 2026 · one submission, locked afterwards.</p></div>
+      <div class="px-6 py-5 text-sm text-text-main"><p>Your reviewer reads the Self review column before entering the Miltenyi reviewer's comments. <span class="wf-tag">to confirm</span> whether your overall rating is visible to them at that point.</p></div>
+      <div class="flex justify-end gap-3 border-t border-border px-6 py-4">
+        <button type="button" data-close="confirm-self" class="rounded-lg border border-border px-4 py-2 text-sm font-medium text-text-muted hover:bg-slate-50 transition-colors">Cancel</button>
+        <button type="button" data-stage="self_reviewed" class="advance flex items-center gap-2 rounded-lg bg-brand px-5 py-2 text-sm font-medium text-white hover:opacity-90 transition-opacity"><i data-lucide="send" class="h-4 w-4"></i>Submit Self-Review</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="assets/data.js"></script>
+<script src="assets/shell.js"></script>
+<script src="assets/goals-table.js"></script>
+<script>
+PMS.init({
+  role: "employee",
+  active: "project-goals",
+  render() {
+    const t = renderGoalsTable({ role: "employee" });
+    document.getElementById("page").innerHTML = `
+<div class="flex items-center justify-between">
+  <div>
+    <h1 class="font-display text-xl font-semibold text-text-main">Project Goals <span class="ml-2 text-sm font-normal text-text-muted">· CY 2026</span></h1>
+    <p class="mt-0.5 text-sm text-text-muted">One table for the year: your goals under each KPI, your self-review after the period, and your reviewer's comments, side by side.</p>
+  </div>
+</div>
+<div class="rounded-xl border border-border bg-surface shadow-sm overflow-hidden">
+  <div class="flex border-b border-border px-2">
+    <button type="button" class="px-4 py-2.5 text-sm font-semibold border-b-2 border-brand text-brand">My Goals · CY 2026</button>
+    <button type="button" class="px-4 py-2.5 text-sm font-semibold border-b-2 border-transparent text-text-muted hover:text-text-main">Previous periods</button>
+  </div>
+  <div class="p-5 space-y-5">
+    ${t.stage}
+    ${t.notice}
+    ${t.frameworkBand}
+    ${t.table}
+    ${t.footerBar}
+  </div>
+</div>`;
+    document.querySelectorAll(".advance").forEach((b) => b.addEventListener("click", () => {
+      PMS.state.stage = b.dataset.stage;
+      localStorage.setItem("pms-wf-state", JSON.stringify(PMS.state));
+      location.reload();
+    }));
+  },
+});
+</script>
+</body>
+</html>

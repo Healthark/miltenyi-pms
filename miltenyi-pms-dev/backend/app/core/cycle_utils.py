@@ -97,33 +97,6 @@ def resolve_now(settings: "Optional[SystemSettings]" = None) -> datetime:
     return datetime.now(org_tz)
 
 
-def apply_rollover_resets(settings: "SystemSettings", fresh_cycle: str) -> bool:
-    """Reset the org-wide submission / visibility flags whenever the
-    active cycle has changed since `settings.active_cycle_name` was
-    last stored.
-
-    Resets three flags to False:
-      - `annual_reviews_enabled`
-      - `project_ratings_visible`
-      - `annual_review_final_rating_visible`
-
-    Preserved (intentionally): `annual_goals_edit_enabled`. HR may want
-    annual-goal editing to stay open across the rollover; they re-open
-    the others deliberately per cycle.
-
-    Also updates `settings.active_cycle_name` to the new value so
-    subsequent calls short-circuit. Returns True when a reset was
-    applied. Caller is responsible for `db.commit()`.
-    """
-    if settings.active_cycle_name == fresh_cycle:
-        return False
-    settings.active_cycle_name = fresh_cycle
-    settings.annual_reviews_enabled = False
-    settings.project_ratings_visible = False
-    settings.annual_review_final_rating_visible = False
-    return True
-
-
 # ── Cadence helpers ─────────────────────────────────────────────────
 
 #: The full ordered list of cycle codes for each cadence.
@@ -428,13 +401,12 @@ def _format_fy_span(fiscal_year: int) -> str:
 # gating helpers in route modules don't each re-parse cycle strings or
 # duplicate the lazy-create logic.
 
-#: Flag names whose values move from `SystemSettings` to per-FY override
-#: rows. Listed once so seed paths can copy them as a unit.
+#: The per-FY access toggles, listed once so read/write paths treat them
+#: as a unit.
 YEAR_OVERRIDE_FLAGS: tuple[str, ...] = (
     "annual_reviews_enabled",
     "annual_review_final_rating_visible",
     "annual_goals_edit_enabled",
-    "project_ratings_visible",
 )
 
 
@@ -517,7 +489,6 @@ def ensure_year_override_row(
     org_id: int,
     fy_label: str,
     *,
-    seed_from_settings: "Optional[SystemSettings]" = None,
     updated_by_id: Optional[int] = None,
 ) -> "SystemSettingsYearOverride":
     """Lazily create the override row for (org_id, fy_label) and return it.
@@ -526,10 +497,7 @@ def ensure_year_override_row(
       1. The most recent existing override row for the same org (so a
          new FY inherits the previous FY's configuration — HR almost
          always wants this).
-      2. The legacy flag values on `SystemSettings` when `seed_from_settings`
-         is supplied (used by the admin and read paths that already have
-         the row in hand).
-      3. All-False defaults.
+      2. All-False defaults.
 
     The created row is committed before return so concurrent readers
     don't see a phantom session-local row. Caller does NOT need to
@@ -555,9 +523,6 @@ def ensure_year_override_row(
     if latest_prior is not None:
         for flag in YEAR_OVERRIDE_FLAGS:
             seed_values[flag] = bool(getattr(latest_prior, flag))
-    elif seed_from_settings is not None:
-        for flag in YEAR_OVERRIDE_FLAGS:
-            seed_values[flag] = bool(getattr(seed_from_settings, flag, False))
 
     row = SystemSettingsYearOverride(
         org_id=org_id,

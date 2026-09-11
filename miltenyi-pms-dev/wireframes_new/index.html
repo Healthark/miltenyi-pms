@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Project Goals wireframes · Miltenyi PMS</title>
+<link rel="icon" href="../frontend/public/miltenyi-biotech-small.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="assets/tailwind-config.js"></script>
+<link rel="stylesheet" href="assets/style.css">
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+</head>
+<body>
+<div class="mx-auto max-w-5xl px-6 py-10 space-y-8">
+  <header class="flex flex-wrap items-start justify-between gap-4">
+    <div class="flex items-center gap-4">
+      <img src="../frontend/public/miltenyi-biotec-logo.svg" alt="Miltenyi Biotec" class="h-10 w-auto">
+      <div>
+        <p class="text-[11px] font-bold uppercase tracking-wider text-text-muted">PMS · clickable wireframes · for sign-off</p>
+        <h1 class="font-display text-2xl font-semibold text-text-main">Project Goals for Miltenyi</h1>
+      </div>
+    </div>
+    <div class="rounded-lg border border-border bg-surface px-3 py-2 text-xs text-text-muted">Based on the 2 Sep 2026 meeting · <a class="text-brand-accent underline" href="../docs/meetings/2026-09-02-miltenyi-goals-gap-review.md">gap review</a></div>
+  </header>
+
+  <section class="rounded-xl border border-border bg-surface p-5 shadow-sm">
+    <h2 class="font-display text-base font-semibold text-text-main">The idea in one line</h2>
+    <p class="mt-1 text-sm text-text-main">One table per employee for the year. Rows are the KPIs of their framework; the columns are <span class="font-semibold">KPI · Goal · Self review · PM review</span>. The framework paragraphs sit above the table. The same table is what the employee, the Healthark reviewer and HR see; only the column that is editable changes with the stage, and each column fills in when its step happens. Ratings sit in a footer row.</p>
+    <ul class="mt-3 space-y-1.5 text-sm text-text-main">
+      <li class="flex gap-2"><span class="text-accent">•</span><span>The <span class="font-semibold">Prototype controls</span> panel (bottom right) switches the persona, the stage of the goal set, weightage visibility, rating visibility and who gives the final rating. Every screen reacts.</span></li>
+      <li class="flex gap-2"><span class="text-accent">•</span><span>Elements marked <span class="wf-tag">to confirm</span> are positions the prototype takes on an open question; strike or keep them during the review.</span></li>
+      <li class="flex gap-2"><span class="text-accent">•</span><span>Chrome, colours, type and components are the React app's own. Nothing saves data; buttons that advance the stage just move the prototype forward.</span></li>
+    </ul>
+  </section>
+
+  <section>
+    <h2 class="mb-3 font-display text-base font-semibold text-text-main">Screens</h2>
+    <div class="grid gap-3 md:grid-cols-2">
+      <a href="01-employee-goals-table.html" class="rounded-lg border border-border bg-surface p-4 shadow-sm hover:shadow-md transition-shadow">
+        <p class="text-[11px] font-bold uppercase tracking-wider text-text-muted">1 · Employee</p>
+        <h3 class="mt-0.5 font-display font-semibold text-text-main">The goals table</h3>
+        <p class="mt-1 text-sm text-text-muted">Framework band, then the table. At Draft the Goal column is editable; at Approved the Self review column opens; at Reviewed the PM review column and the ratings are filled in. Walk it with the stage control.</p>
+      </a>
+      <a href="02-team-queue.html" class="rounded-lg border border-border bg-surface p-4 shadow-sm hover:shadow-md transition-shadow">
+        <p class="text-[11px] font-bold uppercase tracking-wider text-text-muted">2 · Healthark reviewer</p>
+        <h3 class="mt-0.5 font-display font-semibold text-text-main">Team queue</h3>
+        <p class="mt-1 text-sm text-text-muted">Everyone the reviewer covers, with goal and review status, the Miltenyi reviewer per person, "Mark approved (agreed offline)", "Send packet", "Enter review". Unmapped employees flagged.</p>
+      </a>
+      <a href="03-reviewer-goals-table.html" class="rounded-lg border border-border bg-surface p-4 shadow-sm hover:shadow-md transition-shadow">
+        <p class="text-[11px] font-bold uppercase tracking-wider text-text-muted">3 · Healthark reviewer</p>
+        <h3 class="mt-0.5 font-display font-semibold text-text-main">The same table, reviewer side</h3>
+        <p class="mt-1 text-sm text-text-muted">Provenance band (Miltenyi reviewer, received on, source, entered by), then the table with the PM review column editable and the final rating in the footer. Approve, send packet and submit from here.</p>
+      </a>
+      <a href="04-hr-framework-mapping.html" class="rounded-lg border border-border bg-surface p-4 shadow-sm hover:shadow-md transition-shadow">
+        <p class="text-[11px] font-bold uppercase tracking-wider text-text-muted">4 · Healthark HR</p>
+        <h3 class="mt-0.5 font-display font-semibold text-text-main">Framework mapping and content</h3>
+        <p class="mt-1 text-sm text-text-muted">Admin Panel. Framework Mapping: employee, function, GCC designation and level, reviewer (mentor), Miltenyi reviewer, status. Framework: per function, a matrix of Level 1–4 columns with the two illustrative paragraphs and the KPI + weightage list per level, staged Save/Discard, and "Add Function" to add a role/level row with its KPI table.</p>
+      </a>
+    </div>
+  </section>
+
+  <section class="grid gap-4 md:grid-cols-2">
+    <div class="rounded-xl border border-border bg-surface p-5 shadow-sm">
+      <h2 class="font-display text-base font-semibold text-text-main">Personas</h2>
+      <ul class="mt-2 space-y-2 text-sm">
+        <li><span class="font-medium text-text-main">Aditi Rao</span> <span class="text-text-muted">· Biostatistician (level 2), two trials, 5 KPIs. The multi-trial case the meeting discussed.</span></li>
+        <li><span class="font-medium text-text-main">Rohan Iyer</span> <span class="text-text-muted">· Senior Clinical Trial Manager (level 3), 4 KPIs, the shortest framework.</span></li>
+        <li><span class="font-medium text-text-main">Meera Krishnan</span> <span class="text-text-muted">· Lead Clinical Trial Manager (level 4), 7 KPIs, the longest.</span></li>
+        <li><span class="font-medium text-text-main">Rahul Verma</span> <span class="text-text-muted">· Healthark Mentor of all three. As the mentor he is the reviewer of record who enters the Miltenyi reviewers' inputs.</span></li>
+        <li><span class="font-medium text-text-main">Aanya Sharma</span> <span class="text-text-muted">· Healthark HR (from the test seed).</span></li>
+      </ul>
+      <p class="mt-3 text-xs text-text-muted">Framework text is transcribed from the CY 2026 documents. People, trials, goals and comments are sample text.</p>
+    </div>
+    <div class="rounded-xl border border-border bg-surface p-5 shadow-sm">
+      <h2 class="font-display text-base font-semibold text-text-main">Positions this prototype takes</h2>
+      <ul class="mt-2 space-y-1.5 text-sm text-text-main">
+        <li class="flex gap-2"><span class="wf-tag mt-0.5">to confirm</span><span>One goal set per employee for CY 2026; the per-project PM review queue retires for Miltenyi, so "Project Reviews" is absent from the menu.</span></li>
+        <li class="flex gap-2"><span class="wf-tag mt-0.5">to confirm</span><span>Submit records an offline agreement; the reviewer's "Mark approved" click locks the Goal column. No comment loop.</span></li>
+        <li class="flex gap-2"><span class="wf-tag mt-0.5">to confirm</span><span>Every KPI row needs a goal to submit.</span></li>
+        <li class="flex gap-2"><span class="wf-tag mt-0.5">to confirm</span><span>The PM review column holds the Miltenyi reviewer's words; a small optional Healthark note can sit under them. One self rating and one final rating in the footer; whose final rating it is, is a toggle.</span></li>
+        <li class="flex gap-2"><span class="wf-tag mt-0.5">to confirm</span><span>CY 2026 has a single evaluation after 31 Dec; the stage strip shows one review, not quarters.</span></li>
+        <li class="flex gap-2"><span class="wf-tag mt-0.5">to confirm</span><span>Weightages are read-only and their visibility to employees is a switch; ratings visibility to employees is a switch.</span></li>
+        <li class="flex gap-2"><span class="wf-tag mt-0.5">to confirm</span><span>The employee acknowledges the review with one click.</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="rounded-xl border border-dashed border-border p-5 text-sm text-text-muted">
+    <h2 class="font-display text-base font-semibold text-text-main">Not in these wireframes</h2>
+    <p class="mt-1">Notifications, dashboards, exports and the mentor's view of project goals. The reviewer packet (the file handed to the Miltenyi reviewer) is a preview only.</p>
+  </section>
+</div>
+<script>lucide.createIcons();</script>
+</body>
+</html>

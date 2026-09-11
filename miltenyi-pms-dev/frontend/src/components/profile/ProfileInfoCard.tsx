@@ -22,18 +22,9 @@ import {
 import type { UserProfile } from "@/services/profile.service";
 import { RoleBadge } from "@/components/admin/RoleBadge";
 
-// Both companies share a single org_id in the data model, so the
-// backend's `org_name` doesn't distinguish Healthark folks from
-// Miltenyi folks. Map by role until this is modelled server-side.
-//   HR_MyOrg, Mentor, Employee  -> Healthark
-//   HR_Miltenyi, PM          -> Miltenyi
-const ROLE_TO_ORG: Record<string, string> = {
-  HR_MyOrg: "Healthark",
-  Mentor: "Healthark",
-  Employee: "Healthark",
-  HR_Miltenyi: "Miltenyi",
-  PM: "Miltenyi",
-};
+// Every account is a Healthark employee; the tenant row (`org_name`)
+// names the client engagement, so the employer is shown as a constant.
+const EMPLOYER = "Healthark";
 
 interface ProfileInfoCardProps {
   readonly profile: UserProfile | null;
@@ -148,7 +139,7 @@ export function ProfileInfoCard({ profile, isLoading }: ProfileInfoCardProps) {
         <InfoRow
           icon={Building2}
           label="Organization"
-          value={ROLE_TO_ORG[profile.role] ?? profile.org_name}
+          value={EMPLOYER}
         />
         <InfoRow
           icon={Briefcase}
@@ -162,18 +153,9 @@ export function ProfileInfoCard({ profile, isLoading }: ProfileInfoCardProps) {
           value={profile.designation}
           emptyText="N/A"
         />
-        {/* Mentor row hidden for roles that don't have a mentor
-            relationship in this product:
-              • HR_Miltenyi — Miltenyi-side HR; mentor pairings are
-                a Healthark concern.
-              • PM         — per the Role enum docstring (no
-                goals, never rated; no mentor either).
-            Other roles (HR_MyOrg / Mentor / Employee) still render
-            the row even when mentor_name is null so HR can see
-            who's unmentored. */}
-        {profile.role !== "HR_Miltenyi" && profile.role !== "PM" && (
-          <InfoRow icon={Users} label="Mentor" value={profile.mentor_name} />
-        )}
+        {/* Rendered for every role, even when mentor_name is null, so HR
+            can see who is unmentored. */}
+        <InfoRow icon={Users} label="Mentor" value={profile.mentor_name} />
         <InfoRow icon={Calendar} label="Joined" value={joinDate} />
       </div>
 

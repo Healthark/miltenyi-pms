@@ -47,6 +47,7 @@ _MODULE_URL: dict[str, str] = {
     "goal":           "/annual-goals",
     "annual_review":  "/annual-reviews",
     "project_review": "/project-reviews",
+    "project_goal":   "/project-goals",
     "project":        "/admin",
     "admin":          "/profile",
 }
@@ -81,6 +82,7 @@ _DEFAULT_SUBJECTS: dict[str, str] = {
     "goal":           "Update on your goal",
     "annual_review":  "Update on your annual review",
     "project_review": "Update on your project review",
+    "project_goal":   "Update on your project goals",
     "project":        "Project update",
     "admin":          "Account update",
 }

@@ -28,18 +28,14 @@ import { ProjectReviewCompletionCard } from "@/components/dashboard/ProjectRevie
 import { PendingActionsCard } from "@/components/dashboard/PendingActionsCard";
 import { ActiveCyclesCard } from "@/components/dashboard/ActiveCyclesCard";
 import { MentorCoverageCard } from "@/components/dashboard/MentorCoverageCard";
-import { ProjectCoverageCard } from "@/components/dashboard/ProjectCoverageCard";
 
 export function HrDashboard() {
-  const { user } = useAuth();
+  const { user, hasFeature } = useAuth();
   const { settings } = useSystemSettings();
   const snackbar = useSnackbar();
-
-  // HR_Miltenyi's scope excludes annual reviews and annual goals
-  // (see annual_review_routes.py: "Miltenyi HR has no business in
-  // annual reviews"), so the four cards that summarise those flows
-  // are hidden for them.
-  const isMiltenyiHR = user?.role === "HR_Miltenyi";
+  // Retired for orgs that run Project Goals (Miltenyi, Sep 2026): the
+  // project-review completion card and the project-cycle block go away.
+  const projectReviewsOn = hasFeature("project_reviews");
 
   // Active FY drives the picker's default selection. Read straight from
   // settings since it's needed during render. Settings load is async, so
@@ -138,32 +134,7 @@ export function HrDashboard() {
         </div>
       </div>
 
-      {/* HR_Miltenyi: simpler layout — single project-cycle anchor +
-          their two-card summary grid. They don't see annual reviews,
-          annual goals, or PendingActions, so no merge needed. */}
-      {isMiltenyiHR ? (
-        <>
-          <div className="grid grid-cols-1 gap-4">
-            {/* Miltenyi sees Fiscal Year + Project Review Cycle in
-                the same container. Goal Review block is omitted —
-                Miltenyi doesn't own annual goal reviews. Reuses the
-                ActiveCyclesCard layout so the visual language is
-                consistent with HR_MyOrg's three-block version. */}
-            <ActiveCyclesCard
-              activeCycle={activeCycleName ?? null}
-              blocks={["fy", "project"]}
-            />
-          </div>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <ProjectReviewCompletionCard
-              data={summary?.project_review_completion ?? null}
-              cycleHint={activeCycleName ?? null}
-            />
-            <HeadcountCard data={summary?.headcount ?? null} />
-          </div>
-        </>
-      ) : (
-        /* HR_MyOrg: single grid pairing the merged Cycles card with
+      {/* Admin: single grid pairing the merged Cycles card with
            Pending Actions in the top row, then a 2×2 of funnel /
            data cards beneath. Pending Actions stays tall on the right
            (it has 3 subsections); the merged Cycles card sits to its
@@ -179,10 +150,13 @@ export function HrDashboard() {
              Row 2: PendingActions (full row, col-span-2)
              Row 3: AnnualRev | ProjectRev
              Row 4: GoalApprov | Headcount
-        */
+        */}
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           <div className="md:col-span-2 xl:col-span-2">
-            <ActiveCyclesCard activeCycle={activeCycleName ?? null} />
+            <ActiveCyclesCard
+              activeCycle={activeCycleName ?? null}
+              blocks={projectReviewsOn ? undefined : ["fy", "goal"]}
+            />
           </div>
           <div className="md:col-span-2 xl:col-span-1 xl:col-start-3 xl:row-start-1 xl:row-span-3">
             <PendingActionsCard
@@ -192,31 +166,21 @@ export function HrDashboard() {
           <AnnualReviewFunnelCard
             data={summary?.annual_review_funnel ?? null}
           />
-          <ProjectReviewCompletionCard
-            data={summary?.project_review_completion ?? null}
-          />
+          {projectReviewsOn && (
+            <ProjectReviewCompletionCard
+              data={summary?.project_review_completion ?? null}
+            />
+          )}
           <GoalApprovalFunnelCard
             data={summary?.goal_approval_funnel ?? null}
           />
           <HeadcountCard data={summary?.headcount ?? null} />
         </div>
-      )}
 
       {/* Mentor pairing health snapshot — full-width row of its own
           since it isn't FY-scoped and doesn't pair narratively with
-          the summary grid above. HR_MyOrg only — Miltenyi HR doesn't
-          own mentor assignments (no Mentor/Employee relationship on
-          their side of the org). */}
-      {!isMiltenyiHR && (
-        <MentorCoverageCard data={summary?.mentor_coverage ?? null} />
-      )}
-
-      {/* Project Coverage — PM-side analog of MentorCoverage. Shown
-          to BOTH HR roles because Miltenyi HR also manages projects
-          (they can edit projects + reassign PMs — see
-          project_routes._require_hr_any). Self-hides when there are
-          no orphans so the card doesn't add passive noise. */}
-      <ProjectCoverageCard data={summary?.project_coverage ?? null} />
+          the summary grid above. */}
+      <MentorCoverageCard data={summary?.mentor_coverage ?? null} />
     </div>
   );
 }

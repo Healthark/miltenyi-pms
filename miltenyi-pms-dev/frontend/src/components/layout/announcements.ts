@@ -15,41 +15,32 @@ import { authService } from "@/services/auth.service";
 export type AnnouncementKey =
   | "annual_reviews_enabled"
   | "annual_goals_edit_enabled"
-  | "project_ratings_visible"
   | "annual_review_final_rating_visible";
 
 type RoleCopy = Partial<Record<string, string>>;
 
+// Keyed by the user's role (Admin / Staff / Mentor).
 const GATE_COPY: Record<AnnouncementKey, RoleCopy> = {
   annual_reviews_enabled: {
-    Employee:
+    Staff:
       "Annual review submissions are paused. You can't submit your self-review right now.",
     Mentor:
       "Annual review submissions are paused. You can't submit team evaluations right now.",
-    HR_MyOrg:
+    Admin:
       "Annual review submissions are paused. Re-enable in System Settings when ready.",
   },
   annual_goals_edit_enabled: {
-    Employee:
+    Staff:
       "Annual goal editing is disabled. You can't create or edit goals right now.",
     Mentor:
       "Annual goal editing is disabled. New goals from your mentees are paused.",
-    HR_MyOrg:
+    Admin:
       "Annual goal editing is disabled. Re-enable in System Settings when ready.",
   },
-  project_ratings_visible: {
-    Employee:
-      "Project performance ratings are hidden for the current cycle.",
-    PM: "Project ratings are hidden from employees for the current cycle.",
-    HR_MyOrg:
-      "Project ratings are hidden from employees. Re-enable in System Settings.",
-    HR_Miltenyi:
-      "Project ratings are hidden from employees. Re-enable in System Settings.",
-  },
   annual_review_final_rating_visible: {
-    Employee:
+    Staff:
       "Final annual review ratings are hidden for the current cycle.",
-    HR_MyOrg:
+    Admin:
       "Final ratings hidden. Re-enable when calibration is complete.",
   },
 };
@@ -89,11 +80,6 @@ export function buildAnnouncements(
       key: "annual_goals_edit_enabled",
       active: settings.annual_goals_edit_enabled === false,
       title: "Annual goal editing disabled",
-    },
-    {
-      key: "project_ratings_visible",
-      active: settings.project_ratings_visible === false,
-      title: "Project ratings hidden",
     },
     {
       key: "annual_review_final_rating_visible",

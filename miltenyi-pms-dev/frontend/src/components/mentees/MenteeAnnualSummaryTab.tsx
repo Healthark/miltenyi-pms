@@ -24,6 +24,7 @@
  */
 
 import { useMemo, useState } from "react";
+import { useAuth } from "@/hooks/useAuth";
 import {
   Briefcase,
   ChevronDown,
@@ -425,6 +426,10 @@ export function MenteeAnnualSummaryTab({
   onOpenEval,
 }: MenteeAnnualSummaryTabProps) {
   const { settings } = useSystemSettings();
+  // Orgs that run Project Goals have retired per-project PM reviews, so
+  // the Project Reviews section (always empty for them) is not rendered.
+  const { hasFeature } = useAuth();
+  const showProjectReviews = hasFeature("project_reviews");
   const activeFyToken = settings?.active_cycle_name
     ? extractFyToken(settings.active_cycle_name)
     : "";
@@ -632,6 +637,7 @@ export function MenteeAnnualSummaryTab({
       </section>
 
       {/* Projects section */}
+      {showProjectReviews && (
       <section className="space-y-3">
         <header className="flex items-center gap-2">
           <Briefcase className="h-4 w-4 text-text-muted" />
@@ -702,6 +708,7 @@ export function MenteeAnnualSummaryTab({
           </div>
         )}
       </section>
+      )}
 
     </div>
   );

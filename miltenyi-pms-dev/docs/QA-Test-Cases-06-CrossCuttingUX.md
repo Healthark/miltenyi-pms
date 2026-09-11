@@ -84,7 +84,7 @@ Run each of these at three browser widths: **narrow ≈ 600 px** · **medium ≈
 
 ### TC-RESP-007 — HR Dashboard widgets at three widths
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 **Steps:**
 1. Cycle widget layout through: wide (3 cols), medium (2 cols), narrow (1 col).
 
@@ -466,7 +466,7 @@ Run each of these at three browser widths: **narrow ≈ 600 px** · **medium ≈
 
 Do this sweep **after** every release. It's the smoke test for "the app still works end-to-end."
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 1. Open HR Dashboard → all 7 widgets load.
 2. Open Users → invite a test user.
 3. Open Settings → toggle a setting → save → refresh → setting persists.
@@ -482,7 +482,7 @@ Do this sweep **after** every release. It's the smoke test for "the app still wo
 2. Open Team Reviews (Annual) → finish the mentor stage.
 3. Logout.
 
-**Login as:** HR_MyOrg
+**Login as:** Admin
 1. Open All Goals → confirm the goal appears.
 2. Open All Reviews → confirm the review appears.
 3. Open HR Dashboard → confirm funnel counts updated.

@@ -1,0 +1,93 @@
+/* Wireframe stylesheet — copies the theme tokens and the dark-mode utility
+   overrides from frontend/src/index.css so the static pages read exactly like
+   the React app. Nothing here is new design; it is the app's palette. */
+
+:root {
+  --brand: #3C1053;
+  --brand-light: #F4EFF8;
+  --brand-accent: #3C1053;
+  --accent: #F37920;
+  --background: #FDFCFE;
+  --surface: #FFFFFF;
+  --text-main: #0F172A;
+  --text-muted: #64748B;
+  --border: #E2E8F0;
+  --green: #10B981;
+  --amber: #F59E0B;
+  --red: #EF4444;
+  --scrollbar-thumb: rgba(15, 23, 42, 0.18);
+}
+:root.dark {
+  --brand: #5B1F82;
+  --brand-light: #4A2B61;
+  --brand-accent: #D5B8E8;
+  --accent: #F37920;
+  --background: #0F172A;
+  --surface: #1E293B;
+  --text-main: #F1F5F9;
+  --text-muted: #94A3B8;
+  --border: #334155;
+  --green: #34D399;
+  --amber: #FBBF24;
+  --red: #F87171;
+  --scrollbar-thumb: rgba(226, 232, 240, 0.18);
+}
+
+/* The app zooms the whole document out one notch (index.css @layer base). */
+html { font-size: 87.5%; }
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--text-main);
+  font-family: "DM Sans", system-ui, sans-serif;
+  min-height: 100vh;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+* { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) transparent; }
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-thumb { background-color: var(--scrollbar-thumb); border-radius: 2px; }
+
+/* Lucide icons render as inline SVG; give them the app's stroke defaults. */
+svg.lucide { stroke-width: 2; }
+
+/* ── Dark-mode overrides of raw palette utilities (subset of index.css) ── */
+:root.dark .bg-white { background-color: var(--surface); }
+:root.dark .bg-slate-50, :root.dark .bg-gray-50 { background-color: rgba(30, 41, 59, 0.5); }
+:root.dark .bg-slate-100 { background-color: rgba(51, 65, 85, 0.5); }
+:root.dark .bg-slate-200 { background-color: rgba(51, 65, 85, 0.7); }
+:root.dark .hover\:bg-slate-50:hover, :root.dark .hover\:bg-slate-100:hover { background-color: rgba(51, 65, 85, 0.4); }
+:root.dark .hover\:bg-red-50:hover { background-color: rgba(127, 29, 29, 0.4); }
+:root.dark .text-slate-600, :root.dark .text-slate-700 { color: #CBD5E1; }
+:root.dark .border-slate-200 { border-color: #334155; }
+
+:root.dark .bg-amber-50, :root.dark .bg-amber-100 { background-color: rgba(120, 53, 15, 0.45); }
+:root.dark .text-amber-600, :root.dark .text-amber-700, :root.dark .text-amber-800 { color: #FCD34D; }
+:root.dark .border-amber-200 { border-color: rgba(217, 119, 6, 0.4); }
+
+:root.dark .bg-blue-50, :root.dark .bg-blue-100 { background-color: rgba(30, 58, 138, 0.45); }
+:root.dark .text-blue-600, :root.dark .text-blue-700, :root.dark .text-blue-800, :root.dark .text-blue-900 { color: #93C5FD; }
+:root.dark .text-blue-500 { color: #60A5FA; }
+:root.dark .border-blue-100, :root.dark .border-blue-200 { border-color: rgba(59, 130, 246, 0.3); }
+
+:root.dark .bg-emerald-50, :root.dark .bg-emerald-100, :root.dark .bg-green-50 { background-color: rgba(6, 78, 59, 0.5); }
+:root.dark .text-emerald-600, :root.dark .text-emerald-700, :root.dark .text-green-600, :root.dark .text-green-700 { color: #6EE7B7; }
+:root.dark .border-emerald-200, :root.dark .border-green-200 { border-color: rgba(16, 185, 129, 0.35); }
+
+:root.dark .bg-teal-100 { background-color: rgba(19, 78, 74, 0.5); }
+:root.dark .text-teal-700 { color: #5EEAD4; }
+:root.dark .bg-violet-100 { background-color: rgba(76, 29, 149, 0.5); }
+:root.dark .text-violet-700 { color: #C4B5FD; }
+:root.dark .bg-red-50 { background-color: rgba(127, 29, 29, 0.4); }
+:root.dark .text-red-600, :root.dark .text-red-700 { color: #FCA5A5; }
+:root.dark .border-red-200 { border-color: rgba(239, 68, 68, 0.35); }
+
+/* Prototype-only affordances (not part of the product design). */
+.wf-note { border: 1px dashed var(--accent); }
+.wf-tag {
+  display: inline-flex; align-items: center; gap: .25rem;
+  border-radius: 9999px; padding: .1rem .5rem;
+  font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  background: #FFF1E6; color: #9A4B0F; border: 1px solid #F8C9A6;
+}
+:root.dark .wf-tag { background: rgba(154, 75, 15, .35); color: #FDBA74; border-color: rgba(249, 115, 22, .4); }

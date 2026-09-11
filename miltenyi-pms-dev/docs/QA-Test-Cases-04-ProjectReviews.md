@@ -1,5 +1,7 @@
 # QA Test Cases — Module 4: Project Reviews
 
+> **Status (September 2026): retired on the Miltenyi instance.** Per-project PM reviews were replaced by **Project Goals** (Module 7). The feature stays in the code but `project_reviews` is not in the organisation's enabled features, so the sidebar entry, the dashboard cards, the mentee **Projects** tab and the export button are hidden and the API answers 403. Run this module only on an organisation that still has the feature enabled; for Miltenyi, run **Module 7** instead and use TC-PG-060 to confirm these surfaces are gone.
+
 > **Audience:** Manual QA tester, non-technical.
 > **Prerequisite:** Module 1 reviewed. Apply Module 1 §1.7 UI checklist on every screen.
 > **Test accounts needed:** PM (assigned to projects with staff), Secondary Evaluator (assigned to projects), Staff (on projects), Mentor, HR_MyOrg.
