@@ -6,7 +6,8 @@
  */
 
 import apiClient from "@/services/api.client";
-import type { FrameworkRow, PeriodSettings, Quarter } from "@/services/project-goals.service";
+import type { DesignationBrief as AdminDesignationBrief, FunctionBrief } from "@/services/admin.service";
+import type { FrameworkRow, PeriodBrief, PeriodSettings, Quarter } from "@/services/project-goals.service";
 
 export interface DesignationBrief {
   id: number;
@@ -66,13 +67,56 @@ export interface MappingRow {
   mentor_name: string | null;
   miltenyi_reviewer_name: string | null;
   status: MappingStatus;
+  /** Function / designation are locked while this year's goal set exists. */
+  has_active_set: boolean;
+  active_set_status: string | null;
 }
 
-/** Yearly switches. The review window is not a switch — see the cycle. */
+export interface DesignationCreatePayload {
+  name: string;
+  function_id: number;
+  career_level: number;
+}
+
+export interface DesignationUpdatePayload {
+  name?: string;
+  career_level?: number;
+}
+
+/** Yearly switches. The review window is not a switch — see the cycle.
+ *  `backfill_open` matters for a past year only. */
 export interface PeriodSettingsUpdatePayload {
   is_active?: boolean;
   entry_open?: boolean;
   weightages_visible?: boolean;
+  backfill_open?: boolean;
+  extra_goal_enabled?: boolean;
+  extra_goal_weightage?: number;
+}
+
+/** Per-quarter switches; send only what changed. */
+export interface QuarterUpdatePayload {
+  ratings_visible?: boolean;
+  backfill_open?: boolean;
+}
+
+export interface QuarterPreflight {
+  seq: number;
+  cycle_label: string;
+  self_pending: number;
+  review_pending: number;
+  reviews_submitted: number;
+}
+
+/** Who a switch flip would affect — shown in the Save confirmation. */
+export interface PeriodPreflight {
+  period_label: string;
+  staff_total: number;
+  staff_without_set: number;
+  sets_draft: number;
+  sets_submitted: number;
+  sets_approved: number;
+  quarters: QuarterPreflight[];
 }
 
 /** What the quarter roll-out card shows, in one call. */
@@ -112,12 +156,23 @@ export const goalFrameworkService = {
   deleteRow: async (rowId: number): Promise<void> => {
     await apiClient.delete(`${BASE}/${rowId}`);
   },
-  setDesignationLevel: async (designationId: number, careerLevel: number): Promise<DesignationBrief> =>
-    (await apiClient.patch<DesignationBrief>(`${BASE}/designations/${designationId}`, { career_level: careerLevel })).data,
+  updateDesignation: async (designationId: number, payload: DesignationUpdatePayload): Promise<DesignationBrief> =>
+    (await apiClient.patch<DesignationBrief>(`${BASE}/designations/${designationId}`, payload)).data,
+
+  // Reference data (functions and designations are org-wide; the Users tab reads the same lists)
+  createFunction: async (name: string): Promise<FunctionBrief> =>
+    (await apiClient.post<FunctionBrief>("/admin/functions", { name })).data,
+  renameFunction: async (functionId: number, name: string): Promise<FunctionBrief> =>
+    (await apiClient.patch<FunctionBrief>(`/admin/functions/${functionId}`, { name })).data,
+  createDesignation: async (payload: DesignationCreatePayload): Promise<AdminDesignationBrief> =>
+    (await apiClient.post<AdminDesignationBrief>("/admin/designations", payload)).data,
   getMapping: async (period?: string): Promise<MappingRow[]> =>
     (await apiClient.get<MappingRow[]>(`${BASE}/mapping`, { params: period ? { period } : undefined })).data,
 
   // Period switches
+  getPeriods: async (): Promise<PeriodBrief[]> => (await apiClient.get<PeriodBrief[]>(`${BASE}/periods`)).data,
+  getPreflight: async (period?: string | null): Promise<PeriodPreflight> =>
+    (await apiClient.get<PeriodPreflight>(`${BASE}/settings/preflight`, { params: period ? { period } : undefined })).data,
   getSettings: async (period?: string): Promise<PeriodSettings> =>
     (await apiClient.get<PeriodSettings>(`${BASE}/settings`, { params: period ? { period } : undefined })).data,
   updateSettings: async (payload: PeriodSettingsUpdatePayload, period?: string): Promise<PeriodSettings> =>
@@ -132,6 +187,6 @@ export const goalFrameworkService = {
   rollback: async (): Promise<CycleStatus> => (await apiClient.post<CycleStatus>(`${BASE}/cycle/rollback`)).data,
   getCycleLog: async (limit = 10): Promise<CycleLogEntry[]> =>
     (await apiClient.get<CycleLogEntry[]>(`${BASE}/cycle/log`, { params: { limit } })).data,
-  updateQuarter: async (seq: number, ratingsVisible: boolean): Promise<Quarter> =>
-    (await apiClient.patch<Quarter>(`${BASE}/quarters/${seq}`, { ratings_visible: ratingsVisible })).data,
+  updateQuarter: async (seq: number, payload: QuarterUpdatePayload, period?: string | null): Promise<Quarter> =>
+    (await apiClient.patch<Quarter>(`${BASE}/quarters/${seq}`, payload, { params: period ? { period } : undefined })).data,
 };

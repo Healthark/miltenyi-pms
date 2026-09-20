@@ -31,11 +31,6 @@ export interface SystemSettingsResponse {
   annual_goals_edit_enabled: boolean;
   annual_reviews_enabled: boolean;
   annual_review_final_rating_visible: boolean;
-  /** Demo-only escape hatch — when true, the date-based H1/H2 review-
-   *  window gate is bypassed everywhere. Mirrors the backend's
-   *  `cycle_window_override` and unlocks the calendar-gated frontend
-   *  menus so stakeholders can drive the whole cycle in one session. */
-  cycle_window_override: boolean;
   /** Demo / QA date simulation. ISO date string when HR has pinned a
    *  fake "today" for the system; null otherwise. The app shell shows
    *  an amber banner whenever this is set. */
@@ -57,7 +52,6 @@ export interface SystemSettingsCreate {
 export interface SystemSettingsUpdate {
   fiscal_start_month?: number;
   timezone?: string;
-  cycle_window_override?: boolean;
   simulated_today?: string | null;
 }
 

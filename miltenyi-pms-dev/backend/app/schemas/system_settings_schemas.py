@@ -36,11 +36,6 @@ class SystemSettingsResponse(BaseModel):
     annual_goals_edit_enabled: bool = False
     annual_reviews_enabled: bool = False
     annual_review_final_rating_visible: bool = False
-    # Demo-only escape hatch — bypasses the date-based H1/H2 review-window
-    # gate (see `cycle_utils.is_review_window_open`). When True the
-    # frontend should ALSO unlock the calendar-gated menus so stakeholders
-    # can drive the whole cycle in one session.
-    cycle_window_override: bool
     # Demo-only date simulation. When set, the backend treats this as
     # "today" for every cycle / window decision. The frontend renders a
     # banner across the app so every user knows the dates are simulated.
@@ -76,12 +71,6 @@ class SystemSettingsCreate(BaseModel):
 # ── Update Schema ────────────────────────────────────────────────────
 # Everything is Optional — Pydantic's model_dump(exclude_unset=True)
 # ensures only fields the Admin actually sent are written to the DB.
-# Fields: fiscal_start_month, timezone (via the admin panel), and the
-# developer escape hatches.
-# Fields: fiscal_start_month, timezone (via the admin panel), and the
-# developer escape hatches.
-# Fields: fiscal_start_month, timezone (via the admin panel), and the
-# developer escape hatches.
 # Fields: fiscal_start_month, timezone (via the admin panel), and the
 # developer escape hatches.
 class SystemSettingsUpdate(BaseModel):

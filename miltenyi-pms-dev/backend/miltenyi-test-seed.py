@@ -31,7 +31,7 @@ What this seeds (and only this):
                    types in; Miltenyi staff never log in.
     - Project Goals framework: 28 rows (7 functions × 4 levels) from the
       Miltenyi "CY 2026 INDICATIVE GOAL THEMES" PDFs (`seed_data.goal_themes`),
-      the "CY 2026" period settings (active; goal entry open; weightages
+      the "CY 26-27" period settings (active; goal entry open; weightages
       visible; current quarter Q3 with Q1–Q3 rolled out, ratings hidden),
       Designation → Function links,
       and a Miltenyi reviewer name on each Employee (their function's PM).
@@ -422,6 +422,7 @@ def seed_test_database() -> None:
             db.add(ProjectGoalPeriodSettings(
                 org_id=miltenyi.id, period_label=PERIOD_LABEL, is_active=True,
                 entry_open=True, weightages_visible=True, current_quarter_seq=CURRENT_QUARTER,
+                extra_goal_enabled=True, extra_goal_weightage=10,   # HR: one "Additional goals" row on every sheet
                 updated_by_id=aanya.id,
             ))
             for seq in range(1, CURRENT_QUARTER + 1):

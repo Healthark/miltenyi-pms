@@ -38,4 +38,3 @@ Demo seed complete.
   from the Miltenyi goal-themes PDFs; Pharmacovigilance has none, so
   Neha's mentees see the 'no framework yet' notice until HR adds rows
   in Admin → Framework. No goal sets seeded — employees start their own.
-

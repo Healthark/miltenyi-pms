@@ -124,13 +124,14 @@ export function GoalsTable(props: GoalsTableProps) {
             className={TEXTAREA_CLS}
             value={v}
             onChange={(e) => onGoalChange?.(it.id, e.target.value)}
-            placeholder="The deliverable, the measure and the timing for the year."
+            placeholder={it.is_extra ? "Any other goals you are working on this year (optional)." : "The deliverable, the measure and the timing for the year."}
           />
           <CharCounter value={v} max={TEXT_MAX} />
         </>
       );
     }
     if (status === "draft" && !isEmployee) return <Placeholder text="Staff member drafting" />;
+    if (it.is_extra && !it.goal_text) return <Placeholder text="No additional goals" />;
     return <ReadText text={it.goal_text} />;
   };
 
@@ -180,7 +181,7 @@ export function GoalsTable(props: GoalsTableProps) {
           <div className="mt-2 rounded-md border border-dashed border-border px-2.5 py-2">
             <label htmlFor={`note-${it.id}`} className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold text-brand-accent">
               <MessageSquare className="h-3 w-3" aria-hidden="true" />
-              Healthark note · optional
+              Secondary review · optional
             </label>
             <textarea
               id={`note-${it.id}`}
@@ -189,7 +190,7 @@ export function GoalsTable(props: GoalsTableProps) {
               className={`${TEXTAREA_CLS} text-xs`}
               value={d.note}
               onChange={(e) => onReviewChange?.(it.id, "note", e.target.value)}
-              placeholder="Your own observation, shown to the staff member as Healthark's."
+              placeholder="Your own observation as the mentor, shown to the staff member as the secondary review."
             />
           </div>
         </>
@@ -207,7 +208,7 @@ export function GoalsTable(props: GoalsTableProps) {
             <div className="mt-2 rounded-md bg-brand-light px-2.5 py-2">
               <p className="mb-0.5 flex items-center gap-1 text-[11px] font-semibold text-brand-accent">
                 <MessageSquare className="h-3 w-3" aria-hidden="true" />
-                Healthark{mentorName ? ` · ${mentorName}` : ""}
+                Secondary review{mentorName ? ` · ${mentorName}` : ""}
               </p>
               <p className="text-xs text-text-main">{ri.healthark_note}</p>
             </div>
@@ -324,12 +325,17 @@ export function GoalsTable(props: GoalsTableProps) {
         </thead>
         <tbody>
           {items.map((it) => (
-            <tr key={it.id} className="align-top hover:bg-slate-50/60">
+            <tr key={it.id} className={`align-top hover:bg-slate-50/60 ${it.is_extra ? "bg-amber-50/30" : ""}`}>
               <td className="border-b border-border px-4 py-3">
                 <div className="flex items-start gap-2.5">
-                  <KpiNumber n={it.seq} />
+                  {it.is_extra ? (
+                    <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-amber-100 text-[12px] font-bold text-amber-800" title="Additional goals">+</span>
+                  ) : (
+                    <KpiNumber n={it.seq} />
+                  )}
                   <div>
                     <p className="text-sm font-semibold leading-snug text-text-main">{it.kpi_text}</p>
+                    {it.is_extra && <p className="mt-0.5 text-[11px] text-text-muted">Anything else you are working on this year, agreed with your reviewer · optional</p>}
                     <div className="mt-1.5">
                       <WeightChip weight={it.weightage} />
                     </div>

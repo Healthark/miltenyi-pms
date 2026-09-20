@@ -9,7 +9,7 @@
  *
  * The review window is the Admin-advanced current quarter: quarters at or
  * before it are writable, later ones are closed. Quarter labels are stored
- * as "Q3 CY 2026" and shown as "Q3 · CY 2026".
+ * as "Q3 CY 26-27" and shown as "Q3 · CY 26-27".
  */
 
 import apiClient from "@/services/api.client";
@@ -31,14 +31,14 @@ export type StepStatus = "not_started" | "draft" | "submitted";
 
 export type FinalRatingBy = "miltenyi" | "healthark";
 
-/** "Q3 CY 2026" → "Q3 · CY 2026". Anything else is returned as is. */
+/** "Q3 CY 26-27" → "Q3 · CY 26-27". Anything else is returned as is. */
 export function quarterDisplay(label: string | null | undefined): string {
   if (!label) return "";
   const m = /^Q([1-4]) (.+)$/.exec(label);
   return m ? `Q${m[1]} · ${m[2]}` : label;
 }
 
-/** "Q3 CY 2026" → 3; 0 when the label is not a quarter label. */
+/** "Q3 CY 26-27" → 3; 0 when the label is not a quarter label. */
 export function quarterSeq(label: string | null | undefined): number {
   const m = /^Q([1-4]) /.exec(label ?? "");
   return m ? Number(m[1]) : 0;
@@ -76,27 +76,58 @@ export interface Quarter {
   seq: number;
   cycle_label: string;
   ratings_visible: boolean;
+  /** Earlier quarter still writable; the current quarter is always open. */
+  backfill_open: boolean;
   is_current: boolean;
   opened_at: string | null;
 }
 
 export interface PeriodSettings {
+  /** Goal-year label, e.g. "CY 26-27" (the year ends around April). */
   period_label: string;
+  /** The review year: the quarter roll-out runs here. */
   is_active: boolean;
   entry_open: boolean;
   weightages_visible: boolean;
+  /** Past year: its started quarters stay writable while this is on. */
+  backfill_open: boolean;
+  /** The optional "Additional goals" row and the weightage the Admin gives it. */
+  extra_goal_enabled: boolean;
+  extra_goal_weightage: number;
   current_quarter_seq: number | null;
   current_quarter_label: string | null;
   /** Started quarters only (seq ≤ current), ordered by seq. */
   quarters: Quarter[];
 }
 
-/** Is this quarter open for writing? The current quarter is the window;
- *  earlier quarters of the same (active) year stay open for backfill. */
+/** One goal year in a year selector. */
+export interface PeriodBrief {
+  period_label: string;
+  is_active: boolean;
+  entry_open: boolean;
+  backfill_open: boolean;
+  current_quarter_seq: number | null;
+  current_quarter_label: string | null;
+  /** Staff only: do I have a goal set for this year? */
+  has_set: boolean | null;
+}
+
+/** Has this quarter been rolled out (seq ≤ the year's current quarter)? */
+export function quarterStarted(period: PeriodSettings | null | undefined, seq: number): boolean {
+  return !!period && period.current_quarter_seq != null && seq >= 1 && seq <= period.current_quarter_seq;
+}
+
+/** Is this quarter open for writing? In the review year the current quarter
+ *  is always open and an earlier quarter stays open while its own backfill
+ *  switch is on; in a past year a started quarter is open while both the
+ *  year's and the quarter's backfill switches are on. */
 export function isQuarterWritable(period: PeriodSettings | null | undefined, cycleLabel: string | null | undefined): boolean {
-  if (!period || !cycleLabel || !period.is_active || period.current_quarter_seq == null) return false;
+  if (!period || !cycleLabel) return false;
   const seq = quarterSeq(cycleLabel);
-  return seq > 0 && seq <= period.current_quarter_seq && cycleLabel === quarterLabel(period.period_label, seq);
+  if (!quarterStarted(period, seq) || cycleLabel !== quarterLabel(period.period_label, seq)) return false;
+  const quarterOpen = period.quarters.find((q) => q.seq === seq)?.backfill_open ?? true;
+  if (period.is_active) return seq === period.current_quarter_seq || quarterOpen;
+  return period.backfill_open && quarterOpen;
 }
 
 // ── Goal set ────────────────────────────────────────────────────────
@@ -107,6 +138,8 @@ export interface GoalItem {
   kpi_text: string;
   weightage: number | null;
   goal_text: string | null;
+  /** The optional "Additional goals" row at the end of the sheet. */
+  is_extra: boolean;
 }
 
 export interface ReviewItem {
@@ -136,7 +169,6 @@ export interface GoalReview {
   entered_by_name: string | null;
   miltenyi_reviewer_name: string | null;
   source_received_on: string | null;
-  source_url: string | null;
   /** null for staff until the Admin releases this quarter's ratings. */
   final_rating: number | null;
   final_rating_hidden: boolean;
@@ -178,6 +210,8 @@ export function reviewFor(set: GoalSet | null | undefined, cycleLabel: string | 
 
 export interface MyProjectGoals {
   period: PeriodSettings | null;
+  /** Every goal year, newest first — the year selector. */
+  periods: PeriodBrief[];
   framework: FrameworkRow | null;
   framework_missing_reason: string | null;
   goal_set: GoalSet | null;
@@ -212,18 +246,6 @@ export interface TeamRow {
   miltenyi_reviewer_name: string | null;
 }
 
-export interface ChangeLogEntry {
-  id: number;
-  action: string;
-  cycle_label: string | null;
-  actor_id: number | null;
-  actor_name: string | null;
-  reason: string | null;
-  before: string | null;
-  after: string | null;
-  created_at: string;
-}
-
 // ── Payloads ────────────────────────────────────────────────────────
 
 export interface GoalItemsPayload {
@@ -247,7 +269,6 @@ export interface ReviewPayload {
   items: { item_id: number; primary_comment: string; healthark_note: string }[];
   miltenyi_reviewer_name?: string | null;
   source_received_on?: string | null;
-  source_url?: string | null;
   final_rating: number | null;
   final_rating_by: FinalRatingBy;
 }
@@ -263,18 +284,20 @@ export interface UnlockPayload {
 
 export const projectGoalsService = {
   // Everyone
-  getPeriod: async (): Promise<PeriodSettings | null> =>
-    (await apiClient.get<PeriodSettings | null>("/project-goals/period")).data,
+  getPeriod: async (period?: string | null): Promise<PeriodSettings | null> =>
+    (await apiClient.get<PeriodSettings | null>("/project-goals/period", { params: period ? { period } : undefined })).data,
+  getPeriods: async (): Promise<PeriodBrief[]> =>
+    (await apiClient.get<PeriodBrief[]>("/project-goals/periods")).data,
 
-  // Staff
-  getMine: async (): Promise<MyProjectGoals> =>
-    (await apiClient.get<MyProjectGoals>("/project-goals/me")).data,
-  createMine: async (): Promise<GoalSet> =>
-    (await apiClient.post<GoalSet>("/project-goals/me")).data,
-  saveMyGoals: async (payload: GoalItemsPayload): Promise<GoalSet> =>
-    (await apiClient.put<GoalSet>("/project-goals/me/items", payload)).data,
-  submitMyGoals: async (): Promise<GoalSet> =>
-    (await apiClient.post<GoalSet>("/project-goals/me/submit")).data,
+  // Staff (`period` = goal year; the active one when omitted)
+  getMine: async (period?: string | null): Promise<MyProjectGoals> =>
+    (await apiClient.get<MyProjectGoals>("/project-goals/me", { params: period ? { period } : undefined })).data,
+  createMine: async (period?: string | null): Promise<GoalSet> =>
+    (await apiClient.post<GoalSet>("/project-goals/me", null, { params: period ? { period } : undefined })).data,
+  saveMyGoals: async (payload: GoalItemsPayload, period?: string | null): Promise<GoalSet> =>
+    (await apiClient.put<GoalSet>("/project-goals/me/items", payload, { params: period ? { period } : undefined })).data,
+  submitMyGoals: async (period?: string | null): Promise<GoalSet> =>
+    (await apiClient.post<GoalSet>("/project-goals/me/submit", null, { params: period ? { period } : undefined })).data,
   saveMySelfReview: async (payload: SelfReviewPayload): Promise<GoalSet> =>
     (await apiClient.put<GoalSet>("/project-goals/me/self-review", payload)).data,
   submitMySelfReview: async (cycleLabel: string): Promise<GoalSet> =>
@@ -283,12 +306,10 @@ export const projectGoalsService = {
     (await apiClient.post<GoalSet>("/project-goals/me/acknowledge", { cycle_label: cycleLabel })).data,
 
   // Mentor / Admin
-  getTeam: async (cycle?: string | null): Promise<TeamRow[]> =>
-    (await apiClient.get<TeamRow[]>("/project-goals/team", { params: cycle ? { cycle } : undefined })).data,
+  getTeam: async (period?: string | null, cycle?: string | null): Promise<TeamRow[]> =>
+    (await apiClient.get<TeamRow[]>("/project-goals/team", { params: { ...(period ? { period } : {}), ...(cycle ? { cycle } : {}) } })).data,
   getSet: async (setId: number): Promise<GoalSet> =>
     (await apiClient.get<GoalSet>(`/project-goals/sets/${setId}`)).data,
-  getLog: async (setId: number): Promise<ChangeLogEntry[]> =>
-    (await apiClient.get<ChangeLogEntry[]>(`/project-goals/sets/${setId}/log`)).data,
   approve: async (setId: number, payload: ApprovePayload): Promise<GoalSet> =>
     (await apiClient.post<GoalSet>(`/project-goals/sets/${setId}/approve`, payload)).data,
   saveReview: async (setId: number, payload: ReviewPayload): Promise<GoalSet> =>

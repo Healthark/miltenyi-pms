@@ -4,8 +4,9 @@ year), against the Miltenyi "Indicative Goal Themes" framework; one review per
 QUARTER against those same goals.
 
     Staff
-        GET  /project-goals/period                 active period + started quarters (any role)
-        GET  /project-goals/me                     period (+ quarters) · framework · own set with every quarter's review
+        GET  /project-goals/period                 one goal year + started quarters (any role; ?period=, default active)
+        GET  /project-goals/periods                every goal year (the year selector; staff also see has_set)
+        GET  /project-goals/me                     one goal year (?period=): framework · own set with every quarter's review · year list
         POST /project-goals/me                     create the draft set (items snapshot the KPIs)
         PUT  /project-goals/me/items               save goal texts (draft)
         POST /project-goals/me/submit              draft → submitted (records the offline agreement)
@@ -14,11 +15,11 @@ QUARTER against those same goals.
         POST /project-goals/me/acknowledge         read receipt on one quarter's final review
 
     Mentor (own mentees) · Admin (all)
-        GET  /project-goals/team?cycle=            queue rows for one quarter (default: the current one)
+        GET  /project-goals/team?period=&cycle=    queue rows for one year / quarter (default: active year, current quarter)
         GET  /project-goals/sets/{id}              full set
         GET  /project-goals/sets/{id}/log          change log
         POST /project-goals/sets/{id}/approve      submitted → approved (agreed offline) — once a year
-        PUT  /project-goals/sets/{id}/review       one quarter: Miltenyi comments, Healthark notes, provenance, final rating
+        PUT  /project-goals/sets/{id}/review       one quarter: Miltenyi comments, secondary review, provenance, final rating (draft only)
         POST /project-goals/sets/{id}/review/submit  submit one quarter's review (Admin may force past a missing self-review)
         POST /project-goals/sets/{id}/unlock       Admin only, reason logged (goals, or one quarter's review)
 
@@ -49,6 +50,7 @@ from sqlalchemy.orm import joinedload
 from app.api.dependencies import CurrentUser, DbSession
 from app.core.features import require_feature
 from app.models.project_goal_models import (
+    EXTRA_GOAL_LABEL,
     FinalRatingBy,
     GoalFramework,
     ProjectGoalChangeLog,
@@ -73,6 +75,7 @@ from app.schemas.project_goal_schemas import (
     GoalItemsUpdate,
     GoalSetOut,
     MyProjectGoalsOut,
+    PeriodBriefOut,
     PeriodSettingsOut,
     ReviewItemOut,
     ReviewOut,
@@ -114,6 +117,28 @@ def _require_period(db, org_id: int) -> ProjectGoalPeriodSettings:
     if period is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No active Project Goals period is configured. Ask the Admin.")
     return period
+
+
+def _target_period(db, org_id: int, period_label: Optional[str]) -> ProjectGoalPeriodSettings:
+    """The goal year a request names (`?period=`), else the active one."""
+    if period_label:
+        row = periods.period_by_label(db, org_id, period_label.strip())
+        if row is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No Project Goals year called '{period_label}'.")
+        return row
+    return _require_period(db, org_id)
+
+
+def _period_of_label(db, org_id: int, cycle_label: str) -> ProjectGoalPeriodSettings:
+    """The goal year a quarter label belongs to ("Q3 CY 26-27" -> CY 26-27)."""
+    try:
+        _seq, plabel = parse_quarter_label(cycle_label)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"'{cycle_label}' is not a quarter label (expected e.g. 'Q3 CY 26-27').")
+    row = periods.period_by_label(db, org_id, plabel)
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No Project Goals year called '{plabel}'.")
+    return row
 
 
 def _framework_for(db, org_id: int, function_id: Optional[int], level: Optional[int], period_label: str) -> Optional[GoalFramework]:
@@ -205,7 +230,6 @@ def _review_out(review: ProjectGoalReview, is_owner: bool, period: Optional[Proj
         entered_by_id=review.entered_by_id, entered_by_name=review.entered_by.full_name if review.entered_by else None,
         miltenyi_reviewer_name=review.miltenyi_reviewer_name if show_comments else None,
         source_received_on=review.source_received_on if not is_owner else None,
-        source_url=review.source_url if not is_owner else None,
         final_rating=None if hide_final else review.final_rating,
         final_rating_hidden=hide_final and review.final_rating is not None,
         final_rating_by=review.final_rating_by,
@@ -241,7 +265,7 @@ def _set_out(db, s: ProjectGoalSet, viewer: User, period: Optional[ProjectGoalPe
         period_label=s.period_label, status=s.status,
         framework=_framework_out(s.framework, weights_visible) if s.framework else None,
         items=[
-            GoalItemOut(id=it.id, seq=it.seq, kpi_text=it.kpi_text, weightage=it.weightage if weights_visible else None, goal_text=it.goal_text)
+            GoalItemOut(id=it.id, seq=it.seq, kpi_text=it.kpi_text, weightage=it.weightage if weights_visible else None, goal_text=it.goal_text, is_extra=it.is_extra)
             for it in s.items
         ],
         reviews=[_review_out(r, is_owner, set_period, quarters.get(_seq_of(r.cycle_label))) for r in reviews],
@@ -277,7 +301,6 @@ def _snapshot(s: ProjectGoalSet, review: Optional[ProjectGoalReview] = None) -> 
             "review_is_draft": review.review_is_draft,
             "miltenyi_reviewer_name": review.miltenyi_reviewer_name,
             "source_received_on": str(review.source_received_on) if review.source_received_on else None,
-            "source_url": review.source_url,
             "acknowledged_at": str(review.acknowledged_at) if review.acknowledged_at else None,
             "items": [
                 {"item_id": ri.item_id, "self_text": ri.self_text, "primary_comment": ri.primary_comment, "healthark_note": ri.healthark_note}
@@ -362,17 +385,22 @@ def _require_reviewer(s: ProjectGoalSet, user: User) -> None:
 
 
 def _resolve_quarter(db, period: ProjectGoalPeriodSettings, cycle_label: str) -> ProjectGoalQuarter:
-    """The quarter a request names. 400 for a label outside the active period,
-    409 for a quarter that has not been rolled out yet."""
+    """The quarter a request names, checked against `period` (the set's year).
+    400 for a label of another year, 409 when the quarter has not started or
+    the year is closed for backfill."""
     try:
         seq, plabel = parse_quarter_label(cycle_label)
     except ValueError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"'{cycle_label}' is not a quarter label (expected e.g. 'Q3 {period.period_label}').")
     if plabel != period.period_label:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{quarter_display(cycle_label)} is not part of the active period {period.period_label}.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{quarter_display(cycle_label)} is not part of {period.period_label}.")
     quarter = periods.quarter_by_label(db, period, cycle_label)
-    if quarter is None or not periods.is_writable(period, quarter):
+    if not periods.has_started(period, quarter):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Q{seq} has not started yet. The Admin rolls quarters out in System Settings.")
+    if not periods.is_writable(period, quarter):
+        if not period.is_active and not period.backfill_open:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"{period.period_label} is closed: its quarters are read-only unless the Admin reopens the year for backfill in System Settings.")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"{quarter_display(cycle_label)} is closed for backfill. The Admin can reopen it in System Settings.")
     return quarter
 
 
@@ -407,28 +435,44 @@ def _reviews_started(s: ProjectGoalSet) -> list[str]:
 # ── Everyone in the org ──────────────────────────────────────────────
 
 @router.get("/period", response_model=Optional[PeriodSettingsOut])
-def active_period_info(db: DbSession, current_user: CurrentUser):
-    """The active period with its started quarters — what the quarter
-    selector needs. Same payload for staff, mentors and Admins; null when
-    no period is active."""
-    period = periods.active_period(db, current_user.org_id)
-    return periods.period_out(db, period) if period else None
+def period_info(db: DbSession, current_user: CurrentUser, period: Optional[str] = Query(default=None)):
+    """One goal year with its started quarters — what the quarter selector
+    needs. The active year by default, or the year named by `period`. Same
+    payload for staff, mentors and Admins; null when no year is active."""
+    row = periods.period_by_label(db, current_user.org_id, period.strip()) if period else periods.active_period(db, current_user.org_id)
+    return periods.period_out(db, row) if row else None
+
+
+@router.get("/periods", response_model=list[PeriodBriefOut])
+def list_periods(db: DbSession, current_user: CurrentUser):
+    """Every goal year, newest first — the year selector. Staff also learn
+    which years they have a goal set for."""
+    for_user = current_user.id if current_user.role == Role.STAFF.value else None
+    return periods.period_briefs(db, current_user.org_id, for_user_id=for_user)
 
 
 # ── Staff ────────────────────────────────────────────────────────────
 
 @router.get("/me", response_model=MyProjectGoalsOut)
-def my_project_goals(db: DbSession, current_user: CurrentUser):
+def my_project_goals(db: DbSession, current_user: CurrentUser, period: Optional[str] = Query(default=None, description="Goal year, e.g. 'CY 26-27'. Defaults to the active year.")):
     _require_employee(current_user)
-    period = periods.active_period(db, current_user.org_id)
-    if period is None:
-        return MyProjectGoalsOut(period=None, framework_missing_reason="No Project Goals period is open yet.")
+    briefs = periods.period_briefs(db, current_user.org_id, for_user_id=current_user.id)
+    if period:
+        row = periods.period_by_label(db, current_user.org_id, period.strip())
+        if row is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No Project Goals year called '{period}'.")
+    else:
+        row = periods.active_period(db, current_user.org_id)
+    if row is None:
+        return MyProjectGoalsOut(period=None, periods=briefs, framework_missing_reason="No Project Goals period is open yet.")
+    period = row
 
     level = current_user.designation.career_level if current_user.designation else None
     fw = _framework_for(db, current_user.org_id, current_user.function_id, level, period.period_label)
     s = _own_set(db, current_user, period.period_label)
     return MyProjectGoalsOut(
         period=periods.period_out(db, period),
+        periods=briefs,
         framework=_framework_out(fw, period.weightages_visible) if fw else None,
         framework_missing_reason=_framework_missing_reason(current_user, fw),
         goal_set=_set_out(db, s, current_user, period) if s else None,
@@ -438,11 +482,11 @@ def my_project_goals(db: DbSession, current_user: CurrentUser):
 
 
 @router.post("/me", response_model=GoalSetOut, status_code=status.HTTP_201_CREATED)
-def create_my_set(db: DbSession, current_user: CurrentUser):
-    """Create the draft set for the active period. Idempotent: returns the
-    existing set if one is already there."""
+def create_my_set(db: DbSession, current_user: CurrentUser, period: Optional[str] = Query(default=None)):
+    """Create the draft set for a goal year (the active one by default).
+    Idempotent: returns the existing set if one is already there."""
     _require_employee(current_user)
-    period = _require_period(db, current_user.org_id)
+    period = _target_period(db, current_user.org_id, period)
     existing = _own_set(db, current_user, period.period_label)
     if existing is not None:
         return _set_out(db, existing, current_user, period)
@@ -460,14 +504,18 @@ def create_my_set(db: DbSession, current_user: CurrentUser):
     db.flush()
     for k in fw.kpis:
         db.add(ProjectGoalItem(set_id=s.id, seq=k.seq, kpi_id=k.id, kpi_text=k.text, weightage=k.weightage))
+    if period.extra_goal_enabled:
+        # The optional "Additional goals" row, last, with the year's weightage.
+        db.add(ProjectGoalItem(set_id=s.id, seq=max((k.seq for k in fw.kpis), default=0) + 1, kpi_id=None,
+                               kpi_text=EXTRA_GOAL_LABEL, weightage=period.extra_goal_weightage, is_extra=True))
     db.commit()
     return _set_out(db, _get_set(db, s.id, current_user.org_id), current_user, period)
 
 
 @router.put("/me/items", response_model=GoalSetOut)
-def save_my_goals(payload: GoalItemsUpdate, db: DbSession, current_user: CurrentUser):
+def save_my_goals(payload: GoalItemsUpdate, db: DbSession, current_user: CurrentUser, period: Optional[str] = Query(default=None)):
     _require_employee(current_user)
-    period = _require_period(db, current_user.org_id)
+    period = _target_period(db, current_user.org_id, period)
     s = _own_set(db, current_user, period.period_label)
     if s is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Create your goal set first.")
@@ -487,9 +535,9 @@ def save_my_goals(payload: GoalItemsUpdate, db: DbSession, current_user: Current
 
 
 @router.post("/me/submit", response_model=GoalSetOut)
-def submit_my_goals(db: DbSession, current_user: CurrentUser, background_tasks: BackgroundTasks):
+def submit_my_goals(db: DbSession, current_user: CurrentUser, background_tasks: BackgroundTasks, period: Optional[str] = Query(default=None)):
     _require_employee(current_user)
-    period = _require_period(db, current_user.org_id)
+    period = _target_period(db, current_user.org_id, period)
     s = _own_set(db, current_user, period.period_label)
     if s is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Create your goal set first.")
@@ -497,7 +545,7 @@ def submit_my_goals(db: DbSession, current_user: CurrentUser, background_tasks: 
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This goal set has already been submitted.")
     if not period.entry_open:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Goal entry is closed for this period.")
-    missing = [it.seq for it in s.items if not (it.goal_text or "").strip()]
+    missing = [it.seq for it in s.items if not it.is_extra and not (it.goal_text or "").strip()]
     if missing:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Every KPI needs a goal before submitting. Empty rows: {', '.join(map(str, missing))}.")
 
@@ -517,7 +565,7 @@ def submit_my_goals(db: DbSession, current_user: CurrentUser, background_tasks: 
 @router.put("/me/self-review", response_model=GoalSetOut)
 def save_my_self_review(payload: SelfReviewUpdate, db: DbSession, current_user: CurrentUser):
     _require_employee(current_user)
-    period = _require_period(db, current_user.org_id)
+    period = _period_of_label(db, current_user.org_id, payload.cycle_label)
     s = _own_set(db, current_user, period.period_label)
     if s is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No goal set for this period.")
@@ -547,7 +595,7 @@ def save_my_self_review(payload: SelfReviewUpdate, db: DbSession, current_user: 
 @router.post("/me/self-review/submit", response_model=GoalSetOut)
 def submit_my_self_review(payload: CycleRef, db: DbSession, current_user: CurrentUser, background_tasks: BackgroundTasks):
     _require_employee(current_user)
-    period = _require_period(db, current_user.org_id)
+    period = _period_of_label(db, current_user.org_id, payload.cycle_label)
     s = _own_set(db, current_user, period.period_label)
     if s is None or s.status != S.APPROVED.value:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The self-review can be submitted once the goals are approved.")
@@ -559,7 +607,7 @@ def submit_my_self_review(payload: CycleRef, db: DbSession, current_user: Curren
     if not review.self_is_draft:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Your {quarter_display(quarter.cycle_label)} self-review is already submitted.")
     rmap = _review_item_map(review)
-    missing = [it.seq for it in s.items if not ((rmap.get(it.id).self_text if rmap.get(it.id) else "") or "").strip()]
+    missing = [it.seq for it in s.items if not it.is_extra and not ((rmap.get(it.id).self_text if rmap.get(it.id) else "") or "").strip()]
     if missing:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Every KPI needs a self-review. Empty rows: {', '.join(map(str, missing))}.")
     if review.self_rating is None:
@@ -581,7 +629,7 @@ def submit_my_self_review(payload: CycleRef, db: DbSession, current_user: Curren
 @router.post("/me/acknowledge", response_model=GoalSetOut)
 def acknowledge_my_review(payload: CycleRef, db: DbSession, current_user: CurrentUser):
     _require_employee(current_user)
-    period = _require_period(db, current_user.org_id)
+    period = _period_of_label(db, current_user.org_id, payload.cycle_label)
     s = _own_set(db, current_user, period.period_label)
     if s is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No goal set for this period.")
@@ -602,12 +650,18 @@ def acknowledge_my_review(payload: CycleRef, db: DbSession, current_user: Curren
 def team_goal_sets(
     db: DbSession,
     current_user: CurrentUser,
-    cycle: Optional[str] = Query(default=None, description="Quarter label, e.g. 'Q3 CY 2026'. Defaults to the current quarter."),
+    cycle: Optional[str] = Query(default=None, description="Quarter label, e.g. 'Q3 CY 26-27'. Defaults to the year's current quarter."),
+    period: Optional[str] = Query(default=None, description="Goal year, e.g. 'CY 26-27'. Defaults to the active year."),
 ):
-    """Mentor: own mentees. Admin: every staff member. Review columns
-    describe the selected quarter."""
+    """Mentor: own mentees. Admin: every staff member. Goals column for the
+    selected year; review columns for the selected quarter of that year."""
     _require_mentor_or_hr(current_user)
-    period = periods.active_period(db, current_user.org_id)
+    if period:
+        period = periods.period_by_label(db, current_user.org_id, period.strip())
+        if period is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No such Project Goals year.")
+    else:
+        period = periods.active_period(db, current_user.org_id)
 
     cycle_label: Optional[str] = None
     if period is not None:
@@ -721,22 +775,23 @@ def approve_goal_set(set_id: int, payload: ApproveRequest, db: DbSession, curren
 
 
 @router.put("/sets/{set_id}/review", response_model=GoalSetOut)
-def save_review(set_id: int, payload: ReviewUpdate, db: DbSession, current_user: CurrentUser, background_tasks: BackgroundTasks):
-    """Save one quarter's Miltenyi comments (transcribed), optional Healthark
-    notes, provenance and final rating. Before submission this is a draft;
-    after submission it is an edit and is logged + notified."""
+def save_review(set_id: int, payload: ReviewUpdate, db: DbSession, current_user: CurrentUser):
+    """Save one quarter's Miltenyi comments (transcribed), the mentor's optional
+    secondary review, provenance and final rating — as a draft. A submitted
+    review is final: it cannot be edited; the Admin unlocks it instead."""
     s = _get_set(db, set_id, current_user.org_id)
     _require_reviewer(s, current_user)
     if s.status != S.APPROVED.value:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The review can be entered once the goals are approved.")
-    period = _require_period(db, current_user.org_id)
-    if period.period_label != s.period_label:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"This goal set belongs to {s.period_label}, which is closed.")
+    period = periods.period_by_label(db, s.org_id, s.period_label)
+    if period is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"This goal set belongs to {s.period_label}, which has no configuration.")
     quarter = _resolve_quarter(db, period, payload.cycle_label)
 
     review = _get_or_create_review(db, s, quarter)
-    editing_submitted = not review.review_is_draft
-    before = _snapshot(s, review) if editing_submitted else None
+    if not review.review_is_draft:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail=f"The {quarter_display(quarter.cycle_label)} review is already submitted and cannot be edited. Ask the Admin to unlock it if it needs a correction.")
 
     rmap = _review_item_map(review)
     valid_ids = {it.id for it in s.items}
@@ -753,19 +808,9 @@ def save_review(set_id: int, payload: ReviewUpdate, db: DbSession, current_user:
     review.entered_by_id = current_user.id
     review.miltenyi_reviewer_name = (payload.miltenyi_reviewer_name or "").strip() or review.miltenyi_reviewer_name or s.owner.miltenyi_reviewer_name
     review.source_received_on = payload.source_received_on
-    review.source_url = (payload.source_url or "").strip() or None
     review.final_rating = payload.final_rating
     review.final_rating_by = payload.final_rating_by
-
-    if editing_submitted:
-        _log(db, s, current_user, "review_edit", before, _snapshot(s, review), cycle_label=review.cycle_label)
     db.commit()
-    if editing_submitted:
-        label = quarter_display(review.cycle_label)
-        _notify(db, s=s, recipient_id=s.user_id, sender=current_user, background_tasks=background_tasks, cycle_label=review.cycle_label,
-                subject=f"Your {label} project goals review was edited",
-                message=f"Your {label} project goals review was edited by {current_user.full_name}.")
-        db.commit()
     return _set_out(db, _get_set(db, s.id, current_user.org_id), current_user, period)
 
 
@@ -782,9 +827,9 @@ def submit_review(
     _require_reviewer(s, current_user)
     if s.status != S.APPROVED.value:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The review can be submitted once the goals are approved.")
-    period = _require_period(db, current_user.org_id)
-    if period.period_label != s.period_label:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"This goal set belongs to {s.period_label}, which is closed.")
+    period = periods.period_by_label(db, s.org_id, s.period_label)
+    if period is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"This goal set belongs to {s.period_label}, which has no configuration.")
     quarter = _resolve_quarter(db, period, payload.cycle_label)
     label = quarter_display(quarter.cycle_label)
 
@@ -799,7 +844,7 @@ def submit_review(
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"{s.owner.full_name} has not submitted a {label} self-review. An Admin can override with force=true.")
         forced = True
     rmap = _review_item_map(review)
-    missing = [it.seq for it in s.items if not ((rmap.get(it.id).primary_comment if rmap.get(it.id) else "") or "").strip()]
+    missing = [it.seq for it in s.items if not it.is_extra and not ((rmap.get(it.id).primary_comment if rmap.get(it.id) else "") or "").strip()]
     if missing:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Every KPI needs the Miltenyi reviewer's comment. Empty rows: {', '.join(map(str, missing))}.")
     if review.final_rating is None:

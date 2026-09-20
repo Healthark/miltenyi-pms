@@ -61,11 +61,9 @@ export function SelfReviewCycleMenu({
   const menuRef = useRef<HTMLDivElement>(null);
   const { settings } = useSystemSettings();
   const fiscalStartMonth = settings?.fiscal_start_month ?? 4;
-  // When the admin has flipped `cycle_window_override`, the backend
-  // accepts H1 + H2 submissions year-round. Mirror that here so the
-  // menu unlocks both halves and HR can drive a full demo cycle in
-  // one session instead of seeing "H2 window has not opened yet."
-  const cycleWindowOverride = settings?.cycle_window_override ?? false;
+  // The H1/H2 window bypass was removed (UAT feedback, 17 Sep 2026): the
+  // calendar gate always applies; testers move the simulated date instead.
+  const cycleWindowOverride = false;
   // Goal review cadence is always half-yearly (H1 / H2) regardless of
   // the org's cycle_type. The function still resolves the cycle list
   // through `cycleKeysForType` so any future split stays one edit away.

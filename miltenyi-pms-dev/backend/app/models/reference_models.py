@@ -2,6 +2,26 @@ from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, U
 from sqlalchemy.sql import func
 from app.core.database import Base
 
+# Designation levels run 1..MAX_LEVEL (free integers, UAT feedback 17 Sep
+# 2026). Only the four GCC levels carry a band name.
+MAX_LEVEL = 12
+LEVEL_LABEL = {1: "Entry", 2: "Mid", 3: "Senior", 4: "Lead"}
+
+
+def career_level_label(level):
+    """Band name for a level, or None outside the GCC 1..4 range."""
+    return LEVEL_LABEL.get(level) if level is not None else None
+
+# Designation levels run 1..MAX_LEVEL (free integers, UAT feedback 17 Sep
+# 2026). Only the four GCC levels carry a band name.
+MAX_LEVEL = 12
+LEVEL_LABEL = {1: "Entry", 2: "Mid", 3: "Senior", 4: "Lead"}
+
+
+def career_level_label(level):
+    """Band name for a level, or None outside the GCC 1..4 range."""
+    return LEVEL_LABEL.get(level) if level is not None else None
+
 class Function(Base):
     __tablename__ = "functions"
 
@@ -30,8 +50,8 @@ class Designation(Base):
     # role_expectations table is keyed by (function_id, career_level), so this
     # column is what links a user's designation to their expectations row.
     # Nullable so legacy / non-GCC designations stay valid.
-    career_level = Column(Integer, nullable=True)            # 1..4 in the GCC framework
-    career_level_label = Column(String, nullable=True)       # "Entry" / "Mid" / "Senior" / "Lead"
+    career_level = Column(Integer, nullable=True)            # 1..MAX_LEVEL; 1..4 are the GCC bands
+    career_level_label = Column(String, nullable=True)       # "Entry" / "Mid" / "Senior" / "Lead" for 1..4, else NULL
 
     # The function (department) this title belongs to. Nullable so legacy
     # titles stay valid; the GCC seed sets it for every title, and the

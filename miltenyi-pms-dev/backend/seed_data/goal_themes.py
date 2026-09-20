@@ -11,7 +11,8 @@ marked with a comment. Regenerate with scratch/gen_goal_themes.py if the
 documents change.
 """
 
-PERIOD_LABEL = "CY 2026"
+# Goal years are labelled as spans (the year ends around April): "CY 26-27".
+PERIOD_LABEL = "CY 26-27"
 
 # function name -> level -> row
 GOAL_THEMES: dict[str, dict[int, dict]] = {
