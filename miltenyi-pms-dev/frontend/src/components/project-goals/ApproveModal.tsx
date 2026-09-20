@@ -57,7 +57,7 @@ export function ApproveModal({ set, onClose, onConfirm, isSaving, error }: Appro
           </label>
           <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
             <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-            <span>This locks the employee's goals for {set.period_label}. Only Healthark HR can unlock them afterwards, with a logged reason.</span>
+            <span>This locks the staff member's goals for {set.period_label}. Only the Admin can unlock them afterwards, with a reason.</span>
           </div>
         </div>
         <div className="flex justify-end gap-3 border-t border-border px-6 py-4">

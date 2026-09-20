@@ -18,8 +18,10 @@ export interface DesignationBrief {
   level: number;
   /** GCC career band 1..4. Null on legacy / non-GCC designations. */
   career_level: number | null;
-  /** Human label for the band ("Entry" / "Mid" / "Senior" / "Lead"). */
+  /** Band name for levels 1–4 ("Entry" / "Mid" / "Senior" / "Lead"); null above 4. */
   career_level_label: string | null;
+  /** The function this title belongs to (null for legacy titles). */
+  function_id: number | null;
 }
 
 export interface UserResponse {

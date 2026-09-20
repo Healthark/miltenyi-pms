@@ -58,7 +58,7 @@ def _validate_kpis(kpis: list[FrameworkKpiIn]) -> list[FrameworkKpiIn]:
 
 class FrameworkRowCreate(BaseModel):
     function_id: int
-    level: int = Field(..., ge=1, le=4)
+    level: int = Field(..., ge=1, le=12)
     period_label: Optional[str] = None          # defaults to the active period
     title: str = Field(..., min_length=1, max_length=200)
     business_outcomes: str = Field(..., min_length=1, max_length=4000)
@@ -96,7 +96,7 @@ class FrameworkFunctionOut(BaseModel):
     function_id: int
     function_name: str
     designations: list[DesignationBriefOut]
-    rows: list[FrameworkRowOut]            # 0..4 rows, one per defined level
+    rows: list[FrameworkRowOut]            # one per defined level (1..12)
 
 
 class FrameworkMatrixOut(BaseModel):
@@ -105,24 +105,30 @@ class FrameworkMatrixOut(BaseModel):
 
 
 class DesignationLevelUpdate(BaseModel):
-    career_level: int = Field(..., ge=1, le=4)
+    """Framework tab: change a designation's level (1..12) and/or rename it."""
+    career_level: Optional[int] = Field(default=None, ge=1, le=12)
+    name: Optional[str] = Field(default=None, min_length=1, max_length=120)
 
 
 # ── Period, quarters, roll-out ───────────────────────────────────────
 
 class QuarterOut(BaseModel):
     seq: int
-    cycle_label: str                        # "Q3 CY 2026"
+    cycle_label: str                        # "Q3 CY 26-27"
     ratings_visible: bool
+    backfill_open: bool = True              # earlier quarter still writable (the current one is always open)
     is_current: bool
     opened_at: Optional[datetime] = None
 
 
 class PeriodSettingsOut(BaseModel):
-    period_label: str
-    is_active: bool
+    period_label: str                       # "CY 26-27"
+    is_active: bool                         # the review year (the quarter roll-out runs here)
     entry_open: bool
     weightages_visible: bool
+    backfill_open: bool = True              # past year: started quarters stay writable while on
+    extra_goal_enabled: bool = False        # the "Additional goals" row at the end of every sheet
+    extra_goal_weightage: int = 10
     current_quarter_seq: Optional[int] = None
     current_quarter_label: Optional[str] = None
     quarters: list[QuarterOut] = []         # started quarters only (seq <= current)
@@ -132,10 +138,44 @@ class PeriodSettingsUpdate(BaseModel):
     is_active: Optional[bool] = None
     entry_open: Optional[bool] = None
     weightages_visible: Optional[bool] = None
+    backfill_open: Optional[bool] = None
+    extra_goal_enabled: Optional[bool] = None
+    extra_goal_weightage: Optional[int] = Field(default=None, ge=0, le=100)
+
+
+class PeriodBriefOut(BaseModel):
+    """One goal year in a year selector."""
+    period_label: str
+    is_active: bool
+    entry_open: bool
+    backfill_open: bool
+    current_quarter_seq: Optional[int] = None
+    current_quarter_label: Optional[str] = None
+    has_set: Optional[bool] = None          # staff: do I have a goal set for this year?
+
+
+class QuarterPreflightOut(BaseModel):
+    seq: int
+    cycle_label: str
+    self_pending: int                       # approved sets without a submitted self-review
+    review_pending: int                     # approved sets without a submitted Miltenyi review
+    reviews_submitted: int
+
+
+class PeriodPreflightOut(BaseModel):
+    """Who a switch flip would affect — shown in the Save confirmation."""
+    period_label: str
+    staff_total: int
+    staff_without_set: int
+    sets_draft: int
+    sets_submitted: int
+    sets_approved: int
+    quarters: list[QuarterPreflightOut] = []
 
 
 class QuarterUpdate(BaseModel):
-    ratings_visible: bool
+    ratings_visible: Optional[bool] = None
+    backfill_open: Optional[bool] = None
 
 
 class CycleStatusOut(BaseModel):
@@ -154,12 +194,12 @@ class CycleStatusOut(BaseModel):
 
 class CycleRolloutRequest(BaseModel):
     # Required only when the roll-out starts a new year: the Admin types the
-    # new period label ("CY 2027") to confirm the year change.
+    # new period label ("CY 27-28") to confirm the year change.
     confirmation: Optional[str] = Field(default=None, max_length=40)
 
 
 class CycleSetRequest(BaseModel):
-    target_label: str = Field(..., min_length=3, max_length=40)   # "Q2 CY 2026"
+    target_label: str = Field(..., min_length=3, max_length=40)   # "Q2 CY 26-27"
 
 
 class CycleLogOut(BaseModel):
@@ -190,6 +230,12 @@ class MappingRowOut(BaseModel):
     mentor_name: Optional[str] = None
     miltenyi_reviewer_name: Optional[str] = None
     status: MappingStatus
+    # Function / designation are locked while this year's goal set exists.
+    has_active_set: bool = False
+    active_set_status: Optional[str] = None
+    # Function / designation are locked while this year's goal set exists.
+    has_active_set: bool = False
+    active_set_status: Optional[str] = None
 
 
 # ── Goal set ─────────────────────────────────────────────────────────
@@ -200,13 +246,14 @@ class GoalItemOut(BaseModel):
     kpi_text: str
     weightage: Optional[int] = None         # hidden for staff when the period says so
     goal_text: Optional[str] = None
+    is_extra: bool = False                  # the optional "Additional goals" row
 
 
 class ReviewItemOut(BaseModel):
     item_id: int
     self_text: Optional[str] = None         # staff's own draft is theirs; others see it once submitted
     primary_comment: Optional[str] = None   # hidden from staff until the review is submitted
-    healthark_note: Optional[str] = None
+    healthark_note: Optional[str] = None    # the mentor's "Secondary review" (optional); same visibility rule
 
 
 class ReviewOut(BaseModel):
@@ -226,7 +273,6 @@ class ReviewOut(BaseModel):
     entered_by_name: Optional[str] = None
     miltenyi_reviewer_name: Optional[str] = None
     source_received_on: Optional[date] = None
-    source_url: Optional[str] = None
     final_rating: Optional[int] = None      # None for staff until the quarter's ratings are released
     final_rating_hidden: bool = False       # True when redacted for the viewer
     final_rating_by: str
@@ -259,8 +305,9 @@ class GoalSetOut(BaseModel):
 
 
 class MyProjectGoalsOut(BaseModel):
-    """Everything the staff member's page needs in one call."""
+    """Everything the staff member's page needs in one call, for one goal year."""
     period: Optional[PeriodSettingsOut] = None
+    periods: list[PeriodBriefOut] = []      # every goal year, newest first (the year selector)
     framework: Optional[FrameworkRowOut] = None
     framework_missing_reason: Optional[str] = None
     goal_set: Optional[GoalSetOut] = None
@@ -307,7 +354,6 @@ class ReviewUpdate(CycleRef):
     items: list[ReviewItemIn]
     miltenyi_reviewer_name: Optional[str] = Field(default=None, max_length=200)
     source_received_on: Optional[date] = None
-    source_url: Optional[str] = Field(default=None, max_length=1000)
     final_rating: Optional[int] = Field(default=None, ge=1, le=5)
     final_rating_by: Literal["miltenyi", "healthark"] = "miltenyi"
 

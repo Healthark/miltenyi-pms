@@ -70,21 +70,6 @@ class SystemSettings(Base):
     # zones don't see off-by-one rollovers. Defaults to "UTC".
     timezone = Column(String, nullable=False, default="UTC", server_default="UTC")
 
-    # ── Access toggles live elsewhere ────────────────────────────────
-    # The per-fiscal-year switches (annual reviews open, final-rating
-    # visibility, annual-goal editing) are rows of
-    # `system_settings_year_overrides`; the Project Goals period switches
-    # are rows of `project_goal_period_settings`. This singleton keeps
-    # only the calendar anchors above and the developer escape hatches
-    # below. (September 2026: the duplicate org-wide copies, the never-read
-    # submission gates and the project-review rating switch were dropped.)
-    # Demo-only escape hatch. When True, the date-based H1/H2 review-window
-    # gate (`cycle_utils.is_review_window_open`) is skipped, so a Staff /
-    # Mentor pair can submit BOTH the H1 and the H2 reviews in the same
-    # session — useful when stakeholders are testing the system before H2
-    # has actually started in real time. Production should always leave
-    # this False so the calendar gate enforces ordering.
-    cycle_window_override = Column(Boolean, default=False, nullable=False, server_default="false")
     # Demo-only date simulation. When non-null, every cycle-determination
     # and review-window check uses this date instead of today's real wall
     # date — letting HR/QA preview the morning of a cycle rollover or

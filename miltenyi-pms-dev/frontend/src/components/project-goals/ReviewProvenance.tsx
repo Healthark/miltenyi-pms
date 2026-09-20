@@ -1,11 +1,9 @@
-import { Paperclip } from "lucide-react";
 import type { GoalReview } from "@/services/project-goals.service";
 import { INPUT_CLS, fmtDate } from "@/components/project-goals/ui";
 
 export interface ProvenanceDraft {
   miltenyi_reviewer_name: string;
   source_received_on: string;
-  source_url: string;
 }
 
 interface ReviewProvenanceProps {
@@ -19,8 +17,8 @@ interface ReviewProvenanceProps {
 
 /**
  * "Entered on behalf" block above the mentor's table: who the Miltenyi
- * reviewer is, when their input arrived, where it came from, and who typed
- * it. Stored on the review and shown to the employee once submitted.
+ * reviewer is, when their input arrived, and who typed it. Stored on the
+ * quarter's review and shown to the staff member once it is submitted.
  */
 export function ReviewProvenance({ review, fallbackReviewerName, enteredByName, editable, draft, onChange }: ReviewProvenanceProps) {
   const disabled = !editable;
@@ -28,9 +26,9 @@ export function ReviewProvenance({ review, fallbackReviewerName, enteredByName, 
     <section className="rounded-lg border border-border bg-slate-50 p-4">
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-700">Entered on behalf</span>
-        <p className="text-xs text-text-muted">Stored with the review and shown to the employee once it is submitted.</p>
+        <p className="text-xs text-text-muted">Stored with this quarter's review and shown to the staff member once it is submitted.</p>
       </div>
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-3">
         <label className="block">
           <span className="mb-1 block text-xs font-semibold text-text-main">Miltenyi reviewer</span>
           <input
@@ -49,18 +47,6 @@ export function ReviewProvenance({ review, fallbackReviewerName, enteredByName, 
             disabled={disabled}
             value={draft.source_received_on}
             onChange={(e) => onChange({ ...draft, source_received_on: e.target.value })}
-          />
-        </label>
-        <label className="block">
-          <span className="mb-1 flex items-center gap-1 text-xs font-semibold text-text-main">
-            <Paperclip className="h-3 w-3 text-text-muted" aria-hidden="true" /> Source
-          </span>
-          <input
-            className={INPUT_CLS}
-            disabled={disabled}
-            value={draft.source_url}
-            onChange={(e) => onChange({ ...draft, source_url: e.target.value })}
-            placeholder="Link to the email or file"
           />
         </label>
         <div>

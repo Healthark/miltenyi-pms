@@ -1,8 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Bell, CalendarDays, Moon, Sun } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
 import { useTheme } from "@/hooks/useTheme";
+import { queryKeys } from "@/lib/queryKeys";
+import { projectGoalsService, quarterDisplay } from "@/services/project-goals.service";
 import {
   notificationService,
   type TopbarSummary,
@@ -110,11 +113,12 @@ export function Topbar() {
 
   return (
     <header className="h-16 bg-surface border-b border-border flex items-center justify-between px-8 shrink-0">
-      {/* Left — project cycle badge */}
+      {/* Left — cycle badges */}
       <CycleBadges
         settingsLoading={settingsLoading}
         activeCycleName={settings?.active_cycle_name ?? null}
         showProjectCycle={hasFeature("project_reviews")}
+        showProjectGoals={hasFeature("project_goals")}
       />
 
       {/* Right — theme toggle + bell + avatar */}
@@ -185,19 +189,18 @@ export function Topbar() {
   );
 }
 
-// ── Cycle Badge ─────────────────────────────────────────────────────
+// ── Cycle Badges ─────────────────────────────────────────────────────
 
 /**
- * Cycle badges — single source of truth is
- * `SystemSettings.active_cycle_name` (set by HR).
+ * Cycle badges.
  *
- * Two pills:
- *   1. Project review cycle ("Project · Q2 FY26-27") — the raw cycle.
- *   2. Financial year ("FY26-27") — derived by scraping the FYxx-yy
- *      substring out of the cycle name. We keep the parsing local
- *      because every active cycle string carries the FY in this format
- *      ("Q2 FY26-27", "H1 FY26-27", or just "FY26-27" for annual-only
- *      orgs), so no extra fetch or context wiring is needed.
+ * Orgs running Project Goals (the Miltenyi instance) see the goal year and
+ * the current review quarter — both come from the Project Goals period the
+ * Admin rolls out in System Settings ("CY 2026", "Q3 · current quarter").
+ *
+ * Other orgs keep the fiscal-year pill scraped out of
+ * `SystemSettings.active_cycle_name` ("H1 FY26-27" → "FY26-27"), plus the
+ * project review cycle pill when that feature is on.
  */
 const FY_LABEL_PATTERN = /FY\d{2}-\d{2}/;
 
@@ -207,44 +210,85 @@ function extractFyLabel(cycleName: string | null): string | null {
   return match ? match[0] : null;
 }
 
+const PILL_AMBER =
+  "hidden sm:inline-flex items-center gap-1.5 rounded-full border border-border bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-800";
+const PILL_BRAND =
+  "hidden sm:inline-flex items-center gap-1.5 rounded-full border border-border bg-brand-light px-2.5 py-0.5 text-xs font-medium text-brand-accent";
+const PILL_MUTED =
+  "hidden sm:inline-flex items-center gap-1.5 rounded-full border border-dashed border-border bg-gray-50 px-2.5 py-0.5 text-xs text-text-muted";
+
 function CycleBadges({
   settingsLoading,
   activeCycleName,
   showProjectCycle,
+  showProjectGoals,
 }: {
   readonly settingsLoading: boolean;
   readonly activeCycleName: string | null;
-  /** False for orgs that retired project reviews — only the FY pill shows. */
+  /** Retired project reviews: their cycle pill only when the feature is on. */
   readonly showProjectCycle: boolean;
+  /** Project Goals orgs: goal year + current quarter replace the FY pill. */
+  readonly showProjectGoals: boolean;
 }) {
-  if (settingsLoading) {
+  const periodQ = useQuery({
+    queryKey: queryKeys.projectGoals.period(),
+    queryFn: () => projectGoalsService.getPeriod(),
+    enabled: showProjectGoals,
+    staleTime: 60_000,
+  });
+
+  if (settingsLoading || (showProjectGoals && periodQ.isPending)) {
     return (
       <div className="flex items-center gap-2">
-        <span className="hidden sm:inline-flex items-center rounded-full border border-border bg-gray-50 px-2.5 py-0.5 text-xs text-text-muted animate-pulse">
-          Loading...
-        </span>
+        <span className={`${PILL_MUTED} animate-pulse`}>Loading...</span>
+      </div>
+    );
+  }
+
+  if (showProjectGoals) {
+    const period = periodQ.data ?? null;
+    const currentQuarter = period?.current_quarter_label ?? null;
+    return (
+      <div className="flex items-center gap-2">
+        {period ? (
+          <span className={PILL_AMBER} title="Project Goals year — goals are set once for this year">
+            <CalendarDays className="h-3 w-3 text-amber-700" aria-hidden="true" />
+            {period.period_label}
+          </span>
+        ) : (
+          <span className={PILL_MUTED} title="No Project Goals period is active yet">
+            <CalendarDays className="h-3 w-3" aria-hidden="true" />
+            No goal year set
+          </span>
+        )}
+        {period && (
+          currentQuarter ? (
+            <span className={PILL_BRAND} title="Current review quarter — rolled out by the Admin in System Settings">
+              <CalendarDays className="h-3 w-3 text-accent" aria-hidden="true" />
+              {quarterDisplay(currentQuarter).split(" · ")[0]} · current quarter
+            </span>
+          ) : (
+            <span className={PILL_MUTED} title="The Admin has not rolled out the first quarter yet">
+              <CalendarDays className="h-3 w-3" aria-hidden="true" />
+              No quarter rolled out
+            </span>
+          )
+        )}
       </div>
     );
   }
 
   const fyLabel = extractFyLabel(activeCycleName);
-
   return (
     <div className="flex items-center gap-2">
       {fyLabel && (
-        <span
-          className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-border bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-800"
-          title="Current financial year"
-        >
+        <span className={PILL_AMBER} title="Current financial year">
           <CalendarDays className="h-3 w-3 text-amber-700" aria-hidden="true" />
           {fyLabel}
         </span>
       )}
       {showProjectCycle && activeCycleName && (
-        <span
-          className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-border bg-brand-light px-2.5 py-0.5 text-xs font-medium text-brand-accent"
-          title="Project review cycle"
-        >
+        <span className={PILL_BRAND} title="Project review cycle">
           <CalendarDays className="h-3 w-3 text-accent" aria-hidden="true" />
           Project · {activeCycleName}
         </span>

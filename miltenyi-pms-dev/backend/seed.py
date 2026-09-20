@@ -385,7 +385,7 @@ def seed_database() -> None:
             print("  [~] Role expectations already exist; reusing.")
 
         # ============================================================ #
-        # 6b. PROJECT GOALS (Miltenyi CY 2026 goal themes)               #
+        # 6b. PROJECT GOALS (Miltenyi CY 26-27 goal themes)                    #
         # ============================================================ #
         # Framework rows from seed_data.goal_themes (the seven documents
         # Gautham shared on 2 Sep 2026), one active period with the HR
@@ -413,13 +413,14 @@ def seed_database() -> None:
                         db.add(GoalFrameworkKpi(framework_id=fw.id, seq=seq, text=text, weightage=weight))
                     fw_rows += 1
             # Goals are set once a year; reviews run every quarter. The demo
-            # sits in Q3 CY 2026 with Q1–Q3 rolled out (Q3 = the writable window,
+            # sits in Q3 CY 26-27 with Q1–Q3 rolled out (Q3 = the writable window,
             # Q1/Q2 open for backfill, Q4 locked until the Admin rolls it out).
             CURRENT_QUARTER = 3
             CURRENT_CYCLE = f"Q{CURRENT_QUARTER} {PERIOD_LABEL}"
             db.add(ProjectGoalPeriodSettings(
                 org_id=miltenyi.id, period_label=PERIOD_LABEL, is_active=True,
                 entry_open=True, weightages_visible=True, current_quarter_seq=CURRENT_QUARTER,
+                extra_goal_enabled=True, extra_goal_weightage=10,   # HR: one "Additional goals" row on every sheet
                 updated_by_id=sarah.id,
             ))
             for seq in range(1, CURRENT_QUARTER + 1):
@@ -481,6 +482,10 @@ def seed_database() -> None:
                     it = ProjectGoalItem(set_id=s.id, seq=k.seq, kpi_id=k.id, kpi_text=k.text, weightage=k.weightage, goal_text=goal)
                     db.add(it)
                     items.append(it)
+                extra = ProjectGoalItem(set_id=s.id, seq=len(fw.kpis) + 1, kpi_id=None, kpi_text="Additional goals", weightage=10, is_extra=True,
+                                        goal_text=None if partial else "Mentor two new joiners on the study documentation SOPs.")
+                db.add(extra)
+                items.append(extra)
                 db.flush()
                 if status in ("self_reviewed", "reviewed"):
                     # The current quarter's review (Q3). Earlier quarters are left

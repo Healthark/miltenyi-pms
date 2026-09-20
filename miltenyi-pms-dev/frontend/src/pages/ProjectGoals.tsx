@@ -14,7 +14,8 @@
  *
  * `?set_id=` deep links from notifications resolve to the detail route for
  * mentors and Admins; staff always land on their own set. `?cycle=` pre-
- * selects a quarter.
+ * selects a quarter; `?period=` a goal year (past years stay readable, and
+ * writable while the Admin keeps them open for backfill).
  */
 import { useEffect, useMemo, useState } from "react";
 import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -27,7 +28,6 @@ import {
   CheckCircle2,
   Clock,
   FileCheck2,
-  History,
   Loader2,
   Lock,
   Pencil,
@@ -58,8 +58,7 @@ import {
 } from "@/services/project-goals.service";
 import { GoalsTable, type ReviewDraft, type Viewer } from "@/components/project-goals/GoalsTable";
 import { FrameworkBand } from "@/components/project-goals/FrameworkBand";
-import { StageStrip } from "@/components/project-goals/StageStrip";
-import { QuarterProgress, QuarterSelector } from "@/components/project-goals/QuarterSelector";
+import { QuarterProgress, QuarterSelector, YearSelector } from "@/components/project-goals/QuarterSelector";
 import { ApproveModal } from "@/components/project-goals/ApproveModal";
 import { UnlockModal } from "@/components/project-goals/UnlockModal";
 import { ReviewProvenance, type ProvenanceDraft } from "@/components/project-goals/ReviewProvenance";
@@ -71,6 +70,7 @@ import {
   BTN_WARN,
   Notice,
   SetStatusBadge,
+  TH_CLS,
   fmtDate,
 } from "@/components/project-goals/ui";
 
@@ -102,7 +102,6 @@ function Card({ tabs, children }: Readonly<{ tabs: React.ReactNode; children: Re
 }
 
 const TAB_ACTIVE = "px-4 py-2.5 text-sm font-semibold border-b-2 border-brand text-brand";
-const TAB_IDLE = "px-4 py-2.5 text-sm font-semibold border-b-2 border-transparent text-text-muted hover:text-text-main";
 
 function Skeleton() {
   return (
@@ -128,6 +127,19 @@ function useSelectedQuarter(period: PeriodSettings | null | undefined): [string 
     setPicked(label);
     const next = new URLSearchParams(params);
     next.set("cycle", label);
+    setParams(next, { replace: true });
+  };
+  return [value, onChange];
+}
+
+/** Which goal year to show: the `?period=` deep link, else the active year. */
+function useSelectedPeriod(): [string | null, (label: string) => void] {
+  const [params, setParams] = useSearchParams();
+  const value = params.get("period");
+  const onChange = (label: string) => {
+    const next = new URLSearchParams(params);
+    next.set("period", label);
+    next.delete("cycle");
     setParams(next, { replace: true });
   };
   return [value, onChange];
@@ -170,7 +182,8 @@ function EmployeeGoals() {
   const confirm = useConfirm();
   const [error, setError] = useState("");
 
-  const q = useQuery({ queryKey: queryKeys.projectGoals.mine(), queryFn: projectGoalsService.getMine });
+  const [periodParam, setPeriodParam] = useSelectedPeriod();
+  const q = useQuery({ queryKey: queryKeys.projectGoals.mine(periodParam), queryFn: () => projectGoalsService.getMine(periodParam) });
   const data = q.data;
   const set = data?.goal_set ?? null;
   const period = data?.period ?? null;
@@ -209,16 +222,17 @@ function EmployeeGoals() {
     self_rating: selfRating === "" ? null : selfRating,
   });
 
-  const create = useMutation({ mutationFn: projectGoalsService.createMine, onSuccess: () => { setError(""); invalidate(); }, onError: onErr });
+  const yearLabel = period?.period_label ?? periodParam;
+  const create = useMutation({ mutationFn: () => projectGoalsService.createMine(yearLabel), onSuccess: () => { setError(""); invalidate(); }, onError: onErr });
   const saveGoals = useMutation({
-    mutationFn: () => projectGoalsService.saveMyGoals({ items: (set?.items ?? []).map((it) => ({ item_id: it.id, goal_text: goalDrafts[it.id] ?? "" })) }),
+    mutationFn: () => projectGoalsService.saveMyGoals({ items: (set?.items ?? []).map((it) => ({ item_id: it.id, goal_text: goalDrafts[it.id] ?? "" })) }, yearLabel),
     onSuccess: () => { setError(""); invalidate(); toast.success("Draft saved"); },
     onError: onErr,
   });
   const submitGoals = useMutation({
     mutationFn: async () => {
-      await projectGoalsService.saveMyGoals({ items: (set?.items ?? []).map((it) => ({ item_id: it.id, goal_text: goalDrafts[it.id] ?? "" })) });
-      return projectGoalsService.submitMyGoals();
+      await projectGoalsService.saveMyGoals({ items: (set?.items ?? []).map((it) => ({ item_id: it.id, goal_text: goalDrafts[it.id] ?? "" })) }, yearLabel);
+      return projectGoalsService.submitMyGoals(yearLabel);
     },
     onSuccess: () => { setError(""); invalidate(); toast.success("Goals submitted"); },
     onError: onErr,
@@ -245,8 +259,8 @@ function EmployeeGoals() {
   const busy = create.isPending || saveGoals.isPending || submitGoals.isPending || saveSelf.isPending || submitSelf.isPending;
   const editGoal = !!set && set.status === "draft" && !!period?.entry_open;
   const editSelf = !!set && set.status === "approved" && quarterWritable && (!review || review.self_is_draft);
-  const allGoalsFilled = !!set && set.items.every((it) => (goalDrafts[it.id] ?? "").trim().length > 0);
-  const allSelfFilled = !!set && set.items.every((it) => (selfDrafts[it.id] ?? "").trim().length > 0) && selfRating !== "";
+  const allGoalsFilled = !!set && set.items.every((it) => it.is_extra || (goalDrafts[it.id] ?? "").trim().length > 0);
+  const allSelfFilled = !!set && set.items.every((it) => it.is_extra || (selfDrafts[it.id] ?? "").trim().length > 0) && selfRating !== "";
   const reviewPublished = !!review && !review.review_is_draft;
 
   const handleSubmitGoals = async () => {
@@ -271,6 +285,7 @@ function EmployeeGoals() {
     <PageHeader
       title={<>Project Goals {periodLabel && <span className="ml-2 text-sm font-normal text-text-muted">· {periodLabel}</span>}</>}
       subtitle="Your goals for the year under each KPI, set once and reviewed every quarter: your self-review and your Miltenyi reviewer's comments, side by side."
+      right={<YearSelector periods={data?.periods ?? []} value={period?.period_label ?? null} onChange={setPeriodParam} />}
     />
   );
 
@@ -300,8 +315,8 @@ function EmployeeGoals() {
     if (!cycle) return <Notice tone="amber" icon={CalendarClock}>Quarterly reviews have not started yet. The Admin opens Q1 when the first quarter's reviews are due.</Notice>;
     if (reviewPublished) return <Notice tone="violet" icon={FileCheck2}><b>{quarterShown} reviewed on {fmtDate(review?.review_submitted_at)}</b> by {rev}, entered by {review?.entered_by_name ?? mentor}.</Notice>;
     if (review && !review.self_is_draft) return <Notice tone="teal" icon={CheckCircle2}><b>{quarterShown} self-review submitted on {fmtDate(review.self_submitted_at)}.</b> {rev}'s comments will fill the last column once {mentor} has entered them.</Notice>;
-    if (quarterWritable) return <Notice tone="info" icon={PenLine}><b>{quarterShown} self-review is open.</b> Write what you delivered against each goal this quarter and give one overall rating. {cycle !== period.current_quarter_label ? "This is an earlier quarter of the year; it stays open for backfill." : ""}</Notice>;
-    return <Notice tone="amber" icon={Lock}>{quarterShown} is closed.</Notice>;
+    if (quarterWritable) return <Notice tone="info" icon={PenLine}><b>{quarterShown} self-review is open.</b> Write what you delivered against each goal this quarter and give one overall rating. {!period.is_active ? `${period.period_label} has ended; the Admin keeps it open so you can finish this quarter.` : cycle !== period.current_quarter_label ? "This is an earlier quarter of the year; it stays open for backfill." : ""}</Notice>;
+    return <Notice tone="amber" icon={Lock}>{quarterShown} is closed{!period.is_active ? ` — ${period.period_label} is a past year and read-only` : ""}.</Notice>;
   })();
 
   let body: React.ReactNode;
@@ -312,7 +327,7 @@ function EmployeeGoals() {
   } else if (!set) {
     body = (
       <>
-        <FrameworkBand framework={framework} kpiCountNote={`${framework.kpis.length} KPIs follow${period.weightages_visible ? "; weightages are fixed by Miltenyi and total 100%." : "."}`} />
+        <FrameworkBand framework={framework} kpiCountNote={`${framework.kpis.length} KPIs follow${period.weightages_visible ? "; weightages are fixed by Miltenyi and total 100%" : ""}${period.extra_goal_enabled ? `, plus one optional "Additional goals" row${period.weightages_visible ? ` at ${period.extra_goal_weightage}%` : ""}.` : "."}`} />
         {period.entry_open ? (
           <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border px-6 py-10 text-center">
             <PenLine className="h-8 w-8 text-text-muted" aria-hidden="true" />
@@ -331,8 +346,8 @@ function EmployeeGoals() {
   } else {
     body = (
       <>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <StageStrip status={set.status} />
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={TH_CLS}>Goals · {set.period_label}</span>
           <SetStatusBadge status={set.status} />
         </div>
         {goalsNotice}
@@ -419,12 +434,15 @@ function EmployeeGoals() {
 
 function TeamGoals({ viewerIsHr }: Readonly<{ viewerIsHr: boolean }>) {
   const navigate = useNavigate();
-  const periodQ = useQuery({ queryKey: queryKeys.projectGoals.period(), queryFn: projectGoalsService.getPeriod });
+  const [periodParam, setPeriodParam] = useSelectedPeriod();
+  const periodsQ = useQuery({ queryKey: queryKeys.projectGoals.periods(), queryFn: projectGoalsService.getPeriods });
+  const periodQ = useQuery({ queryKey: queryKeys.projectGoals.period(periodParam), queryFn: () => projectGoalsService.getPeriod(periodParam) });
   const period = periodQ.data ?? null;
   const [cycle, setCycle] = useSelectedQuarter(period);
+  const yearLabel = period?.period_label ?? periodParam;
   const q = useQuery({
-    queryKey: queryKeys.projectGoals.team(cycle),
-    queryFn: () => projectGoalsService.getTeam(cycle),
+    queryKey: queryKeys.projectGoals.team(yearLabel, cycle),
+    queryFn: () => projectGoalsService.getTeam(yearLabel, cycle),
     enabled: periodQ.isSuccess,
   });
   const rows = q.data ?? [];
@@ -432,10 +450,11 @@ function TeamGoals({ viewerIsHr }: Readonly<{ viewerIsHr: boolean }>) {
   return (
     <div className="space-y-6">
       <PageHeader
-        title={<>Project Goals {period && <span className="ml-2 text-sm font-normal text-text-muted">· {period.period_label}</span>}</>}
+        title={<>Project Goals {period && <span className="ml-2 text-sm font-normal text-text-muted">· {period.period_label}{!period.is_active ? (period.backfill_open ? " · open for backfill" : " · closed") : ""}</span>}</>}
         subtitle={viewerIsHr
           ? "Every staff member's goals for the year and the selected quarter's reviews. Mentors enter the Miltenyi reviewers' inputs; the Admin can unlock."
           : "Your mentees' goals for the year and the selected quarter's reviews. You record the offline approval once and enter the Miltenyi reviewer's comments each quarter."}
+        right={<YearSelector periods={periodsQ.data ?? []} value={period?.period_label ?? null} onChange={setPeriodParam} />}
       />
       <Card tabs={<button type="button" className={TAB_ACTIVE}>{viewerIsHr ? "All Goals" : "Team Goals"}</button>}>
         {(periodQ.isPending || q.isPending) && <Skeleton />}
@@ -475,13 +494,10 @@ function SetDetail({ setId, viewer }: Readonly<{ setId: number; viewer: Viewer }
   const [error, setError] = useState("");
   const [approveOpen, setApproveOpen] = useState(false);
   const [unlockTarget, setUnlockTarget] = useState<UnlockPayload["target"] | null>(null);
-  const [editingAfterSubmit, setEditingAfterSubmit] = useState(false);
-  const [showLog, setShowLog] = useState(false);
 
   const q = useQuery({ queryKey: queryKeys.projectGoals.set(setId), queryFn: () => projectGoalsService.getSet(setId) });
   const set = q.data ?? null;
   const period = set?.period ?? null;
-  const logQ = useQuery({ queryKey: queryKeys.projectGoals.log(setId), queryFn: () => projectGoalsService.getLog(setId), enabled: showLog });
 
   const [cycle, setCycle] = useSelectedQuarter(period);
   const review: GoalReview | null = reviewFor(set, cycle);
@@ -491,7 +507,7 @@ function SetDetail({ setId, viewer }: Readonly<{ setId: number; viewer: Viewer }
   const [reviewDrafts, setReviewDrafts] = useState<Record<number, ReviewDraft>>({});
   const [finalRating, setFinalRating] = useState<number | "">("");
   const [finalBy, setFinalBy] = useState<FinalRatingBy>("miltenyi");
-  const [prov, setProv] = useState<ProvenanceDraft>({ miltenyi_reviewer_name: "", source_received_on: "", source_url: "" });
+  const [prov, setProv] = useState<ProvenanceDraft>({ miltenyi_reviewer_name: "", source_received_on: "" });
 
   useEffect(() => {
     if (!set) return;
@@ -504,9 +520,7 @@ function SetDetail({ setId, viewer }: Readonly<{ setId: number; viewer: Viewer }
     setProv({
       miltenyi_reviewer_name: review?.miltenyi_reviewer_name ?? set.miltenyi_reviewer_name ?? "",
       source_received_on: review?.source_received_on ?? "",
-      source_url: review?.source_url ?? "",
     });
-    setEditingAfterSubmit(false);
   }, [set?.id, set?.status, cycle, review?.id, review?.review_submitted_at]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: queryKeys.projectGoals.all });
@@ -517,7 +531,6 @@ function SetDetail({ setId, viewer }: Readonly<{ setId: number; viewer: Viewer }
     items: s.items.map((it) => ({ item_id: it.id, primary_comment: reviewDrafts[it.id]?.primary ?? "", healthark_note: reviewDrafts[it.id]?.note ?? "" })),
     miltenyi_reviewer_name: prov.miltenyi_reviewer_name || null,
     source_received_on: prov.source_received_on || null,
-    source_url: prov.source_url || null,
     final_rating: finalRating === "" ? null : finalRating,
     final_rating_by: finalBy,
   });
@@ -529,7 +542,7 @@ function SetDetail({ setId, viewer }: Readonly<{ setId: number; viewer: Viewer }
   });
   const saveReview = useMutation({
     mutationFn: () => projectGoalsService.saveReview(setId, buildReviewPayload(set!)),
-    onSuccess: () => { setError(""); invalidate(); toast.success(review && !review.review_is_draft ? "Review updated" : "Review draft saved"); },
+    onSuccess: () => { setError(""); invalidate(); toast.success("Review draft saved"); },
     onError: onErr,
   });
   const submitReview = useMutation({
@@ -560,9 +573,9 @@ function SetDetail({ setId, viewer }: Readonly<{ setId: number; viewer: Viewer }
   const canWrite = viewer === "hr" || set.mentor_id === user?.user_id;
   const approved = set.status === "approved";
   const reviewPublished = !!review && !review.review_is_draft;
-  const editReview = canWrite && approved && quarterWritable && (!reviewPublished || editingAfterSubmit);
+  const editReview = canWrite && approved && quarterWritable && !reviewPublished;
   const selfDone = !!review && !review.self_is_draft;
-  const allPrimaryFilled = set.items.every((it) => (reviewDrafts[it.id]?.primary ?? "").trim().length > 0) && finalRating !== "";
+  const allPrimaryFilled = set.items.every((it) => it.is_extra || (reviewDrafts[it.id]?.primary ?? "").trim().length > 0) && finalRating !== "";
   const busy = approve.isPending || saveReview.isPending || submitReview.isPending || unlock.isPending;
   const rev = set.miltenyi_reviewer_name ?? "the Miltenyi reviewer";
 
@@ -577,7 +590,7 @@ function SetDetail({ setId, viewer }: Readonly<{ setId: number; viewer: Viewer }
   const quarterNotice = (() => {
     if (!approved || !period) return null;
     if (!cycle) return <Notice tone="amber" icon={CalendarClock}>Quarterly reviews have not started yet. The Admin rolls out Q1 in System Settings → Project Goals.</Notice>;
-    if (reviewPublished) return <Notice tone="violet" icon={FileCheck2}><b>{quarterShown} review submitted on {fmtDate(review?.review_submitted_at)}</b> by {review?.entered_by_name ?? "the mentor"}. {review?.acknowledged_at ? `Acknowledged by ${set.owner_name} on ${fmtDate(review.acknowledged_at)}.` : "Not yet acknowledged by the staff member."} Edits are logged and notify {set.owner_name}.</Notice>;
+    if (reviewPublished) return null;   // the quarter progress row already says it: review submitted, acknowledged or not
     if (selfDone) return <Notice tone="teal" icon={CheckCircle2}><b>{quarterShown} self-review in</b> ({fmtDate(review?.self_submitted_at)}). Enter {rev}'s comments in the last column and the final rating in the footer.</Notice>;
     if (!quarterWritable) return <Notice tone="amber" icon={Lock}>{quarterShown} is closed. Nothing was submitted for it.</Notice>;
     return <Notice tone="amber" icon={Clock}>{set.owner_name} has not submitted a {quarterShown} self-review. You can draft {rev}'s comments now{viewer === "hr" ? " and submit anyway as Admin" : "; submission waits for the self-review"}.</Notice>;
@@ -588,7 +601,7 @@ function SetDetail({ setId, viewer }: Readonly<{ setId: number; viewer: Viewer }
       title: force ? `Submit the ${quarterShown} review without the self-review?` : `Submit the ${quarterShown} review?`,
       message: force
         ? `${set.owner_name} has not submitted a ${quarterShown} self-review. Submitting now records the Miltenyi comments anyway and is logged as an Admin override.`
-        : `This publishes ${rev}'s ${quarterShown} comments and the final rating to ${set.owner_name}. Later edits are logged and notify them.`,
+        : `This publishes ${rev}'s ${quarterShown} comments and the final rating to ${set.owner_name}. The review is final once submitted; only the Admin can unlock it.`,
       confirmText: "Submit review",
       variant: force ? "warning" : "default",
     });
@@ -598,10 +611,10 @@ function SetDetail({ setId, viewer }: Readonly<{ setId: number; viewer: Viewer }
   return (
     <div className="space-y-6">
       {header}
-      <Card tabs={<><button type="button" className={TAB_ACTIVE}>Goals &amp; reviews · {set.period_label}</button><button type="button" onClick={() => setShowLog((v) => !v)} className={`${TAB_IDLE} flex items-center gap-1.5`}><History className="h-3.5 w-3.5" /> Change log</button></>}>
+      <Card tabs={<button type="button" className={TAB_ACTIVE}>Goals &amp; reviews · {set.period_label}</button>}>
         {error && <p className="rounded-lg bg-red-50 px-4 py-2.5 text-sm text-red-600">{error}</p>}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <StageStrip status={set.status} />
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={TH_CLS}>Goals · {set.period_label}</span>
           <SetStatusBadge status={set.status} />
         </div>
         {goalsNotice}
@@ -660,7 +673,7 @@ function SetDetail({ setId, viewer }: Readonly<{ setId: number; viewer: Viewer }
             {canWrite && set.status === "submitted" && (
               <button type="button" disabled={busy} onClick={() => setApproveOpen(true)} className={BTN_PRIMARY}><Check className="h-4 w-4" /> Mark approved (agreed offline)</button>
             )}
-            {editReview && !reviewPublished && (
+            {editReview && (
               <>
                 <button type="button" disabled={busy} onClick={() => saveReview.mutate()} className={BTN_SECONDARY}>
                   {saveReview.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save Draft
@@ -678,38 +691,9 @@ function SetDetail({ setId, viewer }: Readonly<{ setId: number; viewer: Viewer }
                 )}
               </>
             )}
-            {canWrite && reviewPublished && quarterWritable && !editingAfterSubmit && (
-              <button type="button" disabled={busy} onClick={() => setEditingAfterSubmit(true)} className={BTN_WARN}><Pencil className="h-4 w-4" /> Edit review</button>
-            )}
-            {canWrite && reviewPublished && editingAfterSubmit && (
-              <>
-                <button type="button" onClick={() => setEditingAfterSubmit(false)} className={BTN_GHOST}>Cancel</button>
-                <button type="button" disabled={busy || !allPrimaryFilled} onClick={() => saveReview.mutate()} className={BTN_WARN}>
-                  {saveReview.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pencil className="h-4 w-4" />} Save changes
-                </button>
-              </>
-            )}
           </div>
         </div>
 
-        {showLog && (
-          <div className="rounded-lg border border-border">
-            <div className="border-b border-border bg-slate-50 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-text-muted">Change log</div>
-            {logQ.isPending && <div className="px-4 py-3 text-sm text-text-muted">Loading…</div>}
-            {logQ.data?.length === 0 && <div className="px-4 py-3 text-sm text-text-muted">No entries yet.</div>}
-            {logQ.data?.map((l) => (
-              <div key={l.id} className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border px-4 py-2 text-sm last:border-b-0">
-                <div>
-                  <span className="font-medium text-text-main">{l.action.replace("_", " ")}</span>
-                  {l.cycle_label && <span className="ml-1.5 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-text-main">{quarterDisplay(l.cycle_label)}</span>}
-                  <span className="text-text-muted"> by {l.actor_name ?? "system"}</span>
-                  {l.reason && <span className="text-text-muted"> · {l.reason}</span>}
-                </div>
-                <span className="text-xs text-text-muted">{fmtDate(l.created_at)}</span>
-              </div>
-            ))}
-          </div>
-        )}
       </Card>
 
       {approveOpen && <ApproveModal set={set} onClose={() => setApproveOpen(false)} onConfirm={async (p) => { await approve.mutateAsync(p).catch(() => undefined); }} isSaving={approve.isPending} error={approve.isError ? getErrorMessage(approve.error) : ""} />}

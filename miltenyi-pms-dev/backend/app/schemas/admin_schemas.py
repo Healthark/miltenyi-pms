@@ -35,6 +35,8 @@ class DesignationBrief(BaseModel):
     level: int
     career_level: int | None = None
     career_level_label: str | None = None
+    function_id: int | None = None
+    function_id: int | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -206,3 +208,47 @@ class YearPreflightResponse(BaseModel):
     annual_goals_edit_enabled: YearPreflightEntry
     annual_reviews_enabled: YearPreflightEntry
     annual_review_final_rating_visible: YearPreflightEntry
+
+
+# ── Reference data writes (Framework tab) ────────────────────────────
+
+class FunctionCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+
+
+class FunctionUpdate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+
+
+class DesignationCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    function_id: int
+    career_level: int = Field(..., ge=1, le=12)
+
+
+class DesignationUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    function_id: Optional[int] = None
+    career_level: Optional[int] = Field(default=None, ge=1, le=12)
+
+
+# ── Reference data writes (Framework tab) ────────────────────────────
+
+class FunctionCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+
+
+class FunctionUpdate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+
+
+class DesignationCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    function_id: int
+    career_level: int = Field(..., ge=1, le=12)
+
+
+class DesignationUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    function_id: Optional[int] = None
+    career_level: Optional[int] = Field(default=None, ge=1, le=12)

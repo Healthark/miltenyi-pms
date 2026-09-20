@@ -79,6 +79,11 @@ export const queryKeys = {
     /** Per-period Project Goals switches (Admin). */
     goalPeriodSettings: (period: string | undefined = undefined) =>
       [...queryKeys.admin.all, "goal-period-settings", period ?? "active"] as const,
+    /** Every configured goal year (Admin dropdown). */
+    goalPeriods: () => [...queryKeys.admin.all, "goal-periods"] as const,
+    /** Impact counts behind the Project Goals Save confirmation. */
+    goalPreflight: (period: string | null | undefined = undefined) =>
+      [...queryKeys.admin.all, "goal-preflight", period ?? "active"] as const,
     /** Project Goals quarter roll-out status (Admin). */
     goalCycle: () => [...queryKeys.admin.all, "goal-cycle"] as const,
     /** Recent roll-out / set / roll-back entries (Admin). */
@@ -89,16 +94,17 @@ export const queryKeys = {
   // `period` is the active period + started quarters (any role). `mine` is
   // the staff member's own page payload (period + framework + set). `team`
   // is the mentor's / Admin's queue for one quarter. `set(id)` is one full
-  // set (every quarter's review) as seen by a mentor or Admin; `log(id)` its
-  // change log.
+  // set (every quarter's review) as seen by a mentor or Admin.
   projectGoals: {
     all: ["project-goals"] as const,
-    period: () => [...queryKeys.projectGoals.all, "period"] as const,
-    mine: () => [...queryKeys.projectGoals.all, "mine"] as const,
-    team: (cycle: string | null | undefined = undefined) =>
-      [...queryKeys.projectGoals.all, "team", cycle ?? "current"] as const,
+    period: (label: string | null | undefined = undefined) =>
+      [...queryKeys.projectGoals.all, "period", label ?? "active"] as const,
+    periods: () => [...queryKeys.projectGoals.all, "periods"] as const,
+    mine: (period: string | null | undefined = undefined) =>
+      [...queryKeys.projectGoals.all, "mine", period ?? "active"] as const,
+    team: (period: string | null | undefined = undefined, cycle: string | null | undefined = undefined) =>
+      [...queryKeys.projectGoals.all, "team", period ?? "active", cycle ?? "current"] as const,
     set: (id: number) => [...queryKeys.projectGoals.all, "set", id] as const,
-    log: (id: number) => [...queryKeys.projectGoals.all, "set", id, "log"] as const,
   },
 
   // ── Dashboard summaries ────────────────────────────────────────────

@@ -25,6 +25,8 @@ Set status: draft → submitted → approved → self_reviewed → reviewed.
 """
 
 import enum
+import re
+from datetime import date
 
 from sqlalchemy import (
     Boolean,
@@ -176,6 +178,10 @@ class ProjectGoalItem(Base):
     kpi_text = Column(Text, nullable=False)                 # snapshot at set creation
     weightage = Column(Integer, nullable=False)             # snapshot at set creation
     goal_text = Column(Text, nullable=True)
+    # The "Additional goals" row (HR requirement, Sep 2026): free text for
+    # anything else the staff member works on; weightage set by the Admin per
+    # goal year; optional everywhere (no KPI behind it).
+    is_extra = Column(Boolean, nullable=False, default=False, server_default="false")
 
     __table_args__ = (
         UniqueConstraint("set_id", "seq", name="uix_project_goal_item_seq"),
@@ -269,7 +275,7 @@ class ProjectGoalChangeLog(Base):
     org_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
     set_id = Column(Integer, ForeignKey("project_goal_sets.id", ondelete="CASCADE"), nullable=False)
     actor_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    action = Column(String, nullable=False)                 # submit | approve | self_submit | review_submit | review_edit | unlock | acknowledge
+    action = Column(String, nullable=False)                 # submit | approve | self_submit | review_submit | unlock | acknowledge
     cycle_label = Column(String, nullable=True)             # the quarter an action concerns; NULL for goal-level actions
     before = Column(Text, nullable=True)                    # JSON
     after = Column(Text, nullable=True)                     # JSON
@@ -280,8 +286,9 @@ class ProjectGoalChangeLog(Base):
 
 
 class ProjectGoalPeriodSettings(Base):
-    """One goal period = one calendar year ("CY 2026"). Exactly one row per
-    org is active; the staff surfaces read that row.
+    """One goal period = one goal year, labelled as a span ("CY 26-27": the
+    year ends around April). Exactly one row per org is active; the staff
+    surfaces default to that row and can look back at past years.
 
     The yearly switches live here (goal entry, weightages). The review
     window is NOT a switch: it is the Admin-advanced `current_quarter_seq`
@@ -295,6 +302,14 @@ class ProjectGoalPeriodSettings(Base):
     is_active = Column(Boolean, nullable=False, default=True)
     entry_open = Column(Boolean, nullable=False, default=True)          # staff may draft/submit goals (once a year)
     weightages_visible = Column(Boolean, nullable=False, default=True)  # show % to staff
+    # After the year rolls over, its started quarters stay writable while this
+    # is on (Healthark PMS: a past year stays open after the system advanced).
+    # The Admin closes the year from System Settings. Meaningless while active.
+    backfill_open = Column(Boolean, nullable=False, default=True, server_default="true")
+    # The optional "Additional goals" row at the end of every goal sheet of
+    # this year, and the weightage the Admin gives it (informational).
+    extra_goal_enabled = Column(Boolean, nullable=False, default=False, server_default="false")
+    extra_goal_weightage = Column(Integer, nullable=False, default=10, server_default="10")
     current_quarter_seq = Column(Integer, nullable=True)                # 1..4; NULL until the first roll-out / manual set
     updated_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -308,21 +323,22 @@ class ProjectGoalPeriodSettings(Base):
 # ── Quarters (the review cycles of a period) ─────────────────────────
 
 QUARTER_SEQS: tuple[int, ...] = (1, 2, 3, 4)
+EXTRA_GOAL_LABEL = "Additional goals"
 
 
 def quarter_label(period_label: str, seq: int) -> str:
-    """Stored cycle label of a quarter: ("CY 2026", 3) -> "Q3 CY 2026"."""
+    """Stored cycle label of a quarter: ("CY 26-27", 3) -> "Q3 CY 26-27"."""
     return f"Q{seq} {period_label}"
 
 
 def quarter_display(cycle_label: str) -> str:
-    """UI form of a stored label: "Q3 CY 2026" -> "Q3 · CY 2026"."""
+    """UI form of a stored label: "Q3 CY 26-27" -> "Q3 · CY 26-27"."""
     seq, period = parse_quarter_label(cycle_label)
     return f"Q{seq} · {period}"
 
 
 def parse_quarter_label(label: str) -> tuple[int, str]:
-    """"Q3 CY 2026" -> (3, "CY 2026"). ValueError on anything else."""
+    """"Q3 CY 26-27" -> (3, "CY 26-27"). ValueError on anything else."""
     parts = (label or "").strip().split(" ", 1)
     if len(parts) != 2 or not parts[0].startswith("Q") or not parts[0][1:].isdigit():
         raise ValueError(f"Not a quarter label: {label!r}")
@@ -332,24 +348,60 @@ def parse_quarter_label(label: str) -> tuple[int, str]:
     return seq, parts[1]
 
 
+_SPAN_RE = re.compile(r"^(?P<prefix>[A-Za-z]+) (?P<y1>\d{2})-(?P<y2>\d{2})$")
+_YEAR_RE = re.compile(r"^(?P<prefix>[A-Za-z]+) (?P<year>\d{4})$")
+PERIOD_PREFIX = "CY"
+
+
+def period_start_year(period_label: str) -> int:
+    """"CY 26-27" -> 2026 (the legacy "CY 2026" form is still read)."""
+    label = (period_label or "").strip()
+    m = _SPAN_RE.match(label)
+    if m:
+        return 2000 + int(m.group("y1"))
+    m = _YEAR_RE.match(label)
+    if m:
+        return int(m.group("year"))
+    raise ValueError(f"Not a goal-year label: {period_label!r}")
+
+
 def period_year(period_label: str) -> int:
-    """"CY 2026" -> 2026. ValueError when the label carries no 4-digit year."""
-    for token in period_label.split():
-        if token.isdigit() and len(token) == 4:
-            return int(token)
-    raise ValueError(f"No year in period label: {period_label!r}")
+    """Alias kept for older call sites."""
+    return period_start_year(period_label)
+
+
+def period_label_for(start_year: int, prefix: str = PERIOD_PREFIX) -> str:
+    """2026 -> "CY 26-27"."""
+    return f"{prefix} {start_year % 100:02d}-{(start_year + 1) % 100:02d}"
+
+
+def _prefix_of(period_label: str) -> str:
+    m = _SPAN_RE.match(period_label.strip()) or _YEAR_RE.match(period_label.strip())
+    return m.group("prefix") if m else PERIOD_PREFIX
 
 
 def next_period_label(period_label: str) -> str:
-    """"CY 2026" -> "CY 2027"."""
-    year = period_year(period_label)
-    return period_label.replace(str(year), str(year + 1))
+    """"CY 26-27" -> "CY 27-28"."""
+    return period_label_for(period_start_year(period_label) + 1, _prefix_of(period_label))
+
+
+def previous_period_label(period_label: str) -> str:
+    """"CY 26-27" -> "CY 25-26"."""
+    return period_label_for(period_start_year(period_label) - 1, _prefix_of(period_label))
+
+
+def default_period_label(today: date, fiscal_start_month: int = 4) -> str:
+    """The goal year `today` falls in: with an April start, Sep 2026 -> "CY 26-27",
+    Feb 2027 -> "CY 26-27", Apr 2027 -> "CY 27-28"."""
+    start_year = today.year if today.month >= fiscal_start_month else today.year - 1
+    return period_label_for(start_year)
 
 
 class ProjectGoalQuarter(Base):
     """One row per quarter that has STARTED in a period (seq <= the period's
-    current quarter). Created by the roll-out. Carries the only per-quarter
-    switch: whether the final rating is shown to the staff member."""
+    current quarter). Created by the roll-out. Carries the two per-quarter
+    switches: whether the final rating is shown to the staff member, and
+    whether the quarter is still open for backfill."""
     __tablename__ = "project_goal_quarters"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -358,6 +410,10 @@ class ProjectGoalQuarter(Base):
     seq = Column(Integer, nullable=False)                               # 1..4
     cycle_label = Column(String, nullable=False)                        # "Q3 CY 2026"
     ratings_visible = Column(Boolean, nullable=False, default=False)    # release this quarter's final ratings to staff
+    # An earlier quarter stays writable (backfill) while this is on; the
+    # current quarter of the active year is always open. A past year's quarter
+    # also needs the year's backfill_open.
+    backfill_open = Column(Boolean, nullable=False, default=True, server_default="true")
     opened_at = Column(DateTime(timezone=True), server_default=func.now())
     opened_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 

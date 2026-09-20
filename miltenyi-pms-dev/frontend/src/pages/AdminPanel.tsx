@@ -491,7 +491,6 @@ export default function AdminPanel() {
             activeCycleName={settings?.active_cycle ?? ""}
             fiscalStartMonth={fiscalStartMonth}
             timezone={timezone}
-            onTimezoneChange={setTimezone}
             simulatedToday={simulatedToday || null}
             simulationAllowed={simulationAllowed}
             onSimulatedTodayChange={(date) => {

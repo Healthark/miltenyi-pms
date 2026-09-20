@@ -7,16 +7,18 @@ the quarter roll-out. Mounted at /api/v1/admin/goal-frameworks.
     POST   /                         add one role/level row ("Add Function" in the UI) with its KPIs
     PUT    /{row_id}                 replace title, paragraphs and KPI list (weights must total 100)
     DELETE /{row_id}                 remove a row nobody has a goal set against
-    PATCH  /designations/{id}        set a designation's career level (and its function)
+    PATCH  /designations/{id}        set a designation's level (1..12) and/or rename it
     GET    /mapping                  Staff · Function · Designation · Level · Reviewer (Mentor) · Miltenyi reviewer · Status
-    GET    /settings                 period switches + started quarters (active period by default)
+    GET    /periods                  every goal year (the year dropdown)
+    GET    /settings                 period switches + started quarters (active period by default; ?period=)
+    GET    /settings/preflight       who a switch flip would affect (counts for the Save confirmation)
     PATCH  /settings                 upsert the yearly switches; is_active=True deactivates the others
     GET    /cycle                    what the quarter roll-out card shows: current, next, roll-back target
     POST   /cycle/rollout            advance to the next quarter (Q4 → Q1 of the next year; typed confirmation)
     POST   /cycle/set                set the current quarter by label (forward or back; may start a new year)
-    POST   /cycle/rollback           return to the quarter before the last move
+    POST   /cycle/rollback           move one quarter back (Q1 → Q4 of the previous year)
     GET    /cycle/log                recent roll-out / set / roll-back entries
-    PATCH  /quarters/{seq}           per-quarter "ratings visible to staff"
+    PATCH  /quarters/{seq}           per-quarter switches: ratings visible to staff, open for backfill
 
 The current quarter is the review window (Healthark PMS model): quarters at
 or before it are writable, later ones are closed. Every move is logged and
@@ -39,13 +41,15 @@ from app.models.project_goal_models import (
     GoalFrameworkKpi,
     ProjectGoalCycleLog,
     ProjectGoalPeriodSettings,
+    ProjectGoalReview,
     ProjectGoalSet,
     next_period_label,
     parse_quarter_label,
+    previous_period_label,
     quarter_display,
     quarter_label,
 )
-from app.models.reference_models import Designation, Function
+from app.models.reference_models import MAX_LEVEL, Designation, Function, career_level_label
 from app.models.user_models import Role, User
 from app.schemas.project_goal_schemas import (
     CycleLogOut,
@@ -61,9 +65,12 @@ from app.schemas.project_goal_schemas import (
     FrameworkRowOut,
     FrameworkRowUpdate,
     MappingRowOut,
+    PeriodBriefOut,
+    PeriodPreflightOut,
     PeriodSettingsOut,
     PeriodSettingsUpdate,
     QuarterOut,
+    QuarterPreflightOut,
     QuarterUpdate,
 )
 from app.services import project_goal_periods as periods
@@ -71,8 +78,6 @@ from app.services.notification_service import notify_many
 
 router = APIRouter(dependencies=[Depends(require_feature("project_goals"))])
 
-LEVEL_LABEL = {1: "Entry", 2: "Mid", 3: "Senior", 4: "Lead"}
-DEFAULT_PERIOD = periods.DEFAULT_PERIOD
 
 
 def _require_admin(user: User) -> None:
@@ -86,7 +91,7 @@ def _active_period_label(db, org_id: int) -> Optional[str]:
 
 
 def _resolve_period(db, org_id: int, period: Optional[str]) -> str:
-    return period or _active_period_label(db, org_id) or DEFAULT_PERIOD
+    return period or _active_period_label(db, org_id) or periods.default_label(db, org_id)
 
 
 def _row_out(fw: GoalFramework) -> FrameworkRowOut:
@@ -153,6 +158,8 @@ def create_row(payload: FrameworkRowCreate, db: DbSession, current_user: Current
     fn = db.query(Function).filter(Function.id == payload.function_id, Function.org_id == current_user.org_id).first()
     if fn is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Function not found.")
+    if not 1 <= payload.level <= MAX_LEVEL:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Levels run 1 to {MAX_LEVEL}.")
     period_label = _resolve_period(db, current_user.org_id, payload.period_label)
     clash = (
         db.query(GoalFramework)
@@ -217,15 +224,26 @@ def delete_row(row_id: int, db: DbSession, current_user: CurrentUser):
 # ── Designations → levels ────────────────────────────────────────────
 
 @router.patch("/designations/{designation_id}", response_model=DesignationBriefOut)
-def set_designation_level(designation_id: int, payload: DesignationLevelUpdate, db: DbSession, current_user: CurrentUser):
+def update_designation(designation_id: int, payload: DesignationLevelUpdate, db: DbSession, current_user: CurrentUser):
+    """Change a designation's level (1..MAX_LEVEL) and/or rename it."""
     _require_admin(current_user)
     d = db.query(Designation).filter(Designation.id == designation_id, Designation.org_id == current_user.org_id).first()
     if d is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Designation not found.")
-    d.career_level = payload.career_level
-    d.career_level_label = LEVEL_LABEL[payload.career_level]
+    if payload.career_level is not None:
+        d.career_level = payload.career_level
+        d.career_level_label = career_level_label(payload.career_level)
+        d.level = payload.career_level
+    if payload.name is not None:
+        name = payload.name.strip()
+        clash = db.query(Designation).filter(Designation.org_id == current_user.org_id, Designation.id != d.id, Designation.name == name).first()
+        if clash is not None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"A designation named '{name}' already exists.")
+        d.name = name
     db.commit()
     db.refresh(d)
+    from app.core.cache import designations_cache
+    designations_cache.invalidate(current_user.org_id)
     return DesignationBriefOut.model_validate(d)
 
 
@@ -248,6 +266,12 @@ def mapping(db: DbSession, current_user: CurrentUser, period: Optional[str] = Qu
         .filter(GoalFramework.org_id == current_user.org_id, GoalFramework.period_label == period_label)
         .all()
     }
+    sets_by_user = {
+        s.user_id: s.status
+        for s in db.query(ProjectGoalSet.user_id, ProjectGoalSet.status)
+        .filter(ProjectGoalSet.org_id == current_user.org_id, ProjectGoalSet.period_label == period_label)
+        .all()
+    }
     out: list[MappingRowOut] = []
     for u in employees:
         level = u.designation.career_level if u.designation else None
@@ -263,14 +287,24 @@ def mapping(db: DbSession, current_user: CurrentUser, period: Optional[str] = Qu
             user_id=u.id, full_name=u.full_name, email=u.email,
             function_id=u.function_id, function_name=u.function.name if u.function else None,
             designation_id=u.designation_id, designation_name=u.designation.name if u.designation else None,
-            level=level, level_label=LEVEL_LABEL.get(level) if level else None,
+            level=level, level_label=career_level_label(level),
             mentor_id=u.mentor_id, mentor_name=u.mentor.full_name if u.mentor else None,
             miltenyi_reviewer_name=u.miltenyi_reviewer_name, status=st,
+            has_active_set=u.id in sets_by_user, active_set_status=sets_by_user.get(u.id),
         ))
     return out
 
 
 # ── Period switches ──────────────────────────────────────────────────
+
+@router.get("/periods", response_model=list[PeriodBriefOut])
+def list_goal_periods(db: DbSession, current_user: CurrentUser):
+    """Every configured goal year, newest first — the System Settings dropdown.
+    Like the Healthark PMS, no future year is offered: a year is configured
+    once the quarter roll-out has moved into it."""
+    _require_admin(current_user)
+    return periods.period_briefs(db, current_user.org_id)
+
 
 @router.get("/settings", response_model=PeriodSettingsOut)
 def get_period_settings(db: DbSession, current_user: CurrentUser, period: Optional[str] = Query(default=None)):
@@ -281,6 +315,44 @@ def get_period_settings(db: DbSession, current_user: CurrentUser, period: Option
         # Not persisted yet: report the defaults the PATCH would create.
         return PeriodSettingsOut(period_label=period_label, is_active=False, entry_open=True, weightages_visible=True)
     return periods.period_out(db, row)
+
+
+@router.get("/settings/preflight", response_model=PeriodPreflightOut)
+def period_preflight(db: DbSession, current_user: CurrentUser, period: Optional[str] = Query(default=None)):
+    """Counts behind the Save confirmation: who is mid-entry, and per started
+    quarter how many self-reviews / reviews are still pending or submitted."""
+    _require_admin(current_user)
+    period_label = _resolve_period(db, current_user.org_id, period)
+    org_id = current_user.org_id
+    staff_total = db.query(User).filter(User.org_id == org_id, User.role == Role.STAFF.value, User.is_deleted.is_(False)).count()
+    sets = db.query(ProjectGoalSet).filter(ProjectGoalSet.org_id == org_id, ProjectGoalSet.period_label == period_label).all()
+    by_status = {"draft": 0, "submitted": 0, "approved": 0}
+    for st in sets:
+        by_status[st.status] = by_status.get(st.status, 0) + 1
+    approved_ids = [st.id for st in sets if st.status == "approved"]
+    row = periods.period_by_label(db, org_id, period_label)
+    quarters: list[QuarterPreflightOut] = []
+    if row is not None:
+        for q in periods.started_quarters(db, row):
+            reviews = (
+                db.query(ProjectGoalReview)
+                .filter(ProjectGoalReview.org_id == org_id, ProjectGoalReview.cycle_label == q.cycle_label, ProjectGoalReview.set_id.in_(approved_ids))
+                .all()
+                if approved_ids else []
+            )
+            self_done = sum(1 for r in reviews if not r.self_is_draft)
+            review_done = sum(1 for r in reviews if not r.review_is_draft)
+            quarters.append(QuarterPreflightOut(
+                seq=q.seq, cycle_label=q.cycle_label,
+                self_pending=max(len(approved_ids) - self_done, 0),
+                review_pending=max(len(approved_ids) - review_done, 0),
+                reviews_submitted=review_done,
+            ))
+    return PeriodPreflightOut(
+        period_label=period_label, staff_total=staff_total, staff_without_set=max(staff_total - len(sets), 0),
+        sets_draft=by_status.get("draft", 0), sets_submitted=by_status.get("submitted", 0), sets_approved=by_status.get("approved", 0),
+        quarters=quarters,
+    )
 
 
 @router.patch("/settings", response_model=PeriodSettingsOut)
@@ -296,6 +368,9 @@ def update_period_settings(payload: PeriodSettingsUpdate, db: DbSession, current
         if value is not None:
             setattr(row, field, value)
     row.updated_by_id = current_user.id
+    if "extra_goal_enabled" in data or "extra_goal_weightage" in data:
+        # Draft sets follow the year's setting; submitted sets keep their snapshot.
+        _sync_extra_rows(db, row)
     if data.get("is_active"):
         db.query(ProjectGoalPeriodSettings).filter(
             ProjectGoalPeriodSettings.org_id == current_user.org_id,
@@ -306,16 +381,28 @@ def update_period_settings(payload: PeriodSettingsUpdate, db: DbSession, current
     return periods.period_out(db, row)
 
 
+def _sync_extra_rows(db, period: ProjectGoalPeriodSettings) -> None:
+    """Keep the DRAFT sets of a year in step with its "Additional goals" row:
+    add the row when the Admin enables it, update its weightage, drop it again
+    when disabled and still empty. Submitted / approved sets keep their snapshot."""
+    from app.models.project_goal_models import EXTRA_GOAL_LABEL, ProjectGoalItem
+    drafts = db.query(ProjectGoalSet).filter(
+        ProjectGoalSet.org_id == period.org_id, ProjectGoalSet.period_label == period.period_label, ProjectGoalSet.status == "draft",
+    ).all()
+    for st in drafts:
+        extra = next((it for it in st.items if it.is_extra), None)
+        if period.extra_goal_enabled:
+            if extra is None:
+                seq = max((it.seq for it in st.items), default=0) + 1
+                db.add(ProjectGoalItem(set_id=st.id, seq=seq, kpi_id=None, kpi_text=EXTRA_GOAL_LABEL, weightage=period.extra_goal_weightage, is_extra=True))
+            else:
+                extra.weightage = period.extra_goal_weightage
+        elif extra is not None and not (extra.goal_text or "").strip():
+            db.delete(extra)
+    db.flush()
+
+
 # ── Quarter roll-out ─────────────────────────────────────────────────
-
-def _latest_log(db, org_id: int) -> Optional[ProjectGoalCycleLog]:
-    return (
-        db.query(ProjectGoalCycleLog)
-        .filter(ProjectGoalCycleLog.org_id == org_id)
-        .order_by(ProjectGoalCycleLog.id.desc())
-        .first()
-    )
-
 
 def _next_of(period: Optional[ProjectGoalPeriodSettings], fallback_label: str) -> tuple[int, str, bool]:
     """(next_seq, next_period_label, crosses_year) for the roll-out button."""
@@ -326,11 +413,24 @@ def _next_of(period: Optional[ProjectGoalPeriodSettings], fallback_label: str) -
     return 1, next_period_label(period.period_label), True
 
 
+def _previous_of(db, period: Optional[ProjectGoalPeriodSettings]) -> Optional[str]:
+    """Roll-back target: one quarter earlier than the current one. Q1 goes to
+    Q4 of the previous year when that period exists; None at the very start."""
+    if period is None or not period.current_quarter_seq:
+        return None
+    if period.current_quarter_seq > 1:
+        return quarter_label(period.period_label, period.current_quarter_seq - 1)
+    try:
+        prev_label = previous_period_label(period.period_label)
+    except ValueError:
+        return None
+    return quarter_label(prev_label, QUARTER_SEQS[-1]) if periods.period_by_label(db, period.org_id, prev_label) else None
+
+
 def _cycle_status(db, org_id: int) -> CycleStatusOut:
     period = periods.active_period(db, org_id)
     fallback = _resolve_period(db, org_id, None)
     next_seq, next_plabel, crosses = _next_of(period, fallback)
-    last = _latest_log(db, org_id)
     current = periods.current_label(period)
     return CycleStatusOut(
         period_label=period.period_label if period else fallback,
@@ -341,7 +441,7 @@ def _cycle_status(db, org_id: int) -> CycleStatusOut:
         next_period_label=next_plabel,
         crosses_year=crosses,
         requires_typed_confirmation=crosses,
-        previous_label=(last.from_label if (last and last.from_label and last.from_label != current) else None),
+        previous_label=_previous_of(db, period),
         quarters=periods.period_out(db, period).quarters if period else [],
     )
 
@@ -374,13 +474,20 @@ def _copy_frameworks(db, org_id: int, from_label: str, to_label: str, actor_id: 
 
 
 def _activate_period(db, org_id: int, period_label: str, actor: User, template: Optional[ProjectGoalPeriodSettings]) -> ProjectGoalPeriodSettings:
-    """Make `period_label` the active period, creating its row (and copying
-    the frameworks from `template`'s period) when it does not exist yet."""
+    """Make `period_label` the review year. A brand-new year is created ALL
+    CLOSED (goal entry off — the Admin opens it when the framework is ready),
+    with the framework rows carried over from `template`'s year. Rolling back
+    to an existing year keeps its saved configuration (Healthark PMS model).
+    The year being left keeps `backfill_open` as it is, so its started
+    quarters stay writable until the Admin closes that year."""
     row = periods.period_by_label(db, org_id, period_label)
     if row is None:
         row = ProjectGoalPeriodSettings(
-            org_id=org_id, period_label=period_label, is_active=True, entry_open=True,
-            weightages_visible=template.weightages_visible if template else True, updated_by_id=actor.id,
+            org_id=org_id, period_label=period_label, is_active=True, entry_open=False, backfill_open=True,
+            weightages_visible=template.weightages_visible if template else True,
+            extra_goal_enabled=template.extra_goal_enabled if template else False,
+            extra_goal_weightage=template.extra_goal_weightage if template else 10,
+            updated_by_id=actor.id,
         )
         db.add(row)
         db.flush()
@@ -416,8 +523,8 @@ def _move_to(db, actor: User, target_label: str, kind: str) -> CycleStatusOut:
     # Announcement (bell only): every active user in the org.
     shown = quarter_display(target_label)
     if new_year:
-        message = (f"Project Goals moved to {shown}. {plabel} is the new goal year: staff set their goals for the year, "
-                   f"mentors record the approvals, and quarterly reviews start with Q1.")
+        message = (f"Project Goals moved to {shown}. {plabel} is the new goal year — goal entry opens once the Admin "
+                   f"releases it{f'; {from_label.split(chr(32), 1)[1]} stays open for backfill until it is closed' if from_label else ''}.")
     elif kind == "rollback":
         message = f"Project Goals moved back to {shown}. Quarters after it are closed again."
     else:
@@ -441,9 +548,10 @@ def cycle_status(db: DbSession, current_user: CurrentUser):
 
 @router.post("/cycle/rollout", response_model=CycleStatusOut)
 def cycle_rollout(payload: CycleRolloutRequest, db: DbSession, current_user: CurrentUser):
-    """Advance one quarter. Q4 → Q1 of the next calendar year: a new period is
-    created (frameworks carried over, goal entry open) and the old one is
-    deactivated, so the Admin must type the new period label to confirm."""
+    """Advance one quarter. Q4 → Q1 of the next goal year: the new year is
+    created all closed (frameworks carried over, goal entry off until the
+    Admin opens it), the old year stops being the review year but stays open
+    for backfill; the Admin must type the new year's label to confirm."""
     _require_admin(current_user)
     st = _cycle_status(db, current_user.org_id)
     if st.requires_typed_confirmation and (payload.confirmation or "").strip() != st.next_period_label:
@@ -461,13 +569,13 @@ def cycle_set(payload: CycleSetRequest, db: DbSession, current_user: CurrentUser
     try:
         parse_quarter_label(payload.target_label)
     except ValueError:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Use a quarter label such as 'Q2 CY 2026'.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Use a quarter label such as 'Q2 CY 26-27'.")
     return _move_to(db, current_user, payload.target_label.strip(), "set")
 
 
 @router.post("/cycle/rollback", response_model=CycleStatusOut)
 def cycle_rollback(db: DbSession, current_user: CurrentUser):
-    """Return to the quarter that was current before the last move."""
+    """Move one quarter back (Q1 goes to Q4 of the previous goal year)."""
     _require_admin(current_user)
     st = _cycle_status(db, current_user.org_id)
     if not st.previous_label:
@@ -491,17 +599,27 @@ def cycle_log(db: DbSession, current_user: CurrentUser, limit: int = Query(defau
 
 
 @router.patch("/quarters/{seq}", response_model=QuarterOut)
-def update_quarter(seq: int, payload: QuarterUpdate, db: DbSession, current_user: CurrentUser):
-    """Release (or hide again) one quarter's final ratings to staff."""
+def update_quarter(seq: int, payload: QuarterUpdate, db: DbSession, current_user: CurrentUser, period: Optional[str] = Query(default=None)):
+    """One quarter's switches: release (or hide) its final ratings to staff,
+    open or close it for backfill — for the active year by default, or the
+    year named by `period`. The current quarter cannot be closed."""
     _require_admin(current_user)
-    period = periods.active_period(db, current_user.org_id)
+    period = periods.period_by_label(db, current_user.org_id, period) if period else periods.active_period(db, current_user.org_id)
     if period is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active Project Goals period.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No such Project Goals period.")
     quarter = periods.quarter_by_label(db, period, quarter_label(period.period_label, seq)) if seq in QUARTER_SEQS else None
-    if quarter is None:
+    if quarter is None or not periods.has_started(period, quarter):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Q{seq} has not started in {period.period_label}.")
-    quarter.ratings_visible = payload.ratings_visible
+    if payload.ratings_visible is None and payload.backfill_open is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Nothing to change.")
+    if payload.backfill_open is not None:
+        if period.is_active and quarter.seq == period.current_quarter_seq and not payload.backfill_open:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                                detail=f"{quarter_display(quarter.cycle_label)} is the current quarter — the review window itself. Roll the quarter forward or back instead of closing it.")
+        quarter.backfill_open = payload.backfill_open
+    if payload.ratings_visible is not None:
+        quarter.ratings_visible = payload.ratings_visible
     db.commit()
     db.refresh(quarter)
-    return QuarterOut(seq=quarter.seq, cycle_label=quarter.cycle_label, ratings_visible=quarter.ratings_visible,
-                      is_current=(quarter.seq == period.current_quarter_seq), opened_at=quarter.opened_at)
+    return QuarterOut(seq=quarter.seq, cycle_label=quarter.cycle_label, ratings_visible=quarter.ratings_visible, backfill_open=quarter.backfill_open,
+                      is_current=(period.is_active and quarter.seq == period.current_quarter_seq), opened_at=quarter.opened_at)

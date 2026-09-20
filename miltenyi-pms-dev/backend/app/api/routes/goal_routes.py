@@ -1311,7 +1311,6 @@ def submit_goal_self_review(
         )
     if not is_review_window_open(
         half, fy_year, resolve_today(settings), settings.fiscal_start_month,
-        override=settings.cycle_window_override,
     ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1419,7 +1418,6 @@ def save_goal_self_review_draft(
         )
     if not is_review_window_open(
         half, fy_year, resolve_today(settings), settings.fiscal_start_month,
-        override=settings.cycle_window_override,
     ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1517,7 +1515,6 @@ def submit_goal_mentor_review(
         )
     if not is_review_window_open(
         half, fy_year, resolve_today(settings), settings.fiscal_start_month,
-        override=settings.cycle_window_override,
     ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1633,7 +1630,6 @@ def save_goal_mentor_review_draft(
         )
     if not is_review_window_open(
         half, fy_year, resolve_today(settings), settings.fiscal_start_month,
-        override=settings.cycle_window_override,
     ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

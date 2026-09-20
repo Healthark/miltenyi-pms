@@ -21,7 +21,7 @@ export function FrameworkBand({
           <h2 className="font-display text-base font-semibold text-text-main">
             {framework.title}{" "}
             <span className="font-normal text-text-muted">
-              · {framework.function_name} · level {framework.level} of 4
+              · {framework.function_name} · level {framework.level}
             </span>
           </h2>
         </div>

@@ -1,6 +1,8 @@
 import { Lock } from "lucide-react";
 import {
+  isQuarterWritable,
   quarterLabel,
+  quarterStarted,
   type GoalReview,
   type PeriodSettings,
   type StepStatus,
@@ -17,9 +19,11 @@ interface QuarterSelectorProps {
 }
 
 /**
- * The quarter pills. All four quarters of the period are shown: started
- * ones (seq ≤ current) are selectable, the current one is marked, future
- * ones are locked until the Admin rolls them out in System Settings.
+ * The quarter pills of one goal year. Started quarters (seq ≤ the year's
+ * current quarter) are selectable; the current one is marked while the year
+ * is the review year; quarters not rolled out yet are locked. For a past
+ * year every started quarter is selectable and the pill says whether the
+ * year is still open for backfill or closed.
  */
 export function QuarterSelector({ period, value, onChange, hints, compact = false }: QuarterSelectorProps) {
   const current = period.current_quarter_seq ?? 0;
@@ -28,10 +32,14 @@ export function QuarterSelector({ period, value, onChange, hints, compact = fals
       {!compact && <span className={`${TH_CLS} mr-1`}>Quarter</span>}
       {[1, 2, 3, 4].map((seq) => {
         const label = quarterLabel(period.period_label, seq);
-        const started = period.is_active && seq <= current;
+        const started = quarterStarted(period, seq);
         const selected = value === label;
-        const isCurrent = seq === current;
+        const isCurrent = period.is_active && seq === current;
+        const open = isQuarterWritable(period, label);
         const hint = hints?.[label];
+        const sub = !started
+          ? "Not started"
+          : hint ?? (isCurrent ? period.period_label : open ? "Open for backfill" : "Closed");
         return (
           <button
             key={seq}
@@ -50,7 +58,7 @@ export function QuarterSelector({ period, value, onChange, hints, compact = fals
             }`}
           >
             <span className="flex items-center gap-1.5 text-sm font-semibold">
-              {!started && <Lock className="h-3 w-3" aria-hidden="true" />}
+              {(!started || !open) && <Lock className="h-3 w-3" aria-hidden="true" />}
               Q{seq}
               {isCurrent && (
                 <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${selected ? "bg-white/20 text-white" : "bg-brand-light text-brand-accent"}`}>
@@ -59,9 +67,7 @@ export function QuarterSelector({ period, value, onChange, hints, compact = fals
               )}
             </span>
             {!compact && (
-              <span className={`text-[11px] ${selected ? "text-white/80" : "text-text-muted"}`}>
-                {started ? hint ?? period.period_label : "Not started"}
-              </span>
+              <span className={`text-[11px] ${selected ? "text-white/80" : "text-text-muted"}`}>{sub}</span>
             )}
           </button>
         );
@@ -98,5 +104,39 @@ export function QuarterProgress({ review, quarterOpen }: Readonly<{ review: Goal
         </>
       )}
     </div>
+  );
+}
+
+/** Year dropdown shared by the staff page and the mentor / Admin queue. */
+export function YearSelector({
+  periods,
+  value,
+  onChange,
+  id = "pg-year",
+}: Readonly<{
+  periods: ReadonlyArray<{ period_label: string; is_active: boolean; backfill_open: boolean; has_set?: boolean | null }>;
+  value: string | null;
+  onChange: (label: string) => void;
+  id?: string;
+}>) {
+  if (periods.length <= 1) return null;
+  return (
+    <label className="flex items-center gap-2">
+      <span className={TH_CLS}>Goal year</span>
+      <select
+        id={id}
+        value={value ?? ""}
+        onChange={(e) => onChange(e.target.value)}
+        className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand cursor-pointer"
+      >
+        {periods.map((p) => (
+          <option key={p.period_label} value={p.period_label}>
+            {p.period_label}
+            {p.is_active ? " (current)" : p.backfill_open ? " · open for backfill" : " · closed"}
+            {p.has_set === false ? " · no goals" : ""}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }

@@ -106,10 +106,8 @@ export function currentQuarterAndFy(
  * during a later one of the same FY). Returns false (locked) when
  * goalFyYear is null (legacy goals without a stamped cycle_name).
  *
- * `override` mirrors the backend's `cycle_window_override` system
- * setting — when true the date gate is skipped and every cycle is
- * treated as open. Used so demo orgs can drive the whole cycle
- * (including future-FY halves) in a single session.
+ * `override` is kept for callers but always false in practice: the
+ * H1/H2 window bypass was removed from System Settings (17 Sep 2026).
  */
 export function isHalfWindowOpen(
   cycle: SelfReviewCycleHalf,

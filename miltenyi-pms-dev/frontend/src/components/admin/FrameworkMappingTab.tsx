@@ -1,20 +1,24 @@
 /**
- * FrameworkMappingTab — Employee · Function · GCC designation · Level ·
+ * FrameworkMappingTab — Staff member · Function · GCC designation · Level ·
  * Reviewer (Mentor) · Miltenyi reviewer · Status.
  *
- * Function, designation and its level come from the user record and are
- * read-only here (designation levels are set on the Framework tab). HR edits
- * only the two reviewer fields: the mentor (who is the Healthark reviewer of
- * record for Project Goals) and the Miltenyi reviewer's name.
+ * The Admin edits the staff member's function and GCC designation (the
+ * level follows from the designation, set on the Framework tab), the mentor
+ * (the Healthark reviewer of record) and the Miltenyi reviewer's name. All
+ * four write to the same user record the Users tab edits.
+ *
+ * Function and designation are locked while the staff member has this
+ * year's goal set in progress: the set was built from one framework row and
+ * keeps it. Promotions are recorded between goal years.
  */
 import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Pencil, Save, Search, X } from "lucide-react";
+import { Loader2, Lock, Pencil, Save, Search, X } from "lucide-react";
 
 import { queryKeys } from "@/lib/queryKeys";
 import { getErrorMessage } from "@/utils/errors";
-import { adminService, type UserResponse } from "@/services/admin.service";
+import { adminService, type DesignationBrief, type FunctionBrief, type UserResponse } from "@/services/admin.service";
 import { goalFrameworkService, type MappingRow, type MappingStatus } from "@/services/goal-framework.service";
 import { useToast } from "@/hooks/useToast";
 import { BTN_GHOST, BTN_PRIMARY, INPUT_CLS, TH_CLS } from "@/components/project-goals/ui";
@@ -31,6 +35,8 @@ const STATUS_LABEL: Record<MappingStatus, { label: string; dot: string; text: st
   no_function: { label: "No function", dot: "bg-amber-500", text: "text-amber-700" },
 };
 
+const GOALS_STATUS_LABEL: Record<string, string> = { draft: "Draft", submitted: "Submitted", approved: "Approved" };
+
 function StatusPill({ status }: Readonly<{ status: MappingStatus }>) {
   const s = STATUS_LABEL[status];
   return (
@@ -41,8 +47,19 @@ function StatusPill({ status }: Readonly<{ status: MappingStatus }>) {
   );
 }
 
+function LevelChip({ level, label }: Readonly<{ level: number | null; label: string | null }>) {
+  if (!level) return <span className="text-xs italic text-text-muted">—</span>;
+  return (
+    <span className="inline-flex items-center rounded-full bg-brand-light px-2 py-0.5 text-[11px] font-semibold text-brand-accent">
+      L{level}{label ? ` · ${label}` : ""}
+    </span>
+  );
+}
+
 interface EditState {
   row: MappingRow;
+  functionId: string;
+  designationId: string;
   mentorId: string;
   reviewer: string;
 }
@@ -58,9 +75,13 @@ export function FrameworkMappingTab({ users }: Readonly<{ users: UserResponse[] 
 
   const q = useQuery({ queryKey: queryKeys.admin.goalMapping(), queryFn: () => goalFrameworkService.getMapping() });
   const rows = q.data ?? [];
+  const functionsQ = useQuery({ queryKey: queryKeys.admin.functions(), queryFn: adminService.getFunctions });
+  const designationsQ = useQuery({ queryKey: queryKeys.admin.designations(), queryFn: adminService.getDesignations });
+  const allFunctions: FunctionBrief[] = functionsQ.data ?? [];
+  const allDesignations: DesignationBrief[] = designationsQ.data ?? [];
 
   const mentors = useMemo(() => users.filter((u) => u.role === "Mentor" && !u.is_deleted).sort((a, b) => a.full_name.localeCompare(b.full_name)), [users]);
-  const functions = useMemo(() => Array.from(new Set(rows.map((r) => r.function_name).filter((x): x is string => !!x))).sort(), [rows]);
+  const functionNames = useMemo(() => Array.from(new Set(rows.map((r) => r.function_name).filter((x): x is string => !!x))).sort(), [rows]);
 
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
@@ -75,11 +96,17 @@ export function FrameworkMappingTab({ users }: Readonly<{ users: UserResponse[] 
   const counts = useMemo(() => rows.reduce<Record<string, number>>((a, r) => { a[r.status] = (a[r.status] ?? 0) + 1; return a; }, {}), [rows]);
 
   const save = useMutation({
-    mutationFn: (e: EditState) =>
-      adminService.updateUser(e.row.user_id, {
+    mutationFn: (e: EditState) => {
+      const payload: Parameters<typeof adminService.updateUser>[1] = {
         mentor_id: e.mentorId ? Number(e.mentorId) : null,
         miltenyi_reviewer_name: e.reviewer.trim() || null,
-      }),
+      };
+      if (!e.row.has_active_set) {
+        payload.function_id = e.functionId ? Number(e.functionId) : null;
+        payload.designation_id = e.designationId ? Number(e.designationId) : null;
+      }
+      return adminService.updateUser(e.row.user_id, payload);
+    },
     onSuccess: () => {
       setError("");
       setEdit(null);
@@ -97,19 +124,33 @@ export function FrameworkMappingTab({ users }: Readonly<{ users: UserResponse[] 
     </span>
   );
 
+  const openEdit = (r: MappingRow) => setEdit({
+    row: r,
+    functionId: r.function_id ? String(r.function_id) : "",
+    designationId: r.designation_id ? String(r.designation_id) : "",
+    mentorId: r.mentor_id ? String(r.mentor_id) : "",
+    reviewer: r.miltenyi_reviewer_name ?? "",
+  });
+
+  // Designations offered in the dialog: those of the chosen function, plus
+  // the current one so a legacy title without a function link stays visible.
+  const designationOptions = (e: EditState) =>
+    allDesignations.filter((d) => (e.functionId ? d.function_id === Number(e.functionId) : true) || String(d.id) === e.designationId);
+  const chosenDesignation = (e: EditState) => allDesignations.find((d) => String(d.id) === e.designationId) ?? null;
+
   return (
     <div className="space-y-4 p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative min-w-[220px] max-w-xs flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-muted" aria-hidden="true" />
-            <input type="text" placeholder="Search employees..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-full rounded-lg border border-border bg-white py-1.5 pl-9 pr-3 text-[13px] text-text-main placeholder:text-text-muted outline-none focus:border-brand" />
+            <input type="text" placeholder="Search staff..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-full rounded-lg border border-border bg-white py-1.5 pl-9 pr-3 text-[13px] text-text-main placeholder:text-text-muted outline-none focus:border-brand" />
           </div>
           <div className="flex items-center gap-2">
             <label htmlFor="map-fn" className={TH_CLS}>Function</label>
             <select id="map-fn" value={fn} onChange={(e) => setFn(e.target.value)} className={`${SELECT_CLS} min-w-[170px]`}>
               <option value="all">All functions</option>
-              {functions.map((f) => <option key={f} value={f}>{f}</option>)}
+              {functionNames.map((f) => <option key={f} value={f}>{f}</option>)}
             </select>
           </div>
           <div className="flex items-center gap-2">
@@ -132,7 +173,7 @@ export function FrameworkMappingTab({ users }: Readonly<{ users: UserResponse[] 
         <div className="overflow-x-auto rounded-lg border border-border">
           <div className="min-w-[1200px]">
             <div className={`grid ${GRID} gap-3 border-b border-border bg-slate-50 px-4 py-2.5`}>
-              <span className={TH_CLS}>Employee</span>
+              <span className={TH_CLS}>Staff member</span>
               <span className={TH_CLS}>Function</span>
               <span className={TH_CLS}>GCC designation</span>
               <span className={TH_CLS}>Designation level</span>
@@ -141,7 +182,7 @@ export function FrameworkMappingTab({ users }: Readonly<{ users: UserResponse[] 
               <span className={TH_CLS}>Status</span>
               <span />
             </div>
-            {filtered.length === 0 && <div className="px-4 py-8 text-center text-sm text-text-muted">No employees match these filters.</div>}
+            {filtered.length === 0 && <div className="px-4 py-8 text-center text-sm text-text-muted">No staff match these filters.</div>}
             {filtered.map((r) => (
               <div key={r.user_id} className={`grid ${GRID} items-center gap-3 border-b border-border px-4 py-3 last:border-b-0 hover:bg-slate-50`}>
                 <div className="min-w-0">
@@ -150,18 +191,19 @@ export function FrameworkMappingTab({ users }: Readonly<{ users: UserResponse[] 
                 </div>
                 <div className="text-sm text-text-main">{r.function_name ?? <span className="italic text-text-muted">—</span>}</div>
                 <div className="text-sm text-text-main">{r.designation_name ?? <span className="italic text-text-muted">—</span>}</div>
-                <div>
-                  {r.level ? (
-                    <span className="inline-flex items-center rounded-full bg-brand-light px-2 py-0.5 text-[11px] font-semibold text-brand-accent">L{r.level} · {r.level_label}</span>
-                  ) : (
-                    <span className="text-xs italic text-text-muted">—</span>
-                  )}
-                </div>
+                <div><LevelChip level={r.level} label={r.level_label} /></div>
                 <div className={`text-sm ${r.mentor_name ? "text-text-main" : "italic text-text-muted"}`}>{r.mentor_name ?? "No mentor"}</div>
                 <div className={`text-sm ${r.miltenyi_reviewer_name ? "text-text-main" : "italic text-text-muted"}`}>{r.miltenyi_reviewer_name ?? "Not set"}</div>
-                <div><StatusPill status={r.status} /></div>
+                <div className="flex flex-col gap-0.5">
+                  <StatusPill status={r.status} />
+                  {r.has_active_set && (
+                    <span className="inline-flex items-center gap-1 text-[11px] text-text-muted" title="Function and designation are locked while this year's goals are in progress">
+                      <Lock className="h-3 w-3" aria-hidden="true" /> Goals {GOALS_STATUS_LABEL[r.active_set_status ?? ""] ?? "in progress"}
+                    </span>
+                  )}
+                </div>
                 <div className="text-right">
-                  <button type="button" onClick={() => setEdit({ row: r, mentorId: r.mentor_id ? String(r.mentor_id) : "", reviewer: r.miltenyi_reviewer_name ?? "" })} className="rounded-md p-1.5 text-text-muted hover:bg-brand-light hover:text-brand transition-colors" title="Edit reviewers">
+                  <button type="button" onClick={() => openEdit(r)} className="rounded-md p-1.5 text-text-muted hover:bg-brand-light hover:text-brand transition-colors" title="Edit mapping">
                     <Pencil className="h-4 w-4" aria-hidden="true" />
                   </button>
                 </div>
@@ -171,7 +213,7 @@ export function FrameworkMappingTab({ users }: Readonly<{ users: UserResponse[] 
         </div>
       )}
       <p className="text-xs text-text-muted">
-        Function, GCC designation and its level come from the user record. The designation's level decides which framework row the employee sees; set designation levels in the Framework tab. HR edits only the reviewer (mentor) and the Miltenyi reviewer here.
+        Function, GCC designation, mentor and Miltenyi reviewer are the same fields as on the Users tab. The designation's level (set on the Framework tab) decides which framework column the staff member sees. Function and designation cannot change while the staff member's goals for the current year are in progress — record promotions between goal years.
       </p>
 
       {edit &&
@@ -187,10 +229,32 @@ export function FrameworkMappingTab({ users }: Readonly<{ users: UserResponse[] 
               </div>
               <div className="space-y-4 px-6 py-5 text-sm">
                 {error && <p className="rounded-lg bg-red-50 px-4 py-2.5 text-sm text-red-600">{error}</p>}
-                <div className="grid gap-3 rounded-lg border border-border bg-slate-50 px-4 py-3 text-[13px] sm:grid-cols-3">
-                  <div><p className={TH_CLS}>Function</p><p className="text-text-main">{edit.row.function_name ?? "—"}</p></div>
-                  <div><p className={TH_CLS}>GCC designation</p><p className="text-text-main">{edit.row.designation_name ?? "—"}</p></div>
-                  <div><p className={TH_CLS}>Level</p><p className="text-text-main">{edit.row.level ? `L${edit.row.level} · ${edit.row.level_label}` : "—"}</p></div>
+                {edit.row.has_active_set && (
+                  <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                    <span>
+                      {edit.row.full_name}'s goals for this year are {GOALS_STATUS_LABEL[edit.row.active_set_status ?? ""]?.toLowerCase() ?? "in progress"}. Function and designation are locked until the next goal year starts; the reviewer fields can still change.
+                    </span>
+                  </div>
+                )}
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="block">
+                    <span className="mb-1 block text-xs font-semibold text-text-main">Function</span>
+                    <select value={edit.functionId} disabled={edit.row.has_active_set} onChange={(e) => setEdit({ ...edit, functionId: e.target.value, designationId: "" })} className={`${INPUT_CLS} cursor-pointer disabled:cursor-not-allowed`}>
+                      <option value="">No function</option>
+                      {allFunctions.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-xs font-semibold text-text-main">GCC designation</span>
+                    <select value={edit.designationId} disabled={edit.row.has_active_set} onChange={(e) => setEdit({ ...edit, designationId: e.target.value })} className={`${INPUT_CLS} cursor-pointer disabled:cursor-not-allowed`}>
+                      <option value="">No designation</option>
+                      {designationOptions(edit).map((d) => <option key={d.id} value={d.id}>{d.name}{d.career_level ? ` · L${d.career_level}` : ""}</option>)}
+                    </select>
+                    <span className="mt-0.5 block text-[11px] text-text-muted">
+                      Level {chosenDesignation(edit)?.career_level ?? "—"}{chosenDesignation(edit)?.career_level_label ? ` · ${chosenDesignation(edit)?.career_level_label}` : ""} — follows the designation; change it on the Framework tab.
+                    </span>
+                  </label>
                 </div>
                 <label className="block">
                   <span className="mb-1 block text-xs font-semibold text-text-main">Reviewer (Mentor)</span>

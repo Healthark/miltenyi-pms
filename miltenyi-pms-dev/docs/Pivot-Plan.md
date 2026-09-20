@@ -193,3 +193,33 @@ What changed (migration `d4a7b2c9e1f3`):
 5. **Projects removed (audit D1 settled).** The Admin Projects tab, the HR dashboard Project Coverage card, the Projects export sheet/endpoint and the "Trials" line are gone; `project_routes.py` is gated behind `require_feature("projects")` and its tables stay dormant like project reviews.
 
 Follow-ups agreed but not built: an HR tracker with "Remind" digests (first), an Admin Notify tab, a Project Goals export / reviewer packet, a link from the annual-review tab, automated reminders.
+
+### UAT feedback, 11 September 2026 (Zaahid, first pass)
+
+- A submitted quarterly review is **final**: no edit path for the mentor or the Admin; the Admin **unlocks** the quarter's review and the mentor resubmits. The "review edited" notification is gone with it.
+- The mentor's optional per-KPI note is called **Secondary review** everywhere (column `healthark_note` unchanged).
+- The **change log** tab, the **Source** link field and the **stage strip** were removed from the screens; a status badge shows the goals' current state. Actions are still recorded in `project_goal_change_logs` for audit.
+- The **topbar** shows the Project Goals year (**CY 2026**) and the **current quarter** instead of the fiscal-year pill for orgs running Project Goals.
+
+### UAT feedback, 17 September 2026 (Zaahid, Admin walkthrough)
+
+- **Framework tab.** Reference data is managed here now: **Add function**, **Add designation** (name, function, integer level 1–12) and rename for both (new endpoints `POST/PATCH /admin/functions`, `POST /admin/designations`; the goal-framework `PATCH /designations/{id}` takes a name and a level 1–12). The two-step "Add Function" row modal is gone: a new level is a column added straight in the table, filled inline and saved with the staged Save. Levels are free integers up to 12; only 1–4 carry the GCC band names.
+- **Framework Mapping.** Function and GCC designation are editable (same user record as the Users tab), but **locked while the staff member's goal set for the active year exists** — the set was built from one framework row and keeps it. The rule is enforced in the user update endpoint, so the Users tab follows it too. Promotions are recorded between goal years.
+- **Quarter roll-back** always means one quarter earlier than the current one (Q1 → Q4 of the previous year when that year exists), not "the quarter before the last move".
+
+### System Settings audit, 20 September 2026 (Zaahid)
+
+- **Goal years are spans**: "CY 26-27", "CY 27-28" — the year ends around April. Migration `e5b8c3d0f2a7` relabels every stored "CY 2026" label; the default year for a fresh org follows today's date and the fiscal start month.
+- **Year roll-over, Healthark model.** The Q4 → Q1 roll-out (or Set manually → Q1 of the next year, always offered) starts the next goal year **all closed**: goal entry off until the Admin opens it, framework rows carried over. The previous year is no longer the review year but its started quarters **stay open for backfill** until the Admin turns its new **Quarters open for backfill** switch off. Nothing is deleted; closed years stay readable.
+- **Per-year configuration.** System Settings → Project Goals has a **Configure goal year** dropdown (existing years only, like fiscal years). Each year carries goal entry, weightages, backfill (past years) and the per-quarter ratings switches. Every switch is **staged and confirmed before saving**, with impact counts from a preflight endpoint (`GET /admin/goal-frameworks/settings/preflight`); the roll-out dialog shows the pending counts of the quarter being left. The fiscal-year column keeps its staged Save; the H1/H2 review-window bypass is gone (column dropped).
+- **Layout.** The quarter roll-out card sits on top at full width; one **Configure year** dropdown (labelled CY yy-zz for both calendars, since the fiscal year and the goal year are the same April-to-April span) and one Save button cover everything below it; the annual switches (left) and the Project Goals switches (right) sit side by side; Calendar (both calendars, read-only text) and, when allowed, the Developer date simulation close the page.
+- **Year selector** on the staff page and on the mentor / Admin queue (`?period=`); `GET /project-goals/periods`, `GET /project-goals/period?period=`, `GET /project-goals/me?period=`, `GET /project-goals/team?period=&cycle=`. Reviews for a past year are accepted while the year is open for backfill.
+- **Backfill rule (20 Sep 2026).** In the active year the current quarter is always open and every earlier rolled-out quarter stays open while its own **open for backfill** switch is on (`project_goal_quarters.backfill_open`, migration `f1d9a4c7e2b3`); a past year's quarter is open while both the year's and the quarter's switch are on. Backfill may start from scratch: anything not yet submitted can be written. The current quarter cannot be closed; roll it forward or back instead.
+
+### HR requirement, 20 September 2026: the "Additional goals" row
+
+HR asked for one extra free-text row at the end of the goal-setting sheet where staff write any other goals they are working on, with a weightage the Admin sets. Implemented as a per-goal-year setting in System Settings → Project Goals (**Additional goals row** switch + weightage %, migration `a2e7c5d9b4f1`): new sheets get the row last (`project_goal_items.is_extra`), draft sheets follow the setting, submitted and approved sheets keep their snapshot, the setting is carried into the next year. The row is optional for goal submission, self-review and Miltenyi review, and its weightage is informational like the KPIs'.
+
+### All Goals / Team Goals queue, 20 September 2026 (audit)
+
+Dropped the per-status count capsules; added **Level** and (Admin) **Mentor** filters, a **Mentor** column for the Admin, a search that also matches mentor and Miltenyi reviewer names, and a one-line summary ("Showing N of M staff · awaiting approval · reviews to enter"). Actions unchanged: Mark approved, Enter Qn review, Open.

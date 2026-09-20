@@ -152,7 +152,7 @@ def update_system_settings(
 ):
     """
     Update the org-wide anchors and developer escape hatches
-    (fiscal start month, timezone, H1/H2 window bypass, simulated date).
+    (fiscal start month, timezone, simulated date).
     The per-FY access toggles are written through /admin/settings/year/{fy}
     and the Project Goals period switches through /admin/goal-frameworks/settings.
     """

@@ -24,7 +24,7 @@ import secrets
 import string
 from typing import List, Literal, Optional
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import aliased, joinedload
 
 from app.api.dependencies import DbSession, CurrentUser
@@ -36,7 +36,9 @@ from app.core.cache import (
 from app.core.config import settings
 from app.core.security import get_password_hash
 from app.models.user_models import User, Role
-from app.models.reference_models import Function, Designation
+from app.models.reference_models import Function, Designation, career_level_label
+from app.models.project_goal_models import ProjectGoalSet
+from app.services import project_goal_periods as goal_periods
 from app.models.project_models import (
     Project,
     ProjectAssignment,
@@ -72,7 +74,10 @@ from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from app.schemas.admin_schemas import (
     FunctionBrief,
+    FunctionCreate,
+    FunctionUpdate,
     DesignationBrief,
+    DesignationCreate,
     UserResponse,
     UserCreate,
     UserUpdate,
@@ -1258,6 +1263,34 @@ def update_user(
             reason="role_change",
         )
 
+    # Function / designation are locked while the user's Project Goals set
+    # for the active goal year exists: the set was built from one framework
+    # row and keeps it. Promotions are recorded between goal years (UAT
+    # feedback, 17 Sep 2026). Covers the Users tab and Framework Mapping,
+    # which both write through this endpoint.
+    wants_function = "function_id" in update_data and update_data["function_id"] != user.function_id
+    wants_designation = "designation_id" in update_data and update_data["designation_id"] != user.designation_id
+    if wants_function or wants_designation:
+        active_period = goal_periods.active_period(db, current_user.org_id)
+        if active_period is not None:
+            existing_set = (
+                db.query(ProjectGoalSet)
+                .filter(
+                    ProjectGoalSet.org_id == current_user.org_id,
+                    ProjectGoalSet.user_id == user.id,
+                    ProjectGoalSet.period_label == active_period.period_label,
+                )
+                .first()
+            )
+            if existing_set is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"{user.full_name} has {active_period.period_label} project goals in progress "
+                        f"({existing_set.status}). Function and designation can change once the next goal year starts."
+                    ),
+                )
+
     for field, value in update_data.items():
         setattr(user, field, value)
 
@@ -1570,6 +1603,78 @@ def list_designations(
         return [DesignationBrief.model_validate(r, from_attributes=True) for r in rows]
 
     return designations_cache.get_or_compute(current_user.org_id, _query)
+
+
+# ── Reference data writes (Framework tab) ────────────────────────────
+
+@router.post("/functions", response_model=FunctionBrief, status_code=status.HTTP_201_CREATED)
+def create_function(payload: FunctionCreate, db: DbSession, current_user: CurrentUser):
+    """Add a function (department). Framework tab → Add function."""
+    _require_admin(current_user)
+    name = payload.name.strip()
+    clash = (
+        db.query(Function)
+        .filter(Function.org_id == current_user.org_id, func.lower(Function.name) == name.lower())
+        .first()
+    )
+    if clash is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"A function named '{clash.name}' already exists.")
+    fn = Function(org_id=current_user.org_id, name=name, is_active=True)
+    db.add(fn)
+    db.commit()
+    db.refresh(fn)
+    functions_cache.invalidate(current_user.org_id)
+    return FunctionBrief.model_validate(fn, from_attributes=True)
+
+
+@router.patch("/functions/{function_id}", response_model=FunctionBrief)
+def rename_function(function_id: int, payload: FunctionUpdate, db: DbSession, current_user: CurrentUser):
+    """Rename a function. Framework tab → pencil next to the function."""
+    _require_admin(current_user)
+    fn = db.query(Function).filter(Function.id == function_id, Function.org_id == current_user.org_id).first()
+    if fn is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Function not found.")
+    name = payload.name.strip()
+    clash = (
+        db.query(Function)
+        .filter(Function.org_id == current_user.org_id, Function.id != fn.id, func.lower(Function.name) == name.lower())
+        .first()
+    )
+    if clash is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"A function named '{clash.name}' already exists.")
+    fn.name = name
+    db.commit()
+    db.refresh(fn)
+    functions_cache.invalidate(current_user.org_id)
+    return FunctionBrief.model_validate(fn, from_attributes=True)
+
+
+@router.post("/designations", response_model=DesignationBrief, status_code=status.HTTP_201_CREATED)
+def create_designation(payload: DesignationCreate, db: DbSession, current_user: CurrentUser):
+    """Add a GCC designation (job title) inside an existing function, at a
+    level 1..12. Framework tab → Add designation."""
+    _require_admin(current_user)
+    fn = db.query(Function).filter(Function.id == payload.function_id, Function.org_id == current_user.org_id).first()
+    if fn is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Function not found.")
+    name = payload.name.strip()
+    clash = (
+        db.query(Designation)
+        .filter(Designation.org_id == current_user.org_id, func.lower(Designation.name) == name.lower())
+        .first()
+    )
+    if clash is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"A designation named '{clash.name}' already exists.")
+    d = Designation(
+        org_id=current_user.org_id, name=name, level=payload.career_level,
+        career_level=payload.career_level, career_level_label=career_level_label(payload.career_level),
+        function_id=fn.id, is_active=True,
+    )
+    db.add(d)
+    db.commit()
+    db.refresh(d)
+    designations_cache.invalidate(current_user.org_id)
+    return DesignationBrief.model_validate(d, from_attributes=True)
 
 
 # =====================================================================
