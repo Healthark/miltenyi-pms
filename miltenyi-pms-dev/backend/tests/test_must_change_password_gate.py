@@ -3,7 +3,7 @@ test_must_change_password_gate.py — server-side enforcement of the
 `must_change_password` flag (risk-register 1.2).
 
 What this test does:
-    Seeds an Employee with `must_change_password=True` and makes
+    Seeds a Staff user with `must_change_password=True` and makes
     requests bypassing only the JWT resolver (NOT the gate). Asserts:
       1. A normal authenticated route (GET /goals/) returns 403 with
          the gate message.
@@ -46,7 +46,7 @@ CSRF_VALUE = "test-csrf-token"
 
 
 def _seed_gated_user(db: Session) -> User:
-    """Org + Employee with `must_change_password=True`.
+    """Org + Staff user with `must_change_password=True`.
 
     `enabled_features=[]` so /auth/session's `_build_session` returns
     cleanly without exploding on a None list. We hash a real placeholder
@@ -62,9 +62,9 @@ def _seed_gated_user(db: Session) -> User:
     user = User(
         org_id=org.id,
         employee_code="GATED-001",
-        full_name="Gated Employee",
+        full_name="Gated Staff",
         email="gated@test.local",
-        role=Role.EMPLOYEE.value,
+        role=Role.STAFF.value,
         password_hash=get_password_hash("real-current-password"),
         must_change_password=True,
     )

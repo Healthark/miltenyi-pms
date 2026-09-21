@@ -588,9 +588,9 @@
 
 ---
 
-### TC-SELFREV-005 — H2 unlocks after H2 calendar window opens (or override is ON)
+### TC-SELFREV-005 — H2 unlocks after the H2 calendar window opens
 
-**Pre-condition:** Currently in H1 calendar window, no override.
+**Pre-condition:** Currently in the H1 calendar window.
 **Login as:** Staff
 **Steps:**
 1. Look at the self-review menu options on an approved goal.
@@ -599,7 +599,7 @@
 - H1 is enabled.
 - H2 is hidden or shows "Available after Oct 1" (or similar).
 
-**Then:** Admin toggles **cycle_window_override** ON; Staff refreshes → both H1 and H2 are now available.
+**Then (dev/staging only):** with date simulation enabled on the backend, Admin sets **Simulated today** to a date in H2 (System Settings → **Developer**) and saves; Staff refreshes → both H1 and H2 are now available. The org-wide H1/H2 bypass switch was removed on 20 Sep 2026, so there is no other way to open H2 early.
 
 ---
 

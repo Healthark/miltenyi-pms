@@ -1,7 +1,9 @@
 # Review Window Policy — Stakeholder Discussion Table
 
 **Status:** Draft, awaiting stakeholder sign-off.
-**Last updated:** 2026-05-21
+**Last updated:** 2026-09-21
+
+> **Revision 2026-09-21:** the org-wide `cycle_window_override` bypass was removed from System Settings on 20 Sep 2026 (PR #99). Rows 1.6, 1.7, 3.8 and 4.2 are superseded: there is no emergency override any more. `simulated_today` (dev/staging only) remains the way to walk a demo across windows, project-goal years and quarters have their own backfill switches, and the Admin unlock is the correction path for a submitted project-goal review.
 **Owners:** PMS engineering + HR stakeholders.
 
 ## Purpose
@@ -29,8 +31,8 @@ Lock down WHEN each review form opens, closes, what dependencies apply, and what
 | 1.3 | Can a PM fill an **earlier cycle** of the **same FY** after it has technically ended? | **Yes — until FY rolls over** | | "I forgot to do Q1, can I submit it in Q3?" → yes, same FY. |
 | 1.4 | Can a PM fill a cycle from a **previous FY**? | **No — locked at FY rollover** | | Once new FY starts (Apr 1 for April-start orgs), prior-FY reviews lock. |
 | 1.5 | Should the **Secondary Evaluator** follow the **same window** as the PM? | **Yes — single window for both** | | Simpler mental model. Currently same code path. |
-| 1.6 | Should HR retain the **emergency override** (`cycle_window_override` flag) to unlock a cycle for special cases? | **Yes — keep as escape hatch** | | Already implemented; flag in System Settings. |
-| 1.7 | When HR closes a cycle manually mid-window (sets `cycle_window_override = false`), should in-progress drafts be **preserved** or **discarded**? | **Preserved as drafts; submit blocked** | | Defensive — no lost work. |
+| 1.6 | Should HR retain the **emergency override** (`cycle_window_override` flag) to unlock a cycle for special cases? | ~~**Yes — keep as escape hatch**~~ | Superseded | Flag removed 20 Sep 2026 (PR #99); no org-wide override exists. |
+| 1.7 | When a window closes while work is in progress, should drafts be **preserved** or **discarded**? | **Preserved as drafts; submit blocked** | Superseded | The manual flag is gone (20 Sep 2026); the rule still holds for windows closed by the calendar or a backfill switch. |
 
 ---
 
@@ -64,7 +66,7 @@ Lock down WHEN each review form opens, closes, what dependencies apply, and what
 | 3.5 | When does **Management Calibration** OPEN? | **Event-driven** — when Mentor submits | | Existing flow. |
 | 3.6 | When does **Management Calibration CLOSE**? | **60 days after FY ends** (e.g. 30 May) | | HR has two months for calibration. |
 | 3.7 | What if an Employee **fails to submit a self-review by the close date**? | **HR can manually start a draft on their behalf** (or extend window globally via `annual_reviews_enabled`) | | Needs discussion — auto-create draft? Skip the cycle? Email nag? |
-| 3.8 | Can a previous FY's Annual Review be **edited after the calibration closes**? | **No — locked. HR override only.** | | Existing `annual_reviews_enabled` + `cycle_window_override` toggles. |
+| 3.8 | Can a previous FY's Annual Review be **edited after the calibration closes**? | **No — locked. HR override only.** | Superseded | Per-FY `annual_reviews_enabled` toggle; the override flag was removed 20 Sep 2026. |
 | 3.9 | Should the **final rating be visible to the Employee** the moment Calibration closes, or only after a separate "Publish" action by HR? | **Auto-visible at Calibration close** (`annual_review_final_rating_visible` already gates this) | | Toggle exists; could stay manual. |
 
 ---
@@ -74,7 +76,7 @@ Lock down WHEN each review form opens, closes, what dependencies apply, and what
 | # | Decision | Proposed Default | Stakeholder Answer | Notes |
 |---|---|---|---|---|
 | 4.1 | Where do the three **lead-day settings** (`project`, `goal`, `annual`) live? | **System Settings tab, single section "Review Window Policy"** | | HR_MyOrg only. HR_Miltenyi does not touch these. |
-| 4.2 | Org-wide `cycle_window_override` vs **per-cycle** override? | **Keep org-wide for now**; revisit if HR keeps needing surgical control | | Current implementation is org-wide; works at scale. |
+| 4.2 | Org-wide `cycle_window_override` vs **per-cycle** override? | ~~**Keep org-wide for now**~~ | Superseded | The org-wide flag was removed 20 Sep 2026; project-goal years and quarters carry per-year / per-quarter backfill switches instead. |
 | 4.3 | Should the **topbar surface a countdown** ("Review window closes in 3 days") when within 7 days of close? | **Yes — amber chip in the top-right** | | Nice-to-have; reduces "I missed it" tickets. |
 | 4.4 | When a user is **deactivated mid-cycle**, do their in-flight reviews stay submittable until close, or lock immediately? | **Lock immediately** (consistent with deactivation = "user is gone") | | Drafts preserved for audit; just no further edits. |
 | 4.5 | Should **email reminders** fire X days before each review window closes? | **Yes — at T-7 and T-1 days** for each window | | Future scope; not blocking this release. |
@@ -96,7 +98,7 @@ Depending on what's locked in:
 
 - **3 new System Settings sliders** (`project_review_lead_days`, `goal_review_lead_days`, `annual_review_lead_days`) — proposed defaults 15 / 30 / 30 days.
 - **Backend `is_review_window_open()` extension** to read each setting + the cycle's calculated end date and apply per-review-type lead-time.
-- **FY-rollover hard-lock** enforcement on prior-FY reviews (currently soft — `cycle_window_override` lets through; we'd add a deeper guard).
+- **FY-rollover hard-lock** enforcement on prior-FY reviews (the former `cycle_window_override` bypass was removed 20 Sep 2026; project-goal years lock through the per-year backfill switch).
 - **Topbar countdown chip** (if approved in 4.3).
 - **Email reminder cron** (if approved in 4.5 — separate sprint).
 
@@ -110,6 +112,6 @@ Depending on what's locked in:
 - **Cycle** — generic term for the org's current review period; "H1 FY26-27" or "Q3 FY26-27" depending on cadence.
 - **Lead days** — how many days *before* a cycle end the corresponding review form opens.
 - **Grace period** — how many days *after* a cycle / FY end the form stays open before hard-lock.
-- **`cycle_window_override`** — existing org-wide toggle in System Settings that bypasses date-based locks. Used by HR for demos / catch-ups.
+- **`cycle_window_override`** — former org-wide toggle that bypassed date-based locks; removed 20 Sep 2026 (PR #99). Use `simulated_today` for demos.
 - **`annual_reviews_enabled`** — existing org-wide toggle that pauses all new annual-review submissions.
 - **`simulated_today`** — existing dev/QA escape hatch that pins a fake "today" for cycle determination; gated behind `ALLOW_DATE_SIMULATION` env flag.
