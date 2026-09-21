@@ -401,17 +401,23 @@ def dismiss_cycle_banner(
 @router.get("/me", response_model=UserProfileResponse)
 def get_my_profile(current_user: CurrentUser):
     """
-    Returns the full profile of the authenticated user.
-    Used by the Profile page — richer than the JWT payload alone.
+    Returns the full profile of the authenticated user - the same payload
+    as GET /users/me (the Profile page calls that one; this route stays
+    for API clients that start from /auth). UserProfile requires org_id,
+    org_name and created_at, so they are filled in here as well.
     """
     return UserProfileResponse(
         id=current_user.id,
+        org_id=current_user.org_id,
+        org_name=current_user.organization.name if current_user.organization else "Unknown",
         email=current_user.email,
         full_name=current_user.full_name,
         employee_code=current_user.employee_code,
         phone=current_user.phone,
         role=current_user.role,
+        avatar_url=current_user.avatar_url,
         function=current_user.function.name if current_user.function else None,
         designation=current_user.designation.name if current_user.designation else None,
         mentor_name=current_user.mentor.full_name if current_user.mentor else None,
+        created_at=current_user.created_at,
     )

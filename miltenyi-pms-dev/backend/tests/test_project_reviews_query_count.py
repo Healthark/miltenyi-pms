@@ -3,7 +3,7 @@ test_project_reviews_query_count.py — first concrete test (doc 33).
 
 What this test does:
     Seeds an org with 50 ProjectReview rows, hits
-    GET /api/v1/project-reviews/all?limit=50 as an HR_MyOrg user, and
+    GET /api/v1/project-reviews/all?limit=50 as an Admin user, and
     asserts that the response is correct AND that the number of SQL
     statements emitted stays bounded.
 
@@ -56,7 +56,7 @@ from tests.conftest import QueryCounter
 
 
 def _seed_org_and_admin(db: Session) -> tuple[Organization, User]:
-    """Bare-minimum seed: org + HR_MyOrg user + SystemSettings.
+    """Bare-minimum seed: org + Admin user + SystemSettings.
 
     The SystemSettings row is REQUIRED — without it, the route's
     `_get_settings_row` returns None, and `_build_review_response`'s
@@ -65,7 +65,9 @@ def _seed_org_and_admin(db: Session) -> tuple[Organization, User]:
     and thread it down"; the test must produce conditions matching
     that contract.
     """
-    org = Organization(name="Test Org")
+    # Routes are feature-gated per organisation; the query-count target
+    # is the project-reviews list, so that feature must be on for the org.
+    org = Organization(name="Test Org", enabled_features=["project_reviews"])
     db.add(org)
     db.flush()  # populate org.id without committing
 
@@ -74,7 +76,7 @@ def _seed_org_and_admin(db: Session) -> tuple[Organization, User]:
         employee_code="HR001",
         full_name="HR Admin",
         email="hr@test.local",
-        role=Role.HR_MYORG.value,
+        role=Role.ADMIN.value,
         password_hash="not-checked-in-tests",
     )
     db.add(admin)
@@ -116,7 +118,7 @@ def _seed_50_reviews(db: Session, org: Organization, pm: User) -> list[ProjectRe
             employee_code=f"STAFF-{i:03d}",
             full_name=f"Staff {i}",
             email=f"staff{i}@test.local",
-            role=Role.EMPLOYEE.value,
+            role=Role.STAFF.value,
             password_hash="not-checked",
         )
         db.add(staff)
@@ -161,7 +163,7 @@ def test_project_reviews_all_query_count_is_bounded(
     org, admin = _seed_org_and_admin(db_session)
     _seed_50_reviews(db_session, org, admin)
 
-    # 2. Make the request as the HR_MyOrg user. Reset the counter
+    # 2. Make the request as the Admin user. Reset the counter
     #    AFTER seeding — we only care about queries that fire under
     #    the route handler, not the inserts that built the fixture.
     client: TestClient = as_user(admin)
