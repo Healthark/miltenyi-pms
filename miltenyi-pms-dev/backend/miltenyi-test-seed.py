@@ -323,9 +323,9 @@ def seed_test_database() -> None:
         # 4. SYSTEM SETTINGS                                            #
         # ============================================================ #
         # Demo posture: half-yearly cadence (H1/H2 goal reviews, FY annual
-        # reviews), every per-FY gate open and every rating visible, and the
-        # H1/H2 review-window calendar gate bypassed so stakeholders can fill
-        # both halves in one session.
+        # reviews), every per-FY gate open and every rating visible. The
+        # H1/H2 calendar gate has no bypass switch any more (removed 20 Sep
+        # 2026); Date simulation (ALLOW_DATE_SIMULATION) walks a demo across halves.
         if not db.query(SystemSettings).filter(SystemSettings.org_id == miltenyi.id).first():
             db.add(SystemSettings(
                 org_id=miltenyi.id,
@@ -333,11 +333,10 @@ def seed_test_database() -> None:
                 cycle_type=CycleType.HALF_YEARLY.value,
                 fiscal_start_month=4,
                 timezone="Asia/Kolkata",
-                cycle_window_override=True,
                 updated_by_id=aanya.id,
             ))
             db.commit()
-            print("  [+] System Settings (half-yearly, H1 FY26-27, Asia/Kolkata, H1/H2 review window bypass on)")
+            print("  [+] System Settings (half-yearly, H1 FY26-27, Asia/Kolkata)")
         else:
             print("  [~] System settings already exist; reusing.")
 

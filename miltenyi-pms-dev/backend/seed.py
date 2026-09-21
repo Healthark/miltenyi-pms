@@ -334,14 +334,10 @@ def seed_database() -> None:
                 cycle_type=CycleType.HALF_YEARLY.value,
                 fiscal_start_month=4,
                 timezone="Asia/Kolkata",
-                # Dev convenience: bypass the H1/H2 calendar gate so we can
-                # test both halves' goal reviews in one session without
-                # waiting for October. Production should leave this False.
-                cycle_window_override=True,
                 updated_by_id=sarah.id,
             ))
             db.commit()
-            print("  [+] System Settings (half-yearly, H1 FY26-27, Asia/Kolkata, H1/H2 review window bypass on)")
+            print("  [+] System Settings (half-yearly, H1 FY26-27, Asia/Kolkata)")
         else:
             print("  [~] System settings already exist; reusing.")
 

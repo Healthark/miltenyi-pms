@@ -71,8 +71,9 @@ class SystemSettingsCreate(BaseModel):
 # ── Update Schema ────────────────────────────────────────────────────
 # Everything is Optional — Pydantic's model_dump(exclude_unset=True)
 # ensures only fields the Admin actually sent are written to the DB.
-# Fields: fiscal_start_month, timezone (via the admin panel), and the
-# developer escape hatches.
+# Field: fiscal_start_month. The timezone is read-only in the UI, the
+# per-FY toggles and the developer date simulation have their own routes,
+# and the H1/H2 calendar bypass was removed on 20 Sep 2026.
 class SystemSettingsUpdate(BaseModel):
     fiscal_start_month: Optional[int] = Field(
         default=None,
@@ -83,4 +84,3 @@ class SystemSettingsUpdate(BaseModel):
     # The active cycle label is computed on every read, and the cadence is
     # fixed at half-yearly, so neither is accepted here. The per-FY toggles
     # are written through /admin/settings/year/{fy}.
-    cycle_window_override: Optional[bool] = None
