@@ -4,8 +4,10 @@
  * Two subsections share the HR mental model "what needs my
  * attention?":
  *   1. Unsubmitted Annual Reviews — not-started + draft chase lists.
- *   2. Paused Settings — org-wide gate flags currently OFF. Self-
- *      reminder to re-enable. Replaces the retired ActiveOverridesCard.
+ *   2. Paused Settings — year switches currently OFF (annual gates from
+ *      System Settings, plus the Project Goals switches of the picked
+ *      goal year: goal entry, weightages, quarters closed for backfill,
+ *      ratings not yet released). A self-reminder to re-open them.
  *
  * Each section keeps the same shape:
  *   - badge in the subheader (count or "All clear"),
@@ -26,6 +28,8 @@ import type { MissingAnnualReviewsSummary } from "@/services/dashboard.service";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
 import type { SystemSettingsResponse } from "@/services/system-settings.service";
 import { fyStartYearToToken } from "@/utils/fy";
+import { quarterDisplay, type PeriodSettings } from "@/services/project-goals.service";
+import type { PeriodPreflight } from "@/services/goal-framework.service";
 
 const INLINE_LIMIT = 3;
 const SETTINGS_HREF = "/admin?tab=settings";
@@ -44,12 +48,19 @@ interface PendingActionsCardProps {
    *  a Not Started name should jump straight to that employee's row in
    *  Management Review, pre-filtered to the matching cycle. */
   readonly notStartedHref?: string;
+  /** The picked goal year's Project Goals period: null when that year has
+   *  no goal year or the feature is off. */
+  readonly period?: PeriodSettings | null;
+  /** The same year's preflight — which quarters have submitted reviews. */
+  readonly preflight?: PeriodPreflight | null;
 }
 
 export function PendingActionsCard({
   missingReviews,
   draftsHref = "/annual-reviews",
   notStartedHref = "/management-review",
+  period = null,
+  preflight = null,
 }: PendingActionsCardProps) {
   return (
     <article className="flex h-full flex-col gap-5 rounded-xl border border-border bg-surface p-5 shadow-sm">
@@ -58,7 +69,7 @@ export function PendingActionsCard({
         draftsHref={draftsHref}
         notStartedHref={notStartedHref}
       />
-      <PausedSettingsSection />
+      <PausedSettingsSection period={period} preflight={preflight} />
     </article>
   );
 }
@@ -136,8 +147,8 @@ function MissingReviewsSection({
       ) : isAllClear ? (
         <AllClearBlock
           icon={<CheckCircle2 className="h-5 w-5 text-green" />}
-          title="Every Employee has submitted their review."
-          subtitle="No drafts pending, no employees missing — full coverage."
+          title="Every staff member has submitted their review."
+          subtitle="No drafts pending, nobody missing — full coverage."
         />
       ) : (
         <div className="flex flex-col gap-3">
@@ -309,20 +320,43 @@ const PAUSED_SETTINGS: ReadonlyArray<{
   },
   {
     settingKey: "annual_goals_edit_enabled",
-    label: "Goal editing disabled",
+    label: "Annual goal editing disabled",
   },
   {
     settingKey: "annual_review_final_rating_visible",
-    label: "Final ratings hidden",
+    label: "Annual final ratings hidden",
   },
 ];
 
-function PausedSettingsSection() {
+/** The Project Goals switches that are OFF for the picked goal year. */
+function projectGoalRows(period: PeriodSettings | null, preflight: PeriodPreflight | null): Array<{ key: string; label: string }> {
+  if (!period) return [];
+  const rows: Array<{ key: string; label: string }> = [];
+  const year = period.period_label;
+  if (!period.entry_open) rows.push({ key: "pg-entry", label: `Goal entry closed · ${year}` });
+  if (!period.weightages_visible) rows.push({ key: "pg-weights", label: `Weightages hidden · ${year}` });
+  for (const q of period.quarters) {
+    const started = period.current_quarter_seq != null && q.seq <= period.current_quarter_seq;
+    if (!started) continue;
+    const label = quarterDisplay(q.cycle_label);
+    if (!q.is_current && !q.backfill_open) rows.push({ key: `pg-backfill-${q.seq}`, label: `${label} closed for backfill` });
+    const submitted = preflight?.quarters.find((x) => x.seq === q.seq)?.reviews_submitted ?? 0;
+    if (!q.ratings_visible && submitted > 0) {
+      rows.push({ key: `pg-ratings-${q.seq}`, label: `${label} ratings not released · ${submitted} review${submitted === 1 ? "" : "s"} submitted` });
+    }
+  }
+  return rows;
+}
+
+function PausedSettingsSection({ period, preflight }: { readonly period: PeriodSettings | null; readonly preflight: PeriodPreflight | null }) {
   const { settings } = useSystemSettings();
   const isLoading = !settings;
-  // Setting OFF (false) → override is active → row is shown.
+  // A switch that is OFF is a paused gate → one row each.
   const activeRows = !isLoading
-    ? PAUSED_SETTINGS.filter((s) => settings[s.settingKey] === false)
+    ? [
+        ...PAUSED_SETTINGS.filter((s) => settings[s.settingKey] === false).map((s) => ({ key: String(s.settingKey), label: s.label })),
+        ...projectGoalRows(period, preflight),
+      ]
     : [];
   const count = activeRows.length;
   const isAllClear = !isLoading && count === 0;
@@ -347,12 +381,12 @@ function PausedSettingsSection() {
         <AllClearBlock
           icon={<CheckCircle2 className="h-5 w-5 text-green" />}
           title="No settings paused."
-          subtitle="All org-wide gates are at default."
+          subtitle="Every year switch is open."
         />
       ) : (
         <ul className="flex flex-col divide-y divide-border/50">
           {activeRows.map((row) => (
-            <li key={row.settingKey}>
+            <li key={row.key}>
               <Link
                 to={SETTINGS_HREF}
                 className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-slate-100 transition-colors"

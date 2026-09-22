@@ -147,3 +147,44 @@ export function daysUntilFyEnd(
   const msPerDay = 1000 * 60 * 60 * 24;
   return Math.round((fyEndMid.getTime() - todayMid.getTime()) / msPerDay);
 }
+
+// ── CY labels ─────────────────────────────────────────────────────────
+// The application shows every year as a calendar-year span ("CY 26-27",
+// decided 20 Sep 2026). "FY26-27" stays the stored token and the URL
+// filter value; both describe the same April-to-March span. These helpers
+// are shared by System Settings, the Topbar and the dashboards so the
+// spelling never drifts.
+
+/**
+ * "FY26-27" | "FY2026-27" | "CY 26-27" | "CY 2026" | "H1 FY26-27" |
+ * "Q3 CY 26-27" → 2026; null when unreadable.
+ */
+export function startYearOf(label: string | null | undefined): number | null {
+  if (!label) return null;
+  const token = label.trim().replace(/^(?:H[12]|Q[1-4])\s+/i, "");
+  const span = /^(?:FY|CY)\s?(\d{2}|\d{4})-\d{2}$/i.exec(token);
+  if (span) return span[1].length === 4 ? Number(span[1]) : 2000 + Number(span[1]);
+  const year = /^(?:FY|CY)\s?(\d{4})$/i.exec(token);
+  return year ? Number(year[1]) : null;
+}
+
+/** 2026 → "CY 26-27" */
+export function cyLabel(startYear: number): string {
+  return `CY ${String(startYear % 100).padStart(2, "0")}-${String((startYear + 1) % 100).padStart(2, "0")}`;
+}
+
+/** 2026 → "FY26-27" (the stored token). */
+export function fyLabel(startYear: number): string {
+  return fyStartYearToToken(startYear);
+}
+
+/** "H1 FY26-27" → "H1 · CY 26-27"; "FY26-27" → "CY 26-27"; anything else unchanged. */
+export function cycleAsCy(cycleName: string): string {
+  const m = /^(H[12]|Q[1-4])\s+(\S+)$/i.exec(cycleName.trim());
+  if (m) {
+    const y = startYearOf(m[2]);
+    return y ? `${m[1].toUpperCase()} · ${cyLabel(y)}` : cycleName;
+  }
+  const y = startYearOf(cycleName);
+  return y ? cyLabel(y) : cycleName;
+}

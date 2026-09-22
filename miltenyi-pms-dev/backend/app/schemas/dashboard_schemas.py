@@ -60,6 +60,8 @@ class DashboardSummary(BaseModel):
     # by historical noise; HR's org-wide ProjectReviewCompletion widget
     # already surfaces those at the FY rollup level.
     #
+    # Only computed when the org has the project_reviews feature (retired
+    # for Project Goals orgs); zero otherwise.
     # Primary: Project.pm_id == me AND status in (pending, draft) — keyed
     # off the live PM relationship so a freshly-pending row (reviewer_id
     # is NULL until the PM saves) still counts. Cycle filter applied via
@@ -94,11 +96,9 @@ class DashboardSummary(BaseModel):
 
 # ── HR org-wide dashboard ─────────────────────────────────────────────
 #
-# Separate response model from DashboardSummary because the HR view is
-# org-wide rollups, not the caller's personal queue. Both HR roles
-# (HR_MyOrg, HR_Miltenyi) receive the same shape for now — divergent
-# widgets in later versions will be either gated on the frontend or
-# split into role-specific endpoints if the payloads grow apart.
+# Separate response model from DashboardSummary because the Admin view is
+# org-wide rollups, not the caller's personal queue. Project Goals numbers
+# are served by the project-goals / goal-framework routes instead.
 
 class HeadcountByRole(BaseModel):
     """Active-user breakdown by role (Staff / Mentor / Admin)."""
@@ -211,29 +211,6 @@ class MissingAnnualReviewsSummary(BaseModel):
     drafts: list[DraftAnnualReviewUser] = []
 
 
-class StalledGoal(BaseModel):
-    """One row in the stalled-goal-approvals chase list."""
-    goal_id: int
-    title: str
-    owner_name: str
-    mentor_name: str | None = None
-    days_waiting: int
-
-
-class StalledGoalsSummary(BaseModel):
-    """Annual goals stuck in `pending_approval` longer than the
-    threshold for the selected FY.
-
-    The mentor is the natural escalation target — when an employee
-    submits, the goal sits at `pending_approval` until their mentor
-    acts. After `threshold_days` we surface the row here so HR can
-    nudge the mentor."""
-    fy_year: int | None = None
-    threshold_days: int = 7
-    count: int = 0
-    goals: list[StalledGoal] = []
-
-
 class UnmentoredEmployee(BaseModel):
     """One row in the unmentored-Employee list."""
     user_id: int
@@ -299,7 +276,6 @@ class HrDashboardSummary(BaseModel):
     goal_approval_funnel: GoalApprovalFunnel = GoalApprovalFunnel()
     project_review_completion: ProjectReviewCompletion = ProjectReviewCompletion()
     missing_annual_reviews: MissingAnnualReviewsSummary = MissingAnnualReviewsSummary()
-    stalled_goals: StalledGoalsSummary = StalledGoalsSummary()
     mentor_coverage: MentorCoverage = MentorCoverage()
     # Distinct 4-digit FY start years that have any annual review or
     # annual goal row in the caller's org, plus the active FY (so the

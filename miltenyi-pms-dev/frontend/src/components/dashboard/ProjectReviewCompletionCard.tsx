@@ -20,7 +20,7 @@
 import { Briefcase } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { ProjectReviewCompletion } from "@/services/dashboard.service";
-import { formatFyYearSpan } from "@/utils/fy";
+import { cyLabel } from "@/utils/fy";
 import { DonutChart } from "./DonutChart";
 
 // Local chart palette (slate-400 / amber-400 / emerald-400). Kept off
@@ -55,7 +55,7 @@ export function ProjectReviewCompletionCard({
 }: ProjectReviewCompletionCardProps) {
   const isLoading = data === null;
   const fyLabel =
-    data?.fy_year != null ? formatFyYearSpan(data.fy_year) : null;
+    data?.fy_year != null ? cyLabel(data.fy_year) : null;
   // Deep-link to the matching cycle on /project-reviews when the
   // parent supplied one. Without the hint we'd either pass an FY
   // token (which doesn't match any actual cycle_name and would zero

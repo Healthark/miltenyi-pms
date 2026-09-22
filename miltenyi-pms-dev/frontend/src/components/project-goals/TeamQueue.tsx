@@ -22,7 +22,7 @@ const GRID_MENTOR =
 type ReviewFilter = "all" | "self_pending" | "review_pending" | "reviewed" | "acknowledged";
 
 /** Where one row stands in the selected quarter. */
-function quarterBucket(r: TeamRow): ReviewFilter | null {
+export function quarterBucket(r: TeamRow): ReviewFilter | null {
   if (!r.has_framework || r.goals_status !== "approved") return null;
   if (r.self_status !== "submitted" && r.review_status !== "submitted") return "self_pending";
   if (r.review_status !== "submitted") return "review_pending";
@@ -30,7 +30,7 @@ function quarterBucket(r: TeamRow): ReviewFilter | null {
 }
 
 /** What the viewer can do on this row right now. */
-function nextAction(r: TeamRow, cycleLabel: string | null, viewerIsHr: boolean): "approve" | "review" | "open" | "not_started" | "no_framework" {
+export function nextAction(r: TeamRow, cycleLabel: string | null, viewerIsHr: boolean): "approve" | "review" | "open" | "not_started" | "no_framework" {
   if (!r.has_framework) return "no_framework";
   if (!r.set_id) return "not_started";
   if (r.goals_status === "submitted") return "approve";

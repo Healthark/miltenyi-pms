@@ -35,9 +35,8 @@ export interface DashboardSummary {
   annual_review_cycle: string | null;
 
   // ── Personal: Project Reviews where caller is evaluator ────────────
-  // Pending + done counts are both scoped to the active project cycle
-  // so the PM dashboard's Project Reviews donut reads as "this cycle".
-  // See backend `DashboardSummary` docstring for the exact filters.
+  // Only computed when the org has the project_reviews feature; zero
+  // otherwise (retired for Project Goals orgs).
   project_reviews_pending_primary: number;
   project_reviews_pending_secondary: number;
   /** Primary reviews the caller has already submitted (REVIEWED) in
@@ -50,20 +49,19 @@ export interface DashboardSummary {
 
   // ── Personal: Project Reviews RECEIVED in the active cycle ─────────
   // Count of PM evaluations submitted against the caller in the active
-  // project cycle. Drives the compact strip footer on the Employee
-  // dashboard's Annual Review card. Always 0 for PM/Mentor/HR roles.
+  // project cycle (project_reviews feature only).
   project_reviews_received_count: number;
 
   // ── Mentor: only meaningful when caller has direct mentees ─────────
   mentee_count: number;
 }
 
-// ── HR org-wide dashboard ─────────────────────────────────────────────
+// ── Admin org-wide dashboard ──────────────────────────────────────────
 //
-// Separate response model from DashboardSummary — the HR view shows
-// org-wide rollups, not the caller's personal queue. Both HR roles
-// (HR_MyOrg, HR_Miltenyi) hit the same endpoint and receive the same
-// payload for now; widgets that diverge get gated on the frontend.
+// Separate response model from DashboardSummary — the Admin view shows
+// org-wide rollups, not the caller's personal queue. Project Goals
+// numbers come from the project-goals and goal-framework services
+// (period, team, preflight) rather than this payload.
 
 export interface HeadcountByRole {
   staff: number;
@@ -148,24 +146,6 @@ export interface MissingAnnualReviewsSummary {
   drafts: DraftAnnualReviewUser[];
 }
 
-export interface StalledGoal {
-  goal_id: number;
-  title: string;
-  owner_name: string;
-  mentor_name: string | null;
-  days_waiting: number;
-}
-
-export interface StalledGoalsSummary {
-  fy_year: number | null;
-  /** Number of days a goal must sit in `pending_approval` before it
-   *  counts as stalled. Echoed back by the backend so the frontend
-   *  doesn't have to duplicate the constant. */
-  threshold_days: number;
-  count: number;
-  goals: StalledGoal[];
-}
-
 export interface UnmentoredEmployee {
   user_id: number;
   full_name: string;
@@ -205,7 +185,6 @@ export interface HrDashboardSummary {
   goal_approval_funnel: GoalApprovalFunnel;
   project_review_completion: ProjectReviewCompletion;
   missing_annual_reviews: MissingAnnualReviewsSummary;
-  stalled_goals: StalledGoalsSummary;
   mentor_coverage: MentorCoverage;
   /** Distinct fiscal start years that have annual-review or annual-goal
    *  data in the caller's org, sorted newest-first. The active FY is
@@ -220,10 +199,9 @@ export const dashboardService = {
     return res.data;
   },
 
-  /** HR-only aggregate. `fyYear` is the 4-digit fiscal start year
-   *  (e.g. 2026 for FY26-27). Sent today even though only cycle-scoped
-   *  widgets we add later will consume it — the headcount widget is a
-   *  snapshot and ignores it. */
+  /** Admin-only aggregate. `fyYear` is the 4-digit start year of the
+   *  picked year (2026 for CY 26-27 / FY26-27); the headcount and mentor
+   *  coverage widgets are snapshots and ignore it. */
   getHrSummary: async (fyYear?: number): Promise<HrDashboardSummary> => {
     const res = await apiClient.get<HrDashboardSummary>(
       "/dashboard/hr-summary",

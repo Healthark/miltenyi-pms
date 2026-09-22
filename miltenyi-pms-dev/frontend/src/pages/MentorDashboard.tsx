@@ -1,26 +1,17 @@
 /**
- * MentorDashboard — landing page for users with one or more direct
- * mentees. Cards on this page are scoped to the mentor's relationship
- * with their mentees, not the mentor's own employee data — mentors in
- * this org structure do not maintain their own goals or annual review,
- * so the personal "My Goals" / "My Review" / "My Action Items" widgets
- * that the Employee dashboard renders are deliberately omitted.
+ * MentorDashboard — landing page for Mentors (and anyone with direct
+ * mentees). Cards are scoped to the mentor's mentees, not the mentor's own
+ * records — mentors do not keep annual goals or an annual review of their
+ * own, so the personal cards of the staff dashboard are left out.
  *
- * Layout:
- *   Row 1: Active Project Cycle | Active Goal Cycle    — cycle anchors,
- *          identical to the Mentee/Employee dashboard's top row.
- *   Row 2: Mentee Goal Funnel | Mentee Annual Review   — HR-style donut
- *          cards aggregated across every mentee. Surface where work
- *          sits in the approval / evaluation pipeline.
- *   Row 3: My Mentees                                  — mentee count tile.
+ *   Row 1: Cycles (goal year · current quarter · annual half) | Team Project Goals
+ *   Row 2: Mentee Goal Approvals | Mentee Annual Reviews
+ *   Row 3: My Mentees
  *
- * Owns two fetches at the page level:
- *   /dashboard/summary  → DashboardSummary  (drives the cycle cards and
- *                          the mentee count tile)
- *   /mentees/summary    → MenteeSummary[]   (drives both funnel cards)
- *
- * Each card receives either its loaded slice or null and renders its
- * own skeleton in place — the grid is stable from first paint.
+ * Fetches: /dashboard/summary (cycle, mentee count), /mentees/summary
+ * (annual funnels) and, for Project Goals orgs, /project-goals/period and
+ * /project-goals/team for the current quarter — the same rows the Team
+ * Goals queue renders.
  */
 
 import { useEffect } from "react";
@@ -30,24 +21,27 @@ import { useAuth } from "@/hooks/useAuth";
 import { useSnackbar } from "@/hooks/useSnackbar";
 import { dashboardService } from "@/services/dashboard.service";
 import { menteeService } from "@/services/mentee.service";
+import { projectGoalsService } from "@/services/project-goals.service";
 import { getErrorMessage } from "@/utils/errors";
-import { ActiveCycleWidget } from "@/components/dashboard/ActiveCycleWidget";
+import {
+  ActiveCyclesCard,
+  LEGACY_BLOCKS,
+  LEGACY_BLOCKS_WITH_PROJECT_REVIEWS,
+  PROJECT_GOALS_BLOCKS,
+} from "@/components/dashboard/ActiveCyclesCard";
 import { MenteesWidget } from "@/components/dashboard/MenteesWidget";
 import { MenteeGoalFunnelCard } from "@/components/dashboard/MenteeGoalFunnelCard";
 import { MenteeReviewFunnelCard } from "@/components/dashboard/MenteeReviewFunnelCard";
+import { TeamProjectGoalsCard } from "@/components/dashboard/TeamProjectGoalsCard";
 
 export function MentorDashboard() {
-  const { user } = useAuth();
+  const { user, hasFeature } = useAuth();
   const snackbar = useSnackbar();
+  const projectGoalsOn = hasFeature("project_goals");
+  const projectReviewsOn = hasFeature("project_reviews");
 
-  // Two independent queries — they run in parallel (TanStack Query does
-  // not serialise them). Both share global defaults from queryClient
-  // (30s staleTime, 5min gcTime, refetch-on-focus).
-  //
-  // Note ['dashboard', 'summary'] matches EmployeeDashboard's key on purpose:
-  // a Mentor who also lands on /dashboard sees the same cached entry,
-  // and any future mutation that invalidates ['dashboard'] refreshes
-  // BOTH variants at once.
+  // ['dashboard', 'summary'] is shared with the staff dashboard on purpose:
+  // one cache entry, one invalidation.
   const { data: summary, error: summaryError } = useQuery({
     queryKey: queryKeys.dashboard.summary(),
     queryFn: dashboardService.getSummary,
@@ -58,10 +52,18 @@ export function MentorDashboard() {
     queryFn: menteeService.getSummaries,
   });
 
-  // One snackbar effect per query: keeps each query's error surfacing
-  // independent. If both queries fail in the same render, both toasts
-  // fire — which is what the user wants (they need to know both
-  // resources are broken, not just whichever errored first).
+  const { data: period, error: periodError } = useQuery({
+    queryKey: queryKeys.projectGoals.period(),
+    queryFn: () => projectGoalsService.getPeriod(),
+    enabled: projectGoalsOn,
+  });
+
+  const { data: team, error: teamError } = useQuery({
+    queryKey: queryKeys.projectGoals.team(),
+    queryFn: () => projectGoalsService.getTeam(),
+    enabled: projectGoalsOn,
+  });
+
   useEffect(() => {
     if (summaryError) snackbar.error(getErrorMessage(summaryError));
   }, [summaryError, snackbar]);
@@ -70,61 +72,56 @@ export function MentorDashboard() {
     if (menteesError) snackbar.error(getErrorMessage(menteesError));
   }, [menteesError, snackbar]);
 
+  useEffect(() => {
+    if (periodError) snackbar.error(getErrorMessage(periodError));
+  }, [periodError, snackbar]);
+
+  useEffect(() => {
+    if (teamError) snackbar.error(getErrorMessage(teamError));
+  }, [teamError, snackbar]);
+
   const firstName = user?.full_name?.split(" ")[0] ?? "there";
+  const blocks = projectGoalsOn ? PROJECT_GOALS_BLOCKS : projectReviewsOn ? LEGACY_BLOCKS_WITH_PROJECT_REVIEWS : LEGACY_BLOCKS;
+  // undefined while loading, null when no goal year is active
+  const pgPeriod = projectGoalsOn ? period : null;
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div>
-        <h1 className="font-display text-xl font-semibold text-text-main">
-          Welcome back, {firstName}
-        </h1>
-        <p className="mt-0.5 text-sm text-text-muted">
-          Where your mentees stand on goals and reviews.
-        </p>
+        <h1 className="font-display text-xl font-semibold text-text-main">Welcome back, {firstName}</h1>
+        <p className="mt-0.5 text-sm text-text-muted">Where your mentees stand on project goals, annual goals and reviews.</p>
       </div>
 
-      {/* Row 1: Active Project Cycle | Active Goal Cycle */}
+      {/* Row 1: where are we now | the Project Goals queue at a glance */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        {summary ? (
-          <ActiveCycleWidget
-            activeCycle={summary.active_cycle}
-            variant="project"
-          />
-        ) : (
-          <CardSkeleton />
-        )}
-        {summary ? (
-          <ActiveCycleWidget
-            activeCycle={summary.active_cycle}
-            variant="goal"
-          />
+        {summary ? <ActiveCyclesCard activeCycle={summary.active_cycle} period={pgPeriod} blocks={blocks} /> : <CardSkeleton />}
+        {projectGoalsOn ? (
+          <TeamProjectGoalsCard rows={team ?? null} period={pgPeriod} viewerIsHr={user?.role === "Admin"} />
+        ) : summary ? (
+          <MenteesWidget summary={summary} />
         ) : (
           <CardSkeleton />
         )}
       </div>
 
-      {/* Row 2: Mentee Goal Funnel | Mentee Annual Review Funnel */}
-      {/* useQuery returns `undefined` for not-yet-loaded data; the
-          widgets predate the migration and were typed for `null` as
-          their loading sentinel. The `?? null` here is the smallest
-          possible bridge — fixing it "properly" means changing every
-          dashboard widget's prop type, which is a follow-up cleanup. */}
+      {/* Row 2: the annual stream, aggregated across every mentee.
+          `?? null` bridges useQuery's undefined to the widgets' null sentinel. */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <MenteeGoalFunnelCard mentees={mentees ?? null} />
         <MenteeReviewFunnelCard mentees={mentees ?? null} />
       </div>
 
-      {/* Row 3: My Mentees count */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        {summary ? <MenteesWidget summary={summary} /> : <CardSkeleton />}
-      </div>
+      {/* Row 3: My Mentees count (already in row 1 for orgs without Project Goals) */}
+      {projectGoalsOn && (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          {summary ? <MenteesWidget summary={summary} /> : <CardSkeleton />}
+        </div>
+      )}
     </div>
   );
 }
 
-// Generic per-card skeleton matching the surface + padding of the
-// loaded widgets, so the grid doesn't reflow when data lands.
+// Generic per-card skeleton matching the loaded widgets' surface + padding.
 function CardSkeleton() {
   return (
     <div className="rounded-xl border border-border bg-surface p-5 shadow-sm flex flex-col gap-4 animate-pulse h-44">

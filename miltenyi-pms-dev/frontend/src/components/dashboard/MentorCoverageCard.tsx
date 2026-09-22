@@ -2,7 +2,7 @@
  * MentorCoverageCard — mentor pairing health snapshot.
  *
  * Two sections, side by side at md+ breakpoint:
- *   1. Unassigned Employees — every active Staff member who currently
+ *   1. Unassigned staff — every active Staff member who currently
  *      has no live mentor. Two sub-populations are surfaced via per-row
  *      chips so HR can triage:
  *        • Orphaned by deactivation/role-change (had a mentor, the
@@ -41,12 +41,12 @@ interface MentorCoverageCardProps {
 
 export function MentorCoverageCard({
   data,
-  // Default deep-links to the Users tab pre-filtered to role=Employee
+  // Default deep-links to the Users tab pre-filtered to role=Staff
   // — the universe the Mentor Coverage card is talking about. HR lands
-  // on the full Employee roster (active by default via UsersTab's
+  // on the full Staff roster (active by default via UsersTab's
   // `status=active` default) and can narrow further from there using
   // the page's own filters.
-  viewAllHref = "/admin?tab=users&role=Employee",
+  viewAllHref = "/admin?tab=users&role=Staff",
 }: MentorCoverageCardProps) {
   const isLoading = data === null;
 
@@ -119,13 +119,13 @@ function UnassignedSection({
     ...unmentored.map<UnassignedRow>((row) => ({ kind: "unmentored", row })),
   ];
   const count = merged.length;
-  const word = count === 1 ? "employee" : "employees";
+  const word = count === 1 ? "staff member" : "staff members";
 
   return (
     <section className="space-y-2">
       <div className="flex items-center justify-between">
         <SectionLabel icon={<AlertTriangle className="h-3 w-3" />}>
-          Unassigned Employees
+          Unassigned staff
         </SectionLabel>
         {count > 0 && (
           <span className="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-500/15 px-2 py-0.5 text-[11px] font-semibold text-amber-800 dark:text-amber-300 tabular-nums">
@@ -138,7 +138,7 @@ function UnassignedSection({
         <div className="rounded-lg bg-emerald-50/40 dark:bg-emerald-900/20 border border-dashed border-emerald-200 dark:border-emerald-500/40 px-3 py-2.5 text-center">
           <p className="text-[12px] text-emerald-700 dark:text-emerald-300 inline-flex items-center gap-1.5">
             <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
-            Every active Employee has a mentor.
+            Every active staff member has a mentor.
           </p>
         </div>
       ) : (
@@ -168,14 +168,14 @@ function UnassignedRow({ item }: { readonly item: UnassignedRow }) {
       {item.kind === "orphaned" ? (
         <span
           className="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:text-amber-300 whitespace-nowrap shrink-0"
-          title="This employee lost their mentor via deactivation or role-change. In-flight goals + reviews are frozen until HR reassigns."
+          title="This staff member lost their mentor via deactivation or role-change. In-flight goals + reviews are frozen until HR reassigns."
         >
           Lost · {formatLostAge(item.row.orphaned_at)}
         </span>
       ) : (
         <span
           className="inline-flex items-center rounded-full bg-slate-100 dark:bg-slate-700/60 px-2 py-0.5 text-[11px] font-medium text-text-muted whitespace-nowrap shrink-0"
-          title="This employee has never been assigned a mentor — a process gap that HR should close."
+          title="This staff member has never been assigned a mentor — a process gap that HR should close."
         >
           Never assigned
         </span>

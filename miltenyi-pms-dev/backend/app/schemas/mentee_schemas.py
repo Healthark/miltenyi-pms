@@ -8,6 +8,9 @@ project lists used by the /my-mentees/:id detail page.
 Pending-action counting (what drives the "Needs my attention" filter):
     - Annual goals in SUBMITTED approval_status                (awaiting approval)
     - Active-cycle AnnualReview in PENDING_MENTOR status       (awaiting eval)
+    - Project goal set in SUBMITTED status                     (approval to record)
+    - Approved set with the current quarter's self-review in
+      and no Miltenyi review submitted                          (comments to enter)
 """
 
 from pydantic import BaseModel, ConfigDict
@@ -104,8 +107,8 @@ class MenteeSummary(BaseModel):
     goals: MenteeGoalsStats
     review: MenteeReviewStatus
     projects: MenteeProjectsStats
-    # Submitted-goal count + PENDING_MENTOR review count. Drives the
-    # amber "Needs your attention" strip on the card.
+    # Annual goals awaiting approval + PENDING_MENTOR annual review +
+    # project-goal actions (set to mark approved, quarter review to enter).
     pending_actions_count: int
 
     model_config = ConfigDict(from_attributes=True)

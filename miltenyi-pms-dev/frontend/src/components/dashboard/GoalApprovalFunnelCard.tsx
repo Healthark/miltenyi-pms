@@ -19,7 +19,7 @@
 import { Target } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { GoalApprovalFunnel } from "@/services/dashboard.service";
-import { formatFyYearSpan } from "@/utils/fy";
+import { cyLabel } from "@/utils/fy";
 import { DonutChart } from "./DonutChart";
 
 // Local chart palette (amber-400 / blue-400 / emerald-400). Kept off
@@ -45,7 +45,7 @@ export function GoalApprovalFunnelCard({
 }: GoalApprovalFunnelCardProps) {
   const isLoading = data === null;
   const fyLabel =
-    data?.fy_year != null ? formatFyYearSpan(data.fy_year) : null;
+    data?.fy_year != null ? cyLabel(data.fy_year) : null;
   // Append the FY as an `?fy=` query param so the destination lands
   // pre-filtered on the same FY the dashboard picker is showing.
   // AnnualGoals' All Goals tab reads `?fy=` as an integer (matches its

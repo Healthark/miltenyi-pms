@@ -505,3 +505,34 @@ Bell = in-app notification (Topbar). Email is sent in addition when SMTP is conf
 | Admin rolls a quarter out / sets / rolls back | Every active user (except the Admin who did it) | "Project Goals moved to Q4 · CY 26-27. Self-reviews and Miltenyi reviews for Q4 · CY 26-27 are open; earlier quarters of CY 26-27 stay open for backfill." (year change: "…CY 27-28 is the new goal year…"; roll back: "…Quarters after it are closed again.") | bell only |
 
 Self-notifications are suppressed (an Admin acting as the mentor of record is not pinged about their own action). Nothing is emailed for drafts or acknowledgements.
+
+---
+
+## 7.7 Dashboard cards (added 22 Sep 2026)
+
+### TC-PG-070 — Staff dashboard
+
+**Login as:** Staff (Aarav)
+**Expected:**
+- Row 1 **Cycles**: Goal year "CY 26-27" · Current quarter "Q3 · CY 26-27" · Annual goals & reviews "H1 · CY 26-27" (the same values as the Topbar) and **My Mentor**.
+- Row 2 **Project Goals**: left, "Goals · CY 26-27" with the status badge and one next step — "Start your CY 26-27 goals" → "Continue your goals" → "Submitted on <date>. Read-only while Rahul Verma records the approval agreed with Stefan Bauer." → "Approved (agreed offline) on <date>…"; right, "This quarter · Q3 · CY 26-27" with the Self-review and Review badges and one next step — "Quarterly reviews start once your goals are approved." → "Write your Q3 · CY 26-27 self-review" → "Self-review submitted on <date>. Stefan Bauer's comments appear here once Rahul Verma has entered them." → "Stefan Bauer's Q3 · CY 26-27 comments are in, entered by Rahul Verma on <date>." with **Read and acknowledge** → "Q3 · CY 26-27 reviewed and acknowledged on <date>." A lock line shows while the final rating is hidden. Every link opens the Project Goals page with the quarter pre-selected.
+- Row 3 **My Reviews** and **Annual Goals** as before.
+- No framework row for the level: the card shows the reason in amber. Goal entry closed: "Goal entry for CY 26-27 is closed…".
+
+---
+
+### TC-PG-071 — Mentor dashboard
+
+**Login as:** Mentor (Rahul)
+**Expected:**
+- Row 1 **Cycles** (there is no "Active Project Cycle" tile any more) and **Team Project Goals**: legend Not started · Draft · Awaiting your approval · Approved with the donut "approved of N"; a "Q3 · CY 26-27" strip — Waiting for self-review · Reviews to enter (amber when above zero) · Reviewed · Acknowledged; the line "1 awaiting your approval · 1 Q3 review to enter" or "Nothing is waiting on you for Q3 · CY 26-27."; a red line when a mentee has no framework row. The numbers equal the Team Goals queue summary for the current quarter.
+- Row 2 **Mentee Goal Approvals** and **Mentee Annual Reviews**; row 3 **My Mentees** ("3 staff members you mentor.").
+- A Mentor with no mentees still lands on this dashboard (empty states), never on the staff one.
+- On My Mentees, the mentee detail's "N pending" count includes a set to mark approved and a current-quarter review to enter.
+
+---
+
+### TC-PG-072 — Admin dashboard
+
+**Login as:** Admin
+**Expected:** See QA module 05, TC-HRD-003 (Cycles), TC-HRD-004 (Project Goals card) and TC-HRD-008 (Paused Settings with the Project Goals switches).

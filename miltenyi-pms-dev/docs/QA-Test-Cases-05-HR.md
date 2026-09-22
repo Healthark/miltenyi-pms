@@ -6,178 +6,109 @@
 
 ---
 
-## 5.1 HR Dashboard
+## 5.1 Admin Dashboard
+
+> Rewritten 22 Sep 2026 for the Project Goals flows. Every year is spelled as a calendar-year span ("CY 26-27"); the stored token "FY26-27" appears only in URLs.
 
 ### TC-HRD-001 — Open the dashboard
 
 **Login as:** Admin
 **Steps:**
-1. Open **HR Dashboard** from the sidebar (this should be the default landing page for Admin).
+1. Sign in (the dashboard is the landing page) or click **Dashboard**.
 
 **Expected:**
-- 7 widgets render in a grid layout:
-  1. **Headcount**
-  2. **Annual Review Funnel**
-  3. **Goal Approval Funnel**
-  4. **Project Review Completion**
-  5. **Missing Annual Reviews**
-  6. **Stalled Goals**
-  7. **Mentor Coverage**
-- A **Fiscal Year picker** is in the top-right of the dashboard.
+- Greeting, the subtitle "Org-wide rollups across staffing, goals and reviews." and a **Year** picker top-right listing years as "CY 26-27 (current)".
+- Cards, top to bottom: **Cycles** (Goal year · Current quarter · Annual goals & reviews), **Pending Actions** in the right column (Unsubmitted Annual Reviews, Paused Settings), **Project Goals**, **Annual Review Progress**, **Goal Approval Progress**, **Active Personnel**, then **Mentor Coverage** full width.
+- No Project Review card and no project cycle anywhere (the feature is retired for this org).
 
 **UI checks:**
-- Widget grid is responsive: 3 cols on wide, 2 on medium, 1 on narrow.
-- All widgets have the same border style, padding, and corner radius.
-- Widget titles are consistently styled and aligned.
+- Grid: 3 columns wide, 2 medium, 1 narrow; Pending Actions stays tall on the right on wide screens.
+- Same border, padding, radius and title style on every card.
 
 ---
 
 ### TC-HRD-002 — Loading skeletons
 
 **Login as:** Admin
-**Steps:**
-1. Open the dashboard (force a slow connection in browser DevTools → Network → Throttle to Slow 3G if needed).
-
-**Expected:**
-- Each widget shows a skeleton/loader during initial load.
-- Skeletons use the same shell as the loaded state (so the layout doesn't shift).
-
-**UI checks:**
-- Skeleton animation (pulse or shimmer) is consistent across widgets.
-- Once loaded, content fades in or replaces the skeleton without a layout jump.
+**Steps:** Open the dashboard on a throttled connection (DevTools → Network → Slow 3G).
+**Expected:** Each card shows its own skeleton in the same shell; content replaces it without a layout jump.
 
 ---
 
-### TC-HRD-003 — Headcount widget
+### TC-HRD-003 — Cycles card
 
 **Login as:** Admin
-**Steps:**
-1. Locate the Headcount widget.
-
-**Expected:**
-- Shows total active users across the org.
-- Optionally breaks down by Function or Role.
-
-**UI checks:**
-- Large number is the focal point; secondary stats below or beside it.
-- If a chart is present, axes/legends are readable.
+**Expected:** **Goal year** "CY 26-27", **Current quarter** "Q3 · CY 26-27", **Annual goals & reviews** "H1 · CY 26-27" — the same values as the Topbar pills and System Settings → Calendar. With no active goal year the first two blocks read "Not set" with a hint pointing at System Settings.
 
 ---
 
-### TC-HRD-004 — Annual Review Funnel widget
+### TC-HRD-004 — Project Goals card
 
 **Login as:** Admin
-**Steps:**
-1. Locate the Annual Review Funnel widget.
-
 **Expected:**
-- Shows counts at each stage: **Not Started · Draft · Pending Mentor · Pending Management · Completed**.
-- A visual element (bar/funnel) makes proportions easy to read.
-
-**UI checks:**
-- Stage labels do not overflow their containers.
-- Color coding for each stage matches the badges used in tables.
+- Legend **Not started · Draft · Submitted · awaiting approval · Approved** with the donut centre "<approved>/<staff>"; the numbers equal the All Goals queue summary and the System Settings Save confirmation (both come from the same preflight).
+- Chips **Goal entry open / closed** and **Weightages visible / hidden** for the picked year.
+- A quarters table for the started quarters: **Self-reviews pending · Reviews pending · Submitted · Ratings** (Released / Hidden), the current quarter highlighted; reviews pending in amber when above zero.
+- **View all →** opens the All Goals queue; **System Settings** opens the settings tab.
+- Picking a year without a goal year shows "No goal year CY 25-26. Goal years start when the Admin rolls Q4 into Q1 in System Settings."
 
 ---
 
-### TC-HRD-005 — Goal Approval Funnel widget
+### TC-HRD-005 — Annual Review Progress
 
 **Login as:** Admin
-**Steps:**
-1. Locate the Goal Approval Funnel widget.
-
-**Expected:**
-- Shows counts at: **Draft · Pending Approval · Changes Requested · Approved · Reviewed (H1) · Reviewed (H2)** for the selected FY.
+**Expected:** **Draft · Pending Mentor · Pending Management · Completed** for the picked year, sublabel "CY 26-27", **View all →** opens Annual Reviews pre-filtered to that year. Staff who have not started are listed in Pending Actions, not here.
 
 ---
 
-### TC-HRD-006 — Project Review Completion widget
+### TC-HRD-006 — Goal Approval Progress
 
 **Login as:** Admin
-**Steps:**
-1. Locate the Project Review Completion widget.
-
-**Expected:**
-- Shows percentage / count of completed vs total project reviews for the cycle.
-
-**UI checks:**
-- Progress bar fills with brand color; percentage text overlays clearly.
+**Expected:** **Pending Approval · Changes Requested · Approved** for the picked year (every post-approval review state rolls into Approved; drafts are private and not shown). **View all →** opens Annual Goals pre-filtered to that year.
 
 ---
 
-### TC-HRD-007 — Missing Annual Reviews widget
+### TC-HRD-007 — Pending Actions: Unsubmitted Annual Reviews
 
 **Login as:** Admin
-**Steps:**
-1. Locate the widget.
-
-**Expected:**
-- Shows a list of employees with no annual review submitted for the current FY.
-- If the list is long, only the top 5 are shown with a "View all" link.
+**Expected:** Chips "N Not Started" and "N Drafts"; the first three rows of each bucket with function · designation and the mentor; Not Started rows open Management Review pre-filtered to the staff member and year, Draft rows open Annual Reviews filtered to drafts. All clear reads "Every staff member has submitted their review."
 
 ---
 
-### TC-HRD-008 — Stalled Goals widget
+### TC-HRD-008 — Pending Actions: Paused Settings
 
 **Login as:** Admin
-**Steps:**
-1. Locate the Stalled Goals widget.
-
-**Expected:**
-- Shows goals that have been in Pending Approval for over N days (e.g. > 7 days).
+**Expected:** One row per switch that is OFF: the annual gates (**Annual reviews paused**, **Annual goal editing disabled**, **Annual final ratings hidden**) and the picked goal year's Project Goals switches — "Goal entry closed · CY 26-27", "Weightages hidden · CY 26-27", "Q1 · CY 26-27 closed for backfill", "Q3 · CY 26-27 ratings not released · N reviews submitted" (only once reviews exist). Every row opens System Settings. All clear reads "No settings paused."
 
 ---
 
-### TC-HRD-009 — Mentor Coverage widget
+### TC-HRD-009 — Active Personnel
 
 **Login as:** Admin
-**Steps:**
-1. Locate the Mentor Coverage widget.
-
-**Expected:**
-- Shows count of mentors and average mentees-per-mentor, OR a chart of mentor → mentee distribution.
-- Identifies mentors with 0 mentees and staff with no mentor.
+**Expected:** Legend **Staff · Mentor · Admin** with the donut total; each legend row opens the Users tab filtered to that role; empty roles are not listed.
 
 ---
 
-### TC-HRD-010 — FY picker switches all widgets
+### TC-HRD-010 — Mentor Coverage
 
 **Login as:** Admin
-**Steps:**
-1. Note the current values across all widgets.
-2. Change the FY picker to a different FY.
-
-**Expected:**
-- All widgets that depend on FY refresh together (single batched API call — should be fast).
-- Numbers update for the new FY.
-
-**UI checks:**
-- FY picker is consistent in size/style with other dropdowns.
-- Loading state shown while refetching.
+**Expected:** **Unassigned staff** (orphaned first with "Lost · Nd ago", then "Never assigned"), all clear "Every active staff member has a mentor."; **Top mentors by load**; **View all →** opens the Users tab filtered to Staff.
 
 ---
 
-### TC-HRD-011 — Widget click-through (if implemented)
+### TC-HRD-011 — Year picker switches the cards
 
 **Login as:** Admin
-**Steps:**
-1. On widgets that link to detail lists (e.g. Missing Annual Reviews), click an item or "View all".
-
-**Expected:**
-- Navigates to a filtered All Reviews / All Goals view pre-filtered to the matching slice.
+**Steps:** Change the **Year** picker.
+**Expected:** Annual Review Progress, Goal Approval Progress, Pending Actions and the Project Goals card follow the picked year (one batched call for the annual cards); Cycles, Active Personnel and Mentor Coverage are snapshots and do not change. The picker lists every year with annual data or a goal year, newest first.
 
 ---
 
 ### TC-HRD-012 — Empty-state dashboard
 
-**Pre-condition:** A brand-new test org with no users/goals/reviews.
-**Login as:** Admin of that org
-**Steps:**
-1. Open the dashboard.
-
-**Expected:**
-- Widgets do NOT show "0" with confusing context — they show graceful empty states ("No data yet").
-- Page does not crash or render NaN%.
+**Pre-condition:** A fresh org with no goals or reviews.
+**Login as:** Admin
+**Expected:** Cards show graceful empty states ("No annual reviews in CY 26-27 yet.", "No goal year …") — never "0 / 0" or NaN%.
 
 ---
 

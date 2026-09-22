@@ -16,7 +16,7 @@
 import { ClipboardCheck } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { AnnualReviewFunnel } from "@/services/dashboard.service";
-import { formatFyYearSpan, fyStartYearToToken } from "@/utils/fy";
+import { cyLabel, fyStartYearToToken } from "@/utils/fy";
 import { DonutChart } from "./DonutChart";
 
 // Local chart palette. Intentionally separate from theme tokens
@@ -43,7 +43,7 @@ export function AnnualReviewFunnelCard({
 }: AnnualReviewFunnelCardProps) {
   const isLoading = data === null;
   const fyLabel =
-    data?.fy_year != null ? formatFyYearSpan(data.fy_year) : null;
+    data?.fy_year != null ? cyLabel(data.fy_year) : null;
   // Append the FY token as a cycle filter to the View-all link so the
   // destination opens pre-filtered to the same FY HR is currently
   // looking at on the dashboard. Without this, HR has to re-pick the

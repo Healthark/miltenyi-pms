@@ -7,17 +7,15 @@ import { EmployeeDashboard } from "@/pages/EmployeeDashboard";
  * Dashboard — role-aware router.
  *
  * Three concrete layouts live behind this entry point:
- *   HR_MyOrg / HR_Miltenyi → HrDashboard       (org-wide rollups)
- *   any role with mentees   → MentorDashboard  (mentee-centric)
- *   everyone else           → EmployeeDashboard (personal queue)
+ *   Admin                        → HrDashboard       (org-wide rollups)
+ *   Mentor, or anyone with mentees → MentorDashboard  (mentee-centric)
+ *   Staff                        → EmployeeDashboard (personal queue)
  *
- * `has_mentees` is sourced from the auth context — populated at login,
- * so the routing decision is synchronous and doesn't wait on any fetch.
- * This avoids a layout flash from a "deciding…" intermediate state.
- *
- * PMs land on EmployeeDashboard by default (their pending project reviews
- * are reached via /project-reviews); a PM who also has direct mentees
- * gets MentorDashboard via the has_mentees branch.
+ * A Mentor lands on the mentor layout even with no mentees assigned yet
+ * (the cards show their empty states); the staff layout offers "start
+ * your goals / self-review" calls to action that do not apply to mentors.
+ * `has_mentees` comes from the auth claims (refreshed on app mount), so
+ * the decision is synchronous and there is no layout flash.
  */
 export function Dashboard() {
   const { user } = useAuth();
@@ -26,7 +24,7 @@ export function Dashboard() {
     return <HrDashboard />;
   }
 
-  if (user?.has_mentees) {
+  if (user?.role === "Mentor" || user?.has_mentees) {
     return <MentorDashboard />;
   }
 

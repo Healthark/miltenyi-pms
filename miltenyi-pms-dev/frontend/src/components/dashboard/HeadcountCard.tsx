@@ -173,7 +173,7 @@ function LoadedBody({
           segments={segments}
           centerPrimary={String(total)}
           centerSecondary="total"
-          ariaLabel={`${total} active employees across ${visibleRoles.length} roles`}
+          ariaLabel={`${total} active users across ${visibleRoles.length} roles`}
         />
       </div>
     </>

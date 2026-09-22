@@ -223,3 +223,16 @@ HR asked for one extra free-text row at the end of the goal-setting sheet where 
 ### All Goals / Team Goals queue, 20 September 2026 (audit)
 
 Dropped the per-status count capsules; added **Level** and (Admin) **Mentor** filters, a **Mentor** column for the Admin, a search that also matches mentor and Miltenyi reviewer names, and a one-line summary ("Showing N of M staff · awaiting approval · reviews to enter"). Actions unchanged: Mark approved, Enter Qn review, Open.
+
+---
+
+## Revision — 22 September 2026: dashboards follow the new flows
+
+An audit of the Dashboard module after the Project Goals and role changes (Zaahid, 21 Sep) found it still describing the retired flows. Built the same day:
+
+- a **Project Goals card on every dashboard** — staff: the goal set and this quarter's next step (from `/project-goals/me`); mentor: the team funnel, the current quarter's counts and what waits on the mentor (from `/project-goals/team`); Admin: the org-wide funnel, a quarters table and the year switches (from the settings preflight, so the dashboard and the Save confirmation quote the same numbers);
+- a **Cycles card** showing the goal year, the current quarter and the annual half in CY spelling ("CY 26-27", "Q3 · CY 26-27", "H1 · CY 26-27"), matching the Topbar and System Settings;
+- **Paused Settings** now lists the picked goal year's Project Goals switches that are off; the mentee needs-attention count includes project-goal actions; a Mentor always lands on the mentor dashboard.
+- Removed: the mentor's "Active Project Cycle" tile (retired project reviews), the never-rendered stalled-goals payload, two orphaned cards; the dormant project-review queries run only when that feature is on.
+
+Labels on the dashboards are CY; the Annual Goals, Annual Reviews and Management Review pages still say FY (follow-up). QA modules 05, 06 and 07 updated.

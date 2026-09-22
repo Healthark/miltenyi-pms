@@ -39,6 +39,7 @@ import { getErrorMessage } from "@/utils/errors";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
 import { Switch, ToggleRow } from "@/components/admin/ToggleRow";
 import { QuarterRolloutCard } from "@/components/admin/QuarterRolloutCard";
+import { startYearOf, cyLabel, fyLabel, cycleAsCy } from "@/utils/fy";
 
 interface SystemSettingsTabProps {
   readonly activeCycleName: string;
@@ -68,34 +69,9 @@ const BTN_SAVE =
   "flex items-center gap-2 rounded-lg bg-brand px-5 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-70 disabled:cursor-not-allowed transition-all shadow-sm";
 
 // ── Year labels: "FY26-27" and "CY 26-27" are the same span ──────────
-
-/** "FY26-27" | "FY2026-27" | "CY 26-27" | "CY 2026" → 2026; null when unreadable. */
-export function startYearOf(label: string | null | undefined): number | null {
-  if (!label) return null;
-  const span = /^(?:FY|CY)\s?(\d{2}|\d{4})-\d{2}$/.exec(label.trim());
-  if (span) return span[1].length === 4 ? Number(span[1]) : 2000 + Number(span[1]);
-  const year = /^(?:FY|CY)\s?(\d{4})$/.exec(label.trim());
-  return year ? Number(year[1]) : null;
-}
-
-export function cyLabel(startYear: number): string {
-  return `CY ${String(startYear % 100).padStart(2, "0")}-${String((startYear + 1) % 100).padStart(2, "0")}`;
-}
-
-export function fyLabel(startYear: number): string {
-  return `FY${String(startYear % 100).padStart(2, "0")}-${String((startYear + 1) % 100).padStart(2, "0")}`;
-}
-
-/** "H1 FY26-27" → "H1 · CY 26-27" for display; anything else unchanged. */
-function cycleAsCy(cycleName: string): string {
-  const m = /^(H[12]|Q[1-4])\s+(FY\S+)$/.exec(cycleName.trim());
-  if (m) {
-    const y = startYearOf(m[2]);
-    return y ? `${m[1]} · ${cyLabel(y)}` : cycleName;
-  }
-  const y = startYearOf(cycleName);
-  return y ? cyLabel(y) : cycleName;
-}
+// The helpers live in utils/fy.ts (shared with the dashboards and the
+// Topbar); re-exported here for existing importers.
+export { startYearOf, cyLabel, fyLabel };
 
 // ── Shared confirmation modal ─────────────────────────────────────────
 
