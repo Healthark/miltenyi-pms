@@ -260,12 +260,12 @@ Run each of these at three browser widths: **narrow ≈ 600 px** · **medium ≈
 
 ## 6.5 Date / FY formatting
 
-### TC-DATE-001 — FY label consistency
+### TC-DATE-001 — Year label consistency
 
 **Steps:**
-1. Across all pages, look at FY labels: dashboards, filters, tables, modal headers.
+1. Across all pages, look at year labels: Topbar, dashboards, System Settings, filters, tables, modal headers.
 
-**Expected:** Every FY label uses the same format. The product convention is **"FY26-27"** (short) or **"FY 2026–27"** (long). Whichever is used must be consistent within each context (e.g. all dropdowns use the long form; all badges use the short form).
+**Expected:** Every year is shown as a calendar-year span **"CY 26-27"**; halves and quarters read "H1 · CY 26-27" and "Q3 · CY 26-27" (decision of 20 Sep 2026). "FY26-27" is the stored token and may appear only in URLs (`?cycle=FY26-27`). Known exception until converted: the Annual Goals, Annual Reviews and Management Review pages still show FY labels in their filters and tables (tracked follow-up).
 
 ---
 

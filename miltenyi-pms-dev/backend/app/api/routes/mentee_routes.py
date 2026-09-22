@@ -27,10 +27,12 @@ from app.api.routes.project_review_routes import _build_review_response
 from app.core.cycle_utils import extract_fy_label, get_current_cycle_info, resolve_today
 from app.models.annual_review_models import AnnualReview, ReviewStatus
 from app.models.goal_models import Goal, GoalType, ApprovalStatus, POST_APPROVAL_STATES
+from app.models.project_goal_models import ProjectGoalReview, ProjectGoalSet, ProjectGoalSetStatus
 from app.models.project_models import Project, ProjectAssignment
 from app.models.project_review_models import ProjectReview, ProjectReviewStatus
 from app.models.system_settings_models import SystemSettings, CycleType
 from app.models.user_models import User, Role
+from app.services import project_goal_periods as pg_periods
 from app.schemas.annual_review_schemas import AnnualReviewResponse
 from app.schemas.goal_schemas import TeamGoalResponse
 from app.schemas.mentee_schemas import (
@@ -195,12 +197,16 @@ def _compose_summary(
     assignments: list[ProjectAssignment],
     reviews: list[ProjectReview],
     active_cycle: str,
+    project_goal_pending: int = 0,
 ) -> MenteeSummary:
     goals = _build_goal_stats(annual_goals)
     review = _build_review_status(active_review)
     projects = _build_project_stats(assignments, reviews, active_cycle)
 
-    pending_actions = goals.submitted
+    # What waits on the mentor: annual goals to approve, an annual review
+    # to evaluate, and the mentee's project goals (set to mark approved,
+    # or the current quarter's Miltenyi review to enter).
+    pending_actions = goals.submitted + project_goal_pending
     if review.status == ReviewStatus.PENDING_MENTOR.value:
         pending_actions += 1
 
@@ -299,6 +305,40 @@ def list_mentee_summaries(
     for r in reviews_all:
         project_reviews_by_user[r.user_id].append(r)
 
+    # Project goals waiting on the mentor: a Submitted set (approval to
+    # record) or an Approved set whose current-quarter self-review is in
+    # while the Miltenyi review is not yet submitted (comments to enter).
+    pg_pending_by_user: dict[int, int] = {uid: 0 for uid in mentee_ids}
+    period = pg_periods.active_period(db, current_user.org_id)
+    if period is not None:
+        sets = (
+            db.query(ProjectGoalSet)
+            .filter(
+                ProjectGoalSet.user_id.in_(mentee_ids),
+                ProjectGoalSet.period_label == period.period_label,
+            )
+            .all()
+        )
+        current = pg_periods.current_label(period)
+        reviews_by_set: dict[int, ProjectGoalReview] = {}
+        if current and sets:
+            for rv in (
+                db.query(ProjectGoalReview)
+                .filter(
+                    ProjectGoalReview.set_id.in_([s.id for s in sets]),
+                    ProjectGoalReview.cycle_label == current,
+                )
+                .all()
+            ):
+                reviews_by_set[rv.set_id] = rv
+        for s in sets:
+            if s.status == ProjectGoalSetStatus.SUBMITTED.value:
+                pg_pending_by_user[s.user_id] += 1
+            elif s.status == ProjectGoalSetStatus.APPROVED.value and current:
+                rv = reviews_by_set.get(s.id)
+                if rv is not None and not rv.self_is_draft and rv.review_is_draft:
+                    pg_pending_by_user[s.user_id] += 1
+
     return [
         _compose_summary(
             user=u,
@@ -307,6 +347,7 @@ def list_mentee_summaries(
             assignments=assignments_by_user[u.id],
             reviews=project_reviews_by_user[u.id],
             active_cycle=active_cycle,
+            project_goal_pending=pg_pending_by_user[u.id],
         )
         for u in mentees
     ]

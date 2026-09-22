@@ -14,6 +14,7 @@ Personal layer:
     - Active cycle name (for the ActiveCycleWidget)
     - Caller's own AnnualReview for the active FY (id + status, or None)
     - Caller's pending project reviews as primary or secondary evaluator
+      (only when the org has the project_reviews feature; zero otherwise)
 
 Mentor layer (filled iff direct mentees exist):
     - Mentee count (drives the My Mentees tile)
@@ -46,6 +47,7 @@ from app.models.project_review_models import (
 )
 from app.models.project_models import Project
 from app.core.cycle_utils import extract_fy_label, extract_fy_year
+from app.core.features import org_features
 from app.core.user_filters import active_user_ids_query
 from app.schemas.dashboard_schemas import (
     AnnualReviewFunnel,
@@ -61,8 +63,6 @@ from app.schemas.dashboard_schemas import (
     MissingAnnualReviewsSummary,
     OrphanedEmployee,
     ProjectReviewCompletion,
-    StalledGoal,
-    StalledGoalsSummary,
     UnmentoredEmployee,
 )
 
@@ -71,11 +71,6 @@ from app.schemas.dashboard_schemas import (
 # Five fits comfortably in the card without scrolling for typical orgs.
 _TOP_MENTORS_LIMIT = 5
 
-
-# A goal in `pending_approval` is considered stalled after this many
-# days without movement. Stays a constant for now; if the threshold
-# proves arbitrary in practice we'll surface it on system settings.
-_STALL_THRESHOLD_DAYS = 7
 
 router = APIRouter()
 
@@ -97,6 +92,9 @@ def get_dashboard_summary(
     # Annual reviews are tagged to the bare FY token regardless of the org's
     # half-yearly/quarterly cadence — mirror what annual_review_routes does.
     active_fy = extract_fy_label(active_cycle) if active_cycle else None
+    # Project reviews are retired for orgs that run Project Goals: their
+    # counters stay at zero without touching the dormant tables.
+    project_reviews_on = "project_reviews" in org_features(db, current_user.org_id)
 
     # ── Annual Goal Counts by Approval State (single GROUP BY) ───────
     approval_rows = (
@@ -168,7 +166,7 @@ def get_dashboard_summary(
     project_reviews_pending_secondary: int = 0
     project_reviews_done_primary: int = 0
     project_reviews_done_secondary: int = 0
-    if active_cycle is not None:
+    if active_cycle is not None and project_reviews_on:
         project_reviews_pending_primary = (
             db.query(func.count(ProjectReview.id))
             .join(Project, Project.id == ProjectReview.project_id)
@@ -261,7 +259,7 @@ def get_dashboard_summary(
     # "what's my historical count?". Soft-deleted reviews + projects
     # are excluded.
     project_reviews_received_count: int = 0
-    if active_cycle is not None:
+    if active_cycle is not None and project_reviews_on:
         project_reviews_received_count = (
             db.query(func.count(ProjectReview.id))
             .join(Project, Project.id == ProjectReview.project_id)
@@ -317,14 +315,16 @@ def get_hr_dashboard_summary(
     """
     Aggregated HR dashboard payload — one GET, every widget fed at once.
 
-    Admin only; gated by `_require_admin`. The `fy` query parameter (4-digit fiscal start
-    year) is accepted today but only consumed by cycle-bound widgets
-    that will be added in later iterations — the headcount widget is a
-    point-in-time org snapshot and ignores it.
+    Admin only; gated by `_require_admin`. The `fy` query parameter (4-digit
+    start year of the picked year) scopes the funnels and chase lists; the
+    headcount and mentor-coverage widgets are point-in-time snapshots and
+    ignore it. Project Goals numbers come from the project-goals and
+    goal-framework routes, not from here.
 
     Tenant isolation: every aggregate filters by `current_user.org_id`.
     """
     _require_admin(current_user)
+    project_reviews_on = "project_reviews" in org_features(db, current_user.org_id)
 
     # ── Available FYs — derived from actual data, not a fixed window ──
     # Take the union of FYs that have any annual review or annual goal
@@ -493,7 +493,7 @@ def get_hr_dashboard_summary(
     # cycle closed and the row stayed around for audit but isn't part
     # of the active completion picture.
     project_review_completion = ProjectReviewCompletion(fy_year=resolved_fy)
-    if resolved_fy is not None:
+    if resolved_fy is not None and project_reviews_on:
         # Active-user gate matches the goal/review funnels — a project
         # review whose employee was deactivated mid-cycle shouldn't
         # contribute to HR's "pending PM" counter.
@@ -619,67 +619,6 @@ def get_hr_dashboard_summary(
             ],
         )
 
-    # ── Stalled goal approvals — mentor-nudge chase list ──────────────
-    # Annual goals stuck in PENDING_APPROVAL longer than the threshold
-    # for the resolved FY. Once submitted the employee can't edit, so
-    # `updated_at` is effectively the submission timestamp (falling
-    # back to `created_at` for rows that haven't been touched since
-    # insert — onupdate doesn't fire then). Sorted oldest-first so the
-    # most-stalled goals surface at the top of the list.
-    stalled_goals = StalledGoalsSummary(
-        fy_year=resolved_fy, threshold_days=_STALL_THRESHOLD_DAYS
-    )
-    if resolved_fy is not None:
-        now_utc = datetime.now(timezone.utc)
-        # Skip stalled goals whose owner was deactivated — the mentor
-        # cannot approve a goal for a dead account and HR should not be
-        # nudged to chase them. Historical detail views still resolve
-        # by id (admin reactivate flow).
-        pending_goals = (
-            db.query(Goal)
-            .options(joinedload(Goal.owner), joinedload(Goal.manager))
-            .filter(
-                Goal.org_id == current_user.org_id,
-                Goal.goal_type == GoalType.ANNUAL.value,
-                Goal.approval_status == ApprovalStatus.PENDING_APPROVAL.value,
-                Goal.user_id.in_(active_user_ids_query(db, current_user.org_id)),
-            )
-            .all()
-        )
-
-        stalled_rows: list[tuple[Goal, int]] = []
-        for g in pending_goals:
-            if extract_fy_year(g.cycle_name) != resolved_fy:
-                continue
-            ts = g.updated_at or g.created_at
-            if ts is None:
-                continue
-            # SQLite hands back naive datetimes; treat as UTC so the
-            # subtraction stays timezone-aware everywhere.
-            if ts.tzinfo is None:
-                ts = ts.replace(tzinfo=timezone.utc)
-            days_waiting = (now_utc - ts).days
-            if days_waiting >= _STALL_THRESHOLD_DAYS:
-                stalled_rows.append((g, days_waiting))
-
-        stalled_rows.sort(key=lambda pair: pair[1], reverse=True)
-
-        stalled_goals = StalledGoalsSummary(
-            fy_year=resolved_fy,
-            threshold_days=_STALL_THRESHOLD_DAYS,
-            count=len(stalled_rows),
-            goals=[
-                StalledGoal(
-                    goal_id=g.id,
-                    title=g.title,
-                    owner_name=g.owner.full_name if g.owner else "—",
-                    mentor_name=g.manager.full_name if g.manager else None,
-                    days_waiting=days,
-                )
-                for g, days in stalled_rows
-            ],
-        )
-
     # ── Mentor coverage — pairing health snapshot ─────────────────────
     # Two insights bundled together: unmentored Employees (operationally
     # blocked from goals/reviews) and the most-loaded mentors (so HR
@@ -800,7 +739,6 @@ def get_hr_dashboard_summary(
         goal_approval_funnel=goal_funnel,
         project_review_completion=project_review_completion,
         missing_annual_reviews=missing_reviews,
-        stalled_goals=stalled_goals,
         mentor_coverage=mentor_coverage,
         available_fys=available_fys,
     )

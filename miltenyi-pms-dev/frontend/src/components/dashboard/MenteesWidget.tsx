@@ -30,7 +30,7 @@ export function MenteesWidget({ summary }: MenteesWidgetProps) {
       <p className="text-sm text-text-muted -mt-2">
         {mentee_count === 0
           ? "No mentees currently assigned to you."
-          : `${mentee_count} ${mentee_count === 1 ? "employee" : "employees"} reporting to you.`}
+          : `${mentee_count} ${mentee_count === 1 ? "staff member" : "staff members"} you mentor.`}
       </p>
 
       {/* CTA */}

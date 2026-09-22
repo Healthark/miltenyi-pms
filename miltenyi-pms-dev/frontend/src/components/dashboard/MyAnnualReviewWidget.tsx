@@ -1,6 +1,7 @@
 import { useAuth } from "@/hooks/useAuth";
 import { ClipboardCheck, ArrowRight } from "lucide-react";
 import { Link } from "react-router-dom";
+import { cycleAsCy } from "@/utils/fy";
 import type {
   AnnualReviewStatus,
   DashboardSummary,
@@ -58,7 +59,7 @@ function copyForStatus(
     return {
       pillLabel: "Not started",
       pillClass: "bg-slate-100 text-text-muted",
-      description: `Begin your self-review for ${cycle}.`,
+      description: `Begin your self-review for ${cycleAsCy(cycle)}.`,
       ctaLabel: "Start self-review",
     };
   }
@@ -68,7 +69,7 @@ function copyForStatus(
       return {
         pillLabel: "Draft",
         pillClass: "bg-amber-50 text-amber-700",
-        description: `Continue your self-review for ${cycle}.`,
+        description: `Continue your self-review for ${cycleAsCy(cycle)}.`,
         ctaLabel: "Continue draft",
       };
     case "pending_mentor":

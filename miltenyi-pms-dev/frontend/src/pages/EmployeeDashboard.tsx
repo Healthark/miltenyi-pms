@@ -1,25 +1,16 @@
 /**
- * EmployeeDashboard — landing page for Employee, PM, and any role without
- * direct mentees. Answers the "how am I doing?" question via:
- *   - S3 My Annual Goals (funnel + completion)
- *   - S4 My Annual Review
+ * EmployeeDashboard — landing page for Staff (and any user who is neither
+ * an Admin nor a mentor). Answers "how am I doing?":
  *
- * Two cycle cards anchor the page at the top so the rest of the
- * numbers read against the right time horizon:
- *   - Active Project Cycle (left)  — H1/H2/Q1..Q4, used by project reviews.
- *   - Active Goal Cycle (right)    — FY span, used by annual goals.
+ *   Row 1: Cycles (goal year · current quarter · annual half) | My Mentor
+ *   Row 2: Project Goals — the yearly goal set and this quarter's review
+ *   Row 3: My Reviews (annual) | Annual Goals
  *
- * NOTE: The old "My Action Items" widget was removed product-wide —
- * users now reach pending work through the per-feature pages (My Goals,
- * accordingly see only the Active Cycles strip on their landing page;
- * their pending project-review queue lives on /project-reviews.
- *
- * A PM who also mentors gets routed to MentorDashboard instead (see
- * Dashboard.tsx).
- *
- * Owns one fetch (/dashboard/summary) and passes the result to each
- * widget. Skeletons render in place per card so the grid is stable
- * from first paint.
+ * Fetches: /dashboard/summary (annual counts, active cycle), /users/me
+ * (mentor name) and, for Project Goals orgs, /project-goals/me — the same
+ * cache entry the Project Goals page uses, so the card and the page never
+ * disagree. Each card renders its own skeleton so the grid is stable from
+ * first paint.
  */
 
 import { useEffect } from "react";
@@ -29,49 +20,45 @@ import { useAuth } from "@/hooks/useAuth";
 import { useSnackbar } from "@/hooks/useSnackbar";
 import { dashboardService } from "@/services/dashboard.service";
 import { profileService } from "@/services/profile.service";
+import { projectGoalsService } from "@/services/project-goals.service";
 import { getErrorMessage } from "@/utils/errors";
-import { ActiveCyclesCard } from "@/components/dashboard/ActiveCyclesCard";
+import {
+  ActiveCyclesCard,
+  LEGACY_BLOCKS,
+  LEGACY_BLOCKS_WITH_PROJECT_REVIEWS,
+  PROJECT_GOALS_BLOCKS,
+} from "@/components/dashboard/ActiveCyclesCard";
 import { GoalsWidget } from "@/components/dashboard/GoalsWidget";
 import { MyAnnualReviewWidget } from "@/components/dashboard/MyAnnualReviewWidget";
 import { MyMentorWidget } from "@/components/dashboard/MyMentorWidget";
+import { ProjectGoalsWidget } from "@/components/dashboard/ProjectGoalsWidget";
 
 export function EmployeeDashboard() {
   const { user, hasFeature } = useAuth();
   const snackbar = useSnackbar();
+  const projectGoalsOn = hasFeature("project_goals");
   // Project Reviews is retired for orgs that run Project Goals instead
-  // (Miltenyi, Sep 2026). Everything that points at /project-reviews
-  // falls away when the feature is off; the route itself is gated by
-  // ProtectedRoute and the nav item by Sidebar.
+  // (Miltenyi, Sep 2026); its cycle block only appears when the feature is on.
   const projectReviewsOn = hasFeature("project_reviews");
 
-  // useQuery replaces the useEffect + useState ceremony:
-  //   - The cache is keyed by ['dashboard', 'summary'], so MentorDashboard
-  //     (which uses the same key) will hit the same cache entry. Navigate
-  //     Employee → Mentor → Employee and the second Employee mount reads cache
-  //     instantly while a silent background refetch validates freshness.
-  //   - data is undefined until the first fetch resolves; the existing
-  //     `summary ? <Widget /> : <Skeleton />` ternaries below already
-  //     handle that, so the JSX is unchanged.
-  //   - The race-condition `cancelled` flag is gone — TanStack Query
-  //     handles unmount-mid-fetch internally via AbortController.
   const { data: summary, error } = useQuery({
     queryKey: queryKeys.dashboard.summary(),
     queryFn: dashboardService.getSummary,
   });
 
-  // Mentor info — fetched for every Employee-style dashboard view so
-  // the My Mentor card always renders. Users without a mentor (CEO /
-  // founders / unassigned mentees) get the same card with a "No
-  // mentor assigned · Contact HR if this looks wrong" empty state
-  // inside the widget rather than a missing tile.
+  // Mentor name for the My Mentor card. Users without a mentor get the
+  // card's "No mentor assigned" empty state rather than a missing tile.
   const { data: profile, error: profileError } = useQuery({
     queryKey: queryKeys.profile.me(),
     queryFn: profileService.getProfile,
   });
 
-  // Surface fetch errors through the existing snackbar pattern. Kept as
-  // a separate effect rather than inlined into the queryFn so the
-  // snackbar stays out of the cache layer's concerns.
+  const { data: mine, error: mineError } = useQuery({
+    queryKey: queryKeys.projectGoals.mine(),
+    queryFn: () => projectGoalsService.getMine(),
+    enabled: projectGoalsOn,
+  });
+
   useEffect(() => {
     if (error) snackbar.error(getErrorMessage(error));
   }, [error, snackbar]);
@@ -80,64 +67,41 @@ export function EmployeeDashboard() {
     if (profileError) snackbar.error(getErrorMessage(profileError));
   }, [profileError, snackbar]);
 
+  useEffect(() => {
+    if (mineError) snackbar.error(getErrorMessage(mineError));
+  }, [mineError, snackbar]);
+
   const firstName = user?.full_name?.split(" ")[0] ?? "there";
+  const blocks = projectGoalsOn ? PROJECT_GOALS_BLOCKS : projectReviewsOn ? LEGACY_BLOCKS_WITH_PROJECT_REVIEWS : LEGACY_BLOCKS;
+  // undefined while /project-goals/me loads, null when no goal year is active
+  const period = projectGoalsOn ? (mine === undefined ? undefined : mine.period) : null;
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div>
-        <h1 className="font-display text-xl font-semibold text-text-main">
-          Welcome back, {firstName}
-        </h1>
-        <p className="mt-0.5 text-sm text-text-muted">
-          Your goals, reviews, and what's on your plate this cycle.
-        </p>
+        <h1 className="font-display text-xl font-semibold text-text-main">Welcome back, {firstName}</h1>
+        <p className="mt-0.5 text-sm text-text-muted">Your project goals, annual goals and reviews at a glance.</p>
       </div>
 
-          {/* Row 1: Active Cycles (left) | My Mentor (right). Cycle
-              context anchors the dashboard ("where are we right
-              now?"); the personal mentor card follows. My Mentor
-              always renders — when the user has no mentor on file
-              (CEO / founders / freshly-orphaned mentees) the card
-              shows a "No mentor assigned" empty state with a Contact
-              HR nudge, rather than collapsing the grid. Keeps the
-              layout stable across user types and surfaces the missing
-              mentor as something to act on. */}
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            {summary ? (
-              <ActiveCyclesCard
-                activeCycle={summary.active_cycle}
-                blocks={projectReviewsOn ? undefined : ["fy", "goal"]}
-              />
-            ) : (
-              <CardSkeleton />
-            )}
-            <MyMentorWidget profile={profile ?? null} />
-          </div>
+      {/* Row 1: where are we now | who you report to */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        {summary ? <ActiveCyclesCard activeCycle={summary.active_cycle} period={period} blocks={blocks} /> : <CardSkeleton />}
+        <MyMentorWidget profile={profile ?? null} />
+      </div>
 
-          {/* Row 2: My Annual Review (left) | Annual Goals (right).
-              Annual Review on the left mirrors row 1's left-side
-              anchor (the "where are we" surface — your active-cycle
-              review status + CTA). The Annual Review card also
-              carries a compact project-reviews strip footer so the
-              Employee can glance at both review streams without an
-              extra card. The page used to have a bottom-row Action
-              Items widget; both were removed together when that
-              widget was retired product-wide. */}
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            {summary ? (
-              <MyAnnualReviewWidget summary={summary} />
-            ) : (
-              <CardSkeleton />
-            )}
-            {summary ? <GoalsWidget summary={summary} /> : <CardSkeleton />}
-          </div>
+      {/* Row 2: Project Goals — the year's goal set and this quarter's review */}
+      {projectGoalsOn && <ProjectGoalsWidget data={mine ?? null} />}
+
+      {/* Row 3: the annual stream */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        {summary ? <MyAnnualReviewWidget summary={summary} /> : <CardSkeleton />}
+        {summary ? <GoalsWidget summary={summary} /> : <CardSkeleton />}
+      </div>
     </div>
   );
 }
 
-// Same skeleton shape as MentorDashboard — keeps both pages visually
-// consistent during their first paint.
+// Same skeleton shape as the other dashboards — keeps first paint consistent.
 function CardSkeleton() {
   return (
     <div className="rounded-xl border border-border bg-surface p-5 shadow-sm flex flex-col gap-4 animate-pulse h-44">
