@@ -47,7 +47,7 @@ function cycleLabel(
   half: SelfReviewCycleHalf,
 ): string {
   const display = halfDisplayLabel(half);
-  return goal.fy_year ? `${display} ${formatFyYearSpan(goal.fy_year)}` : display;
+  return goal.fy_year ? `${display} · ${formatFyYearSpan(goal.fy_year)}` : display;
 }
 
 export function SelfReviewCycleMenu({

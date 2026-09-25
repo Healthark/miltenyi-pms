@@ -13,6 +13,7 @@ import { ApprovalStatusBadge } from "@/components/goals/ApprovalStatusBadge";
 import { SelfReviewCycleMenu } from "@/components/goals/SelfReviewCycleMenu";
 import { formatFyYearSpan } from "@/utils/fy";
 import { isPostApproved } from "@/utils/goalStatus";
+import { isSafeHttpUrl } from "@/utils/safeUrl";
 
 interface AnnualGoalCardProps {
   readonly goal: Goal;
@@ -78,7 +79,7 @@ export function AnnualGoalCard({
       )}
 
       {/* Attachment */}
-      {goal.attachment_url && (
+      {goal.attachment_url && isSafeHttpUrl(goal.attachment_url) && (
         <a
           href={goal.attachment_url}
           target="_blank"
@@ -88,6 +89,12 @@ export function AnnualGoalCard({
           <Link className="h-3 w-3 shrink-0" aria-hidden="true" />
           Attachment
         </a>
+      )}
+      {goal.attachment_url && !isSafeHttpUrl(goal.attachment_url) && (
+        <span className="flex items-center gap-1.5 text-xs text-text-muted truncate w-fit" title={goal.attachment_url}>
+          <Link className="h-3 w-3 shrink-0" aria-hidden="true" />
+          Attachment (not a web link)
+        </span>
       )}
 
       {/* Mentor feedback — only visible when changes have been requested */}

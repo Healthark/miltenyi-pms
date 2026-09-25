@@ -56,7 +56,7 @@ export interface GoalSelfReview {
   goal_id: number;
   cycle_half: SelfReviewCycleHalf;
   submitted_at: string;
-  /** Single freeform paragraph, mirrors the Annual Review self-appraisal shape. */
+  /** Single freeform paragraph, mirrors the Annual Review self-review shape. */
   self_overall_review: string;
   /** True while the row is a saved-but-not-submitted draft. Mentors only
    *  see rows where this is false (drafts are owner-only). */
@@ -76,6 +76,12 @@ export interface GoalMentorReview {
   /** Single freeform paragraph; the form surfaces Firm Growth and Competency
    *  & Skills role expectations as reference panels rather than separate fields. */
   mentor_overall_review: string;
+  /** Who wrote it; null for legacy rows or when the row is hidden from the owner. */
+  mentor_id: number | null;
+  mentor_name: string | null;
+  /** Owner's view only: the Admin has not published this half's goal reviews yet —
+   *  the text and author are blanked, the row stays so a review is known to exist. */
+  hidden: boolean;
   /** True while the row is a saved-but-not-submitted draft. Mentees only
    *  see rows where this is false. */
   is_draft: boolean;

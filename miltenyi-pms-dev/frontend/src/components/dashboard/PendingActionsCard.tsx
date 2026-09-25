@@ -311,6 +311,9 @@ const PAUSED_SETTINGS: ReadonlyArray<{
     | "annual_reviews_enabled"
     | "annual_goals_edit_enabled"
     | "annual_review_final_rating_visible"
+    | "management_review_enabled"
+    | "goal_reviews_visible_h1"
+    | "goal_reviews_visible_h2"
   >;
   readonly label: string;
 }> = [
@@ -325,6 +328,18 @@ const PAUSED_SETTINGS: ReadonlyArray<{
   {
     settingKey: "annual_review_final_rating_visible",
     label: "Annual final ratings hidden",
+  },
+  {
+    settingKey: "management_review_enabled",
+    label: "Management review closed",
+  },
+  {
+    settingKey: "goal_reviews_visible_h1",
+    label: "H1 goal mentor reviews hidden from staff",
+  },
+  {
+    settingKey: "goal_reviews_visible_h2",
+    label: "H2 goal mentor reviews hidden from staff",
   },
 ];
 

@@ -202,11 +202,17 @@ const FY_LABELS: Record<keyof YearSettingsUpdatePayload, string> = {
   annual_reviews_enabled: "Enable Annual Reviews",
   annual_review_final_rating_visible: "Show Ratings on Annual Reviews",
   annual_goals_edit_enabled: "Edit Access for Annual Goals",
+  goal_reviews_visible_h1: "Show H1 Mentor Reviews on Annual Goals",
+  goal_reviews_visible_h2: "Show H2 Mentor Reviews on Annual Goals",
+  management_review_enabled: "Enable Management Review",
 };
 const FY_KEYS: ReadonlyArray<keyof YearSettingsUpdatePayload> = [
   "annual_reviews_enabled",
   "annual_review_final_rating_visible",
   "annual_goals_edit_enabled",
+  "goal_reviews_visible_h1",
+  "goal_reviews_visible_h2",
+  "management_review_enabled",
 ];
 
 interface PeriodForm {
@@ -356,6 +362,9 @@ export function SystemSettingsTab({
     annual_reviews_enabled: false,
     annual_review_final_rating_visible: false,
     annual_goals_edit_enabled: false,
+    goal_reviews_visible_h1: false,
+    goal_reviews_visible_h2: false,
+    management_review_enabled: false,
   });
   const [fyKey, setFyKey] = useState<string>("");
   const savedFyKey = savedFy ? `${savedFy.fy_label}|${FY_KEYS.map((k) => savedFy[k]).join(",")}` : "";
@@ -364,6 +373,9 @@ export function SystemSettingsTab({
       annual_reviews_enabled: savedFy.annual_reviews_enabled,
       annual_review_final_rating_visible: savedFy.annual_review_final_rating_visible,
       annual_goals_edit_enabled: savedFy.annual_goals_edit_enabled,
+      goal_reviews_visible_h1: savedFy.goal_reviews_visible_h1,
+      goal_reviews_visible_h2: savedFy.goal_reviews_visible_h2,
+      management_review_enabled: savedFy.management_review_enabled,
     });
     setFyKey(savedFyKey);
   }
@@ -555,6 +567,13 @@ export function SystemSettingsTab({
                   disabled={!savedFy || save.isPending}
                   onChange={(next) => setFyForm((prev) => ({ ...prev, annual_review_final_rating_visible: next }))}
                 />
+                <ToggleRow
+                  label="Enable Management Review"
+                  description="When on, the Admin can enter management ratings (calibration) for this year, whether or not staff submissions are still open."
+                  checked={fyForm.management_review_enabled}
+                  disabled={!savedFy || save.isPending}
+                  onChange={(next) => setFyForm((prev) => ({ ...prev, management_review_enabled: next }))}
+                />
               </div>
             </div>
           </div>
@@ -568,6 +587,20 @@ export function SystemSettingsTab({
                   checked={fyForm.annual_goals_edit_enabled}
                   disabled={!savedFy || save.isPending}
                   onChange={(next) => setFyForm((prev) => ({ ...prev, annual_goals_edit_enabled: next }))}
+                />
+                <ToggleRow
+                  label="Show H1 Mentor Reviews on Annual Goals"
+                  description="When on, staff can read their mentor's H1 goal review as soon as it is submitted. Off keeps submitted H1 reviews hidden until you publish."
+                  checked={fyForm.goal_reviews_visible_h1}
+                  disabled={!savedFy || save.isPending}
+                  onChange={(next) => setFyForm((prev) => ({ ...prev, goal_reviews_visible_h1: next }))}
+                />
+                <ToggleRow
+                  label="Show H2 Mentor Reviews on Annual Goals"
+                  description="Same for the H2 goal reviews of this year."
+                  checked={fyForm.goal_reviews_visible_h2}
+                  disabled={!savedFy || save.isPending}
+                  onChange={(next) => setFyForm((prev) => ({ ...prev, goal_reviews_visible_h2: next }))}
                 />
               </div>
             </div>

@@ -31,6 +31,23 @@ def _strip_or_none(v: object) -> object:
 # GOAL SCHEMAS
 # =====================================================================
 
+def _safe_attachment_url(value):
+    """Attachment links must be http(s). Anything else (a `javascript:` URL,
+    a bare word, a data: blob) is refused so nothing unsafe is ever stored
+    and later rendered as a clickable link (25 Sep 2026)."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    lowered = text.lower()
+    if not (lowered.startswith("http://") or lowered.startswith("https://")):
+        raise ValueError("The attachment must be a web link starting with http:// or https://.")
+    if any(ch.isspace() for ch in text) or len(text) > 2000:
+        raise ValueError("The attachment link is not a valid web address.")
+    return text
+
+
 class GoalBase(BaseModel):
     title: str = Field(
         ..., min_length=1, max_length=500,
@@ -58,6 +75,7 @@ class GoalCreate(GoalBase):
     goal_type: GoalType = GoalType.REGULAR
     # Optional external reference (e.g. Google Drive folder URL).
     attachment_url: Optional[str] = None
+    _safe_attachment = field_validator("attachment_url", mode="before")(_safe_attachment_url)
 
 
 class GoalUpdate(BaseModel):
@@ -67,6 +85,7 @@ class GoalUpdate(BaseModel):
     start_date: Optional[datetime] = None
     due_date: Optional[datetime] = None
     progress_notes: Optional[str] = Field(default=None, max_length=5000)
+    _safe_attachment = field_validator("attachment_url", mode="before")(_safe_attachment_url)
 
     _strip_title = field_validator("title", mode="before")(_strip_or_none)
     _strip_desc = field_validator("description", mode="before")(_strip_or_none)
@@ -147,9 +166,17 @@ class GoalMentorReviewResponse(BaseModel):
     cycle_half: SelfReviewCycleHalf
     submitted_at: datetime
     mentor_overall_review: str
+    # Who wrote it (25 Sep 2026): survives a later mentor change. None for
+    # legacy rows with no recorded author.
+    mentor_id: Optional[int] = None
+    mentor_name: Optional[str] = None
     # True while the mentor still has the row open as an unsubmitted
     # draft. Submit flips this to False; mentees don't see draft rows.
     is_draft: bool = False
+    # Set on the OWNER's view when the Admin has not published this half's
+    # goal reviews yet: the text and author are blanked, the row stays so
+    # the mentee knows a review exists.
+    hidden: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -163,7 +190,7 @@ class GoalSelfReviewSubmit(BaseModel):
     Each submission is one-shot — once persisted for a given
     (goal_id, cycle_half) it cannot be re-submitted.
 
-    Single freeform paragraph mirroring the Annual Review's self-appraisal
+    Single freeform paragraph mirroring the Annual Review's self-review
     shape; Firm Growth and Competency & Skills role expectations are surfaced
     on the form as reference panels.
     """

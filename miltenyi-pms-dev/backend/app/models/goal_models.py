@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Index, Text
+from sqlalchemy import Boolean, Column, Integer, String, DateTime, ForeignKey, Index, Text
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.core.database import Base
@@ -99,6 +99,11 @@ class Goal(Base):
     due_date    = Column(DateTime(timezone=True), nullable=True)
     # Stamped the moment the goal transitions to APPROVED. Null until then.
     # Enables filtering like "goals approved in H1 FY26" for future dashboards.
+    # Soft delete (25 Sep 2026): deleted goals keep their review history but
+    # are hidden from every ORM query by the loader criteria registered in
+    # app/core/database.py. Nothing reads them back today.
+    is_deleted = Column(Boolean, nullable=False, default=False, server_default="0")
+
     approved_at = Column(DateTime(timezone=True), nullable=True)
     created_at  = Column(DateTime(timezone=True), server_default=func.now())
     updated_at  = Column(DateTime(timezone=True), onupdate=func.now())

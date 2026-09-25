@@ -51,7 +51,7 @@ import { ReviewStatusBadge } from "@/components/reviews/ReviewStatusBadge";
 import { getErrorMessage } from "@/utils/errors";
 import { useConfirm } from "@/hooks/useConfirm";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
-import { extractFyToken } from "@/utils/fy";
+import { extractFyToken, formatFyLabel } from "@/utils/fy";
 import { setOrDeleteParam, searchParamsChanged } from "@/utils/searchParams";
 
 type RatingValue = number | "";
@@ -186,6 +186,10 @@ export function ManagementReview() {
   const activeFyToken = settings?.active_cycle_name
     ? extractFyToken(settings.active_cycle_name)
     : "";
+  // The Management Review window has its own per-year switch (25 Sep 2026).
+  // The settings mirror carries the CURRENT year's value; other years are
+  // decided by the server (a closed year answers 403 on save).
+  const managementOpen = settings?.management_review_enabled ?? false;
   // Distinct cycle options for the Cycle dropdown. The hook merges the
   // active FY token in even when no review row exists for it yet, so
   // HR can always filter to "this year" while pre-population is in
@@ -610,6 +614,19 @@ export function ManagementReview() {
         </p>
       </div>
 
+      {!managementOpen && activeFyToken && (
+        <div
+          role="status"
+          className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800"
+        >
+          <span className="font-semibold">Management review closed.</span>
+          <span>
+            Management ratings for {formatFyLabel(activeFyToken)} cannot be entered until the
+            window is opened in System Settings → Annual Reviews. Reviews stay readable.
+          </span>
+        </div>
+      )}
+
       {/* Card */}
       <div className="rounded-xl border border-border bg-surface shadow-sm overflow-hidden">
         <div className="p-5">
@@ -882,7 +899,8 @@ export function ManagementReview() {
                       const canEdit =
                         r.review_id != null &&
                         (r.status === "pending_management" ||
-                          r.status === "completed");
+                          r.status === "completed") &&
+                        (managementOpen || r.cycle_name !== activeFyToken);
                       return (
                         <div
                           role="row"

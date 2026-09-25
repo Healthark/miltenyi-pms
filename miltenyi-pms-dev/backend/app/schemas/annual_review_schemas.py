@@ -1,8 +1,8 @@
 """
-AnnualReview Schemas — The API Contract for the 3-Stage Appraisal.
+AnnualReview Schemas — The API Contract for the 3-Stage Annual Review.
 
 Schema Map:
-    SelfAppraisalCreate   → Stage 1: Employee submits overall review + rating
+    SelfReviewCreate   → Stage 1: Employee submits overall review + rating
     MentorEvalUpdate      → Stage 2: Mentor submits overall review + rating
     AnnualReviewResponse  → What the frontend receives (all stages)
     CalibrationRow        → Simplified row for the HR calibration grid
@@ -29,8 +29,8 @@ from app.models.annual_review_models import ReviewStatus
 
 # ── Stage 1: Employee Self-Review ───────────────────────────────────
 
-class SelfAppraisalCreate(BaseModel):
-    """Payload from the SelfAppraisalFormModal when the employee submits."""
+class SelfReviewCreate(BaseModel):
+    """Payload from the SelfReviewFormModal when the employee submits."""
     self_overall_review: str = Field(..., min_length=1, max_length=10000)
     self_performance_rating: int = Field(
         ..., ge=1, le=5,
@@ -38,7 +38,7 @@ class SelfAppraisalCreate(BaseModel):
     )
 
 
-class SelfAppraisalDraft(BaseModel):
+class SelfReviewDraft(BaseModel):
     """Partial save — employee can save progress without submitting."""
     self_overall_review: Optional[str] = None
     self_performance_rating: Optional[int] = Field(default=None, ge=1, le=5)

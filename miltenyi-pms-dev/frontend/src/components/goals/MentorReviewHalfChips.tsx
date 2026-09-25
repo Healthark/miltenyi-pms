@@ -10,7 +10,10 @@
  *   - Mentor already reviewed         → green "✓ H1 Reviewed" (click to view)
  *   - Mentor has a draft saved        → amber "Resume H1 · Draft"
  *   - Mentee submitted, mentor hasn't → brand "Review H1 →"
- *   - Mentee hasn't submitted yet     → grey  "H1 · Awaiting self-review" (disabled)
+ *   - Mentee hasn't submitted yet     → outline "Draft H1 review" while the half's
+ *                                       window is open (submit waits for the
+ *                                       self-review; 25 Sep 2026), else grey
+ *                                       "H1 · Not open" (disabled)
  *
  * Clicking any enabled chip fires `onSelect(half)` so the parent can
  * open the GoalMentorReviewModal in the right mode.
@@ -18,7 +21,8 @@
 
 import { Check, ArrowRight, Clock, Edit3 } from "lucide-react";
 import type { Goal, SelfReviewCycleHalf } from "@/services/goal.service";
-import { cycleKeysForType, halfDisplayLabel } from "@/utils/goalStatus";
+import { cycleKeysForType, halfDisplayLabel, isHalfWindowOpen } from "@/utils/goalStatus";
+import { useSystemSettings } from "@/hooks/useSystemSettings";
 
 interface MentorReviewHalfChipsProps {
   readonly goal: Goal;
@@ -30,6 +34,9 @@ export function MentorReviewHalfChips({
   onSelect,
 }: MentorReviewHalfChipsProps) {
   const cycles = cycleKeysForType();
+  const { settings } = useSystemSettings();
+  const fiscalStartMonth = settings?.fiscal_start_month ?? 4;
+  const today = settings?.simulated_today ? new Date(settings.simulated_today) : new Date();
 
   return (
     <div className="flex items-center gap-1.5 flex-wrap">
@@ -59,8 +66,8 @@ export function MentorReviewHalfChips({
           );
         }
 
-        // State 2: Mentor has a draft (mentee already submitted self-review).
-        if (mentorDraft && selfSubmitted) {
+        // State 2: Mentor has a draft — resume it whether or not the self-review is in.
+        if (mentorDraft) {
           return (
             <button
               key={half}
@@ -90,15 +97,32 @@ export function MentorReviewHalfChips({
           );
         }
 
-        // State 4: Mentee hasn't submitted yet — disabled chip with tooltip.
+        // State 4: Mentee hasn't submitted yet — the mentor can still draft
+        // while the half's window is open; submit unlocks once the
+        // self-review arrives.
+        if (isHalfWindowOpen(half, goal.fy_year, fiscalStartMonth, today)) {
+          return (
+            <button
+              key={half}
+              type="button"
+              onClick={() => onSelect(half)}
+              title={`${label} self-review not in yet — draft now; submit unlocks once it arrives`}
+              className="flex items-center gap-1 rounded-md border border-brand/40 bg-white px-2 py-1 text-[11px] font-medium text-brand hover:bg-brand/10 transition-colors"
+            >
+              <Edit3 className="h-3 w-3" aria-hidden="true" />
+              Draft {label} review
+            </button>
+          );
+        }
+        // State 5: the half's window is not open (or the goal has no year).
         return (
           <span
             key={half}
-            title="Mentee hasn't submitted their self-review for this half yet"
+            title={`The ${label} review window is not open yet`}
             className="flex items-center gap-1 rounded-md border border-border bg-slate-50 px-2 py-1 text-[11px] font-medium text-text-muted cursor-not-allowed"
           >
             <Clock className="h-3 w-3" aria-hidden="true" />
-            {label} · Awaiting self-review
+            {label} · Not open
           </span>
         );
       })}

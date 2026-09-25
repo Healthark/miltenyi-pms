@@ -31,6 +31,11 @@ export interface SystemSettingsResponse {
   annual_goals_edit_enabled: boolean;
   annual_reviews_enabled: boolean;
   annual_review_final_rating_visible: boolean;
+  /** 25 Sep 2026: mentee visibility of the mentor's goal review per half,
+   *  and the Management Review (calibration) window — current year. */
+  goal_reviews_visible_h1: boolean;
+  goal_reviews_visible_h2: boolean;
+  management_review_enabled: boolean;
   /** Demo / QA date simulation. ISO date string when HR has pinned a
    *  fake "today" for the system; null otherwise. The app shell shows
    *  an amber banner whenever this is set. */

@@ -176,7 +176,7 @@ function MyOrgExportsView() {
       <div className="rounded-lg border border-border bg-surface p-4">
         <div className="flex items-center gap-2 mb-3">
           <span className="text-[11px] font-bold uppercase tracking-wider text-text-muted">
-            Filter by Fiscal Year
+            Filter by year
           </span>
           <span className="text-[11px] text-text-muted italic">
             (leave all unchecked for all-time)

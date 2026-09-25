@@ -23,7 +23,7 @@
 
 **UI checks:**
 - Top of the page does NOT have a "Start Self-Review" button (action lives on each row).
-- Active FY is shown next to the page title (e.g. "· FY26-27").
+- Active FY is shown next to the page title (e.g. "· CY 26-27").
 
 ---
 
@@ -37,7 +37,7 @@
 **Expected:**
 - A single row appears for the current FY with:
   - Mentor's name in the Mentor column
-  - Cycle: current FY (e.g. "FY26-27")
+  - Cycle: current FY (e.g. "CY 26-27")
   - Status: a muted "Not started" badge
   - Action: a **Start Self-Review** button
 
@@ -127,7 +127,7 @@
 
 **Login as:** Staff with multiple FYs in history
 **Steps:**
-1. Use the **Fiscal Year** filter dropdown.
+1. Use the **Year** filter dropdown.
 2. Select a past FY.
 
 **Expected:** Only that FY's rows are shown. "All" resets.
@@ -160,13 +160,13 @@
 
 ### TC-AREV-011 — Synthesized row vs real row in the same table
 
-**Pre-condition:** Staff has a completed review for FY 2024–25, no review yet for current FY (2026–27).
+**Pre-condition:** Staff has a completed review for CY 24-25, no review yet for current FY (2026–27).
 **Login as:** Staff
 **Steps:**
 1. Open My Reviews.
 
 **Expected:**
-- Two rows appear: synthesized current FY (Start Self-Review action) and the completed FY 2024–25 (View action).
+- Two rows appear: synthesized current FY (Start Self-Review action) and the completed CY 24-25 (View action).
 - Both rows have the same column layout.
 
 **UI checks:**
@@ -285,6 +285,20 @@
 
 ---
 
+### TC-MGMTREV-004 — Management review has its own window
+
+**Pre-condition:** System Settings → Annual Reviews → **Enable Management Review** is OFF for the current year (annual reviews may still be open).
+**Login as:** Admin
+**Steps:**
+1. Open Management Review.
+2. Turn the switch ON in System Settings, save, come back.
+
+**Expected:**
+- Step 1: an amber banner "Management review closed. Management ratings for CY 26-27 cannot be entered until the window is opened in System Settings → Annual Reviews." and no **Edit** on the current year's rows; the API answers 403 with the same wording. Staff and mentors are unaffected by this switch.
+- Step 2: the banner is gone and ratings can be entered. The dashboard's Paused Settings lists "Management review closed" while it is off.
+
+---
+
 ## 3.4 All Reviews tab (HR)
 
 ### TC-ALLREV-001 — Open All Reviews
@@ -361,7 +375,7 @@
 - Refer to **Module 1 §1.7** UI checklist on every screen.
 - After every submission (self/mentor/management), refresh the page → state persists.
 - The Mentor column on Staff My Reviews must NEVER show "—" if a mentor is assigned.
-- Date formatting must read as "FY26-27" or "FY 2026–27", consistent everywhere.
+- Date formatting must read as "CY 26-27" or "CY 26-27", consistent everywhere.
 - Test in three browser widths: narrow / medium / wide.
 
 ---

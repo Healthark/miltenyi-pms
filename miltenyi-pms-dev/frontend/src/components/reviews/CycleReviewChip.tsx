@@ -109,7 +109,7 @@ export function CycleReviewChip({
   const classes = `${CHIP_BASE} ${STATE_CLASSES[slot.state]} ${interactiveClasses} ${
     dimmed ? "opacity-40" : ""
   }`;
-  const label = slot.period || "FY";
+  const label = slot.period || "Year";
 
   if (clickable && onClick) {
     return (

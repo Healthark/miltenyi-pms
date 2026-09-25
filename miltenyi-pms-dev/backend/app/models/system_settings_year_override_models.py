@@ -55,6 +55,14 @@ class SystemSettingsYearOverride(Base):
     annual_review_final_rating_visible = Column(Boolean, default=False, nullable=False)
     # Gate: annual goal create/edit endpoints check this for the goal's FY.
     annual_goals_edit_enabled = Column(Boolean, default=False, nullable=False)
+    # Visibility (25 Sep 2026): the mentee sees the mentor's goal review for a
+    # half only once the Admin publishes that half. Off = submitted reviews
+    # stay hidden from the mentee (the status still shows one exists).
+    goal_reviews_visible_h1 = Column(Boolean, default=False, nullable=False)
+    goal_reviews_visible_h2 = Column(Boolean, default=False, nullable=False)
+    # Gate (25 Sep 2026): the Management Review (calibration) window, separate
+    # from annual_reviews_enabled so HR can close submissions and still rate.
+    management_review_enabled = Column(Boolean, default=False, nullable=False)
 
     # ── Audit Trail ──────────────────────────────────────────────────
     updated_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
