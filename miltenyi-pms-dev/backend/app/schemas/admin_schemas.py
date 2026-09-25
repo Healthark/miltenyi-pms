@@ -131,6 +131,9 @@ class AdminSettingsResponse(BaseModel):
     annual_goals_edit_enabled: bool
     annual_reviews_enabled: bool
     annual_review_final_rating_visible: bool
+    goal_reviews_visible_h1: bool = False
+    goal_reviews_visible_h2: bool = False
+    management_review_enabled: bool = False
     # Dev / QA escape hatch. When set, the system treats this as today
     # for every cycle-determination and review-window check.
     simulated_today: Optional[date] = None
@@ -152,6 +155,9 @@ class AdminSettingsUpdate(BaseModel):
     annual_goals_edit_enabled: Optional[bool] = None
     annual_reviews_enabled: Optional[bool] = None
     annual_review_final_rating_visible: Optional[bool] = None
+    goal_reviews_visible_h1: Optional[bool] = None
+    goal_reviews_visible_h2: Optional[bool] = None
+    management_review_enabled: Optional[bool] = None
     # Use the sentinel `Optional[date]` plus the per-request `clear`
     # convention: pass `null` to clear an existing simulated_today, or
     # a real date to set one. Omit entirely to leave unchanged.
@@ -185,15 +191,23 @@ class YearSettingsResponse(BaseModel):
     annual_reviews_enabled: bool
     annual_review_final_rating_visible: bool
     annual_goals_edit_enabled: bool
+    # 25 Sep 2026: mentee visibility of the mentor's goal review, per half;
+    # and the Management Review (calibration) window.
+    goal_reviews_visible_h1: bool = False
+    goal_reviews_visible_h2: bool = False
+    management_review_enabled: bool = False
     is_current: bool
     updated_at: Optional[datetime] = None
 
 
 class YearSettingsUpdate(BaseModel):
-    """PATCH payload — all three toggles required (HR sees them together)."""
+    """PATCH payload — every switch of the year, sent together (HR sees them together)."""
     annual_reviews_enabled: bool
     annual_review_final_rating_visible: bool
     annual_goals_edit_enabled: bool
+    goal_reviews_visible_h1: bool = False
+    goal_reviews_visible_h2: bool = False
+    management_review_enabled: bool = False
 
 
 class YearPreflightEntry(BaseModel):
@@ -208,6 +222,9 @@ class YearPreflightResponse(BaseModel):
     annual_goals_edit_enabled: YearPreflightEntry
     annual_reviews_enabled: YearPreflightEntry
     annual_review_final_rating_visible: YearPreflightEntry
+    management_review_enabled: YearPreflightEntry = YearPreflightEntry(in_flight_count=0)
+    goal_reviews_visible_h1: YearPreflightEntry = YearPreflightEntry(in_flight_count=0)
+    goal_reviews_visible_h2: YearPreflightEntry = YearPreflightEntry(in_flight_count=0)
 
 
 # ── Reference data writes (Framework tab) ────────────────────────────

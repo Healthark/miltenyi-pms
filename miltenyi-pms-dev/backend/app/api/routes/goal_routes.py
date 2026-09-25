@@ -51,6 +51,7 @@ from app.schemas.goal_schemas import (
     TeamGoalResponse,
 )
 from app.schemas.pagination import Paginated
+from app.core.cycle_utils import half_display, year_display
 from app.core.cycle_utils import (
     _fy_label_of_goal,
     cycles_before,
@@ -115,6 +116,13 @@ def _assert_half_cadence(cycle_half: SelfReviewCycleHalf) -> None:
         )
 
 
+def _status_value(status_in) -> str:
+    """The approval payload validates `approval_status` as a Literal string;
+    older callers passed the enum. Accept both (the `.value` access used to
+    500 on every approve — found by the 25 Sep 2026 smoke)."""
+    return getattr(status_in, "value", status_in)
+
+
 def _self_reviewed_state(cycle_code: str) -> str:
     """`{cycle}_self_reviewed` ApprovalStatus value: "h1" → "h1_self_reviewed"."""
     return f"{cycle_code.lower()}_self_reviewed"
@@ -161,7 +169,7 @@ def _assert_annual_gate_open(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=(
-                f"Annual goal submissions for {fy_label} are currently closed. "
+                f"Annual goal submissions for {year_display(fy_label)} are currently closed. "
                 f"Please wait for the Admin to open the submission window."
             ),
         )
@@ -191,6 +199,32 @@ def _goal_fy_year(goal: Goal) -> Optional[int]:
             return int(token)
     return None
 
+
+
+def _owner_view(db: DbSession, org_id: int, goal: Goal) -> GoalResponse:
+    """What the goal OWNER may see of the mentor's reviews (25 Sep 2026).
+
+    Mentor drafts are dropped. A submitted review whose half the Admin has
+    not published yet (`goal_reviews_visible_h1` / `_h2` on the goal year's
+    override row) is blanked and flagged `hidden`, so the mentee sees that
+    a review exists but not its content. Years without an override row are
+    treated as published (legacy data)."""
+    resp = GoalResponse.model_validate(goal)
+    override = get_year_override(db, org_id, _fy_label_of_goal(goal))
+    kept = []
+    for mr in resp.mentor_reviews:
+        if mr.is_draft:
+            continue
+        flag = f"goal_reviews_visible_{mr.cycle_half.value.lower()}"
+        visible = True if override is None else bool(getattr(override, flag, True))
+        if not visible:
+            mr.mentor_overall_review = ""
+            mr.mentor_id = None
+            mr.mentor_name = None
+            mr.hidden = True
+        kept.append(mr)
+    resp.mentor_reviews = kept
+    return resp
 
 # =====================================================================
 # CORE CRUD OPERATIONS
@@ -227,7 +261,8 @@ def list_goals(
     if goal_type:
         query = query.filter(Goal.goal_type == goal_type)
 
-    return query.order_by(Goal.created_at.desc()).all()
+    goals = query.order_by(Goal.created_at.desc()).all()
+    return [_owner_view(db, current_user.org_id, g) for g in goals]
 
 
 @router.post("/", response_model=GoalResponse, status_code=status.HTTP_201_CREATED)
@@ -837,6 +872,8 @@ def get_goal(
             detail="You do not have access to view this goal.",
         )
 
+    if is_owner and not is_manager:
+        return _owner_view(db, current_user.org_id, goal)
     return goal
 
 
@@ -906,7 +943,8 @@ def delete_goal(
     current_user: CurrentUser,
 ):
     """
-    Permanently delete a goal.
+    Delete a goal (soft delete: the row is flagged and disappears from every
+    list; its review history is kept).
 
     Employees can only delete their own DRAFT goals.
     Annual-goal employees additionally need annual_goals_edit_enabled = True.
@@ -940,7 +978,7 @@ def delete_goal(
                 db, current_user.org_id, _fy_label_of_goal(goal)
             )
 
-    db.delete(goal)
+    goal.is_deleted = True
     db.commit()
     return None
 
@@ -1071,7 +1109,7 @@ def approve_goal(
             detail="Goal is not currently awaiting approval.",
         )
 
-    goal.approval_status = approval_in.approval_status.value
+    goal.approval_status = _status_value(approval_in.approval_status)
     goal.manager_feedback = approval_in.feedback
 
     # Stamp the approval timestamp only on the APPROVED transition.
@@ -1315,8 +1353,7 @@ def submit_goal_self_review(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
-                f"The review window for {half} FY{fy_year % 100:02d}-"
-                f"{(fy_year + 1) % 100:02d} is not currently open."
+                f"The review window for {half_display(half, fy_year)} is not currently open."
             ),
         )
 
@@ -1368,7 +1405,7 @@ def submit_goal_self_review(
         )
         db.commit()
 
-    return _get_goal_with_relations(db, goal.id, current_user.org_id)
+    return _owner_view(db, current_user.org_id, _get_goal_with_relations(db, goal.id, current_user.org_id))
 
 
 @router.patch(
@@ -1422,8 +1459,7 @@ def save_goal_self_review_draft(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
-                f"The review window for {half} FY{fy_year % 100:02d}-"
-                f"{(fy_year + 1) % 100:02d} is not currently open."
+                f"The review window for {half_display(half, fy_year)} is not currently open."
             ),
         )
 
@@ -1453,7 +1489,7 @@ def save_goal_self_review_draft(
         )
         db.add(draft)
     db.commit()
-    return _get_goal_with_relations(db, goal.id, current_user.org_id)
+    return _owner_view(db, current_user.org_id, _get_goal_with_relations(db, goal.id, current_user.org_id))
 
 
 @router.patch(
@@ -1519,8 +1555,7 @@ def submit_goal_mentor_review(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
-                f"The review window for {half} FY{fy_year % 100:02d}-"
-                f"{(fy_year + 1) % 100:02d} is not currently open."
+                f"The review window for {half_display(half, fy_year)} is not currently open."
             ),
         )
 
@@ -1549,12 +1584,14 @@ def submit_goal_mentor_review(
     if existing is not None:
         # Promote draft → submitted.
         existing.mentor_overall_review = payload.mentor_overall_review
+        existing.mentor_id = current_user.id
         existing.is_draft = False
     else:
         mentor_review = GoalMentorReview(
             goal_id=goal.id,
             org_id=current_user.org_id,
             cycle_half=half,
+            mentor_id=current_user.id,
             mentor_overall_review=payload.mentor_overall_review,
             is_draft=False,
         )
@@ -1610,14 +1647,16 @@ def save_goal_mentor_review_draft(
         )
 
     half = cycle_half.value
-    required_state = _self_reviewed_state(half)
-    if goal.approval_status != required_state:
+    # Drafting is allowed as soon as the goal is approved and the half is
+    # active - the mentor may write ahead of the mentee (25 Sep 2026). Only
+    # SUBMIT waits for the self-review, see submit_goal_mentor_review.
+    allowed_states = _self_review_allowed_states(half) | {_self_reviewed_state(half)}
+    if goal.approval_status not in allowed_states:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
                 f"Mentor review for {half} cannot be drafted from the current "
-                f"state ({goal.approval_status}). The mentee must submit their "
-                f"{half} self-review first."
+                f"state ({goal.approval_status})."
             ),
         )
 
@@ -1634,20 +1673,10 @@ def save_goal_mentor_review_draft(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
-                f"The review window for {half} FY{fy_year % 100:02d}-"
-                f"{(fy_year + 1) % 100:02d} is not currently open."
+                f"The review window for {half_display(half, fy_year)} is not currently open."
             ),
         )
 
-    mentee_review = next(
-        (sr for sr in goal.self_reviews if sr.cycle_half == half and not sr.is_draft),
-        None,
-    )
-    if mentee_review is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"The mentee has not yet submitted their self-review for {half}.",
-        )
 
     existing = next(
         (mr for mr in goal.mentor_reviews if mr.cycle_half == half),
@@ -1664,12 +1693,14 @@ def save_goal_mentor_review_draft(
 
     if existing is not None:
         existing.mentor_overall_review = payload.mentor_overall_review
+        existing.mentor_id = current_user.id
         existing.is_draft = True
     else:
         draft = GoalMentorReview(
             goal_id=goal.id,
             org_id=current_user.org_id,
             cycle_half=half,
+            mentor_id=current_user.id,
             mentor_overall_review=payload.mentor_overall_review,
             is_draft=True,
         )

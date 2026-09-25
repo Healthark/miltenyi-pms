@@ -1,9 +1,9 @@
 """
-AnnualReview Routes — The 3-Stage Appraisal Workflow.
+AnnualReview Routes — The 3-Stage Annual Review Workflow.
 
 Endpoints:
     ── Stage 1: Employee ──
-    POST  /annual-reviews/self              → Create + submit self-appraisal
+    POST  /annual-reviews/self              → Create + submit self-review
     PATCH /annual-reviews/{id}/draft        → Save draft (partial, no status change)
     GET   /annual-reviews/mine              → Active-cycle review (404 if none)
     GET   /annual-reviews/mine/history      → All reviews owned by current user
@@ -40,6 +40,7 @@ from app.api.dependencies import DbSession, CurrentUser
 from app.services.notification_service import notify, notify_many
 from app.core.user_filters import active_user_ids_query
 from app.core.cycle_utils import (
+    year_display,
     _fy_label_of_review,
     ensure_year_override_row,
     extract_fy_label,
@@ -52,8 +53,8 @@ from app.models.reference_models import Function, Designation
 from app.models.system_settings_models import SystemSettings, CycleType
 from app.models.user_models import User, Role
 from app.schemas.annual_review_schemas import (
-    SelfAppraisalCreate,
-    SelfAppraisalDraft,
+    SelfReviewCreate,
+    SelfReviewDraft,
     MentorEvalUpdate,
     MentorEvalDraft,
     ManagementRatingUpdate,
@@ -241,8 +242,33 @@ def _require_submissions_open(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=(
-                f"Annual review submissions for {fy_label} are paused. "
+                f"Annual review submissions for {year_display(fy_label)} are paused. "
                 f"Contact your administrator."
+            ),
+        )
+
+
+def _require_management_review_open(
+    db: DbSession,
+    org_id: int,
+    fy_label: str | None,
+) -> None:
+    """The Management Review (calibration) window has its own per-year
+    switch (25 Sep 2026): HR can close submissions and still rate, or keep
+    submissions open while calibration has not started. Default-deny on a
+    missing override row, like the other gates."""
+    if not fy_label:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Could not determine the year for this review.",
+        )
+    override = get_year_override(db, org_id, fy_label)
+    if override is None or not override.management_review_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                f"Management review for {year_display(fy_label)} is not open. "
+                f"The Admin opens it in System Settings → Annual Reviews."
             ),
         )
 
@@ -300,7 +326,7 @@ def _strip_private_ratings(
 
 
 # =====================================================================
-# STAGE 1 — EMPLOYEE SELF-APPRAISAL
+# STAGE 1 — EMPLOYEE SELF-REVIEW
 # =====================================================================
 
 def _attach_mentor_name(review: AnnualReview, db: DbSession) -> AnnualReview:
@@ -321,13 +347,13 @@ def _attach_mentor_name(review: AnnualReview, db: DbSession) -> AnnualReview:
 
 
 @router.post("/self", response_model=AnnualReviewResponse, status_code=status.HTTP_201_CREATED)
-def create_self_appraisal(
-    payload: SelfAppraisalCreate,
+def create_self_review(
+    payload: SelfReviewCreate,
     db: DbSession,
     current_user: CurrentUser,
 ):
     """
-    Submit the employee's self-appraisal. If a draft row already exists for
+    Submit the employee's self-review. If a draft row already exists for
     the user/cycle, promote it to PENDING_MENTOR with the submitted payload.
     Otherwise create a new row directly in PENDING_MENTOR.
 
@@ -345,7 +371,7 @@ def create_self_appraisal(
     if existing and existing.status != ReviewStatus.DRAFT.value:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"You have already submitted a self-review for {cycle_name}.",
+            detail=f"You have already submitted a self-review for {year_display(cycle_name)}.",
         )
 
     if existing is not None:
@@ -355,7 +381,7 @@ def create_self_appraisal(
         existing.status = ReviewStatus.PENDING_MENTOR.value
         db.commit()
         db.refresh(existing)
-        _notify_self_appraisal_submitted(db, existing, current_user, cycle_name)
+        _notify_self_review_submitted(db, existing, current_user, cycle_name)
         return _attach_mentor_name(existing, db)
 
     mentor_id = current_user.mentor_id
@@ -371,14 +397,14 @@ def create_self_appraisal(
     db.add(review)
     db.commit()
     db.refresh(review)
-    _notify_self_appraisal_submitted(db, review, current_user, cycle_name)
+    _notify_self_review_submitted(db, review, current_user, cycle_name)
     return _attach_mentor_name(review, db)
 
 
-def _notify_self_appraisal_submitted(
+def _notify_self_review_submitted(
     db, review: AnnualReview, current_user: User, cycle_name: str,
 ) -> None:
-    """Notify the mentor that their mentee submitted a self-appraisal.
+    """Notify the mentor that their mentee submitted a self-review.
     In-app only — review-cycle events are too frequent for email.
     No-op if the review has no mentor (early-cycle data quirks)."""
     if not review.mentor_id:
@@ -391,20 +417,20 @@ def _notify_self_appraisal_submitted(
         module="annual_review",
         entity_type="annual_review",
         entity_id=review.id,
-        message=f"{current_user.full_name} submitted their {cycle_name} self-appraisal.",
+        message=f"{current_user.full_name} submitted their {year_display(cycle_name)} self-review.",
         entity_url=f"/annual-reviews?review_id={review.id}",
     )
     db.commit()
 
 
 @router.post("/self/draft", response_model=AnnualReviewResponse, status_code=status.HTTP_201_CREATED)
-def create_self_appraisal_draft(
-    payload: SelfAppraisalDraft,
+def create_self_review_draft(
+    payload: SelfReviewDraft,
     db: DbSession,
     current_user: CurrentUser,
 ):
     """
-    Create a new annual self-appraisal in DRAFT state. The employee can
+    Create a new annual self-review in DRAFT state. The employee can
     revisit it via PATCH /draft and submit later via POST /self.
 
     409 if a row already exists for the user/cycle (use the PATCH /draft
@@ -446,7 +472,7 @@ def create_self_appraisal_draft(
 @router.patch("/{review_id}/draft", response_model=AnnualReviewResponse)
 def save_draft(
     review_id: int,
-    payload: SelfAppraisalDraft,
+    payload: SelfReviewDraft,
     db: DbSession,
     current_user: CurrentUser,
 ):
@@ -1125,7 +1151,7 @@ def submit_mentor_evaluation(
         module="annual_review",
         entity_type="annual_review",
         entity_id=review.id,
-        message=f"Your mentor submitted their evaluation for {review.cycle_name}.",
+        message=f"Your mentor submitted their evaluation for {year_display(review.cycle_name)}.",
         entity_url=f"/annual-reviews?review_id={review.id}",
     )
     db.commit()
@@ -1192,7 +1218,7 @@ def submit_mentor_evaluation(
                 entity_type="annual_review_cycle",
                 entity_id=None,
                 message=(
-                    f"All mentor evaluations are in for {review.cycle_name}. "
+                    f"All mentor evaluations are in for {year_display(review.cycle_name)}. "
                     f"Management calibration can begin."
                 ),
                 entity_url="/management-review",
@@ -1797,7 +1823,7 @@ def set_management_rating(
 
     Sets (or updates) management_performance_rating, unlocks the per-row
     final_rating_enabled flag so the user-side fallback
-    (management ?? mentor) becomes visible — still subject to the org-wide
+    (management ?? mentor) becomes visible — still subject to the per-year
     annual_review_final_rating_visible gate — and transitions the row to
     COMPLETED. Further edits remain allowed because the input gate also
     accepts COMPLETED, so management can recalibrate the rating without
@@ -1819,7 +1845,7 @@ def set_management_rating(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Management rating can only be set after mentor evaluation is submitted.",
         )
-    _require_submissions_open(
+    _require_management_review_open(
         db, current_user.org_id, _fy_label_of_review(review)
     )
 
@@ -1847,10 +1873,10 @@ def set_management_rating(
     db.refresh(review)
 
     if was_pending:
-        message = f"Your final {review.cycle_name} rating is now available."
+        message = f"Your final {year_display(review.cycle_name)} rating is now available."
         should_notify = True
     else:
-        message = f"Your final {review.cycle_name} rating was updated."
+        message = f"Your final {year_display(review.cycle_name)} rating was updated."
         should_notify = prior_rating != payload.management_performance_rating
 
     if should_notify:

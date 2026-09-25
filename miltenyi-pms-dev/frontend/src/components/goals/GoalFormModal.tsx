@@ -95,8 +95,17 @@ export function GoalFormModal({
   const set = (field: keyof FormState, value: string) =>
     setForm((prev) => ({ ...prev, [field]: value }));
 
+  // Attachment links must be web links (the server refuses anything else).
+  const [linkError, setLinkError] = useState("");
+
   // ── Submit ────────────────────────────────────────────────────────
   const handleSubmit = async () => {
+    const link = form.attachment_url.trim();
+    if (link && !/^https?:\/\//i.test(link)) {
+      setLinkError("The attachment must be a web link starting with http:// or https://.");
+      return;
+    }
+    setLinkError("");
     if (isEditing) {
       await onSave({
         title: form.title || undefined,
@@ -216,6 +225,7 @@ export function GoalFormModal({
               onChange={(e) => set("attachment_url", e.target.value)}
               placeholder="https://drive.google.com/drive/folders/..."
             />
+            {linkError && <p className="mt-1 text-xs text-red-600">{linkError}</p>}
           </div>
 
           {/* Progress notes — only shown when editing an approved goal */}

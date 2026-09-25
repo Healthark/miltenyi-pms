@@ -265,7 +265,7 @@ function NoMatchEmpty() {
         No reviews match this filter
       </p>
       <p className="mt-1 text-sm text-text-muted">
-        Try adjusting the Fiscal Year or Status filter.
+        Try adjusting the Year or Status filter.
       </p>
     </div>
   );
@@ -441,7 +441,7 @@ export function SelfReviewTab({
               htmlFor="self-review-fy-filter"
               className="text-[11px] font-bold uppercase tracking-wider text-text-muted"
             >
-              Fiscal Year
+              Year
             </label>
             <select
               id="self-review-fy-filter"
@@ -521,7 +521,7 @@ export function SelfReviewTab({
                   <SortableHeader label="Mentor" columnKey="mentor_name" sort={sort} onSort={setSort} />
                 </th>
                 <th className="text-left px-4 py-2.5">
-                  <SortableHeader label="Fiscal Year" columnKey="cycle_name" sort={sort} onSort={setSort} />
+                  <SortableHeader label="Year" columnKey="cycle_name" sort={sort} onSort={setSort} />
                 </th>
                 <th className="text-left px-4 py-2.5">
                   <SortableHeader label="Status" columnKey="status" sort={sort} onSort={setSort} />

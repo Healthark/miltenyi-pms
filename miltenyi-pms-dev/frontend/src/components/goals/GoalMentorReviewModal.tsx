@@ -51,7 +51,7 @@ function cycleLabel(
   cycleHalf: SelfReviewCycleHalf,
 ): string {
   const display = halfDisplayLabel(cycleHalf);
-  return goal.fy_year ? `${display} ${formatFyYearSpan(goal.fy_year)}` : display;
+  return goal.fy_year ? `${display} · ${formatFyYearSpan(goal.fy_year)}` : display;
 }
 
 // ── Props ────────────────────────────────────────────────────────────
@@ -299,12 +299,13 @@ export function GoalMentorReviewModal({
 
               {selfReview === null && !isReadOnly && (
                 <div className="shrink-0 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-                  You can only submit a mentor review once the mentee has
-                  submitted their self-review.
+                  The mentee has not submitted their self-review for this half
+                  yet. You can draft your review now; Submit unlocks once it
+                  arrives.
                 </div>
               )}
 
-              {(selfReview !== null || isReadOnly) && (
+              {(
                 <div className="flex flex-1 flex-col min-h-0">
                   <label
                     htmlFor="mentor-overall"
@@ -351,7 +352,7 @@ export function GoalMentorReviewModal({
             {isReadOnly
               ? "Mentor review is locked once submitted."
               : selfReview === null
-                ? "Waiting for mentee self-review."
+                ? "Draft now; Submit unlocks once the mentee's self-review is in."
                 : isDraft
                   ? "Draft saved — keep editing or submit when ready."
                   : "Drafts can be saved and edited; submit when ready."}
@@ -364,7 +365,7 @@ export function GoalMentorReviewModal({
             >
               {isReadOnly ? "Close" : "Cancel"}
             </button>
-            {!isReadOnly && selfReview !== null && onSaveDraft && (
+            {!isReadOnly && onSaveDraft && (
               <button
                 type="button"
                 onClick={handleSaveDraft}
@@ -383,7 +384,7 @@ export function GoalMentorReviewModal({
               <button
                 type="button"
                 onClick={handleSubmit}
-                disabled={isSaving || isDraftSaving || !allFilled}
+                disabled={selfReview === null || isSaving || isDraftSaving || !allFilled}
                 className="flex items-center gap-2 rounded-lg bg-brand px-5 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
               >
                 {isSaving ? (

@@ -2,7 +2,7 @@
  * GoalSelfReviewModal.tsx — Owner's (or mentor-view) reflection form for
  * a single half (H1 / H2) of an approved annual goal.
  *
- * Form shape mirrors the Annual Review self-appraisal: one freeform
+ * Form shape mirrors the Annual Review self-review: one freeform
  * paragraph capturing the reflection.
  */
 
@@ -29,7 +29,7 @@ function cycleLabel(
   // "H1 FY 2026-27" — goal cadence is uniformly half-yearly.
   const display = halfDisplayLabel(cycleHalf);
   return goal.fy_year
-    ? `${display} ${formatFyYearSpan(goal.fy_year)}`
+    ? `${display} · ${formatFyYearSpan(goal.fy_year)}`
     : display;
 }
 

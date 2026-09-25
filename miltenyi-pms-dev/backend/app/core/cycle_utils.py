@@ -12,6 +12,7 @@ cycle code can recover the cadence without an extra arg — see
 `cycle_keys_for`.
 """
 
+import re
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional, TYPE_CHECKING
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -396,6 +397,9 @@ YEAR_OVERRIDE_FLAGS: tuple[str, ...] = (
     "annual_reviews_enabled",
     "annual_review_final_rating_visible",
     "annual_goals_edit_enabled",
+    "goal_reviews_visible_h1",
+    "goal_reviews_visible_h2",
+    "management_review_enabled",
 )
 
 
@@ -562,3 +566,37 @@ def fy_filter_to_date_ranges(
         for year in sorted(fy_filter)
     ]
     return ranges
+
+
+# ── Display spelling of years ─────────────────────────────────────────
+# The application shows every year as a calendar-year span ("CY 26-27",
+# decided 20 Sep 2026). "FY26-27" stays the stored token. These helpers are
+# for text the user reads: notifications, emails, error messages, exports.
+
+_YEAR_TOKEN = re.compile(r"(?:FY|CY)\s?(\d{2}|\d{4})(?:-\d{2})?", re.I)
+
+
+def cy_label(fy_start_year: int) -> str:
+    """2026 -> "CY 26-27"."""
+    return f"CY {fy_start_year % 100:02d}-{(fy_start_year + 1) % 100:02d}"
+
+
+def year_display(label: str | None) -> str:
+    """"FY26-27" / "FY2026-27" / "CY 26-27" -> "CY 26-27"; "H1 FY26-27" ->
+    "H1 · CY 26-27"; anything unreadable comes back unchanged."""
+    if not label:
+        return ""
+    text = str(label).strip()
+    m = re.match(r"^(H[12]|Q[1-4])\s+(.+)$", text, re.I)
+    prefix, token = (m.group(1).upper(), m.group(2)) if m else (None, text)
+    y = _YEAR_TOKEN.search(token)
+    if not y:
+        return text
+    digits = y.group(1)
+    year = int(digits) if len(digits) == 4 else 2000 + int(digits)
+    return f"{prefix} · {cy_label(year)}" if prefix else cy_label(year)
+
+
+def half_display(half: str, fy_start_year: int) -> str:
+    """("H1", 2026) -> "H1 · CY 26-27"."""
+    return f"{half.upper()} · {cy_label(fy_start_year)}"

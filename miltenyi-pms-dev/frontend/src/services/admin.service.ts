@@ -57,6 +57,9 @@ export interface SystemSettings {
   annual_goals_edit_enabled: boolean;
   annual_reviews_enabled: boolean;
   annual_review_final_rating_visible: boolean;
+  goal_reviews_visible_h1: boolean;
+  goal_reviews_visible_h2: boolean;
+  management_review_enabled: boolean;
   /** ISO date string. Non-null when HR has pinned a simulated "today"
    *  for demo / QA purposes. The whole app shows an amber banner when set. */
   simulated_today: string | null;
@@ -74,6 +77,9 @@ export interface AdminSettingsUpdatePayload {
   annual_goals_edit_enabled?: boolean;
   annual_reviews_enabled?: boolean;
   annual_review_final_rating_visible?: boolean;
+  goal_reviews_visible_h1?: boolean;
+  goal_reviews_visible_h2?: boolean;
+  management_review_enabled?: boolean;
   /** ISO date string to set as the simulated "today". Send null + the
    *  companion `clear_simulated_today: true` to clear an existing
    *  value (PATCH semantics treat omission as "leave unchanged"). */
@@ -115,6 +121,9 @@ export interface YearSettings {
   annual_reviews_enabled: boolean;
   annual_review_final_rating_visible: boolean;
   annual_goals_edit_enabled: boolean;
+  goal_reviews_visible_h1: boolean;
+  goal_reviews_visible_h2: boolean;
+  management_review_enabled: boolean;
   is_current: boolean;
   updated_at: string | null;
 }
@@ -123,6 +132,9 @@ export interface YearSettingsUpdatePayload {
   annual_reviews_enabled: boolean;
   annual_review_final_rating_visible: boolean;
   annual_goals_edit_enabled: boolean;
+  goal_reviews_visible_h1: boolean;
+  goal_reviews_visible_h2: boolean;
+  management_review_enabled: boolean;
 }
 
 export interface YearPreflightEntry {
@@ -135,6 +147,9 @@ export interface YearPreflight {
   annual_goals_edit_enabled: YearPreflightEntry;
   annual_reviews_enabled: YearPreflightEntry;
   annual_review_final_rating_visible: YearPreflightEntry;
+  management_review_enabled?: YearPreflightEntry;
+  goal_reviews_visible_h1?: YearPreflightEntry;
+  goal_reviews_visible_h2?: YearPreflightEntry;
 }
 
 // ---------------------------------------------------------------------------

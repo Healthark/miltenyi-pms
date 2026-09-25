@@ -34,37 +34,26 @@ export function extractCyclePeriod(cycleName: string): string | null {
 }
 
 /**
- * Render a cycle name as a human-readable FY label.
- *   "FY26-27"     → "FY 2026-27"
- *   "H1 FY26-27"  → "FY 2026-27"
- *   "FY26"        → "FY 2026"     (legacy 2-digit form)
- *   "FY2026"      → "FY 2026"     (legacy 4-digit form)
- * Falls back to the input when no FY token is parseable.
+ * Render a cycle name or year token the way the application spells years
+ * (calendar-year span, decided 20 Sep 2026):
+ *   "FY26-27"     → "CY 26-27"
+ *   "H1 FY26-27"  → "CY 26-27"   (the year only; use cycleAsCy for the half)
+ *   "FY26"        → "CY 26-27"   (legacy 2-digit form)
+ *   "FY2026"      → "CY 26-27"   (legacy 4-digit form)
+ * Falls back to the input when no year token is parseable.
  */
 export function formatFyLabel(cycleName: string): string {
-  const token = extractFyToken(cycleName);
-  // New spanning form: "FY26-27"
-  const span = /^FY(\d{2})-(\d{2})$/i.exec(token);
-  if (span) {
-    return `FY 20${span[1]}-${span[2]}`;
-  }
-  // Legacy bare form: "FY26" or "FY2026"
-  const m = /^FY(\d{2,4})$/i.exec(token);
-  if (!m) return cycleName;
-  const digits = m[1];
-  const year = digits.length === 2 ? `20${digits}` : digits;
-  return `FY ${year}`;
+  const y = startYearOf(extractFyToken(cycleName));
+  return y === null ? cycleName : cyLabel(y);
 }
 
 /**
- * Render a 4-digit fiscal start year as the spanning span label.
- *   2026 → "FY 2026-27"
- *   1999 → "FY 1999-00"
- * Used for goal cards/tables that store the FY as a number rather than a token.
+ * Render a 4-digit start year as the application's year label.
+ *   2026 → "CY 26-27"
+ * Used for goal cards/tables that store the year as a number rather than a token.
  */
 export function formatFyYearSpan(year: number): string {
-  const next = (year + 1) % 100;
-  return `FY ${year}-${next.toString().padStart(2, "0")}`;
+  return cyLabel(year);
 }
 
 /**

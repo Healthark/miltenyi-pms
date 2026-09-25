@@ -1,5 +1,5 @@
 """
-AnnualReview Model — The 3-Stage Performance Appraisal.
+AnnualReview Model — The 3-Stage Annual Review.
 
 Lifecycle:
     Stage 1 — Employee Self-Review:

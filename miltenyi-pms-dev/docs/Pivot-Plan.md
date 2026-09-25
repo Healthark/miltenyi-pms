@@ -236,3 +236,19 @@ An audit of the Dashboard module after the Project Goals and role changes (Zaahi
 - Removed: the mentor's "Active Project Cycle" tile (retired project reviews), the never-rendered stalled-goals payload, two orphaned cards; the dormant project-review queries run only when that feature is on.
 
 Labels on the dashboards are CY; the Annual Goals, Annual Reviews and Management Review pages still say FY (follow-up). QA modules 05, 06 and 07 updated.
+
+---
+
+## Revision — 25 September 2026: annual goals & reviews, parity with the Healthark PMS (part 1)
+
+An audit of the Annual Goals and Annual Reviews modules against the Healthark PMS (24 Sep 2026) listed 23 differences; Zaahid decided item by item. Built in part 1 (migration `b7c4d1e9f2a3`):
+
+- **Mentor reviews on annual goals are published per half**: two per-year switches (System Settings → Annual Goals, "Show H1 / H2 Mentor Reviews") keep a submitted review hidden from the staff member until the Admin publishes that half; existing years stay visible, new years start hidden.
+- **The Management Review window is its own per-year switch** ("Enable Management Review"), so HR can close submissions and still calibrate. Management still cannot rate before the mentor.
+- **A mentor may draft a goal review before the mentee's self-review**; only submit waits.
+- **Goals are soft-deleted** (`goals.is_deleted`, hidden by a session-wide loader criteria) and **each goal mentor review records its author** (`goal_mentor_reviews.mentor_id`).
+- **Attachment links must be http(s)** on the API and in the form; anything else stored renders as inert text.
+- **"Self-appraisal" is "self-review" everywhere**, and **years are spelled CY on every annual surface**, in notifications and in the Excel exports.
+- Also fixed on the way: approving an annual goal answered 500 (the endpoint read `.value` on a plain string).
+
+Decided against (kept as is): per-employee goal-access exceptions, throw-back-to-draft, bulk request, the mentor reminder nudge, key results, self-service export, a separate mentor-rating switch, management comments, management-only Admins, the HR review tracker. Still to build: the Admin-controlled H1/H2 roll-out for annual goals and reviews (part 2), rich text in goal descriptions, the Admin Notify tab and snapshot emails (part 3).

@@ -921,7 +921,7 @@ function AllReviewsTab({
                       </div>
                       <div role="cell" className="px-4 py-3">
                         <span className="text-[12px] font-semibold text-text-muted bg-slate-100 px-1.5 py-0.5 rounded">
-                          {r.cycle_name}
+                          {formatFyLabel(r.cycle_name)}
                         </span>
                       </div>
                       <div role="cell" className="px-4 py-3">

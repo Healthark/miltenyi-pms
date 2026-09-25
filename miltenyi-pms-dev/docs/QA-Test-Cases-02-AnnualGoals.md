@@ -17,7 +17,7 @@
 2. Default tab should be **My Goals**.
 
 **Expected:**
-- Page header reads "Team Goals" or "Annual Goals" with the active FY (e.g. "· FY26-27") in muted text next to it.
+- Page header reads "Team Goals" or "Annual Goals" with the active FY (e.g. "· CY 26-27") in muted text next to it.
 - A short subtitle below the header explains the page.
 - An **Add Goal** button is in the top-right (only when the goal-edit gate is open AND you have a mentor).
 - A "Reference your role expectations…" banner appears with a **View Role Expectations** button.
@@ -186,23 +186,9 @@
 
 ---
 
-### TC-GOAL-011 — Approved goal shows criteria checklist
+### TC-GOAL-011 — (removed 9 Sep 2026)
 
-**Login as:** Staff
-**Steps:**
-1. Find an Approved goal.
-2. Expand it (click the row to expand in table view, or look at the card).
-
-**Expected:**
-- Status badge reads **Approved** (green).
-- All criteria are listed.
-- Each criterion has a checkbox to mark complete.
-- Progress percent recomputes when you check/uncheck a criterion.
-
-**UI checks:**
-- Checkbox is properly aligned with criterion text.
-- Progress bar updates smoothly without flicker.
-- Completed criteria are visually distinct (struck-through or muted).
+Key results / criteria under a goal were dropped for the Miltenyi instance (confirmed again on 24 Sep 2026). There is no checklist to test.
 
 ---
 
@@ -211,10 +197,11 @@
 **Login as:** Staff
 **Steps:**
 1. On a goal with an attachment URL (one you set during creation), click the **Attachment** link.
+2. Edit a goal and try to save `javascript:alert(1)` or `not a link` as the attachment.
 
 **Expected:**
-- Opens in a new browser tab.
-- Original app tab is preserved.
+- Opens in a new browser tab; the original app tab is preserved.
+- Step 2 is refused in the form ("The attachment must be a web link starting with http:// or https://."); the API refuses it too (422). Only http(s) links are ever rendered as clickable — anything else already stored shows as the plain text "Attachment (not a web link)".
 
 ---
 
@@ -224,13 +211,13 @@
 **Login as:** Staff
 **Steps:**
 1. Use the **Year** dropdown filter.
-2. Select a specific year (e.g. "FY 2026–27").
+2. Select a specific year (e.g. "CY 26-27").
 
 **Expected:** Only goals matching that FY are shown.
 
 **Then:** Select "All Years" → table resets.
 
-**UI checks:** Year dropdown options use the human format "FY 2026–27", not the raw `2026`.
+**UI checks:** Year dropdown options use the human format "CY 26-27", not the raw `2026`.
 
 ---
 
@@ -312,7 +299,7 @@
 **Expected:** A "Self-Review" cycle menu (dropdown or button group) is visible offering **H1** and possibly **H2** (depending on the current half).
 
 **UI checks:**
-- Menu options are clearly labeled with the half AND year (e.g. "H1 FY 2026–27").
+- Menu options are clearly labeled with the half AND year (e.g. "H1 · CY 26-27").
 
 ---
 
@@ -536,7 +523,7 @@
 2. Modal opens.
 
 **Expected:**
-- Modal title reads "Self-Review · H1 FY 2026–27" (or current FY).
+- Modal title reads "Self-Review · H1 · CY 26-27" (or current FY).
 - A single freeform textarea is present.
 
 **UI checks:**
@@ -635,14 +622,47 @@
 
 ---
 
-### TC-MENTREV-003 — Mentor cannot review before mentee submits self-review
+### TC-MENTREV-003 — Mentor can draft, not submit, before the mentee's self-review
 
 **Login as:** Mentor
 **Steps:**
-1. Find a goal that's Approved but the mentee has NOT submitted H1 self-review yet.
+1. Find a goal that's Approved but the mentee has NOT submitted the H1 self-review yet.
+2. Click the outlined **Draft H1 review** chip; type a review; **Save Draft**; close and reopen.
 
 **Expected:**
-- Mentor cannot start the H1 mentor review (button disabled or hidden, with a note "Awaiting mentee's self-review").
+- The chip is enabled while the H1 window is open (grey "H1 · Not open" when it is not).
+- The modal shows "The mentee has not submitted their self-review for this half yet. You can draft your review now; Submit unlocks once it arrives." — **Save Draft** works, **Submit Review** stays disabled. The chip now reads "Resume H1 · Draft".
+- The mentee never sees the draft. Once the mentee submits the self-review, **Submit Review** enables (the API refuses an early submit with 400).
+
+---
+
+### TC-MENTREV-004 — The review shows who wrote it
+
+**Login as:** Admin (All Goals) or Staff (My Goals → View)
+**Steps:** Open the review details of a goal with a submitted mentor review.
+**Expected:** The block is titled "Mentor Review · <author>" with the name of the person who submitted it, even if the staff member's mentor changed afterwards.
+
+---
+
+### TC-MENTREV-005 — Mentor reviews stay hidden until the Admin publishes the half
+
+**Pre-condition:** A submitted H1 mentor review; System Settings → Annual Goals → **Show H1 Mentor Reviews on Annual Goals** is OFF for the year.
+**Login as:** Staff (the goal owner)
+**Steps:**
+1. My Goals → the goal's Mentor Feedback → **View**.
+2. Ask the Admin to turn the H1 switch ON, then refresh.
+
+**Expected:**
+- Step 1: the status still shows the goal as mentor-reviewed, but the review block reads "Mentor review submitted · hidden until the Admin publishes the H1 reviews (System Settings → Annual Goals)" — no text, no author.
+- Step 2: the review text and "Mentor Review · <author>" appear. H2 has its own switch. Mentors and the Admin always see the full review.
+
+---
+
+### TC-GOAL-020 — Delete a draft goal (soft delete)
+
+**Login as:** Staff
+**Steps:** Delete one of your **Draft** goals.
+**Expected:** It disappears from My Goals, Team Goals, All Goals, the dashboards and the exports, and opening its old link answers "not found". Nothing else changes; the row is kept in the database with its history (there is no restore screen).
 
 ---
 

@@ -349,6 +349,9 @@ def seed_database() -> None:
                     annual_reviews_enabled=True,
                     annual_review_final_rating_visible=True,
                     annual_goals_edit_enabled=True,
+                    goal_reviews_visible_h1=True,
+                    goal_reviews_visible_h2=True,
+                    management_review_enabled=True,
                     updated_by_id=sarah.id,
                 ))
         db.commit()

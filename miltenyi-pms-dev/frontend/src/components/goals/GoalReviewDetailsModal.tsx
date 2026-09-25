@@ -146,11 +146,15 @@ export function GoalReviewDetailsModal({
                     </div>
                   )}
 
-                  {mr ? (
+                  {mr && mr.hidden ? (
+                    <div className="rounded-lg border border-dashed border-border bg-background/50 px-4 py-2 text-[12px] italic text-text-muted">
+                      Mentor review submitted · hidden until the Admin publishes the {halfDisplayLabel(half)} reviews (System Settings → Annual Goals).
+                    </div>
+                  ) : mr ? (
                     <div className="rounded-lg border border-border bg-emerald-50/30 px-4 py-3">
                       <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-text-muted mb-1">
                         <MessageSquare className="h-3 w-3" aria-hidden="true" />
-                        Mentor Review
+                        Mentor Review{mr.mentor_name ? ` · ${mr.mentor_name}` : ""}
                       </div>
                       <p className="text-[13px] text-text-main whitespace-pre-wrap leading-relaxed">
                         {mr.mentor_overall_review}

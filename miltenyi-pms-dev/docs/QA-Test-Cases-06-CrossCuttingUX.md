@@ -265,7 +265,7 @@ Run each of these at three browser widths: **narrow ≈ 600 px** · **medium ≈
 **Steps:**
 1. Across all pages, look at year labels: Topbar, dashboards, System Settings, filters, tables, modal headers.
 
-**Expected:** Every year is shown as a calendar-year span **"CY 26-27"**; halves and quarters read "H1 · CY 26-27" and "Q3 · CY 26-27" (decision of 20 Sep 2026). "FY26-27" is the stored token and may appear only in URLs (`?cycle=FY26-27`). Known exception until converted: the Annual Goals, Annual Reviews and Management Review pages still show FY labels in their filters and tables (tracked follow-up).
+**Expected:** Every year is shown as a calendar-year span **"CY 26-27"**; halves and quarters read "H1 · CY 26-27" and "Q3 · CY 26-27" (decision of 20 Sep 2026). "FY26-27" is the stored token and may appear only in URLs (`?cycle=FY26-27`). Since 25 Sep 2026 this includes the Annual Goals, Annual Reviews and Management Review pages, the notifications and the Excel exports.
 
 ---
 

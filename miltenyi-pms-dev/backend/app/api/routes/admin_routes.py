@@ -1736,6 +1736,9 @@ def get_admin_settings(
             annual_goals_edit_enabled=override.annual_goals_edit_enabled,
             annual_reviews_enabled=override.annual_reviews_enabled,
             annual_review_final_rating_visible=override.annual_review_final_rating_visible,
+            goal_reviews_visible_h1=override.goal_reviews_visible_h1,
+            goal_reviews_visible_h2=override.goal_reviews_visible_h2,
+            management_review_enabled=override.management_review_enabled,
             simulated_today=row.simulated_today,
             simulation_allowed=settings.ALLOW_DATE_SIMULATION,
             updated_at=row.updated_at,
@@ -1842,6 +1845,9 @@ def update_admin_settings(
         "annual_goals_edit_enabled": settings_in.annual_goals_edit_enabled,
         "annual_reviews_enabled": settings_in.annual_reviews_enabled,
         "annual_review_final_rating_visible": settings_in.annual_review_final_rating_visible,
+        "goal_reviews_visible_h1": settings_in.goal_reviews_visible_h1,
+        "goal_reviews_visible_h2": settings_in.goal_reviews_visible_h2,
+        "management_review_enabled": settings_in.management_review_enabled,
     }
     touched_year_row = False
     for flag, value in legacy_year_writes.items():
@@ -1866,6 +1872,9 @@ def update_admin_settings(
         annual_goals_edit_enabled=override.annual_goals_edit_enabled,
         annual_reviews_enabled=override.annual_reviews_enabled,
         annual_review_final_rating_visible=override.annual_review_final_rating_visible,
+        goal_reviews_visible_h1=override.goal_reviews_visible_h1,
+        goal_reviews_visible_h2=override.goal_reviews_visible_h2,
+        management_review_enabled=override.management_review_enabled,
         simulated_today=settings_row.simulated_today,
         simulation_allowed=simulation_allowed,
         updated_at=settings_row.updated_at,
@@ -2039,6 +2048,9 @@ def _build_year_settings_response(
         annual_reviews_enabled=row.annual_reviews_enabled,
         annual_review_final_rating_visible=row.annual_review_final_rating_visible,
         annual_goals_edit_enabled=row.annual_goals_edit_enabled,
+        goal_reviews_visible_h1=row.goal_reviews_visible_h1,
+        goal_reviews_visible_h2=row.goal_reviews_visible_h2,
+        management_review_enabled=row.management_review_enabled,
         is_current=(row.fy_label == current_fy),
         updated_at=row.updated_at,
     )
@@ -2181,7 +2193,7 @@ def update_year_settings(
     db: DbSession,
     current_user: CurrentUser,
 ):
-    """Update the four access toggles for a specific FY."""
+    """Update every switch of a specific year (annual gates, goal-review visibility per half, the management review window)."""
     _require_admin(current_user)
 
     settings_row = db.query(SystemSettings).filter(
