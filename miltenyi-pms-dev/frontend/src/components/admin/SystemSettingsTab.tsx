@@ -12,8 +12,8 @@
  *      (goal entry, weightages, backfill for a past year, per-quarter
  *      ratings) on the right. All staged; Save opens one confirmation that
  *      lists every flip with impact lines from the two preflights.
- *   4. Calendar (read-only anchors) and, when the backend allows it, the
- *      Developer date simulation.
+ *   4. Calendar (read-only anchors). The annual cycle follows the quarter
+ *      roll-out, so the old date simulation is gone (25 Sep 2026).
  *
  * Framework content (rows, KPIs, designation levels) is on the Framework
  * tab; nothing there gates anything.
@@ -21,7 +21,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createPortal } from "react-dom";
-import { Save, Info, FlaskConical, AlertTriangle, ClipboardList, CalendarDays, CalendarClock } from "lucide-react";
+import { Save, Info, AlertTriangle, ClipboardList, CalendarDays, CalendarClock } from "lucide-react";
 import {
   adminService,
   type YearSettingsUpdatePayload,
@@ -46,14 +46,6 @@ interface SystemSettingsTabProps {
   readonly fiscalStartMonth: number;
   /** IANA timezone string. Anchors every backend calendar-day decision. */
   readonly timezone: string;
-  // Dev / QA date simulation
-  readonly simulatedToday: string | null;
-  readonly simulationAllowed: boolean;
-  readonly onSimulatedTodayChange: (date: string) => void;
-  readonly onClearSimulatedToday: () => void;
-  /** Called when the Admin saves the date simulation. */
-  readonly onSaveOrgWide: () => void;
-  readonly isSavingOrgWide: boolean;
 }
 
 const MONTHS = [
@@ -306,12 +298,6 @@ export function SystemSettingsTab({
   activeCycleName,
   fiscalStartMonth,
   timezone,
-  simulatedToday,
-  simulationAllowed,
-  onSimulatedTodayChange,
-  onClearSimulatedToday,
-  onSaveOrgWide,
-  isSavingOrgWide,
 }: SystemSettingsTabProps) {
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -752,8 +738,8 @@ export function SystemSettingsTab({
         </div>
       </div>
 
-      {/* ── 4. Calendar + Developer ──────────────────────────────────── */}
-      <div className={`grid gap-8 ${simulationAllowed ? "lg:grid-cols-2" : ""}`}>
+      {/* ── 4. Calendar ─────────────────────────────────────────────── */}
+      <div>
         <div>
           <h3 className={SECTION_TITLE_CLS}>
             <CalendarDays className="h-4 w-4 text-brand" aria-hidden="true" />
@@ -764,7 +750,7 @@ export function SystemSettingsTab({
               <ReadOnlyValue
                 label="Annual goals & reviews"
                 value={activeCycleName ? cycleAsCy(activeCycleName) : "System calculated…"}
-                note="Half-yearly goal reviews (H1 / H2) and annual reviews per year. Derived from today's date and the year start month."
+                note="Half-yearly goal reviews (H1 / H2) and annual reviews per year. Follows the quarter roll-out above: Q1–Q2 are H1, Q3–Q4 are H2, and starting the next goal year starts the next annual year."
               />
               <ReadOnlyValue
                 label="Project Goals"
@@ -780,48 +766,6 @@ export function SystemSettingsTab({
           </div>
         </div>
 
-        {simulationAllowed && (
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-display text-lg font-semibold text-text-main flex items-center gap-2">
-                <FlaskConical className="h-4 w-4 text-amber-600" aria-hidden="true" />
-                Developer
-              </h3>
-              <button
-                type="button"
-                onClick={onSaveOrgWide}
-                disabled={isSavingOrgWide}
-                className="flex items-center gap-2 rounded-lg border border-border bg-surface px-4 py-2 text-sm font-medium text-text-main hover:bg-slate-50 disabled:opacity-70 disabled:cursor-not-allowed"
-              >
-                <Save className="h-4 w-4" aria-hidden="true" />
-                {isSavingOrgWide ? "Saving…" : "Save simulation"}
-              </button>
-            </div>
-            <div className="space-y-3 bg-surface p-5 rounded-xl border border-amber-200 dark:border-amber-500/40 shadow-sm">
-              <p className="text-sm font-medium text-text-main">Date simulation</p>
-              <p className="text-xs text-text-muted">
-                Pin a fake "today" for cycle determination, review-window checks and dashboards. The whole app shows an amber banner while this is active. Audit timestamps always use the real clock. To test Project Goals, move the quarter or the year with the roll-out card instead.
-              </p>
-              <div className="flex items-end gap-2 flex-wrap">
-                <div>
-                  <label htmlFor="simulated-today" className="block text-xs font-medium text-text-muted mb-1">Simulated today</label>
-                  <input
-                    id="simulated-today"
-                    type="date"
-                    value={simulatedToday ?? ""}
-                    onChange={(e) => onSimulatedTodayChange(e.target.value)}
-                    className="rounded-lg border border-border bg-white px-3 py-2 text-sm text-text-main outline-none focus:border-brand sm:w-52"
-                  />
-                </div>
-                {simulatedToday && (
-                  <button type="button" onClick={onClearSimulatedToday} className="rounded-lg border border-border bg-white px-3 py-2 text-sm font-medium text-text-muted hover:bg-slate-50">
-                    Clear
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
       {showConfirm && year && (

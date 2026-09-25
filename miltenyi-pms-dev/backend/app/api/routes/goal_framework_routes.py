@@ -34,7 +34,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import joinedload
 
 from app.api.dependencies import CurrentUser, DbSession
+from app.core.cycle_utils import year_display
 from app.core.features import require_feature
+from app.models.system_settings_models import SystemSettings
+from app.services.annual_cycle import sync_annual_cycle
 from app.models.project_goal_models import (
     QUARTER_SEQS,
     GoalFramework,
@@ -519,6 +522,17 @@ def _move_to(db, actor: User, target_label: str, kind: str) -> CycleStatusOut:
     periods.ensure_quarter_rows(db, period, seq, actor.id)
     db.add(ProjectGoalCycleLog(org_id=org_id, from_label=from_label, to_label=target_label, kind=kind, actor_id=actor.id))
     db.commit()
+    # One calendar, one roll-out (25 Sep 2026): annual goals and reviews
+    # follow the quarter - Q1-Q2 are H1, Q3-Q4 are H2, a new goal year is
+    # a new annual year. Refresh the cached label now so nobody has to wait
+    # for the next settings read.
+    settings_row = db.query(SystemSettings).filter(SystemSettings.org_id == org_id).first()
+    annual_before = settings_row.active_cycle_name if settings_row else None
+    annual_after = sync_annual_cycle(db, settings_row) if settings_row else None
+    annual_note = (
+        f" Annual goals and reviews are now in {year_display(annual_after)}."
+        if annual_after and annual_after != annual_before else ""
+    )
 
     # Announcement (bell only): every active user in the org.
     shown = quarter_display(target_label)
@@ -530,6 +544,7 @@ def _move_to(db, actor: User, target_label: str, kind: str) -> CycleStatusOut:
     else:
         message = (f"Project Goals moved to {shown}. Self-reviews and Miltenyi reviews for {shown} are open; "
                    f"earlier quarters of {plabel} stay open for backfill.")
+    message += annual_note
     recipients = [uid for (uid,) in db.query(User.id).filter(User.org_id == org_id, User.is_deleted.is_(False)).all()]
     notify_many(
         db, org_id=org_id, recipient_ids=recipients, sender_id=actor.id,

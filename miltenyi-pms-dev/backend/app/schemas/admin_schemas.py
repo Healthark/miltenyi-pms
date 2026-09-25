@@ -134,13 +134,6 @@ class AdminSettingsResponse(BaseModel):
     goal_reviews_visible_h1: bool = False
     goal_reviews_visible_h2: bool = False
     management_review_enabled: bool = False
-    # Dev / QA escape hatch. When set, the system treats this as today
-    # for every cycle-determination and review-window check.
-    simulated_today: Optional[date] = None
-    # Tells the UI whether the date-simulation field should be shown at
-    # all. Mirrors the backend's ALLOW_DATE_SIMULATION env flag — the
-    # field stays hidden (and writes are rejected) when False.
-    simulation_allowed: bool = False
     updated_at: Optional[datetime] = None
 
 
@@ -158,14 +151,6 @@ class AdminSettingsUpdate(BaseModel):
     goal_reviews_visible_h1: Optional[bool] = None
     goal_reviews_visible_h2: Optional[bool] = None
     management_review_enabled: Optional[bool] = None
-    # Use the sentinel `Optional[date]` plus the per-request `clear`
-    # convention: pass `null` to clear an existing simulated_today, or
-    # a real date to set one. Omit entirely to leave unchanged.
-    simulated_today: Optional[date] = None
-    # Companion flag — when True, the patch wants to clear the
-    # `simulated_today` value (since omitting the key is "leave
-    # unchanged" in PATCH semantics, we need an explicit clear signal).
-    clear_simulated_today: Optional[bool] = None
 
 
 # ── Per-Fiscal-Year Override Schemas ─────────────────────────────────

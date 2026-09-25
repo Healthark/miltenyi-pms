@@ -252,3 +252,15 @@ An audit of the Annual Goals and Annual Reviews modules against the Healthark PM
 - Also fixed on the way: approving an annual goal answered 500 (the endpoint read `.value` on a plain string).
 
 Decided against (kept as is): per-employee goal-access exceptions, throw-back-to-draft, bulk request, the mentor reminder nudge, key results, self-service export, a separate mentor-rating switch, management comments, management-only Admins, the HR review tracker. Still to build: the Admin-controlled H1/H2 roll-out for annual goals and reviews (part 2), rich text in goal descriptions, the Admin Notify tab and snapshot emails (part 3).
+
+---
+
+## Revision — 25 September 2026: one calendar, one roll-out (annual parity, part 2)
+
+Item 1 of the annual audit (adopt the roll-out model for annual goals and reviews), built as option 1 of the design: the annual H1/H2 cycle is **derived from the Project Goals quarter** instead of the calendar date.
+
+- **Q1–Q2 of a goal year are H1, Q3–Q4 are H2; starting the next goal year (Q4 → Q1) starts the next annual year.** `system_settings.active_cycle_name` stays the cache every reader uses (Topbar, dashboards, gates, exports); `services/annual_cycle.py` derives it from the active period and refreshes it on every settings read and on every quarter move. With no Project Goals year the calendar fallback still applies.
+- **The H1/H2 self-review and mentor-review windows follow it** (`is_half_open`): the current half and the earlier half of the active year are open, a later half is locked, another year is closed. Annual goals are stamped with the active year, not with the date they were created on.
+- **The quarter roll-out confirmation says what happens to the annual cycle**, the announcement ends with "Annual goals and reviews are now in H2 · CY 26-27", and the Calendar card and the roll-out card explain the mapping.
+- **The date simulation is gone**: no Developer card, no banner, no `simulated_today` / `simulation_allowed` / `clear_simulated_today` on the admin API (the column stays, unused; `ALLOW_DATE_SIMULATION` is accepted and ignored). Testers move the quarter instead.
+- No migration. On the testing database Q3 is current, so the annual cycle reads **H2 · CY 26-27** after the deploy.

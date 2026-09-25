@@ -11,12 +11,12 @@ from datetime import datetime, timedelta, timezone
 from app.core.database import get_db
 from app.core.security import verify_password, get_password_hash
 from app.core.config import settings
-from app.core.cycle_utils import get_current_cycle_info, resolve_today
+from app.services.annual_cycle import derive_annual_cycle
 from app.core.rate_limit import limiter
 from app.models.user_models import User
 from app.models.organization_models import Organization
 from app.models.password_reset_token_models import PasswordResetToken
-from app.models.system_settings_models import SystemSettings, CycleType
+from app.models.system_settings_models import SystemSettings
 from app.schemas.auth_schemas import (
     SessionResponse,
     TokenResponse,
@@ -378,19 +378,14 @@ def dismiss_cycle_banner(
     cycle, suppressing the "cycle rolled over" banner for them. Driven
     by the dismiss button on the dashboard banner.
 
-    The active cycle is computed fresh here (not read from the stored
-    column) so the dismiss sticks even if `system_settings.active_cycle_name`
-    is briefly out of date between rollover and the next settings save.
+    The active cycle is derived from the Project Goals quarter roll-out
+    (the same value the settings cache holds).
     """
     settings_row = db.query(SystemSettings).filter(
         SystemSettings.org_id == current_user.org_id,
     ).first()
     if settings_row is not None:
-        current_user.last_seen_cycle = get_current_cycle_info(
-            resolve_today(settings_row),
-            CycleType(settings_row.cycle_type),
-            settings_row.fiscal_start_month,
-        )
+        current_user.last_seen_cycle = derive_annual_cycle(db, settings_row)
     # If there's no settings row yet, there's no cycle to dismiss; stamp
     # null and the banner stays hidden by virtue of nothing-to-compare-to.
     db.commit()

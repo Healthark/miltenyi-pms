@@ -575,18 +575,19 @@ Key results / criteria under a goal were dropped for the Miltenyi instance (conf
 
 ---
 
-### TC-SELFREV-005 — H2 unlocks after the H2 calendar window opens
+### TC-SELFREV-005 — H2 opens when the Admin rolls out Q3
 
-**Pre-condition:** Currently in the H1 calendar window.
+**Pre-condition:** Project Goals is in Q1 or Q2 of the current year (System Settings → Quarter roll-out); the Calendar card and the Topbar read "H1 · CY 26-27".
 **Login as:** Staff
 **Steps:**
 1. Look at the self-review menu options on an approved goal.
+2. Ask the Admin to roll out Q3. The confirmation lists "Annual goals and reviews move to H2 · CY 26-27: the H2 self-review and mentor review open; H1 stays open for backfill." Refresh.
 
 **Expected:**
-- H1 is enabled.
-- H2 is hidden or shows "Available after Oct 1" (or similar).
-
-**Then (dev/staging only):** with date simulation enabled on the backend, Admin sets **Simulated today** to a date in H2 (System Settings → **Developer**) and saves; Staff refreshes → both H1 and H2 are now available. The org-wide H1/H2 bypass switch was removed on 20 Sep 2026, so there is no other way to open H2 early.
+- Step 1: H1 is enabled; H2 is locked with "H2 has not opened yet — it opens when the Admin rolls out Q3". The mentor's chip reads "H2 · Not open".
+- Step 2: both H1 and H2 are available; the Topbar and the Calendar card read "H2 · CY 26-27"; everyone's bell ends with "Annual goals and reviews are now in H2 · CY 26-27."
+- Rolling back to Q2 closes H2 again (H1 stays open). Rolling out Q4 changes nothing for the annual cycle. Starting the next goal year (Q1 CY 27-28) moves the annual cycle to H1 · CY 27-28 and closes both halves of CY 26-27; new annual goals are stamped CY 27-28.
+- There is no date simulation and no bypass switch: the quarter roll-out is the only control (25 Sep 2026).
 
 ---
 

@@ -32,6 +32,8 @@ from app.schemas.system_settings_schemas import (
     SystemSettingsUpdate,
 )
 
+from app.services.annual_cycle import sync_annual_cycle
+
 router = APIRouter()
 
 
@@ -61,23 +63,11 @@ def get_system_settings(
             detail="System settings have not been configured for this organization."
         )
 
-    # Compute the active cycle on the fly so it never goes stale between
-    # admin saves. resolve_today honours simulated_today so QA / demos
-    # see a consistent cycle string everywhere.
-    fresh_cycle = get_current_cycle_info(
-        resolve_today(row),
-        CycleType(row.cycle_type),
-        row.fiscal_start_month,
-    )
-    # Keep settings.active_cycle_name in sync with the freshly-computed
-    # value so legacy consumers that read it directly don't go stale.
-    # We no longer auto-reset the four toggles here — they now live on
-    # `system_settings_year_overrides`, configured per-FY by HR.
+    # The annual cycle follows the Project Goals quarter roll-out (25 Sep
+    # 2026): Q1-Q2 are H1, Q3-Q4 are H2. sync_annual_cycle refreshes the
+    # cached label so every reader (Topbar, dashboards, gates) agrees.
+    fresh_cycle = sync_annual_cycle(db, row)
     fresh_fy = extract_fy_label(fresh_cycle)
-    if row.active_cycle_name != fresh_cycle:
-        row.active_cycle_name = fresh_cycle
-        db.commit()
-        invalidate_settings(current_user.org_id)
 
     # Lazily ensure an override row exists for the active FY so the
     # next admin-panel read finds it ready (seeded from the most recent

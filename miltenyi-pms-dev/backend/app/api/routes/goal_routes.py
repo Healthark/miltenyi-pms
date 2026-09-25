@@ -51,15 +51,12 @@ from app.schemas.goal_schemas import (
     TeamGoalResponse,
 )
 from app.schemas.pagination import Paginated
-from app.core.cycle_utils import half_display, year_display
+from app.core.cycle_utils import extract_fy_label, half_display, year_display
+from app.services.annual_cycle import is_half_open, sync_annual_cycle
 from app.core.cycle_utils import (
     _fy_label_of_goal,
     cycles_before,
-    get_goal_cycle_name,
     get_year_override,
-    is_review_window_open,
-    resolve_now,
-    resolve_today,
 )
 from app.core.user_filters import active_user_ids_query
 
@@ -94,6 +91,7 @@ def _get_settings(db: DbSession, org_id: int) -> SystemSettings:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="System settings have not been initialized for this organization.",
         )
+    sync_annual_cycle(db, settings)
     return settings
 
 
@@ -342,7 +340,9 @@ def create_goal(
         settings = db.query(SystemSettings).filter(
             SystemSettings.org_id == current_user.org_id
         ).first()
-        cycle_name = get_goal_cycle_name(resolve_now(settings))
+        # Stamped with the ACTIVE annual year (follows the quarter roll-out),
+        # not the calendar date (25 Sep 2026).
+        cycle_name = extract_fy_label(settings.active_cycle_name)
         _assert_annual_gate_open(db, current_user.org_id, cycle_name)
 
     # ── Build the Goal record ──────────────────────────────────────────
@@ -1308,10 +1308,11 @@ def submit_goal_self_review(
         - State machine: H1 self requires status APPROVED.
                          H2 self requires status in {APPROVED, H1_SELF_REVIEWED,
                                                      H1_MENTOR_REVIEWED}.
-        - Time window: today must be in the (cycle_half, goal.fy_year)
-          window — see cycle_utils.is_review_window_open. H1 reviews can
-          be backfilled during H2 of the same FY; H2 cannot be pre-empted;
-          neither can cross a fiscal-year boundary.
+        - Time window: the half must be open for the goal's year — see
+          annual_cycle.is_half_open. It follows the Project Goals quarter
+          roll-out (Q1–Q2 open H1, Q3–Q4 open H2). H1 stays open for
+          backfill during H2 of the same year; H2 cannot be pre-empted;
+          starting the next goal year closes both.
         - One-shot per (goal_id, cycle_half) — DB unique index is the
           final guard; the state machine prevents the case in normal flow.
 
@@ -1347,9 +1348,7 @@ def submit_goal_self_review(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Goal has no fiscal year on record; cannot submit reviews.",
         )
-    if not is_review_window_open(
-        half, fy_year, resolve_today(settings), settings.fiscal_start_month,
-    ):
+    if not is_half_open(half, fy_year, settings.active_cycle_name):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
@@ -1453,9 +1452,7 @@ def save_goal_self_review_draft(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Goal has no fiscal year on record; cannot draft reviews.",
         )
-    if not is_review_window_open(
-        half, fy_year, resolve_today(settings), settings.fiscal_start_month,
-    ):
+    if not is_half_open(half, fy_year, settings.active_cycle_name):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
@@ -1549,9 +1546,7 @@ def submit_goal_mentor_review(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Goal has no fiscal year on record; cannot submit reviews.",
         )
-    if not is_review_window_open(
-        half, fy_year, resolve_today(settings), settings.fiscal_start_month,
-    ):
+    if not is_half_open(half, fy_year, settings.active_cycle_name):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
@@ -1667,9 +1662,7 @@ def save_goal_mentor_review_draft(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Goal has no fiscal year on record; cannot draft reviews.",
         )
-    if not is_review_window_open(
-        half, fy_year, resolve_today(settings), settings.fiscal_start_month,
-    ):
+    if not is_half_open(half, fy_year, settings.active_cycle_name):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(

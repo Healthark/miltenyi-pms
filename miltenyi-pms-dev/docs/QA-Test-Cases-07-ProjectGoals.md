@@ -403,7 +403,7 @@ The change log tab was dropped from the set page. Actions are still recorded in 
 ### TC-PG-043 — System Settings: one year, one Save
 
 **Login as:** Admin (Aanya)
-**Steps:** Admin Panel → **System Settings**. From top to bottom: the **Quarter roll-out** card (full width), the **Configure year** dropdown with the single **Save CY 26-27 configuration** button, then two columns for that year — **Annual Reviews / Annual Goals** on the left and **Project Goals** on the right — then **Calendar** (and **Developer** when date simulation is enabled). Flip one switch in each column, click Save, read the confirmation, apply.
+**Steps:** Admin Panel → **System Settings**. From top to bottom: the **Quarter roll-out** card (full width), the **Configure year** dropdown with the single **Save CY 26-27 configuration** button, then two columns for that year — **Annual Reviews / Annual Goals** on the left and **Project Goals** on the right — then **Calendar**. Flip one switch in each column, click Save, read the confirmation, apply.
 **Expected:**
 - Years are labelled **CY yy-zz** everywhere (the fiscal year and the goal year are the same April-to-April span). The dropdown marks the current year "(Current)"; a year without Project Goals reads "— annual only", a past goal year "— goals open for backfill" or "— goals closed".
 - Project Goals switches for the year: **Goal entry open** → TC-PG-014, **Weightages visible to staff** → TC-PG-015, **Additional goals row** with its weightage → TC-PG-016a, for a past year **Year open for backfill** (TC-PG-046), and a **Quarters** table with one row per started quarter and two switch columns: **Open for backfill** (the current quarter shows an "always open" chip instead) → TC-PG-007a and **Ratings visible** → TC-PG-011. There is **no** "self-review window" switch. For a year without a goal year the right column says "No Project Goals year exists for CY yy-zz…".
@@ -452,10 +452,10 @@ The change log tab was dropped from the set page. Actions are still recorded in 
 
 ---
 
-### TC-PG-047a — Calendar card and Developer section
+### TC-PG-047a — Calendar card
 
 **Login as:** Admin (Aanya)
-**Expected:** Below the two columns, the **Calendar** card shows four read-only values: **Annual goals & reviews** (e.g. H1 · CY 26-27), **Project Goals** (CY 26-27 · Q3 current), **Year start month**, **Organisation timezone** — plain text, no disabled inputs. There is **no** "Bypass the H1/H2 review-window calendar" switch anywhere. The **Developer** card appears only when the backend allows date simulation and then holds the Simulated today field and its Save simulation button.
+**Expected:** Below the two columns, the **Calendar** card shows four read-only values: **Annual goals & reviews** (H2 · CY 26-27 while Q3 is current), **Project Goals** (CY 26-27 · Q3 current), **Year start month**, **Organisation timezone** — plain text, no disabled inputs. There is **no** "Bypass the H1/H2 review-window calendar" switch anywhere. There is no Developer card and no date simulation any more (25 Sep 2026): the **Annual goals & reviews** value follows the quarter roll-out (Q1–Q2 → H1, Q3–Q4 → H2, next goal year → next annual year) and its note says so; the roll-out card carries the same note under its quarter list.
 
 ---
 

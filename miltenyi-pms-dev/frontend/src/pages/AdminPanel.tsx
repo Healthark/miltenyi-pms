@@ -12,14 +12,12 @@ import {
   type UserResponse,
   type UserCreatePayload,
   type UserUpdatePayload,
-  type AdminSettingsUpdatePayload,
 } from "@/services/admin.service";
 import { getErrorMessage } from "@/utils/errors";
 import { UsersTab } from "@/components/admin/UsersTab";
 import { SystemSettingsTab } from "@/components/admin/SystemSettingsTab";
 import { UserModal } from "@/components/admin/UserModal";
 import { ExportsTab } from "@/components/admin/ExportsTab";
-import { useSystemSettings } from "@/hooks/useSystemSettings";
 import { useToast } from "@/hooks/useToast";
 import { useSnackbar } from "@/hooks/useSnackbar";
 import { useConfirm } from "@/hooks/useConfirm";
@@ -38,7 +36,6 @@ type ActiveTab =
   | "settings";
 
 export default function AdminPanel() {
-  const { refreshSettings } = useSystemSettings();
   const toast = useToast();
   const snackbar = useSnackbar();
   const confirm = useConfirm();
@@ -57,7 +54,7 @@ export default function AdminPanel() {
 
   // System Settings tab is HR_MyOrg-only. HR_Miltenyi has no controls
   // they can flip there (cycle cadence, fiscal anchor, timezone,
-  // per-FY toggles, date simulation are all Healthark-owned), so the
+  // per-FY toggles are all Healthark-owned), so the
   // tab is hidden entirely rather than shown read-only. Same role-gate
   // pattern as canSeeExports above.
   const canSeeSystemSettings = user?.role === "Admin";
@@ -120,25 +117,17 @@ export default function AdminPanel() {
   const [modalError, setModalError] = useState("");
 
   // Settings form state — only the org-wide knobs live here
-  // (fiscal month, timezone, simulated_today). The per-FY access
+  // (fiscal month, timezone). The per-FY access
   // toggles are owned by SystemSettingsTab via the year-scoped
   // /admin/settings/year endpoints; the Project Goals switches by the
   // goal-framework settings endpoint. Fiscal month and timezone are
-  // read-only in the UI but still flow to the tab for display.
+  // read-only in the UI (set at onboarding) and only flow to the tab
+  // for display; nothing org-wide is saved from this page any more.
   const [fiscalStartMonth, setFiscalStartMonth] = useState(4);
   // IANA timezone string. Anchors every backend calendar-day decision
   // (cycle rollover, FY-end gates, assignment end dates). Defaults to
   // "UTC" until HR picks the org's actual zone.
   const [timezone, setTimezone] = useState<string>("UTC");
-  // Dev/QA date simulation. simulatedToday is an ISO date string (or
-  // empty when unset). simulationAllowed mirrors the backend's env
-  // flag so the field hides itself outside dev/staging.
-  const [simulatedToday, setSimulatedToday] = useState<string>("");
-  const [simulationAllowed, setSimulationAllowed] = useState(false);
-  // Tracks whether the next save should send `clear_simulated_today`
-  // — set when HR clicks Clear so the PATCH explicitly drops the
-  // stored value (PATCH semantics treat omission as "leave unchanged").
-  const [clearSimulatedTodayPending, setClearSimulatedTodayPending] = useState(false);
 
   // Sync the local settings form ONCE when the query first resolves.
   // Done during render via the "previous prop snapshot" pattern (React 19
@@ -149,9 +138,6 @@ export default function AdminPanel() {
   if (settings && !hasInitializedForm) {
     setFiscalStartMonth(settings.fiscal_start_month ?? 4);
     setTimezone(settings.timezone ?? "UTC");
-    setSimulatedToday(settings.simulated_today ?? "");
-    setSimulationAllowed(settings.simulation_allowed ?? false);
-    setClearSimulatedTodayPending(false);
     setHasInitializedForm(true);
   }
 
@@ -328,54 +314,6 @@ export default function AdminPanel() {
     reactivateMutation.mutate(target);
   };
 
-  // ── Settings mutation ──────────────────────────────────────────────────
-  // The previous handler did: PATCH → GET → setSettings → re-sync form
-  // state. With useMutation, the response of PATCH is already the fresh
-  // server view (the backend returns the updated row), so we:
-  //   1. Push the response straight into the ['admin', 'settings'] cache
-  //      via setQueryData. This skips an extra GET round-trip.
-  //   2. Re-sync the local form state from the response (the server may
-  //      have computed `active_cycle` from cycle_type + fiscal_start_month,
-  //      or normalized `simulation_allowed`).
-  //   3. Tell the global SystemSettingsProvider to refresh — it has its
-  //      own context-cached copy that drives banners and gates elsewhere.
-  //
-  // We deliberately use setQueryData here instead of invalidateQueries:
-  // setQueryData is synchronous and avoids a refetch round-trip when we
-  // already have the canonical response. For a save flow that's the
-  // right trade. invalidateQueries would also work but would add a
-  // wasted GET.
-  const updateSettingsMutation = useMutation({
-    mutationFn: (payload: AdminSettingsUpdatePayload) =>
-      adminService.updateSettings(payload),
-    onSuccess: (fresh) => {
-      queryClient.setQueryData(queryKeys.admin.settings(), fresh);
-      setFiscalStartMonth(fresh.fiscal_start_month ?? 4);
-      setTimezone(fresh.timezone ?? "UTC");
-      setSimulatedToday(fresh.simulated_today ?? "");
-      setSimulationAllowed(fresh.simulation_allowed ?? false);
-      setClearSimulatedTodayPending(false);
-      void refreshSettings();
-      toast.success("Configuration saved.");
-    },
-    onError: (err) => snackbar.error(getErrorMessage(err)),
-  });
-
-  const handleSaveOrgWide = () => {
-    // Org-wide PATCH: only the fiscal/timezone/simulation fields. The
-    // access toggles save through their own mutations in SystemSettingsTab.
-    const payload: AdminSettingsUpdatePayload = {
-      fiscal_start_month: fiscalStartMonth,
-      timezone: timezone,
-    };
-    if (clearSimulatedTodayPending) {
-      payload.clear_simulated_today = true;
-    } else if (simulatedToday) {
-      payload.simulated_today = simulatedToday;
-    }
-    updateSettingsMutation.mutate(payload);
-  };
-
   // ── Tab style helper ──────────────────────────────────────────────────────
   const tabCls = (tab: ActiveTab) =>
     `flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${
@@ -491,18 +429,6 @@ export default function AdminPanel() {
             activeCycleName={settings?.active_cycle ?? ""}
             fiscalStartMonth={fiscalStartMonth}
             timezone={timezone}
-            simulatedToday={simulatedToday || null}
-            simulationAllowed={simulationAllowed}
-            onSimulatedTodayChange={(date) => {
-              setSimulatedToday(date);
-              setClearSimulatedTodayPending(false);
-            }}
-            onClearSimulatedToday={() => {
-              setSimulatedToday("");
-              setClearSimulatedTodayPending(true);
-            }}
-            onSaveOrgWide={handleSaveOrgWide}
-            isSavingOrgWide={updateSettingsMutation.isPending}
           />
         )}
       </div>

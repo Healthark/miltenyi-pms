@@ -60,10 +60,10 @@ export function SelfReviewCycleMenu({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const { settings } = useSystemSettings();
-  const fiscalStartMonth = settings?.fiscal_start_month ?? 4;
-  // The H1/H2 window bypass was removed (UAT feedback, 17 Sep 2026): the
-  // calendar gate always applies; testers move the simulated date instead.
-  const cycleWindowOverride = false;
+  // The half's window follows the Project Goals quarter roll-out (25 Sep
+  // 2026): Q1–Q2 open H1, Q3–Q4 open H2; H1 stays open for backfill until
+  // the Admin starts the next goal year.
+  const activeCycleName = settings?.active_cycle_name ?? null;
   // Goal review cadence is always half-yearly (H1 / H2) regardless of
   // the org's cycle_type. The function still resolves the cycle list
   // through `cycleKeysForType` so any future split stays one edit away.
@@ -181,13 +181,7 @@ export function SelfReviewCycleMenu({
           //                  mentor-review surface needs the mentee's
           //                  self-review on the left panel; no point
           //                  opening it before there's anything to react to.
-          const windowOpen = isHalfWindowOpen(
-            half,
-            goal.fy_year,
-            fiscalStartMonth,
-            undefined,
-            cycleWindowOverride,
-          );
+          const windowOpen = isHalfWindowOpen(half, goal.fy_year, activeCycleName);
           const isMenteeLocked = mode === "mentee" && !submitted && !windowOpen;
           const isMentorLocked = mode === "mentor" && !submitted;
           const isLocked = isMenteeLocked || isMentorLocked;
@@ -195,8 +189,8 @@ export function SelfReviewCycleMenu({
           const lockReason = isMentorLocked
             ? "Awaiting mentee self-review for this cycle"
             : !isFirstCycle
-              ? `${halfDisplayLabel(half)} window has not opened yet`
-              : "Review window for this fiscal year has closed";
+              ? `${halfDisplayLabel(half)} has not opened yet — it opens when the Admin rolls out Q3`
+              : "Review window for this year has closed — the Admin has started the next goal year";
           return (
             <button
               key={half}

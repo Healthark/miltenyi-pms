@@ -80,7 +80,7 @@ Lock down WHEN each review form opens, closes, what dependencies apply, and what
 | 4.3 | Should the **topbar surface a countdown** ("Review window closes in 3 days") when within 7 days of close? | **Yes — amber chip in the top-right** | | Nice-to-have; reduces "I missed it" tickets. |
 | 4.4 | When a user is **deactivated mid-cycle**, do their in-flight reviews stay submittable until close, or lock immediately? | **Lock immediately** (consistent with deactivation = "user is gone") | | Drafts preserved for audit; just no further edits. |
 | 4.5 | Should **email reminders** fire X days before each review window closes? | **Yes — at T-7 and T-1 days** for each window | | Future scope; not blocking this release. |
-| 4.6 | Should `simulated_today` (the date-simulation override) **respect or bypass** all of the above lockouts? | **Respect** — simulating "Mar 25" should make Annual Self Review available, even on real calendar Jan 15 | | Existing intent; confirm. |
+| 4.6 | ~~Should `simulated_today` (the date-simulation override) respect or bypass all of the above lockouts?~~ | **Withdrawn 25 Sep 2026** — the date simulation was removed. The annual cycle (H1/H2) follows the Project Goals quarter roll-out (Q1–Q2 → H1, Q3–Q4 → H2), so testers move the quarter instead. | | |
 
 ---
 
@@ -112,6 +112,6 @@ Depending on what's locked in:
 - **Cycle** — generic term for the org's current review period; "H1 FY26-27" or "Q3 FY26-27" depending on cadence.
 - **Lead days** — how many days *before* a cycle end the corresponding review form opens.
 - **Grace period** — how many days *after* a cycle / FY end the form stays open before hard-lock.
-- **`cycle_window_override`** — former org-wide toggle that bypassed date-based locks; removed 20 Sep 2026 (PR #99). Use `simulated_today` for demos.
+- **`cycle_window_override`** — former org-wide toggle that bypassed date-based locks; removed 20 Sep 2026 (PR #99). Move the Project Goals quarter to open or close a half.
 - **`annual_reviews_enabled`** — existing org-wide toggle that pauses all new annual-review submissions.
-- **`simulated_today`** — existing dev/QA escape hatch that pins a fake "today" for cycle determination; gated behind `ALLOW_DATE_SIMULATION` env flag.
+- **`simulated_today`** — former dev/QA escape hatch that pinned a fake "today" for cycle determination; removed from the API and the UI on 25 Sep 2026 because the annual cycle now follows the quarter roll-out. The column remains in `system_settings`, unused.

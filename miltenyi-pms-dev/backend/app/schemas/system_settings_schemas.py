@@ -39,10 +39,6 @@ class SystemSettingsResponse(BaseModel):
     goal_reviews_visible_h1: bool = False
     goal_reviews_visible_h2: bool = False
     management_review_enabled: bool = False
-    # Demo-only date simulation. When set, the backend treats this as
-    # "today" for every cycle / window decision. The frontend renders a
-    # banner across the app so every user knows the dates are simulated.
-    simulated_today: Optional[date] = None
 
     updated_by_id: Optional[int] = None
     created_at: datetime

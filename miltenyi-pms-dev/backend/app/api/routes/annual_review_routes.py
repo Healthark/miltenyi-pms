@@ -38,6 +38,7 @@ from sqlalchemy.orm import aliased, joinedload
 
 from app.api.dependencies import DbSession, CurrentUser
 from app.services.notification_service import notify, notify_many
+from app.services.annual_cycle import sync_annual_cycle
 from app.core.user_filters import active_user_ids_query
 from app.core.cycle_utils import (
     year_display,
@@ -160,17 +161,17 @@ def _get_settings(db: DbSession, org_id: int) -> SystemSettings:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No active performance cycle configured. Contact your HR administrator.",
         )
+    sync_annual_cycle(db, settings)
     return settings
 
 
 def _compute_active_cycle_name(settings: SystemSettings) -> str:
-    """Compute the canonical active cycle name from settings + today.
-
-    Reads the date through `resolve_today` so a simulated_today shifts
-    cycles. Doesn't read `settings.active_cycle_name` — that column is
-    treated as a cache populated on settings save; we compute fresh on
-    every call so the value can't stale between saves.
-    """
+    """The active cycle. It follows the Project Goals quarter roll-out and is
+    refreshed by `_get_settings` (sync_annual_cycle) on every request that
+    loads settings, so the stored label is current. Calendar fallback only
+    for a row that has never been synced."""
+    if settings.active_cycle_name:
+        return settings.active_cycle_name
     return get_current_cycle_info(
         resolve_today(settings),
         CycleType(settings.cycle_type),
