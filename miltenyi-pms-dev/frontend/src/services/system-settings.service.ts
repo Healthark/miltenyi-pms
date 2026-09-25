@@ -18,6 +18,8 @@ export type CycleType = "annual" | "half_yearly" | "quarterly";
 export interface SystemSettingsResponse {
   id: number;
   org_id: number;
+  /** The annual cycle, e.g. "H2 FY26-27". Follows the Project Goals quarter
+   *  roll-out (Q1–Q2 → H1, Q3–Q4 → H2) since 25 Sep 2026. */
   active_cycle_name: string;
   cycle_type: CycleType;
   fiscal_start_month: number;
@@ -36,10 +38,6 @@ export interface SystemSettingsResponse {
   goal_reviews_visible_h1: boolean;
   goal_reviews_visible_h2: boolean;
   management_review_enabled: boolean;
-  /** Demo / QA date simulation. ISO date string when HR has pinned a
-   *  fake "today" for the system; null otherwise. The app shell shows
-   *  an amber banner whenever this is set. */
-  simulated_today: string | null;
   updated_by_id: number | null;
   created_at: string;
   updated_at: string | null;
@@ -57,7 +55,6 @@ export interface SystemSettingsCreate {
 export interface SystemSettingsUpdate {
   fiscal_start_month?: number;
   timezone?: string;
-  simulated_today?: string | null;
 }
 
 // ── Service Object ──────────────────────────────────────────────────

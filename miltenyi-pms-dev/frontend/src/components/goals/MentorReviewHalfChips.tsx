@@ -35,8 +35,8 @@ export function MentorReviewHalfChips({
 }: MentorReviewHalfChipsProps) {
   const cycles = cycleKeysForType();
   const { settings } = useSystemSettings();
-  const fiscalStartMonth = settings?.fiscal_start_month ?? 4;
-  const today = settings?.simulated_today ? new Date(settings.simulated_today) : new Date();
+  // Follows the Project Goals quarter roll-out (Q1–Q2 → H1, Q3–Q4 → H2).
+  const activeCycleName = settings?.active_cycle_name ?? null;
 
   return (
     <div className="flex items-center gap-1.5 flex-wrap">
@@ -100,7 +100,7 @@ export function MentorReviewHalfChips({
         // State 4: Mentee hasn't submitted yet — the mentor can still draft
         // while the half's window is open; submit unlocks once the
         // self-review arrives.
-        if (isHalfWindowOpen(half, goal.fy_year, fiscalStartMonth, today)) {
+        if (isHalfWindowOpen(half, goal.fy_year, activeCycleName)) {
           return (
             <button
               key={half}

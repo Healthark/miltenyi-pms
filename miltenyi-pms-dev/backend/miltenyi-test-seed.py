@@ -329,14 +329,14 @@ def seed_test_database() -> None:
         if not db.query(SystemSettings).filter(SystemSettings.org_id == miltenyi.id).first():
             db.add(SystemSettings(
                 org_id=miltenyi.id,
-                active_cycle_name="H1 FY26-27",
+                active_cycle_name="H2 FY26-27",   # follows the quarter roll-out: Q3 current -> H2
                 cycle_type=CycleType.HALF_YEARLY.value,
                 fiscal_start_month=4,
                 timezone="Asia/Kolkata",
                 updated_by_id=aanya.id,
             ))
             db.commit()
-            print("  [+] System Settings (half-yearly, H1 FY26-27, Asia/Kolkata)")
+            print("  [+] System Settings (half-yearly, H2 FY26-27 - follows Q3, Asia/Kolkata)")
         else:
             print("  [~] System settings already exist; reusing.")
 

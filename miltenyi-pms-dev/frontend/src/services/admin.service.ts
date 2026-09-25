@@ -47,6 +47,8 @@ export interface UserResponse {
 export interface SystemSettings {
   id: number;
   org_id: number;
+  /** The annual cycle, e.g. "H2 FY26-27". Follows the Project Goals quarter
+   *  roll-out (Q1–Q2 → H1, Q3–Q4 → H2) since 25 Sep 2026. */
   active_cycle: string | null;
   cycle_type: string;
   fiscal_start_month: number;
@@ -60,13 +62,6 @@ export interface SystemSettings {
   goal_reviews_visible_h1: boolean;
   goal_reviews_visible_h2: boolean;
   management_review_enabled: boolean;
-  /** ISO date string. Non-null when HR has pinned a simulated "today"
-   *  for demo / QA purposes. The whole app shows an amber banner when set. */
-  simulated_today: string | null;
-  /** Mirrors the backend's ALLOW_DATE_SIMULATION env flag. When false,
-   *  the simulated_today field is hidden from the System Settings UI
-   *  and PATCHing a non-null value is rejected with 400. */
-  simulation_allowed: boolean;
   updated_at: string | null;
 }
 
@@ -80,11 +75,6 @@ export interface AdminSettingsUpdatePayload {
   goal_reviews_visible_h1?: boolean;
   goal_reviews_visible_h2?: boolean;
   management_review_enabled?: boolean;
-  /** ISO date string to set as the simulated "today". Send null + the
-   *  companion `clear_simulated_today: true` to clear an existing
-   *  value (PATCH semantics treat omission as "leave unchanged"). */
-  simulated_today?: string | null;
-  clear_simulated_today?: boolean;
 }
 
 export interface SettingsPreflightEntry {

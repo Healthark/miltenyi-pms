@@ -13,6 +13,7 @@
  */
 
 import type { ApprovalStatus, SelfReviewCycleHalf } from "@/services/goal.service";
+import { fyTokenToStartYear } from "@/utils/fy";
 
 /** Goals in any of these states are locked from employee editing and
  *  count as "approved" in dashboard / mentee-stat rollups. Covers both
@@ -68,65 +69,50 @@ export function halfDisplayLabel(half: SelfReviewCycleHalf): string {
   return half;
 }
 
-// ── Calendar → cycle code ───────────────────────────────────────────
+// ── Roll-out → cycle code ───────────────────────────────────────────
 
-/** Same calendar logic as backend `cycle_utils.current_half_and_fy`. */
-export function currentHalfAndFy(
-  today: Date = new Date(),
-  fiscalStartMonth = 4,
-): { half: "H1" | "H2"; fyYear: number } {
-  const month = today.getMonth() + 1;
-  const year = today.getFullYear();
-  const fiscalYear = month >= fiscalStartMonth ? year : year - 1;
-  const relativeMonth = (((month - fiscalStartMonth) % 12) + 12) % 12;
-  const half: "H1" | "H2" = relativeMonth < 6 ? "H1" : "H2";
-  return { half, fyYear: fiscalYear };
+/** "H2 FY26-27" (or a legacy "Q3 FY26-27") → { half: "H2", fyYear: 2026 }.
+ *  Null when the label is unreadable. Since 25 Sep 2026 the annual cycle
+ *  follows the Project Goals quarter roll-out: Q1–Q2 are H1, Q3–Q4 are H2,
+ *  and starting the next goal year starts the next annual year. */
+export function activeHalfAndFy(
+  activeCycleName: string | null | undefined,
+): { half: "H1" | "H2"; fyYear: number } | null {
+  if (!activeCycleName) return null;
+  const parts = activeCycleName.trim().split(/\s+/);
+  if (parts.length < 2) return null;
+  const half = halfOf(parts[0].toUpperCase() as SelfReviewCycleHalf);
+  const fyYear = fyTokenToStartYear(parts[parts.length - 1]);
+  if (!half || fyYear == null) return null;
+  return { half, fyYear };
 }
 
-/** Same calendar logic as backend `cycle_utils.current_quarter_and_fy`. */
-export function currentQuarterAndFy(
-  today: Date = new Date(),
-  fiscalStartMonth = 4,
-): { quarter: "Q1" | "Q2" | "Q3" | "Q4"; fyYear: number } {
-  const month = today.getMonth() + 1;
-  const year = today.getFullYear();
-  const fiscalYear = month >= fiscalStartMonth ? year : year - 1;
-  const relativeMonth = (((month - fiscalStartMonth) % 12) + 12) % 12;
-  const qNum = Math.floor(relativeMonth / 3) + 1;
-  return { quarter: `Q${qNum}` as "Q1" | "Q2" | "Q3" | "Q4", fyYear: fiscalYear };
+function halfOf(code: SelfReviewCycleHalf): "H1" | "H2" | null {
+  if (code === "H1" || code === "Q1" || code === "Q2") return "H1";
+  if (code === "H2" || code === "Q3" || code === "Q4") return "H2";
+  return null;
 }
 
 // ── Time-window gate ────────────────────────────────────────────────
 
 /**
- * Mirror of backend `cycle_utils.is_review_window_open`.
+ * Mirror of backend `annual_cycle.is_half_open`.
  *
- * A cycle's window opens at the start of that cycle and stays open
- * through the end of the FY (so any earlier cycle can be backfilled
- * during a later one of the same FY). Returns false (locked) when
- * goalFyYear is null (legacy goals without a stamped cycle_name).
- *
- * `override` is kept for callers but always false in practice: the
- * H1/H2 window bypass was removed from System Settings (17 Sep 2026).
+ * A half is open while the goal's year is the active annual year and the
+ * half is the current one or an earlier one (so H1 can be backfilled during
+ * H2 of the same year). A later half, or any half of another year, is
+ * locked. Returns false when goalFyYear is null (legacy goals without a
+ * stamped cycle_name).
  */
 export function isHalfWindowOpen(
   cycle: SelfReviewCycleHalf,
   goalFyYear: number | null,
-  fiscalStartMonth = 4,
-  today: Date = new Date(),
-  override = false,
+  activeCycleName: string | null | undefined,
 ): boolean {
   if (goalFyYear == null) return false;
-  if (override) return true;
-  const keys = cycleKeysFor(cycle);
-  const currentCode =
-    keys === HALF_KEYS
-      ? currentHalfAndFy(today, fiscalStartMonth).half
-      : currentQuarterAndFy(today, fiscalStartMonth).quarter;
-  const currentFy =
-    keys === HALF_KEYS
-      ? currentHalfAndFy(today, fiscalStartMonth).fyYear
-      : currentQuarterAndFy(today, fiscalStartMonth).fyYear;
-  if (currentFy !== goalFyYear) return false;
-  return keys.indexOf(cycle) <= keys.indexOf(currentCode);
+  const current = activeHalfAndFy(activeCycleName);
+  if (!current || current.fyYear !== goalFyYear) return false;
+  const target = halfOf(cycle);
+  if (!target) return false;
+  return HALF_KEYS.indexOf(target) <= HALF_KEYS.indexOf(current.half);
 }

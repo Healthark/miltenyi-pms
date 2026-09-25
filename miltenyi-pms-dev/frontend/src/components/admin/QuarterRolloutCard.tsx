@@ -70,6 +70,12 @@ function MoveModal({ status, move, preflight, onClose, onConfirm, isSaving, erro
     ? `${quarterDisplay(currentQ.cycle_label)} still has ${currentQ.self_pending} self-review${currentQ.self_pending === 1 ? "" : "s"} and ${currentQ.review_pending} review${currentQ.review_pending === 1 ? "" : "s"} pending`
     : currentQ ? `${quarterDisplay(currentQ.cycle_label)} is fully submitted` : null;
 
+  // The annual cycle (H1/H2) follows this roll-out: Q1–Q2 are H1, Q3–Q4 are H2.
+  const annualOf = (label: string | null, period: string) => (label ? `${Number(label[1]) <= 2 ? "H1" : "H2"} · ${period}` : null);
+  const annualFrom = annualOf(status.current_label, status.period_label);
+  const annualTo = annualOf(target, targetPeriod) ?? targetPeriod;
+  const annualMoves = annualFrom !== annualTo;
+
   const will: string[] = [];
   const wont: string[] = [];
   if (newYear) {
@@ -78,16 +84,20 @@ function MoveModal({ status, move, preflight, onClose, onConfirm, isSaving, erro
     will.push(`The topbar shows ${targetPeriod}; new goal sets and reviews are stamped ${targetPeriod}.`);
     wont.push(`${status.period_label} stays fully readable and its started quarters stay open for backfill${pendingLine ? ` (${pendingLine})` : ""} until you close the year in its configuration below.`);
     wont.push("Approved goals, submitted reviews and released ratings are preserved.");
-    wont.push("Annual goals, annual reviews and the fiscal-year cycle (H1/H2) are separate and unaffected.");
+    will.push(`Annual goals and reviews move to ${annualTo}: new annual goals and annual reviews are stamped ${targetPeriod}, and the H1/H2 goal reviews of ${status.period_label} close.`);
   } else if (backwards) {
     will.push(`${to} becomes the current quarter again; quarters after it are closed.`);
     will.push("Every active user gets an in-app announcement. The move is logged.");
+    if (annualMoves) will.push(`Annual goals and reviews move back to ${annualTo}; the H2 goal reviews close again.`);
+    else wont.push(`Annual goals and reviews stay in ${annualTo}.`);
     wont.push("Nothing already submitted is deleted; the closed quarters just become read-only.");
     wont.push("Approved goals and released ratings are untouched.");
   } else {
     will.push(`${to} becomes the current quarter: staff can write and submit their ${to} self-review; mentors can enter the Miltenyi review for it.`);
     will.push(`Earlier quarters of ${status.period_label} stay open for backfill${pendingLine ? ` (${pendingLine})` : ""}; later quarters remain locked.`);
+    if (annualMoves) will.push(`Annual goals and reviews move to ${annualTo}: the H2 self-review and mentor review open; H1 stays open for backfill.`);
     will.push("Every active user gets an in-app announcement. The move is logged.");
+    if (!annualMoves) wont.push(`Annual goals and reviews stay in ${annualTo} (Q1–Q2 are H1, Q3–Q4 are H2).`);
     wont.push("Approved goals are untouched; goals are set once a year.");
     wont.push("Submitted self-reviews and reviews of other quarters are untouched.");
     wont.push("Ratings stay hidden from staff until you release them per quarter in the year's configuration below.");
@@ -234,6 +244,9 @@ export function QuarterRolloutCard() {
           </ol>
           <p className="text-xs text-text-muted">
             After Q4, the next roll-out starts <b>{st.crosses_year ? st.next_period_label : nextYearLabel(st.period_label)}</b>: the new year begins all closed and {st.period_label} stays open for backfill until you close it.
+          </p>
+          <p className="text-xs text-text-muted">
+            Annual goals and reviews follow this roll-out: Q1–Q2 are <b>H1</b>, Q3–Q4 are <b>H2</b>, and starting the next goal year starts the next annual year.
           </p>
 
           {/* Manual set */}

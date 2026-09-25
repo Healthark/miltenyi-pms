@@ -94,6 +94,9 @@ class Settings(BaseSettings):
     # are safe from accidental cycle-time shifts. Dev / staging set this
     # to True in their .env to make the field editable from the System
     # Settings page.
+    # Obsolete since 25 Sep 2026 (the annual cycle follows the quarter
+    # roll-out; there is no date simulation any more). Kept so an .env that
+    # still sets it does not fail validation.
     ALLOW_DATE_SIMULATION: bool = False
 
     def cookie_kwargs(self) -> dict:

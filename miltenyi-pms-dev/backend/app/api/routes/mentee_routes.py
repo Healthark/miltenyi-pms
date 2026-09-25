@@ -33,6 +33,7 @@ from app.models.project_review_models import ProjectReview, ProjectReviewStatus
 from app.models.system_settings_models import SystemSettings, CycleType
 from app.models.user_models import User, Role
 from app.services import project_goal_periods as pg_periods
+from app.services.annual_cycle import sync_annual_cycle
 from app.schemas.annual_review_schemas import AnnualReviewResponse
 from app.schemas.goal_schemas import TeamGoalResponse
 from app.schemas.mentee_schemas import (
@@ -67,8 +68,9 @@ def _get_active_cycle(db: DbSession, org_id: int) -> str:
     bucket every mentee as "Not Started" on half-yearly/quarterly orgs.
     """
     settings = db.query(SystemSettings).filter(SystemSettings.org_id == org_id).first()
-    if settings and settings.active_cycle_name:
-        return settings.active_cycle_name
+    if settings:
+        # Follows the Project Goals quarter roll-out (25 Sep 2026).
+        return sync_annual_cycle(db, settings)
     cycle_type = (
         CycleType(settings.cycle_type) if settings else CycleType.HALF_YEARLY
     )

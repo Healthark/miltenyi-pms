@@ -202,7 +202,7 @@ export const queryKeys = {
   // The org-wide settings endpoint (/settings/) every page reads to
   // render banners, gates, and cycle text. Distinct from
   // `admin.settings()` (which hits the HR-only /admin/settings endpoint
-  // with extra fields like simulation_allowed) — different responses,
+  // with the admin-only fields) — different responses,
   // different cache entries. After a save on /admin/settings, the
   // AdminPanel mutation invalidates both keys.
   systemSettings: {

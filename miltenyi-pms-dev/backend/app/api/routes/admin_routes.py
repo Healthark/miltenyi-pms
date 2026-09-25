@@ -55,8 +55,6 @@ from app.core.cycle_utils import (
     YEAR_OVERRIDE_FLAGS,
     ensure_year_override_row,
     extract_fy_label,
-    get_current_cycle_info,
-    resolve_today,
 )
 from app.models.system_settings_year_override_models import (
     SystemSettingsYearOverride,
@@ -70,6 +68,7 @@ from app.services.send_email import (
     send_welcome_user_email,
 )
 from app.services.notification_service import notify, notify_many
+from app.services.annual_cycle import derive_annual_cycle
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from app.schemas.admin_schemas import (
@@ -1706,13 +1705,9 @@ def get_admin_settings(
                 detail="System settings have not been configured.",
             )
 
-        # active_cycle is computed on-the-fly so it never goes stale
-        # between settings saves; resolve_today honours simulated_today.
-        live_active_cycle = get_current_cycle_info(
-            resolve_today(row),
-            CycleType(row.cycle_type),
-            row.fiscal_start_month,
-        )
+        # The active cycle follows the Project Goals quarter roll-out
+        # (25 Sep 2026): Q1-Q2 are H1, Q3-Q4 are H2.
+        live_active_cycle = derive_annual_cycle(db, row)
         live_fy = extract_fy_label(live_active_cycle)
         # Keep the cached cycle label in sync. The four access toggles
         # are no longer reset on rollover — they live on the per-FY
@@ -1739,8 +1734,6 @@ def get_admin_settings(
             goal_reviews_visible_h1=override.goal_reviews_visible_h1,
             goal_reviews_visible_h2=override.goal_reviews_visible_h2,
             management_review_enabled=override.management_review_enabled,
-            simulated_today=row.simulated_today,
-            simulation_allowed=settings.ALLOW_DATE_SIMULATION,
             updated_at=row.updated_at,
         )
 
@@ -1758,14 +1751,10 @@ def update_admin_settings(
     """
     Update cycle configuration and goal access controls from the Admin Panel.
 
-    Cycle cadence and fiscal month are editable; active_cycle_name is
-    recomputed automatically from those two values + today's date.
+    The active cycle follows the Project Goals quarter roll-out and is
+    refreshed here as well.
     """
     _require_admin(current_user)
-
-    # Snapshot the env flag before the local `settings` variable shadows
-    # the imported config-settings module.
-    simulation_allowed = settings.ALLOW_DATE_SIMULATION
 
     settings_row = db.query(SystemSettings).filter(
         SystemSettings.org_id == current_user.org_id,
@@ -1777,23 +1766,7 @@ def update_admin_settings(
             detail="System settings have not been configured.",
         )
 
-    # simulated_today is gated behind ALLOW_DATE_SIMULATION env flag so
-    # production deployments are safe from accidental cycle-time shifts.
-    # Validate the gate before mutating anything.
-    wants_simulation_write = (
-        settings_in.simulated_today is not None
-        or bool(settings_in.clear_simulated_today)
-    )
-    if wants_simulation_write and not simulation_allowed:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                "Date simulation is disabled for this deployment. "
-                "Set ALLOW_DATE_SIMULATION=true on the backend to enable."
-            ),
-        )
-
-    # Apply fiscal / timezone / simulated_today changes — these stay
+    # Apply fiscal / timezone changes — these stay
     # org-wide. The cadence is fixed (half-yearly). The access toggles
     # below route to the per-FY override table.
     if settings_in.fiscal_start_month is not None:
@@ -1814,18 +1787,10 @@ def update_admin_settings(
                 ),
             )
         settings_row.timezone = settings_in.timezone
-    if settings_in.clear_simulated_today:
-        settings_row.simulated_today = None
-    elif settings_in.simulated_today is not None:
-        settings_row.simulated_today = settings_in.simulated_today
 
-    # Recompute the active cycle. We just update the cached label —
-    # no auto-reset of flags (per-FY overrides are configured explicitly).
-    fresh_cycle = get_current_cycle_info(
-        resolve_today(settings_row),
-        CycleType(settings_row.cycle_type),
-        settings_row.fiscal_start_month,
-    )
+    # Refresh the cached annual cycle from the roll-out. No auto-reset of
+    # flags (per-FY overrides are configured explicitly).
+    fresh_cycle = derive_annual_cycle(db, settings_row)
     settings_row.active_cycle_name = fresh_cycle
     fresh_fy = extract_fy_label(fresh_cycle)
 
@@ -1875,8 +1840,6 @@ def update_admin_settings(
         goal_reviews_visible_h1=override.goal_reviews_visible_h1,
         goal_reviews_visible_h2=override.goal_reviews_visible_h2,
         management_review_enabled=override.management_review_enabled,
-        simulated_today=settings_row.simulated_today,
-        simulation_allowed=simulation_allowed,
         updated_at=settings_row.updated_at,
     )
 
@@ -1914,11 +1877,7 @@ def settings_preflight(
             "annual_review_final_rating_visible": {"in_flight_count": 0, "warning": None},
         }
 
-    active_cycle = get_current_cycle_info(
-        resolve_today(settings_row),
-        CycleType(settings_row.cycle_type),
-        settings_row.fiscal_start_month,
-    )
+    active_cycle = derive_annual_cycle(db, settings_row)
     active_fy = extract_fy_label(active_cycle)
 
     # ── annual_goals_edit_enabled ───────────────────────────────────
@@ -2028,14 +1987,9 @@ def settings_preflight(
 # org-wide singletons — so HR can re-open FY26-27 review submissions
 # while FY27-28 is the system-computed active cycle.
 
-def _current_fy_label(settings_row: SystemSettings) -> str:
-    """Compute the active FY label from a settings row (honours
-    simulated_today)."""
-    active_cycle = get_current_cycle_info(
-        resolve_today(settings_row),
-        CycleType(settings_row.cycle_type),
-        settings_row.fiscal_start_month,
-    )
+def _current_fy_label(db, settings_row: SystemSettings) -> str:
+    """The active FY label - follows the Project Goals quarter roll-out."""
+    active_cycle = derive_annual_cycle(db, settings_row)
     return extract_fy_label(active_cycle)
 
 
@@ -2085,7 +2039,7 @@ def list_settings_years(
             detail="System settings have not been configured.",
         )
 
-    current_fy = _current_fy_label(settings_row)
+    current_fy = _current_fy_label(db, settings_row)
 
     # Current FY ± 2 — gives HR a small forward / backward window without
     # cluttering the dropdown with decades. The UNION with FY labels
@@ -2183,7 +2137,7 @@ def get_year_settings(
         current_user.org_id,
         canonical,
     )
-    return _build_year_settings_response(row, _current_fy_label(settings_row))
+    return _build_year_settings_response(row, _current_fy_label(db, settings_row))
 
 
 @router.patch("/settings/year/{fy_label}", response_model=YearSettingsResponse)
@@ -2225,7 +2179,7 @@ def update_year_settings(
     db.refresh(row)
     invalidate_settings(current_user.org_id)
 
-    return _build_year_settings_response(row, _current_fy_label(settings_row))
+    return _build_year_settings_response(row, _current_fy_label(db, settings_row))
 
 
 @router.get(
