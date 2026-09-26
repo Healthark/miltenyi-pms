@@ -155,7 +155,7 @@
 **Pre-condition:** Mentor submitted the Q3 review (TC-PG-024); the Q3 **ratings visible** switch is off.
 **Login as:** Staff (Aarav), Q3 selected
 **Expected:**
-- Note "Q3 · CY 26-27 reviewed on <date> by Stefan Bauer, entered by Rahul Verma."; quarter progress "Miltenyi review · Submitted"; Q3 pill hint "Reviewed".
+- No notice above the table (the "reviewed on … by …, entered by …" line was removed on 26 Sep 2026; the quarter progress row and the acknowledge block carry the date). Quarter progress "Miltenyi review · Submitted"; Q3 pill hint "Reviewed"; the Miltenyi review column header names the reviewer and who entered it.
 - Each Miltenyi review cell shows the comment with the attribution "Stefan Bauer · Miltenyi"; a Secondary review, if the mentor added one, is shown separately and labelled "Secondary review · Rahul Verma".
 - Footer: self rating visible; "Final rating is hidden until the Admin releases Q3 · CY 26-27's ratings".
 - Button **Acknowledge Q3 · CY 26-27 review** with the text "Acknowledging confirms you have read this quarter's review; it does not signal agreement."

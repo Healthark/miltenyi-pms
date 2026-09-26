@@ -27,7 +27,6 @@ import {
   Check,
   CheckCircle2,
   Clock,
-  FileCheck2,
   Loader2,
   Lock,
   Pencil,
@@ -313,7 +312,7 @@ function EmployeeGoals() {
     const rev = set.miltenyi_reviewer_name ?? "your Miltenyi reviewer";
     const mentor = set.mentor_name ?? "your mentor";
     if (!cycle) return <Notice tone="amber" icon={CalendarClock}>Quarterly reviews have not started yet. The Admin opens Q1 when the first quarter's reviews are due.</Notice>;
-    if (reviewPublished) return <Notice tone="violet" icon={FileCheck2}><b>{quarterShown} reviewed on {fmtDate(review?.review_submitted_at)}</b> by {rev}, entered by {review?.entered_by_name ?? mentor}.</Notice>;
+    if (reviewPublished) return null;   // the quarter progress row and the acknowledge block already carry the review date (26 Sep 2026)
     if (review && !review.self_is_draft) return <Notice tone="teal" icon={CheckCircle2}><b>{quarterShown} self-review submitted on {fmtDate(review.self_submitted_at)}.</b> {rev}'s comments will fill the last column once {mentor} has entered them.</Notice>;
     if (quarterWritable) return <Notice tone="info" icon={PenLine}><b>{quarterShown} self-review is open.</b> Write what you delivered against each goal this quarter and give one overall rating. {!period.is_active ? `${period.period_label} has ended; the Admin keeps it open so you can finish this quarter.` : cycle !== period.current_quarter_label ? "This is an earlier quarter of the year; it stays open for backfill." : ""}</Notice>;
     return <Notice tone="amber" icon={Lock}>{quarterShown} is closed{!period.is_active ? ` — ${period.period_label} is a past year and read-only` : ""}.</Notice>;
