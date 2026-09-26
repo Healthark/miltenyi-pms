@@ -57,6 +57,8 @@ export const queryKeys = {
     functions: () => [...queryKeys.admin.all, "functions"] as const,
     designations: () => [...queryKeys.admin.all, "designations"] as const,
     settings: () => [...queryKeys.admin.all, "settings"] as const,
+    /** Daily summary emails: schedule + last run (Notify tab). */
+    digestStatus: () => [...queryKeys.admin.all, "digests", "status"] as const,
     /** Year dropdown options for the System Settings tab. Cached once
      *  per session; invalidated after the per-FY save mutation since a
      *  newly-configured year flips `has_override` to true. */

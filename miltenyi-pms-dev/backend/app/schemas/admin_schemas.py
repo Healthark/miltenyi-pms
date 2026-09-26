@@ -292,3 +292,25 @@ class AdminNotifyResult(BaseModel):
     an email actually went out (False when SMTP is not configured)."""
     recipients: int
     emailed: bool
+
+
+# ── Daily summary emails (26 Sep 2026) ───────────────────────────────
+
+class DigestStatusResponse(BaseModel):
+    """What the Notify tab shows about the in-process digest job."""
+    enabled: bool
+    running: bool
+    email_configured: bool
+    schedule: str
+    timezone: str
+    next_run_at: Optional[datetime] = None
+    last_run_at: Optional[datetime] = None
+    sent_today: int = 0
+
+
+class DigestRunResult(BaseModel):
+    """Counts from one run (scheduled or the Admin's "send now")."""
+    mentor: int
+    staff: int
+    skipped_already_sent: int
+    skipped_no_smtp: bool = False

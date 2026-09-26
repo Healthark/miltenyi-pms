@@ -99,6 +99,18 @@ class Settings(BaseSettings):
     # still sets it does not fail validation.
     ALLOW_DATE_SIMULATION: bool = False
 
+    # ── Daily summary emails (26 Sep 2026) ───────────────────────────
+    # One summary email per person per weekday morning — mentors get what
+    # they owe (approvals, reviews), staff get what they are waiting on and
+    # what moved. Runs INSIDE the API process (services/digest_scheduler.py)
+    # at DIGEST_HOUR:DIGEST_MINUTE in the org's timezone (System Settings).
+    # Needs SMTP; without it a run is a no-op. Set DIGEST_ENABLED=false to
+    # switch the job off (the Admin's "send now" button still works).
+    DIGEST_ENABLED: bool = True
+    DIGEST_HOUR: int = 9
+    DIGEST_MINUTE: int = 0
+    DIGEST_WEEKDAYS_ONLY: bool = True
+
     def cookie_kwargs(self) -> dict:
         """Shared cookie attributes for set_cookie / delete_cookie. SameSite=None
         requires Secure=True per browser spec, so we enforce that when the
