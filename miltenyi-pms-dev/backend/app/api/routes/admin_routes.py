@@ -10,6 +10,7 @@ Endpoints:
     GET    /api/v1/admin/designations        → List designations (for dropdowns)
     GET    /api/v1/admin/settings            → Get simplified active cycle info
     PATCH  /api/v1/admin/settings            → Update active cycle
+    POST   /api/v1/admin/notify              → Targeted announcement (Notify tab)
 
 Security Layers Applied (ALL endpoints):
     Layer 1 — Authentication:   CurrentUser dependency (JWT validation)
@@ -67,7 +68,9 @@ from app.services.send_email import (
     is_smtp_configured,
     send_welcome_user_email,
 )
-from app.services.notification_service import notify, notify_many
+from app.services.notification_service import notify, notify_many, notify_audience
+from app.services.send_email import send_notification_email
+from app.core.rich_text import markdown_to_one_line
 from app.services.annual_cycle import derive_annual_cycle
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -88,6 +91,8 @@ from app.schemas.admin_schemas import (
     YearSettingsUpdate,
     YearPreflightEntry,
     YearPreflightResponse,
+    AdminNotifyRequest,
+    AdminNotifyResult,
 )
 from app.schemas.pagination import Paginated
 
@@ -2318,3 +2323,73 @@ def _load_user_with_relations(db: DbSession, user_id: int) -> User:
         .first()
     )
     return user
+
+
+# ── Announcements (Notify tab) ───────────────────────────────────────
+
+@router.post("/notify", response_model=AdminNotifyResult)
+def admin_notify(
+    payload: AdminNotifyRequest,
+    db: DbSession,
+    current_user: CurrentUser,
+    background_tasks: BackgroundTasks,
+):
+    """Manual targeted announcement from the Admin "Notify" tab (26 Sep 2026).
+
+    Resolves the audience from the AND-combined filters (named users, roles,
+    functions; nothing set = every active user, the sender excluded), then
+    delivers per `channel`: "in_app" writes one bell row per person, "email"
+    mails them, "both" does both. The bell row carries the subject in bold
+    on its own line followed by the Markdown body, so RichText renders it
+    like the email does. Emails ride on BackgroundTasks and are skipped
+    (with `emailed=False` in the answer) when SMTP is not configured.
+    """
+    _require_admin(current_user)
+
+    recipients = notify_audience(
+        db, current_user.org_id,
+        user_ids=payload.user_ids, roles=payload.roles, function_ids=payload.function_ids,
+        exclude_user_id=current_user.id,
+    )
+    if not recipients:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No active user matches these filters (you are never a recipient of your own announcement).",
+        )
+
+    subject = payload.subject.strip()
+    body = payload.body.strip()
+    wants_email = payload.channel in ("email", "both")
+    write_inapp = payload.channel in ("in_app", "both")
+
+    if write_inapp:
+        # Asterisks in the subject would break the bold wrapper; the plain
+        # text of the subject is what the reader needs anyway.
+        heading = markdown_to_one_line(subject).replace("*", "")
+        notify_many(
+            db, org_id=current_user.org_id,
+            recipient_ids=[u.id for u in recipients], sender_id=current_user.id,
+            module="announcement", entity_type="admin_announcement", entity_id=None,
+            message=f"**{heading}**\n{body}", entity_url=None,
+        )
+        db.commit()
+
+    emailed = False
+    if wants_email and is_smtp_configured():
+        emailed = True
+        for u in recipients:
+            if not u.email:
+                continue
+            background_tasks.add_task(
+                send_notification_email,
+                to_email=u.email,
+                full_name=u.full_name,
+                subject=subject,
+                lead=body,
+                cta_label="Open Miltenyi PMS",
+                cta_url=settings.APP_BASE_URL,
+                org_id=current_user.org_id,
+                title=subject,
+            )
+
+    return AdminNotifyResult(recipients=len(recipients), emailed=emailed)

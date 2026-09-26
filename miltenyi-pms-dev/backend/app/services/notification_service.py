@@ -210,3 +210,29 @@ def notify_many(
         if row is not None:
             out.append(row)
     return out
+
+
+def notify_audience(
+    db: Session,
+    org_id: int,
+    *,
+    user_ids: Sequence[int] = (),
+    roles: Sequence[str] = (),
+    function_ids: Sequence[int] = (),
+    exclude_user_id: int | None = None,
+) -> list[User]:
+    """Active users of the org matching every filter given (AND-combined).
+
+    Each filter is "any of" within itself and skipped when empty, so no
+    filter at all means everyone. `exclude_user_id` drops the sender: an
+    Admin announcing to "everyone" does not need their own announcement.
+    Ordered by name so the caller's fan-out is deterministic."""
+    q = db.query(User).filter(User.org_id == org_id, User.is_deleted == False)  # noqa: E712
+    if user_ids:
+        q = q.filter(User.id.in_(list(user_ids)))
+    if roles:
+        q = q.filter(User.role.in_(list(roles)))
+    if function_ids:
+        q = q.filter(User.function_id.in_(list(function_ids)))
+    users = q.order_by(User.full_name, User.id).all()
+    return [u for u in users if u.id != exclude_user_id]

@@ -306,4 +306,42 @@ There are 8 export surfaces. Test each one.
 
 ---
 
+## 5.5 Notify (announcements)
+
+### TC-NOTIFY-001 — Send an announcement to a group
+
+**Login as:** Admin (Aanya)
+**Steps:**
+1. Admin Panel → **Notify**. Click the preset **Quarter self-reviews due** (fills subject + message and selects the **Staff** role), edit the text, select text and press **Ctrl+B**.
+2. Add one function chip and one named person; watch the recipient line.
+3. Keep the channel **In-app + email**, click **Send announcement**, read the confirmation, confirm.
+
+**Expected:**
+- The toolbar has Bold / Italic / bullet / numbered list; **Preview** shows the subject in bold and the formatted message.
+- The recipient line counts active people who match **all** selected filters (roles AND functions AND named people) and says "You are not included"; with no filter it is everyone but you. Zero matches shows "Nobody matches these filters." and disables Send.
+- The confirmation names the channel, the count and the filters. After sending: toast "Announcement sent to N people." plus, when the server has no email configured, "Email is not configured on this server, so only the in-app notice went out."; the form clears.
+
+---
+
+### TC-NOTIFY-002 — The recipient's bell
+
+**Login as:** Staff (Aarav), after TC-NOTIFY-001
+**Expected:** The bell's Notifications tab has a row with a megaphone icon: the subject in bold on the first line, then the message with its bold text and lists rendered. No link on the row; the × marks it read. The Admin who sent it has no such row.
+
+---
+
+### TC-NOTIFY-003 — Channels
+
+**Login as:** Admin
+**Steps:** Send one announcement with **Email only**, one with **In-app only**.
+**Expected:** Email only writes no bell rows (recipient count still reported). In-app only sends no email. With SMTP configured the email has the subject as heading, "Hi <name>," the formatted message and an "Open Miltenyi PMS" button.
+
+---
+
+### TC-NOTIFY-004 — Guards
+
+**Expected:** Staff and Mentors have no Notify tab and the API answers 403. An empty subject or message is refused (Send stays disabled; the API answers 422). Selecting only the **Admin** role when you are the only Admin answers "No active user matches these filters…".
+
+---
+
 **End of Module 5.** Next: Module 6 — Cross-cutting UX & Regression.

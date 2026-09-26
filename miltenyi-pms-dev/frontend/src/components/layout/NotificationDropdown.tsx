@@ -21,6 +21,7 @@ import {
   buildAnnouncements,
   type AnnouncementRow,
 } from "@/components/layout/announcements";
+import { RichText } from "@/components/common/RichText";
 
 interface NotificationDropdownProps {
   readonly notifications: NotificationItem[];
@@ -70,6 +71,8 @@ const MODULE_ICONS: Record<string, LucideIcon> = {
   project_review: Briefcase,
   project: FolderKanban,
   admin: UserCog,
+  // Admin announcements from the Notify tab (26 Sep 2026).
+  announcement: Megaphone,
 };
 
 // Announcement copy lives in ./announcements.ts so this file exports only
@@ -281,13 +284,16 @@ function NotificationsBody({
           e.stopPropagation();
           void onMarkRead(n.id);
         };
+        // Messages are Markdown source in the app's small subset (an
+        // announcement is "**Subject**\nbody"); plain messages render as
+        // one paragraph exactly as before.
         const messageContent = (
           <>
             <Icon
               className="h-4 w-4 mt-0.5 shrink-0 text-blue-500"
               aria-hidden="true"
             />
-            <p className="text-sm text-text-main">{n.message}</p>
+            <RichText value={n.message} variant="cell" className="min-w-0 text-sm text-text-main" />
           </>
         );
         return (
