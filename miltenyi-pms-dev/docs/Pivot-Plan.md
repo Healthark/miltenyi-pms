@@ -264,3 +264,9 @@ Item 1 of the annual audit (adopt the roll-out model for annual goals and review
 - **The quarter roll-out confirmation says what happens to the annual cycle**, the announcement ends with "Annual goals and reviews are now in H2 · CY 26-27", and the Calendar card and the roll-out card explain the mapping.
 - **The date simulation is gone**: no Developer card, no banner, no `simulated_today` / `simulation_allowed` / `clear_simulated_today` on the admin API (the column stays, unused; `ALLOW_DATE_SIMULATION` is accepted and ignored). Testers move the quarter instead.
 - No migration. On the testing database Q3 is current, so the annual cycle reads **H2 · CY 26-27** after the deploy.
+
+---
+
+## Revision — 26 September 2026: UAT round-1 leftovers settled
+
+Zaahid's rulings on the three questions left open since 11 Sep: **keep** the final-rating "Given by" toggle (Miltenyi reviewer / Healthark) on the quarterly review; **keep** the separate "Approved · agreed offline" step (the mentor records who agreed the goals and when); **drop** the staff-side "Qn · CY yy-zz reviewed on <date> by <reviewer>, entered by <mentor>" notice — the quarter progress row and the acknowledge block already carry the date, and the mentor-side twin went on 11 Sep. Topbar year wording was settled on 20 Sep (CY 26-27 spans).
