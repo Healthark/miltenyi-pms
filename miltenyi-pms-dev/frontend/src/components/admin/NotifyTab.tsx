@@ -10,10 +10,14 @@
  * bold / italic / lists render identically in the bell (RichText) and in the
  * email (backend markdown_to_html). Quick presets pre-fill subject and body;
  * both stay fully editable.
+ *
+ * Below the composer sits the **Daily summary emails** card: the in-process
+ * job's schedule, SMTP state, last run, and a "send now" button (idempotent
+ * per person per day — see backend/app/services/daily_digests.py).
  */
 import { useMemo, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { Building2, Megaphone, Send, Shield, UserPlus, Users2, X } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Building2, Clock, Mail, Megaphone, Send, Shield, UserPlus, Users2, X } from "lucide-react";
 import {
   adminService,
   type AdminNotifyPayload,
@@ -415,6 +419,91 @@ export function NotifyTab({ users }: NotifyTabProps) {
             </button>
           </div>
         </div>
+      </div>
+
+      <DigestCard />
+    </div>
+  );
+}
+
+function fmtWhen(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+
+/** Daily summary emails — status of the in-process job and a "send now". */
+function DigestCard() {
+  const toast = useToast();
+  const snackbar = useSnackbar();
+  const confirm = useConfirm();
+  const queryClient = useQueryClient();
+  const status = useQuery({ queryKey: queryKeys.admin.digestStatus(), queryFn: adminService.getDigestStatus });
+  const run = useMutation({
+    mutationFn: adminService.runDigests,
+    onSuccess: (r) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.admin.digestStatus() });
+      if (r.skipped_no_smtp) {
+        snackbar.error("Email is not configured on this server, so no summaries were sent.");
+        return;
+      }
+      const skipped = r.skipped_already_sent ? ` ${r.skipped_already_sent} already had today's summary.` : "";
+      toast.success(`Summaries sent: ${r.mentor} to mentors, ${r.staff} to staff.${skipped}`);
+    },
+    onError: (err) => snackbar.error(getErrorMessage(err)),
+  });
+  const st = status.data;
+
+  const handleRun = async () => {
+    const ok = await confirm({
+      title: "Send today's summaries now?",
+      message: "Every mentor with pending approvals or reviews, and every staff member waiting on something or with a fresh approval, gets one email. Anyone who already had today's summary is skipped.",
+      variant: "warning",
+      confirmText: "Send now",
+    });
+    if (ok) run.mutate();
+  };
+
+  const chip = (ok: boolean, yes: string, no: string) => (
+    <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${ok ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-800"}`}>
+      {ok ? yes : no}
+    </span>
+  );
+
+  return (
+    <div className="mt-8 rounded-xl border border-border bg-surface p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start gap-2">
+          <Mail className="mt-0.5 h-5 w-5 text-brand" aria-hidden="true" />
+          <div>
+            <h3 className="font-display text-base font-semibold text-text-main">Daily summary emails</h3>
+            <p className="mt-0.5 max-w-2xl text-xs text-text-muted">
+              One email per person per weekday morning, only when something is pending. Mentors get the approvals and reviews they owe (annual goals, H1/H2 goal reviews, Project Goals sets and quarterly reviews), grouped by mentee. Staff get what is waiting on their mentor, goals sent back, goals approved since their last summary and quarterly reviews to acknowledge. The bell is unchanged.
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={handleRun}
+          disabled={run.isPending || !st}
+          className="flex items-center gap-2 rounded-lg border border-border bg-white px-4 py-2 text-sm font-medium text-text-main hover:bg-slate-50 disabled:opacity-60"
+        >
+          <Send className="h-4 w-4" aria-hidden="true" />
+          {run.isPending ? "Sending…" : "Send today's summaries now"}
+        </button>
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-text-muted">
+        {status.isPending && <span>Loading…</span>}
+        {st && (
+          <>
+            {chip(st.email_configured, "Email configured", "Email not configured — nothing is sent")}
+            {chip(st.enabled && st.running, "Scheduler running", st.enabled ? "Scheduler not running" : "Scheduler off (DIGEST_ENABLED=false)")}
+            <span className="inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5" aria-hidden="true" /> {st.schedule}</span>
+            <span>Next run: <b className="text-text-main">{fmtWhen(st.next_run_at)}</b></span>
+            <span>Last run: <b className="text-text-main">{fmtWhen(st.last_run_at)}</b></span>
+            <span>Sent today: <b className="text-text-main">{st.sent_today}</b></span>
+          </>
+        )}
       </div>
     </div>
   );

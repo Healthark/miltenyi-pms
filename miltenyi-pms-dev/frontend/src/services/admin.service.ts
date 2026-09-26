@@ -97,6 +97,25 @@ export interface AdminNotifyResult {
   emailed: boolean;
 }
 
+/** Daily summary emails (in-process job). */
+export interface DigestStatus {
+  enabled: boolean;
+  running: boolean;
+  email_configured: boolean;
+  schedule: string;
+  timezone: string;
+  next_run_at: string | null;
+  last_run_at: string | null;
+  sent_today: number;
+}
+
+export interface DigestRunResult {
+  mentor: number;
+  staff: number;
+  skipped_already_sent: number;
+  skipped_no_smtp: boolean;
+}
+
 export interface SettingsPreflightEntry {
   in_flight_count: number;
   warning: string | null;
@@ -293,6 +312,17 @@ export const adminService = {
   /** Send a targeted announcement (Admin Notify tab). */
   sendNotify: async (payload: AdminNotifyPayload): Promise<AdminNotifyResult> => {
     const res = await apiClient.post<AdminNotifyResult>("/admin/notify", payload);
+    return res.data;
+  },
+
+  getDigestStatus: async (): Promise<DigestStatus> => {
+    const res = await apiClient.get<DigestStatus>("/admin/digests/status");
+    return res.data;
+  },
+
+  /** Send today's summary emails now (idempotent per person per day). */
+  runDigests: async (): Promise<DigestRunResult> => {
+    const res = await apiClient.post<DigestRunResult>("/admin/digests/run");
     return res.data;
   },
 

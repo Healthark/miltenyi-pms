@@ -11,6 +11,8 @@ Endpoints:
     GET    /api/v1/admin/settings            → Get simplified active cycle info
     PATCH  /api/v1/admin/settings            → Update active cycle
     POST   /api/v1/admin/notify              → Targeted announcement (Notify tab)
+    GET    /api/v1/admin/digests/status      → Daily summary emails: schedule + last run
+    POST   /api/v1/admin/digests/run         → Send today's summaries now
 
 Security Layers Applied (ALL endpoints):
     Layer 1 — Authentication:   CurrentUser dependency (JWT validation)
@@ -71,6 +73,15 @@ from app.services.send_email import (
 from app.services.notification_service import notify, notify_many, notify_audience
 from app.services.send_email import send_notification_email
 from app.core.rich_text import markdown_to_one_line
+from app.models.daily_digest_log_models import DailyDigestLog
+from app.services.daily_digests import run_daily_digests
+from app.services.digest_scheduler import (
+    digest_scheduler,
+    next_run_at,
+    org_timezone_name,
+    schedule_description,
+    _zone as _digest_zone,
+)
 from app.services.annual_cycle import derive_annual_cycle
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -93,6 +104,8 @@ from app.schemas.admin_schemas import (
     YearPreflightResponse,
     AdminNotifyRequest,
     AdminNotifyResult,
+    DigestStatusResponse,
+    DigestRunResult,
 )
 from app.schemas.pagination import Paginated
 
@@ -2393,3 +2406,44 @@ def admin_notify(
             )
 
     return AdminNotifyResult(recipients=len(recipients), emailed=emailed)
+
+
+# ── Daily summary emails ─────────────────────────────────────────────
+
+@router.get("/digests/status", response_model=DigestStatusResponse)
+def digest_status(db: DbSession, current_user: CurrentUser):
+    """Schedule, SMTP state and last run of the in-process digest job."""
+    _require_admin(current_user)
+    tz_name = org_timezone_name()
+    now = datetime.now(_digest_zone(tz_name))
+    last = (
+        db.query(sql_func.max(DailyDigestLog.created_at))
+        .filter(DailyDigestLog.org_id == current_user.org_id)
+        .scalar()
+    )
+    sent_today = (
+        db.query(sql_func.count(DailyDigestLog.id))
+        .filter(DailyDigestLog.org_id == current_user.org_id, DailyDigestLog.sent_on == now.date())
+        .scalar()
+    ) or 0
+    return DigestStatusResponse(
+        enabled=settings.DIGEST_ENABLED,
+        running=digest_scheduler.running,
+        email_configured=is_smtp_configured(),
+        schedule=schedule_description(tz_name),
+        timezone=tz_name,
+        next_run_at=next_run_at(now) if settings.DIGEST_ENABLED else None,
+        last_run_at=last,
+        sent_today=sent_today,
+    )
+
+
+@router.post("/digests/run", response_model=DigestRunResult)
+def digest_run(db: DbSession, current_user: CurrentUser, background_tasks: BackgroundTasks):
+    """Send today's summaries now (Admin). Idempotent per person per day, so
+    pressing it after the morning run sends nothing new; without SMTP it is a
+    no-op and says so."""
+    _require_admin(current_user)
+    today = datetime.now(_digest_zone(org_timezone_name())).date()
+    result = run_daily_digests(db, today=today, enqueue=background_tasks.add_task)
+    return DigestRunResult(**result)
