@@ -270,3 +270,9 @@ Item 1 of the annual audit (adopt the roll-out model for annual goals and review
 ## Revision — 26 September 2026: UAT round-1 leftovers settled
 
 Zaahid's rulings on the three questions left open since 11 Sep: **keep** the final-rating "Given by" toggle (Miltenyi reviewer / Healthark) on the quarterly review; **keep** the separate "Approved · agreed offline" step (the mentor records who agreed the goals and when); **drop** the staff-side "Qn · CY yy-zz reviewed on <date> by <reviewer>, entered by <mentor>" notice — the quarter progress row and the acknowledge block already carry the date, and the mentor-side twin went on 11 Sep. Topbar year wording was settled on 20 Sep (CY 26-27 spans).
+
+---
+
+## Revision — 26 September 2026: Admin Notify tab (annual parity, part 3a)
+
+Item 21 of the annual audit. Admin Panel → **Notify** sends a targeted announcement: AND-combined filters (named people, roles Staff/Mentor/Admin, functions; nothing selected = everyone but the sender), a live recipient count, three channels (in-app, email, both) and a confirmation. The message is written in the app's small Markdown subset (bold, italic, bullet and numbered lists) with a shared editor (`components/common/RichTextEditor.tsx`) and renderer (`RichText.tsx`, React children only — no HTML injection surface); the backend mirror `app/core/rich_text.py` renders the same source as email HTML and as plain text. Bell rows are now rendered through RichText (an announcement is "**Subject**" + body; older plain rows are unchanged). The notification email template gained an optional heading and a summary table, ready for the daily digests (part 3c). `POST /admin/notify`; tests in `tests/test_admin_notify.py`. No migration.

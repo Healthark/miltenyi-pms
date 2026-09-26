@@ -77,6 +77,26 @@ export interface AdminSettingsUpdatePayload {
   management_review_enabled?: boolean;
 }
 
+/** Admin announcements (Notify tab). */
+export type NotifyChannel = "in_app" | "email" | "both";
+
+export interface AdminNotifyPayload {
+  subject: string;
+  /** Markdown source in the app's small subset (bold, italic, lists). */
+  body: string;
+  /** AND-combined filters; all empty = every active user. The sender is never included. */
+  user_ids: number[];
+  roles: string[];
+  function_ids: number[];
+  channel: NotifyChannel;
+}
+
+export interface AdminNotifyResult {
+  recipients: number;
+  /** False when the server has no SMTP configured (in-app rows still went out). */
+  emailed: boolean;
+}
+
 export interface SettingsPreflightEntry {
   in_flight_count: number;
   warning: string | null;
@@ -270,6 +290,12 @@ export const adminService = {
   },
 
   // Reference data (for form dropdowns)
+  /** Send a targeted announcement (Admin Notify tab). */
+  sendNotify: async (payload: AdminNotifyPayload): Promise<AdminNotifyResult> => {
+    const res = await apiClient.post<AdminNotifyResult>("/admin/notify", payload);
+    return res.data;
+  },
+
   getFunctions: async (): Promise<FunctionBrief[]> => {
     const res = await apiClient.get<FunctionBrief[]>("/admin/functions");
     return res.data;

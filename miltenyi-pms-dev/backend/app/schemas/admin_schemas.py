@@ -7,8 +7,8 @@ Key mapping note: The frontend uses `active_cycle` while the database stores
 via a computed field so neither side needs to change.
 """
 
-from pydantic import BaseModel, Field, ConfigDict
-from typing import Optional
+from pydantic import BaseModel, Field, ConfigDict, field_validator
+from typing import List, Literal, Optional
 from datetime import datetime, date
 
 
@@ -254,3 +254,41 @@ class DesignationUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=120)
     function_id: Optional[int] = None
     career_level: Optional[int] = Field(default=None, ge=1, le=12)
+
+
+# ── Announcements (Admin Notify tab, 26 Sep 2026) ────────────────────
+
+class AdminNotifyRequest(BaseModel):
+    """Body for POST /admin/notify — a manual targeted announcement.
+
+    Recipients are active org users narrowed by the optional, AND-combined
+    filters below; with none set every active user is targeted. The sender is
+    never a recipient.
+        * `user_ids`     → only these people (any of)
+        * `roles`        → only these roles (any of): Staff / Mentor / Admin
+        * `function_ids` → only these functions (any of)
+    `body` is Markdown source in the app's small subset (bold, italic,
+    lists) — rendered by RichText in the bell and by markdown_to_html in
+    the email. `channel` picks the delivery: "in_app" writes the bell row
+    only, "email" sends the email only, "both" does both."""
+    subject: str = Field(..., min_length=1, max_length=200)
+    body: str = Field(..., min_length=1, max_length=4000)
+    user_ids: List[int] = Field(default_factory=list)
+    roles: List[Literal["Staff", "Mentor", "Admin"]] = Field(default_factory=list)
+    function_ids: List[int] = Field(default_factory=list)
+    channel: Literal["in_app", "email", "both"] = "both"
+
+    @field_validator("subject", "body", mode="before")
+    @classmethod
+    def _strip_text(cls, value):
+        if value is None:
+            return value
+        text = str(value).strip()
+        return text or None
+
+
+class AdminNotifyResult(BaseModel):
+    """Outcome of an announcement: how many people it reached and whether
+    an email actually went out (False when SMTP is not configured)."""
+    recipients: int
+    emailed: bool

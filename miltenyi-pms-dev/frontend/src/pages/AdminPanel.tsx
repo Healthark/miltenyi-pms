@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/queryKeys";
 import {
-  UserPlus, Users, Settings, Download, GitBranch, BookOpen,
+  UserPlus, Users, Settings, Download, GitBranch, BookOpen, Megaphone,
 } from "lucide-react";
 import { FrameworkMappingTab } from "@/components/admin/FrameworkMappingTab";
 import { FrameworkTab } from "@/components/admin/FrameworkTab";
@@ -18,6 +18,7 @@ import { UsersTab } from "@/components/admin/UsersTab";
 import { SystemSettingsTab } from "@/components/admin/SystemSettingsTab";
 import { UserModal } from "@/components/admin/UserModal";
 import { ExportsTab } from "@/components/admin/ExportsTab";
+import { NotifyTab } from "@/components/admin/NotifyTab";
 import { useToast } from "@/hooks/useToast";
 import { useSnackbar } from "@/hooks/useSnackbar";
 import { useConfirm } from "@/hooks/useConfirm";
@@ -33,7 +34,8 @@ type ActiveTab =
   | "mapping"
   | "framework"
   | "exports"
-  | "settings";
+  | "settings"
+  | "notify";
 
 export default function AdminPanel() {
   const toast = useToast();
@@ -106,7 +108,7 @@ export default function AdminPanel() {
   const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
     const params = new URLSearchParams(window.location.search);
     const requested = params.get("tab");
-    const valid: ActiveTab[] = ["users", "mapping", "framework", "exports", "settings"];
+    const valid: ActiveTab[] = ["users", "mapping", "framework", "exports", "settings", "notify"];
     return (valid as readonly string[]).includes(requested ?? "")
       ? (requested as ActiveTab)
       : "users";
@@ -402,6 +404,16 @@ export default function AdminPanel() {
               Framework
             </button>
           )}
+          {canSeeSystemSettings && (
+            <button
+              type="button"
+              className={tabCls("notify")}
+              onClick={() => setActiveTab("notify")}
+            >
+              <Megaphone className="h-4 w-4" aria-hidden="true" />
+              Notify
+            </button>
+          )}
         </div>
 
         {activeTab === "users" && (
@@ -423,6 +435,8 @@ export default function AdminPanel() {
         )}
 
         {activeTab === "framework" && canSeeSystemSettings && <FrameworkTab />}
+
+        {activeTab === "notify" && canSeeSystemSettings && <NotifyTab users={users} />}
 
         {activeTab === "settings" && canSeeSystemSettings && (
           <SystemSettingsTab

@@ -227,6 +227,10 @@ def send_notification_email(
     cta_label: str,
     cta_url: str,
     org_id: int | None = None,
+    *,
+    title: str | None = None,
+    details: list[tuple[str, str]] | None = None,
+    snapshot_title: str = "Summary",
 ) -> bool:
     """Email a lifecycle-event notification to a user.
 
@@ -236,13 +240,23 @@ def send_notification_email(
 
     Caller must NOT make the lifecycle action depend on the return —
     notifications are best-effort. The in-app row written alongside is
-    the authoritative surface; email is a convenience signal."""
+    the authoritative surface; email is a convenience signal.
+
+    `lead` is Markdown source in the app's small subset (rendered and
+    escaped by the template). `title` adds a heading (announcements,
+    digests); `details` a labelled "{snapshot_title}" key-value table."""
     theme = resolve_theme(org_id)
     sender_display_name = resolve_from_name(theme)
     return _send(
         to_email=to_email,
         subject=subject,
-        html_body=notification_html(full_name, lead, cta_label, cta_url, theme),
-        text_body=notification_text(full_name, lead, cta_url, theme.brand_name),
+        html_body=notification_html(
+            full_name, lead, cta_label, cta_url, theme,
+            title=title, details=details, snapshot_title=snapshot_title,
+        ),
+        text_body=notification_text(
+            full_name, lead, cta_url, theme.brand_name,
+            title=title, details=details, snapshot_title=snapshot_title,
+        ),
         from_name=sender_display_name,
     )
