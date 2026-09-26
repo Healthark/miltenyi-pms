@@ -34,6 +34,7 @@ import { compareValues, type SortKind, type SortState, type SortValue } from "@/
 import { formatFyYearSpan } from "@/utils/fy";
 import { halfDisplayLabel, isPostApproved } from "@/utils/goalStatus";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
+import { RichText } from "@/components/common/RichText";
 
 // ---------------------------------------------------------------------------
 // FeedbackModal — "Request Changes" portal (unchanged)
@@ -976,7 +977,7 @@ export function TeamGoalsTab() {
                                     <td className="px-4 py-2.5 text-[12.5px] text-text-muted max-w-md">
                                       {g.description ? (
                                         <span className="line-clamp-2">
-                                          {g.description}
+                                          <RichText value={g.description} variant="teaser" />
                                         </span>
                                       ) : (
                                         <span>—</span>

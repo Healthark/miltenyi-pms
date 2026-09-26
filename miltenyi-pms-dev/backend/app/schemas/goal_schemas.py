@@ -53,6 +53,10 @@ class GoalBase(BaseModel):
         ..., min_length=1, max_length=500,
         description="The main objective of the goal",
     )
+    # Markdown source in the app's small subset (bold, italic, bullet and
+    # numbered lists) since 26 Sep 2026 — see app/core/rich_text.py. Stored
+    # as typed; rendered per medium (RichText in the UI, markdown_to_plain in
+    # the exports). The cap counts the source, markers included.
     description: Optional[str] = Field(default=None, max_length=5000)
     start_date: Optional[datetime] = None
     due_date: Optional[datetime] = None

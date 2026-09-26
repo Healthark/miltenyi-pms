@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
@@ -22,11 +24,26 @@ from app.api.routes import mentee_routes
 from app.api.routes import export_routes
 from app.api.routes import project_goal_routes
 from app.api.routes import goal_framework_routes
+from app.services.digest_scheduler import digest_scheduler
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # The daily summary emails run inside this process (26 Sep 2026): one
+    # asyncio task that wakes at the send time on weekdays. Off with
+    # DIGEST_ENABLED=false. TestClient without a `with` block never enters
+    # the lifespan, so the tests stay quiet.
+    if settings.DIGEST_ENABLED:
+        digest_scheduler.start()
+    yield
+    await digest_scheduler.stop()
+
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version="1.0.0",
-    description="Multi-Tenant Performance Management API"
+    description="Multi-Tenant Performance Management API",
+    lifespan=lifespan,
 )
 
 # slowapi reads the limiter off `app.state` inside its exception handler, so

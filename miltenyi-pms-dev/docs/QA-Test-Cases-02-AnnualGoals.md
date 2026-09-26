@@ -667,6 +667,22 @@ Key results / criteria under a goal were dropped for the Miltenyi instance (conf
 
 ---
 
+### TC-GOAL-021 — Rich text in the goal description
+
+**Login as:** Staff
+**Steps:**
+1. Add or edit a goal. In **Goal Description**, select a phrase and click **B** (or press Ctrl+B); put the cursor on a line and click the bullet-list button; type a second bullet on the next line.
+2. Save. Look at the card on My Goals, the table view, and the review details (**View**).
+3. As Admin: Exports → Goals.
+
+**Expected:**
+- The editor stores plain Markdown (`**bold**`, `- item`); the **Preview** under the editor shows the formatting live. The counter in the toolbar counts the source (max 5,000).
+- Cards and the table show the text without the markers (bullets as "•"), clamped to two lines; the review details show real bold text and bullet / numbered lists. Typed HTML such as `<b>x</b>` shows as literal text everywhere — nothing is rendered as HTML.
+- The Excel Description cell has the markers stripped (bullets as "•", line breaks kept).
+- The mentor's Team Goals table and cards show the same rendering. Goals written before 26 Sep 2026 look exactly as they did.
+
+---
+
 ## 2.6 Annual Goals — Cross-checks
 
 - Refer to **Module 1 §1.7** UI checklist for every screen in this module.

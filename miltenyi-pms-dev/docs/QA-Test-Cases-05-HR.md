@@ -344,4 +344,33 @@ There are 8 export surfaces. Test each one.
 
 ---
 
+## 5.6 Daily summary emails
+
+### TC-DIGEST-001 — The card on the Notify tab
+
+**Login as:** Admin (Aanya)
+**Steps:** Admin Panel → **Notify**, scroll to **Daily summary emails**.
+**Expected:** Chips for **Email configured / not configured** and **Scheduler running / off**, the schedule ("Weekdays at 09:00 (Asia/Kolkata)"), next run, last run and "Sent today". A **Send today's summaries now** button with a confirmation.
+
+---
+
+### TC-DIGEST-002 — What the mails contain (server with email configured)
+
+**Pre-condition:** Aarav has an annual goal awaiting approval and a submitted Project Goals set awaiting approval; Arjun has a submitted H1 self-review the mentor has not reviewed, a Q3 self-review without a Miltenyi review, and a published Q2 review he has not acknowledged.
+**Login as:** Admin
+**Steps:** Click **Send today's summaries now**, confirm. Then click it again.
+**Expected:**
+- Toast "Summaries sent: 1 to mentors, 2 to staff." Rahul's mail: heading "N items need your attention", one **Summary** row per mentee listing each item with the days waited, oldest first, "Open your dashboard" button. Aarav's mail: "2 items awaiting approval" naming Rahul. Arjun's mail: "1 review to acknowledge" and his approvals since the last summary. Formatting is the branded template; no bell row is written.
+- The second click: toast "…3 already had today's summary." and no new mail. "Sent today" reads 3 and "Last run" is now.
+- Nobody with nothing pending gets a mail. A closed half or a quarter that is not writable is not listed for the mentor.
+
+---
+
+### TC-DIGEST-003 — Without email
+
+**Login as:** Admin, on a server with no SMTP settings
+**Expected:** The card says "Email not configured — nothing is sent"; **Send now** answers "Email is not configured on this server, so no summaries were sent." and "Sent today" stays 0 (no slot is used up, so the first real run after SMTP is configured still goes out).
+
+---
+
 **End of Module 5.** Next: Module 6 — Cross-cutting UX & Regression.

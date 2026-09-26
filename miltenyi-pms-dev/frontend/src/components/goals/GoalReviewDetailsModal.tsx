@@ -16,6 +16,7 @@ import type {
 import { ApprovalStatusBadge } from "@/components/goals/ApprovalStatusBadge";
 import { formatFyYearSpan } from "@/utils/fy";
 import { halfDisplayLabel } from "@/utils/goalStatus";
+import { RichText } from "@/components/common/RichText";
 
 interface GoalReviewDetailsModalProps {
   readonly goal: TeamGoal;
@@ -102,9 +103,7 @@ export function GoalReviewDetailsModal({
                 Description
               </h3>
               <div className="rounded-lg border border-border bg-surface px-4 py-3">
-                <p className="text-[13px] text-text-main whitespace-pre-wrap leading-relaxed">
-                  {goal.description}
-                </p>
+                <RichText value={goal.description} className="text-[13px] text-text-main leading-relaxed" />
               </div>
             </section>
           )}

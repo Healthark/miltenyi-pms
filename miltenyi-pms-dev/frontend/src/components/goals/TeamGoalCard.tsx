@@ -4,6 +4,7 @@ import { ApprovalStatusBadge } from "@/components/goals/ApprovalStatusBadge";
 import { MentorReviewHalfChips } from "@/components/goals/MentorReviewHalfChips";
 import { formatFyYearSpan } from "@/utils/fy";
 import { isPostApproved } from "@/utils/goalStatus";
+import { RichText } from "@/components/common/RichText";
 
 interface TeamGoalCardProps {
   readonly goal: TeamGoal;
@@ -51,7 +52,7 @@ export function TeamGoalCard({
       {/* Description */}
       {goal.description && (
         <p className="text-sm text-text-muted line-clamp-2">
-          {goal.description}
+          <RichText value={goal.description} variant="teaser" />
         </p>
       )}
 

@@ -14,6 +14,7 @@ import { SelfReviewCycleMenu } from "@/components/goals/SelfReviewCycleMenu";
 import { formatFyYearSpan } from "@/utils/fy";
 import { isPostApproved } from "@/utils/goalStatus";
 import { isSafeHttpUrl } from "@/utils/safeUrl";
+import { RichText } from "@/components/common/RichText";
 
 interface AnnualGoalCardProps {
   readonly goal: Goal;
@@ -74,7 +75,7 @@ export function AnnualGoalCard({
       {/* Description */}
       {goal.description && (
         <p className="text-sm text-text-muted line-clamp-2">
-          {goal.description}
+          <RichText value={goal.description} variant="teaser" />
         </p>
       )}
 
