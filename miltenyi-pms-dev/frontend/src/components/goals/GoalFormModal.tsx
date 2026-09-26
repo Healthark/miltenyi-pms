@@ -18,6 +18,8 @@ import type {
   GoalUpdatePayload,
 } from "@/services/goal.service";
 import { isPostApproved } from "@/utils/goalStatus";
+import { RichText } from "@/components/common/RichText";
+import { RichTextEditor } from "@/components/common/RichTextEditor";
 
 interface GoalFormModalProps {
   readonly onClose: () => void;
@@ -172,31 +174,26 @@ export function GoalFormModal({
             />
           </div>
 
-          {/* Description */}
+          {/* Description — Markdown subset (bold, italic, lists); stored as
+              source, rendered by RichText everywhere it is shown. */}
           <div>
-            <div className="flex items-center justify-between mb-1">
-              <label htmlFor="goal-desc" className="text-xs font-medium text-text-muted">
-                Goal Description *
-              </label>
-              <span
-                className={`text-[10px] tabular-nums ${
-                  form.description.length > MAX_DESC_LENGTH
-                    ? "text-red-600 font-semibold"
-                    : "text-text-muted"
-                }`}
-              >
-                {form.description.length}/{MAX_DESC_LENGTH}
-              </span>
-            </div>
-            <textarea
+            <label htmlFor="goal-desc" className={LABEL_CLS}>
+              Goal Description *
+            </label>
+            <RichTextEditor
               id="goal-desc"
-              rows={3}
-              className={`${INPUT_CLS} resize-none`}
+              rows={5}
               value={form.description}
-              onChange={(e) => set("description", e.target.value)}
-              placeholder="What does success look like?"
+              onChange={(next) => set("description", next)}
+              placeholder="What does success look like? Select text for bold or italic; start a line with - for a bullet."
               maxLength={MAX_DESC_LENGTH}
             />
+            {form.description.trim().length > 0 && (
+              <div className="mt-2 rounded-lg border border-dashed border-border bg-slate-50/60 px-3 py-2">
+                <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-text-muted">Preview</p>
+                <RichText value={form.description} variant="cell" className="text-[13px] text-text-main" />
+              </div>
+            )}
           </div>
 
           {/* Attachment URL */}

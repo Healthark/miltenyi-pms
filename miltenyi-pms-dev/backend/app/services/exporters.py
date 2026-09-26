@@ -34,6 +34,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.core.cycle_utils import extract_fy_year as _extract_fy_year
 from app.core.cycle_utils import fy_filter_to_date_ranges
+from app.core.rich_text import markdown_to_plain
 from app.models.annual_review_models import AnnualReview
 from app.models.goal_models import Goal
 from app.models.goal_mentor_review_models import GoalMentorReview
@@ -335,7 +336,9 @@ def build_goals_sheet(
         ws.cell(row=row, column=7, value=fy_year)
         ws.cell(row=row, column=8, value=g.cycle_name or "")
         ws.cell(row=row, column=9, value=g.title or "")
-        ws.cell(row=row, column=10, value=g.description or "")
+        # Descriptions are Markdown source (bold / italic / lists) since
+        # 26 Sep 2026 — strip the markers so the cell reads as prose.
+        ws.cell(row=row, column=10, value=markdown_to_plain(g.description))
         ws.cell(row=row, column=11, value=g.approval_status)
         ws.cell(
             row=row, column=12, value=h1_self.self_overall_review if h1_self else ""
