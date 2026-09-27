@@ -288,3 +288,16 @@ Item 10 of the annual audit. The goal description is written with the shared Ric
 ## Revision — 26 September 2026: daily summary emails (annual parity, part 3c)
 
 Item 22 of the annual audit ("snapshot emails"), built with an **in-process job** (Zaahid's choice over an external cron). `services/daily_digests.py` builds two digests per org — **mentors**: annual goals awaiting approval, H1/H2 goal self-reviews awaiting their review while the half is open, Project Goals sets awaiting "approved (agreed offline)", quarterly self-reviews awaiting the Miltenyi review while the quarter is writable, grouped by mentee and oldest first; **staff**: goals awaiting the mentor's approval (naming the mentor), goals sent back, goals and goal sets approved since their last summary, quarterly reviews to acknowledge. One email per person per day, nothing when nothing is pending; `daily_digest_log` (migration `c8d2e4f6a1b7`) is the idempotency guard. `services/digest_scheduler.py` is an asyncio task started from the FastAPI lifespan that fires at `DIGEST_HOUR:DIGEST_MINUTE` (default 09:00) in the org's timezone on weekdays; `DIGEST_ENABLED=false` switches it off. The Notify tab shows the schedule, SMTP state and last run, with **Send today's summaries now** (`POST /admin/digests/run`, idempotent). `tzdata` added to the requirements so the org timezone resolves on Windows too. Tests in `tests/test_daily_digests.py`.
+
+---
+
+## Revision — 27 September 2026: two seeds, two schemas (testing and UAT)
+
+`backend/seed.py` (the pre-pivot dev seed with the retired HR_MyOrg / PM roles) and its captured output `seed.txt` are gone. Two runnable seeds remain, both built on the shared `seed_data/common.py` (organisation, 8 GCC functions and designations, 32 role-expectation rows, the CY 26-27 goal-theme framework, System Settings, the FY26-27 switches, the goal year with Q1–Q3 rolled out and Q3 current):
+
+| Seed | Schema on the shared Supabase project | Accounts |
+|---|---|---|
+| `miltenyi-test-seed.py` | `miltenyi` (testing) | Aanya (Admin), 3 mentors, 9 staff — unchanged |
+| `miltenyi-uat-seed.py` | `miltenyi_uat` (UAT) | Gautham (Admin), Shreshta (Mentor); password `password123`, no forced change; no function or designation; no staff, goals or reviews — the Admin adds staff from the Users tab with Shreshta as mentor |
+
+Zaahid's rulings: Shreshta = Mentor, Gautham = Admin; known password without a forced change; load everything; same cycle state as testing (Q3 current); a new schema rather than replacing the testing data; clean slate. The UAT backend points at the same connection string with `search_path=miltenyi_uat`; `public` (Healthark PMS) and `miltenyi` are untouched.
