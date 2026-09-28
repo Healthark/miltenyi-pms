@@ -321,3 +321,8 @@ Zaahid's UAT finding: an email without a password answered "Connection to server
 ## Revision — 28 September 2026: temporary password on Add User
 
 Parity with the Healthark PMS form: **Temporary Password** opens pre-filled with a random 12-character password and has a **Generate** button; the field may be left blank, in which case the backend generates one (`UserCreate.password` optional, blank = absent). The account is still created with a forced change at first sign-in and the welcome email carries the password when SMTP is configured. `tests/test_create_user_password.py`. No migration.
+---
+
+## Revision — 28 September 2026: Team Goals no longer hides approved goals
+
+UAT finding (Zaahid): after approving a goal the mentor saw no way to review it. Cause: the Team Goals tab defaulted its Status filter to "Pending Approval", so the approved goal left the list, and the "Approved" option did not match a goal already in H1/H2 review. Now the tab opens on **All**, the buckets are All / Pending approval / **Awaiting my review** / Approved (any stage) / Changes requested, and the empty state says to pick All when a filter hides everything. Deep links with `?status=` keep working. Frontend only.

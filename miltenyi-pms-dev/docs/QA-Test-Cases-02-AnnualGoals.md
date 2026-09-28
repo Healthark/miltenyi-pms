@@ -313,8 +313,9 @@ Key results / criteria under a goal were dropped for the Miltenyi instance (conf
 2. Default tab is **Team Goals**.
 
 **Expected:**
-- A table or grid of mentees' goals is shown.
+- A table or grid of mentees' goals is shown, **every** goal by default (Status = All). Until 28 Sep 2026 the tab opened on "Pending Approval", which hid a goal the moment it was approved.
 - Each row includes: mentee name, goal title, year, status.
+- The Status dropdown has five buckets: All, Pending approval, **Awaiting my review** (a submitted self-review without your submitted review for that half), Approved (any stage, including goals already in H1/H2 review), Changes requested. The dashboard's "awaiting your approval" link still opens the tab on Pending approval.
 
 **UI checks:**
 - Mentee name is in the same column position as **Goal** in the Staff view — alignment is consistent across roles.

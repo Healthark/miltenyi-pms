@@ -15,7 +15,6 @@ import {
 import {
   goalService,
   type TeamGoal,
-  type ApprovalStatus,
   type SelfReviewCycleHalf,
   type GoalMentorReviewPayload,
 } from "@/services/goal.service";
@@ -33,7 +32,6 @@ import { ClearFiltersButton } from "@/components/common/ClearFiltersButton";
 import { compareValues, type SortKind, type SortState, type SortValue } from "@/utils/sort";
 import { formatFyYearSpan } from "@/utils/fy";
 import { halfDisplayLabel, isPostApproved } from "@/utils/goalStatus";
-import { useSystemSettings } from "@/hooks/useSystemSettings";
 import { RichText } from "@/components/common/RichText";
 
 // ---------------------------------------------------------------------------
@@ -128,37 +126,43 @@ function FeedbackModal({
 // Filter config
 // ---------------------------------------------------------------------------
 
-type StatusFilter = "all" | ApprovalStatus;
+/**
+ * Status buckets for the Team Goals tab (28 Sep 2026). The old list had
+ * one entry per lifecycle state and defaulted to "Pending Approval", so a
+ * goal vanished from the mentor's view the moment they approved it — and
+ * "Approved" did not match a goal that had moved on to H1/H2 review. The
+ * buckets now follow what the mentor has to do.
+ */
+type StatusFilter = "all" | "pending_approval" | "awaiting_review" | "approved" | "changes_requested";
 
-function buildStatusFilters(
-  cycleType: string | null,
-): { value: StatusFilter; label: string }[] {
-  const base: { value: StatusFilter; label: string }[] = [
-    { value: "all", label: "All" },
-    { value: "pending_approval", label: "Pending Approval" },
-    { value: "changes_requested", label: "Changes Requested" },
-    { value: "approved", label: "Approved" },
-  ];
-  if (cycleType === "quarterly") {
-    return [
-      ...base,
-      { value: "q1_self_reviewed",   label: "Q1 Self-Reviewed" },
-      { value: "q1_mentor_reviewed", label: "Q1 Mentor-Reviewed" },
-      { value: "q2_self_reviewed",   label: "Q2 Self-Reviewed" },
-      { value: "q2_mentor_reviewed", label: "Q2 Mentor-Reviewed" },
-      { value: "q3_self_reviewed",   label: "Q3 Self-Reviewed" },
-      { value: "q3_mentor_reviewed", label: "Q3 Mentor-Reviewed" },
-      { value: "q4_self_reviewed",   label: "Q4 Self-Reviewed" },
-      { value: "q4_mentor_reviewed", label: "Q4 Mentor-Reviewed" },
-    ];
+const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "pending_approval", label: "Pending approval" },
+  { value: "awaiting_review", label: "Awaiting my review" },
+  { value: "approved", label: "Approved (any stage)" },
+  { value: "changes_requested", label: "Changes requested" },
+];
+
+/** A submitted self-review the mentor has not answered with a submitted review. */
+function awaitsMentorReview(g: TeamGoal): boolean {
+  return g.self_reviews.some(
+    (sr) =>
+      !sr.is_draft &&
+      !g.mentor_reviews.some((mr) => mr.cycle_half === sr.cycle_half && !mr.is_draft),
+  );
+}
+
+function matchesStatus(g: TeamGoal, f: StatusFilter): boolean {
+  switch (f) {
+    case "all":
+      return true;
+    case "approved":
+      return isPostApproved(g.approval_status);
+    case "awaiting_review":
+      return isPostApproved(g.approval_status) && awaitsMentorReview(g);
+    default:
+      return g.approval_status === f;
   }
-  return [
-    ...base,
-    { value: "h1_self_reviewed",   label: "H1 Self-Reviewed" },
-    { value: "h1_mentor_reviewed", label: "H1 Mentor-Reviewed" },
-    { value: "h2_self_reviewed",   label: "H2 Self-Reviewed" },
-    { value: "h2_mentor_reviewed", label: "H2 Mentor-Reviewed" },
-  ];
 }
 
 // ---------------------------------------------------------------------------
@@ -254,8 +258,6 @@ export function TeamGoalsTab() {
   const toast = useToast();
   const snackbar = useSnackbar();
   const confirm = useConfirm();
-  const { settings } = useSystemSettings();
-  const cycleType = settings?.cycle_type ?? null;
 
   const queryClient = useQueryClient();
 
@@ -271,12 +273,11 @@ export function TeamGoalsTab() {
   const goals: TeamGoal[] = teamGoalsQuery.data ?? [];
   const isLoading = teamGoalsQuery.isPending;
 
-  // Filters. Status default is `pending_approval` — Mentor's primary
-  // job here is approving submitted goals (reinforced by the Bulk
-  // Approve badge counting pending across loaded goals). Defaulting
-  // to "all" forced the Mentor to narrow every session before they
-  // could act.
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("pending_approval");
+  // Filters. Status defaults to "all" (28 Sep 2026): the mentor's work
+  // continues after approval (H1/H2 reviews), so hiding approved goals by
+  // default sent them looking for goals that were right there. The Bulk
+  // Approve badge still counts pending goals across everything loaded.
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [yearFilter, setYearFilter] = useState("all");
   const [functionFilter, setFunctionFilter] = useState("all");
   const [designationFilter, setDesignationFilter] = useState("all");
@@ -294,25 +295,21 @@ export function TeamGoalsTab() {
   useEffect(() => {
     if (teamGoalsDefaultedRef.current) return;
     const urlStatus = searchParams.get("status");
-    if (urlStatus) {
+    if (urlStatus && STATUS_FILTERS.some((f) => f.value === urlStatus)) {
       setStatusFilter(urlStatus as StatusFilter);
     }
     teamGoalsDefaultedRef.current = true;
   }, [searchParams]);
 
-  // `pending_approval` is the page's default state (not a "filter
-  // applied" choice), so Clear Filters shouldn't flag it as active.
-  // Same default-aware approach used by PrimaryEvaluationTab (PM
-  // status=pending) and UsersTab (status=active).
   const hasActiveFilters =
-    statusFilter !== "pending_approval" ||
+    statusFilter !== "all" ||
     yearFilter !== "all" ||
     functionFilter !== "all" ||
     designationFilter !== "all" ||
     menteeFilter !== "";
 
   const clearFilters = () => {
-    setStatusFilter("pending_approval");
+    setStatusFilter("all");
     setYearFilter("all");
     setFunctionFilter("all");
     setDesignationFilter("all");
@@ -632,7 +629,7 @@ export function TeamGoalsTab() {
   ).length;
 
   const filtered = goals
-    .filter((g) => statusFilter === "all" || g.approval_status === statusFilter)
+    .filter((g) => matchesStatus(g, statusFilter))
     .filter((g) => yearFilter === "all" || g.fy_year === Number(yearFilter))
     .filter(
       (g) =>
@@ -781,7 +778,7 @@ export function TeamGoalsTab() {
             onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
             className="rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand cursor-pointer min-w-[160px]"
           >
-            {buildStatusFilters(cycleType).map((f) => (
+            {STATUS_FILTERS.map((f) => (
               <option key={f.value} value={f.value}>
                 {f.label}
               </option>
@@ -827,10 +824,14 @@ export function TeamGoalsTab() {
         <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border py-12 text-center bg-background/50">
           <Users className="h-8 w-8 text-text-muted mb-2" aria-hidden="true" />
           <p className="font-display text-sm font-medium text-text-main">
-            No goals match this filter
+            {goals.length === 0 ? "None of your mentees has an annual goal yet" : "No goals match this filter"}
           </p>
           <p className="mt-1 text-xs text-text-muted">
-            Try adjusting your filter options.
+            {goals.length === 0
+              ? "Goals appear here once a mentee creates one."
+              : statusFilter !== "all"
+                ? "Pick \"All\" under Status to see every goal, including approved ones waiting for your H1/H2 review."
+                : "Try adjusting your filter options."}
           </p>
         </div>
       ) : (
