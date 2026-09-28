@@ -166,7 +166,7 @@ function quarterHints(set: GoalSet | null, forStaff: boolean): Record<string, st
   const out: Record<string, string> = {};
   if (!set) return out;
   for (const r of set.reviews) {
-    if (!r.review_is_draft) out[r.cycle_label] = r.acknowledged_at ? "Reviewed · acknowledged" : "Reviewed";
+    if (!r.review_is_draft) out[r.cycle_label] = "Reviewed";
     else if (!r.self_is_draft) out[r.cycle_label] = forStaff ? "Self-review in · awaiting comments" : "Self-review in";
     else if (r.self_status === "draft" || r.review_status === "draft") out[r.cycle_label] = "In progress";
   }
@@ -249,11 +249,6 @@ function EmployeeGoals() {
     onSuccess: () => { setError(""); invalidate(); toast.success(`${quarterShown} self-review submitted`); },
     onError: onErr,
   });
-  const acknowledge = useMutation({
-    mutationFn: () => projectGoalsService.acknowledge(cycle ?? ""),
-    onSuccess: () => { invalidate(); toast.success("Review acknowledged"); },
-    onError: onErr,
-  });
 
   const busy = create.isPending || saveGoals.isPending || submitGoals.isPending || saveSelf.isPending || submitSelf.isPending;
   const editGoal = !!set && set.status === "draft" && !!period?.entry_open;
@@ -312,7 +307,7 @@ function EmployeeGoals() {
     const rev = set.miltenyi_reviewer_name ?? "your Miltenyi reviewer";
     const mentor = set.mentor_name ?? "your mentor";
     if (!cycle) return <Notice tone="amber" icon={CalendarClock}>Quarterly reviews have not started yet. The Admin opens Q1 when the first quarter's reviews are due.</Notice>;
-    if (reviewPublished) return null;   // the quarter progress row and the acknowledge block already carry the review date (26 Sep 2026)
+    if (reviewPublished) return null;   // the quarter progress row already carries the review date (26 Sep 2026)
     if (review && !review.self_is_draft) return <Notice tone="teal" icon={CheckCircle2}><b>{quarterShown} self-review submitted on {fmtDate(review.self_submitted_at)}.</b> {rev}'s comments will fill the last column once {mentor} has entered them.</Notice>;
     if (quarterWritable) return <Notice tone="info" icon={PenLine}><b>{quarterShown} self-review is open.</b> Write what you delivered against each goal this quarter and give one overall rating. {!period.is_active ? `${period.period_label} has ended; the Admin keeps it open so you can finish this quarter.` : cycle !== period.current_quarter_label ? "This is an earlier quarter of the year; it stays open for backfill." : ""}</Notice>;
     return <Notice tone="amber" icon={Lock}>{quarterShown} is closed{!period.is_active ? ` — ${period.period_label} is a past year and read-only` : ""}.</Notice>;
@@ -400,18 +395,6 @@ function EmployeeGoals() {
                 {submitSelf.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Submit {quarterShown} Self-Review
               </button>
             </div>
-          </div>
-        )}
-        {reviewPublished && review && (
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
-            <p className="text-xs text-text-muted">
-              {review.acknowledged_at ? `Acknowledged on ${fmtDate(review.acknowledged_at)}.` : "Acknowledging confirms you have read this quarter's review; it does not signal agreement."}
-            </p>
-            {!review.acknowledged_at && (
-              <button type="button" disabled={acknowledge.isPending} onClick={() => acknowledge.mutate()} className={BTN_PRIMARY}>
-                {acknowledge.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Acknowledge {quarterShown} review
-              </button>
-            )}
           </div>
         )}
       </>
@@ -589,7 +572,7 @@ function SetDetail({ setId, viewer }: Readonly<{ setId: number; viewer: Viewer }
   const quarterNotice = (() => {
     if (!approved || !period) return null;
     if (!cycle) return <Notice tone="amber" icon={CalendarClock}>Quarterly reviews have not started yet. The Admin rolls out Q1 in System Settings → Project Goals.</Notice>;
-    if (reviewPublished) return null;   // the quarter progress row already says it: review submitted, acknowledged or not
+    if (reviewPublished) return null;   // the quarter progress row already says it: review submitted
     if (selfDone) return <Notice tone="teal" icon={CheckCircle2}><b>{quarterShown} self-review in</b> ({fmtDate(review?.self_submitted_at)}). Enter {rev}'s comments in the last column and the final rating in the footer.</Notice>;
     if (!quarterWritable) return <Notice tone="amber" icon={Lock}>{quarterShown} is closed. Nothing was submitted for it.</Notice>;
     return <Notice tone="amber" icon={Clock}>{set.owner_name} has not submitted a {quarterShown} self-review. You can draft {rev}'s comments now{viewer === "hr" ? " and submit anyway as Admin" : "; submission waits for the self-review"}.</Notice>;

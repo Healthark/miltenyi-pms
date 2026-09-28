@@ -36,7 +36,7 @@ export function UnlockModal({ target, cycleLabel, ownerName, onClose, onConfirm,
           <p>
             {target === "goals"
               ? "The set goes back to Draft so the staff member can edit the Goal column. The approval record is cleared. This is refused once any quarter's self-review or review has been submitted."
-              : "The review goes back to draft so the mentor can correct it. The staff member's acknowledgement for this quarter is cleared; their self-review is kept."}{" "}
+              : "The review goes back to draft so the mentor can correct it; the staff member's self-review is kept."}{" "}
             The reason is logged and both the staff member and the mentor are notified.
           </p>
           <label className="block">

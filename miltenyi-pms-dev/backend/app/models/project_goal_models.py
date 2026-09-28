@@ -223,7 +223,6 @@ class ProjectGoalReview(Base):
     final_rating_by = Column(String, nullable=False, default=FinalRatingBy.MILTENYI.value)
     review_is_draft = Column(Boolean, nullable=False, default=True)
     review_submitted_at = Column(DateTime(timezone=True), nullable=True)
-    acknowledged_at = Column(DateTime(timezone=True), nullable=True)      # employee read-receipt for this quarter
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -275,7 +274,7 @@ class ProjectGoalChangeLog(Base):
     org_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
     set_id = Column(Integer, ForeignKey("project_goal_sets.id", ondelete="CASCADE"), nullable=False)
     actor_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    action = Column(String, nullable=False)                 # submit | approve | self_submit | review_submit | unlock | acknowledge
+    action = Column(String, nullable=False)                 # submit | approve | self_submit | review_submit | unlock (older rows: acknowledge)
     cycle_label = Column(String, nullable=True)             # the quarter an action concerns; NULL for goal-level actions
     before = Column(Text, nullable=True)                    # JSON
     after = Column(Text, nullable=True)                     # JSON

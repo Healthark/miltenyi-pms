@@ -155,10 +155,9 @@
 **Pre-condition:** Mentor submitted the Q3 review (TC-PG-024); the Q3 **ratings visible** switch is off.
 **Login as:** Staff (Aarav), Q3 selected
 **Expected:**
-- No notice above the table (the "reviewed on … by …, entered by …" line was removed on 26 Sep 2026; the quarter progress row and the acknowledge block carry the date). Quarter progress "Miltenyi review · Submitted"; Q3 pill hint "Reviewed"; the Miltenyi review column header names the reviewer and who entered it.
+- No notice above the table (the "reviewed on … by …, entered by …" line was removed on 26 Sep 2026; the quarter progress row carries the date). Quarter progress "Miltenyi review · Submitted"; Q3 pill hint "Reviewed"; the Miltenyi review column header names the reviewer and who entered it.
 - Each Miltenyi review cell shows the comment with the attribution "Stefan Bauer · Miltenyi"; a Secondary review, if the mentor added one, is shown separately and labelled "Secondary review · Rahul Verma".
 - Footer: self rating visible; "Final rating is hidden until the Admin releases Q3 · CY 26-27's ratings".
-- Button **Acknowledge Q3 · CY 26-27 review** with the text "Acknowledging confirms you have read this quarter's review; it does not signal agreement."
 
 ---
 
@@ -170,11 +169,9 @@
 
 ---
 
-### TC-PG-012 — Acknowledge
+### TC-PG-012 — (removed 28 Sep 2026)
 
-**Login as:** Staff (Aarav), Q3 selected
-**Steps:** Click **Acknowledge Q3 · CY 26-27 review**.
-**Expected:** The button is replaced by "Acknowledged on <date>"; the quarter progress shows "Acknowledged <date>"; the Q3 pill hint reads "Reviewed · acknowledged". Refreshing keeps it. There is no undo; the Admin unlocking that quarter's review clears it (TC-PG-032). Other quarters are not affected.
+The staff read receipt on a quarterly review ("Acknowledge Q3 review") was removed; there is nothing to acknowledge. A published review simply shows as "Reviewed".
 
 ---
 
@@ -232,7 +229,7 @@
 **Expected:**
 - Title "Project Goals · CY 26-27" with the mentor explanation ("You record the offline approval once and enter the Miltenyi reviewer's comments each quarter.").
 - The **Quarter** bar (Q1–Q3 selectable, Q3 current and pre-selected, Q4 locked). Changing the quarter reloads the two review columns; the URL keeps `?cycle=`.
-- Filters: search (name, email, designation, mentor, Miltenyi reviewer), **Function**, **Level**, **Goals** (Not started, Draft, Submitted, Approved, No framework) and **Q3 · CY 26-27** (Self-review pending, Review pending, Reviewed, Acknowledged). The Admin also gets a **Mentor** filter (with "No mentor").
+- Filters: search (name, email, designation, mentor, Miltenyi reviewer), **Function**, **Level**, **Goals** (Not started, Draft, Submitted, Approved, No framework) and **Q3 · CY 26-27** (Self-review pending, Review pending, Reviewed). The Admin also gets a **Mentor** filter (with "No mentor").
 - Under the filters one summary line: "Showing 3 of 3 staff · 1 awaiting approval · 2 Q3 · CY 26-27 reviews to enter". There are no count chips.
 - Columns: Staff member · Function · level · (Admin only: Mentor) · Miltenyi reviewer · Goals · year · **Q3 · CY 26-27 self-review** · **Q3 · CY 26-27 review** · Actions. No Trials column.
 - Actions: **Mark approved** (goals Submitted), **Enter Q3 review** (goals Approved and the quarter's self-review Submitted; Admins also without it), **Open** (everything else with a set), "Not started" text for no set, and "No framework for this level" in red when the function × level row is missing.
@@ -288,7 +285,7 @@
 2. Fill every Miltenyi comment, set the final rating, click **Submit Q3 · CY 26-27 Review**, confirm ("This publishes Stefan Bauer's Q3 · CY 26-27 comments and the final rating to Aarav Patel. The review is final once submitted; only the Admin can unlock it.").
 
 **Expected:**
-- Toast "Q3 · CY 26-27 review submitted"; the quarter progress row shows **Miltenyi review · Submitted** (and, later, the acknowledgement date). No further note is shown.
+- Toast "Q3 · CY 26-27 review submitted"; the quarter progress row shows **Miltenyi review · Submitted**. No further note is shown.
 - The table is read-only; there is **no Edit button**. **Submit** stays disabled while any Miltenyi comment or the final rating is missing (hover text names the rule). Secondary reviews are optional.
 - Staff member receives a bell notification and an email.
 
@@ -334,13 +331,13 @@ The change log tab was dropped from the set page. Actions are still recorded in 
 
 ### TC-PG-032 — Unlock a quarter's review / unlock goals
 
-**Login as:** Admin (Aanya), Q3 reviewed and acknowledged
+**Login as:** Admin (Aanya), Q3 reviewed
 **Steps:**
-1. With Q3 selected, click **Unlock Q3 · CY 26-27 review**; read the dialog ("The review goes back to draft so the mentor can correct it. The staff member's acknowledgement for this quarter is cleared; their self-review is kept…"). **Reason** is mandatory.
+1. With Q3 selected, click **Unlock Q3 · CY 26-27 review**; read the dialog ("The review goes back to draft so the mentor can correct it. the staff member's self-review is kept…"). **Reason** is mandatory.
 2. Confirm.
 
 **Expected:**
-- Q3's review is a draft again, the Q3 acknowledgement is gone, the self-review and every other quarter are untouched.
+- Q3's review is a draft again; the self-review and every other quarter are untouched.
 - Staff member **and** mentor receive a bell + email quoting the reason. The mentor can now edit the Q3 review again and resubmit it.
 - **Unlock goals** (shown while the set is Submitted or Approved) returns the set to Draft and clears the approval record — but is **refused once any quarter's self-review or review has been submitted** ("Reviews have already been submitted against these goals (Q3 · CY 26-27…). Unlock the quarter's review instead.").
 - Mentors do not see either Unlock button.
@@ -504,7 +501,7 @@ Bell = in-app notification (Topbar). Email is sent in addition when SMTP is conf
 | Admin unlocks goals or a quarter's review | Staff **and** Mentor | "The Admin unlocked the <CY 26-27 goals / Q3 · CY 26-27 review> on <Staff>'s project goals: <reason>" | "Project goals unlocked: …" |
 | Admin rolls a quarter out / sets / rolls back | Every active user (except the Admin who did it) | "Project Goals moved to Q4 · CY 26-27. Self-reviews and Miltenyi reviews for Q4 · CY 26-27 are open; earlier quarters of CY 26-27 stay open for backfill." (year change: "…CY 27-28 is the new goal year…"; roll back: "…Quarters after it are closed again.") | bell only |
 
-Self-notifications are suppressed (an Admin acting as the mentor of record is not pinged about their own action). Nothing is emailed for drafts or acknowledgements.
+Self-notifications are suppressed (an Admin acting as the mentor of record is not pinged about their own action). Nothing is emailed for drafts.
 
 ---
 
@@ -515,7 +512,7 @@ Self-notifications are suppressed (an Admin acting as the mentor of record is no
 **Login as:** Staff (Aarav)
 **Expected:**
 - Row 1 **Cycles**: Goal year "CY 26-27" · Current quarter "Q3 · CY 26-27" · Annual goals & reviews "H1 · CY 26-27" (the same values as the Topbar) and **My Mentor**.
-- Row 2 **Project Goals**: left, "Goals · CY 26-27" with the status badge and one next step — "Start your CY 26-27 goals" → "Continue your goals" → "Submitted on <date>. Read-only while Rahul Verma records the approval agreed with Stefan Bauer." → "Approved (agreed offline) on <date>…"; right, "This quarter · Q3 · CY 26-27" with the Self-review and Review badges and one next step — "Quarterly reviews start once your goals are approved." → "Write your Q3 · CY 26-27 self-review" → "Self-review submitted on <date>. Stefan Bauer's comments appear here once Rahul Verma has entered them." → "Stefan Bauer's Q3 · CY 26-27 comments are in, entered by Rahul Verma on <date>." with **Read and acknowledge** → "Q3 · CY 26-27 reviewed and acknowledged on <date>." A lock line shows while the final rating is hidden. Every link opens the Project Goals page with the quarter pre-selected.
+- Row 2 **Project Goals**: left, "Goals · CY 26-27" with the status badge and one next step — "Start your CY 26-27 goals" → "Continue your goals" → "Submitted on <date>. Read-only while Rahul Verma records the approval agreed with Stefan Bauer." → "Approved (agreed offline) on <date>…"; right, "This quarter · Q3 · CY 26-27" with the Self-review and Review badges and one next step — "Quarterly reviews start once your goals are approved." → "Write your Q3 · CY 26-27 self-review" → "Self-review submitted on <date>. Stefan Bauer's comments appear here once Rahul Verma has entered them." → "Stefan Bauer's Q3 · CY 26-27 comments are in, entered by Rahul Verma on <date>." (that stays the last step) A lock line shows while the final rating is hidden. Every link opens the Project Goals page with the quarter pre-selected.
 - Row 3 **My Reviews** and **Annual Goals** as before.
 - No framework row for the level: the card shows the reason in amber. Goal entry closed: "Goal entry for CY 26-27 is closed…".
 
@@ -525,7 +522,7 @@ Self-notifications are suppressed (an Admin acting as the mentor of record is no
 
 **Login as:** Mentor (Rahul)
 **Expected:**
-- Row 1 **Cycles** (there is no "Active Project Cycle" tile any more) and **Team Project Goals**: legend Not started · Draft · Awaiting your approval · Approved with the donut "approved of N"; a "Q3 · CY 26-27" strip — Waiting for self-review · Reviews to enter (amber when above zero) · Reviewed · Acknowledged; the line "1 awaiting your approval · 1 Q3 review to enter" or "Nothing is waiting on you for Q3 · CY 26-27."; a red line when a mentee has no framework row. The numbers equal the Team Goals queue summary for the current quarter.
+- Row 1 **Cycles** (there is no "Active Project Cycle" tile any more) and **Team Project Goals**: legend Not started · Draft · Awaiting your approval · Approved with the donut "approved of N"; a "Q3 · CY 26-27" strip — Waiting for self-review · Reviews to enter (amber when above zero) · Reviewed; the line "1 awaiting your approval · 1 Q3 review to enter" or "Nothing is waiting on you for Q3 · CY 26-27."; a red line when a mentee has no framework row. The numbers equal the Team Goals queue summary for the current quarter.
 - Row 2 **Mentee Goal Approvals** and **Mentee Annual Reviews**; row 3 **My Mentees** ("3 staff members you mentor.").
 - A Mentor with no mentees still lands on this dashboard (empty states), never on the staff one.
 - On My Mentees, the mentee detail's "N pending" count includes a set to mark approved and a current-quarter review to enter.

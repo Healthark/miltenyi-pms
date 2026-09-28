@@ -101,14 +101,11 @@ function quarterCopy(data: MyProjectGoals, review: GoalReview | null): Copy {
       href,
     };
   }
-  if (!review!.acknowledged_at) {
-    return {
-      text: `${review!.miltenyi_reviewer_name ?? reviewer}'s ${q} comments are in, entered by ${review!.entered_by_name ?? mentor} on ${fmtDate(review!.review_submitted_at)}.`,
-      cta: `Read and acknowledge ${q}`,
-      href,
-    };
-  }
-  return { text: `${q} reviewed and acknowledged on ${fmtDate(review!.acknowledged_at)}.`, cta: `View ${q}`, href };
+  return {
+    text: `${review!.miltenyi_reviewer_name ?? reviewer}'s ${q} comments are in, entered by ${review!.entered_by_name ?? mentor} on ${fmtDate(review!.review_submitted_at)}.`,
+    cta: `View ${q}`,
+    href,
+  };
 }
 
 export function ProjectGoalsWidget({ data }: ProjectGoalsWidgetProps) {

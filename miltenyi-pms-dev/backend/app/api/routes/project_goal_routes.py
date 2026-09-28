@@ -12,7 +12,6 @@ QUARTER against those same goals.
         POST /project-goals/me/submit              draft → submitted (records the offline agreement)
         PUT  /project-goals/me/self-review         save self texts + self rating for one quarter (draft)
         POST /project-goals/me/self-review/submit  submit one quarter's self-review
-        POST /project-goals/me/acknowledge         read receipt on one quarter's final review
 
     Mentor (own mentees) · Admin (all)
         GET  /project-goals/team?period=&cycle=    queue rows for one year / quarter (default: active year, current quarter)
@@ -235,7 +234,6 @@ def _review_out(review: ProjectGoalReview, is_owner: bool, period: Optional[Proj
         final_rating_by=review.final_rating_by,
         review_is_draft=review.review_is_draft,
         review_submitted_at=review.review_submitted_at,
-        acknowledged_at=review.acknowledged_at,
         items=[
             ReviewItemOut(
                 item_id=ri.item_id,
@@ -301,7 +299,6 @@ def _snapshot(s: ProjectGoalSet, review: Optional[ProjectGoalReview] = None) -> 
             "review_is_draft": review.review_is_draft,
             "miltenyi_reviewer_name": review.miltenyi_reviewer_name,
             "source_received_on": str(review.source_received_on) if review.source_received_on else None,
-            "acknowledged_at": str(review.acknowledged_at) if review.acknowledged_at else None,
             "items": [
                 {"item_id": ri.item_id, "self_text": ri.self_text, "primary_comment": ri.primary_comment, "healthark_note": ri.healthark_note}
                 for ri in review.items
@@ -626,24 +623,6 @@ def submit_my_self_review(payload: CycleRef, db: DbSession, current_user: Curren
     return _set_out(db, _get_set(db, s.id, current_user.org_id), current_user, period)
 
 
-@router.post("/me/acknowledge", response_model=GoalSetOut)
-def acknowledge_my_review(payload: CycleRef, db: DbSession, current_user: CurrentUser):
-    _require_employee(current_user)
-    period = _period_of_label(db, current_user.org_id, payload.cycle_label)
-    s = _own_set(db, current_user, period.period_label)
-    if s is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No goal set for this period.")
-    s = _get_set(db, s.id, current_user.org_id)
-    review = _review_for(s, payload.cycle_label)
-    if review is None or review.review_is_draft:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="There is no submitted review to acknowledge for that quarter yet.")
-    if review.acknowledged_at is None:
-        review.acknowledged_at = _now()
-        _log(db, s, current_user, "acknowledge", cycle_label=review.cycle_label)
-        db.commit()
-    return _set_out(db, _get_set(db, s.id, current_user.org_id), current_user, period)
-
-
 # ── Mentor / Admin ───────────────────────────────────────────────────
 
 @router.get("/team", response_model=list[TeamRowOut])
@@ -718,7 +697,6 @@ def team_goal_sets(
             final_rating=review.final_rating if (review and not review.review_is_draft) else None,
             self_submitted_at=review.self_submitted_at if review else None,
             review_submitted_at=review.review_submitted_at if review else None,
-            acknowledged_at=review.acknowledged_at if review else None,
             mentor_id=u.mentor_id, mentor_name=u.mentor.full_name if u.mentor else None,
             miltenyi_reviewer_name=u.miltenyi_reviewer_name,
         ))
@@ -900,7 +878,6 @@ def unlock_goal_set(set_id: int, payload: UnlockRequest, db: DbSession, current_
         before = _snapshot(s, review)
         review.review_is_draft = True
         review.review_submitted_at = None
-        review.acknowledged_at = None
         _log(db, s, current_user, "unlock", before, _snapshot(s, review), reason=payload.reason, cycle_label=review.cycle_label)
         what = f"{quarter_display(review.cycle_label)} review"
         cycle_label = review.cycle_label

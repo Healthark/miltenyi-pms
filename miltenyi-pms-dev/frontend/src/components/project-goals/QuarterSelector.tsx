@@ -7,7 +7,7 @@ import {
   type PeriodSettings,
   type StepStatus,
 } from "@/services/project-goals.service";
-import { StepBadge, TH_CLS, fmtDate } from "@/components/project-goals/ui";
+import { StepBadge, TH_CLS } from "@/components/project-goals/ui";
 
 interface QuarterSelectorProps {
   readonly period: PeriodSettings;
@@ -89,12 +89,6 @@ export function QuarterProgress({ review, quarterOpen }: Readonly<{ review: Goal
       <span className="inline-flex items-center gap-1.5">
         Miltenyi review <StepBadge status={reviewStatus} />
       </span>
-      {review?.acknowledged_at && (
-        <>
-          <span className="h-px w-4 bg-border" aria-hidden="true" />
-          <span className="inline-flex items-center gap-1 text-emerald-700">Acknowledged {fmtDate(review.acknowledged_at)}</span>
-        </>
-      )}
       {!quarterOpen && (
         <>
           <span className="h-px w-4 bg-border" aria-hidden="true" />

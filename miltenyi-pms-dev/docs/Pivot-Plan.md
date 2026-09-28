@@ -303,3 +303,9 @@ Item 22 of the annual audit ("snapshot emails"), built with an **in-process job*
 Zaahid's rulings: Shreshta = Mentor, Gautham = Admin; known password without a forced change; load everything; same cycle state as testing (Q3 current); a new schema rather than replacing the testing data; clean slate. The UAT backend points at the same connection string with `search_path=miltenyi_uat`; `public` (Healthark PMS) and `miltenyi` are untouched.
 
 **28 Sep 2026 — `DB_SCHEMA`:** the backend reads an optional `DB_SCHEMA` setting (`app/core/config.py`, `database_url_for`) and adds the pooler-safe `options=-c%20search_path%3D<schema>` to `DATABASE_URL` for the app and for Alembic. One connection string for every environment; `DB_SCHEMA=miltenyi` (testing) or `DB_SCHEMA=miltenyi_uat` (UAT) picks the schema and wins over any search_path already in the URL.
+
+---
+
+## Revision — 28 September 2026: review acknowledgement removed
+
+Zaahid: the staff read receipt on a quarterly Project Goals review ("Acknowledge Q3 · CY 26-27 review") has no use. Removed end to end: the endpoint, the button and notice on the staff page, the "Acknowledged" chip in the quarter progress, the Team Goals queue filter and column note, the dashboard bucket, the "to acknowledge" line in the daily staff summary, and the `acknowledged_at` column (migration `d3e5f7a9b2c4`). Unlocking a review no longer has anything to clear. Change-log rows with the old "acknowledge" action stay as history.

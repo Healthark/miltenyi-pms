@@ -356,11 +356,11 @@ There are 8 export surfaces. Test each one.
 
 ### TC-DIGEST-002 — What the mails contain (server with email configured)
 
-**Pre-condition:** Aarav has an annual goal awaiting approval and a submitted Project Goals set awaiting approval; Arjun has a submitted H1 self-review the mentor has not reviewed, a Q3 self-review without a Miltenyi review, and a published Q2 review he has not acknowledged.
+**Pre-condition:** Aarav has an annual goal awaiting approval and a submitted Project Goals set awaiting approval; Arjun has a submitted H1 self-review the mentor has not reviewed, a Q3 self-review without a Miltenyi review.
 **Login as:** Admin
 **Steps:** Click **Send today's summaries now**, confirm. Then click it again.
 **Expected:**
-- Toast "Summaries sent: 1 to mentors, 2 to staff." Rahul's mail: heading "N items need your attention", one **Summary** row per mentee listing each item with the days waited, oldest first, "Open your dashboard" button. Aarav's mail: "2 items awaiting approval" naming Rahul. Arjun's mail: "1 review to acknowledge" and his approvals since the last summary. Formatting is the branded template; no bell row is written.
+- Toast "Summaries sent: 1 to mentors, 2 to staff." Rahul's mail: heading "N items need your attention", one **Summary** row per mentee listing each item with the days waited, oldest first, "Open your dashboard" button. Aarav's mail: "2 items awaiting approval" naming Rahul. Arjun's mail: "2 items approved" listing his approvals since the last summary. Formatting is the branded template; no bell row is written.
 - The second click: toast "…3 already had today's summary." and no new mail. "Sent today" reads 3 and "Last run" is now.
 - Nobody with nothing pending gets a mail. A closed half or a quarter that is not writable is not listed for the mentor.
 

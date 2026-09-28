@@ -478,7 +478,7 @@ function DigestCard() {
           <div>
             <h3 className="font-display text-base font-semibold text-text-main">Daily summary emails</h3>
             <p className="mt-0.5 max-w-2xl text-xs text-text-muted">
-              One email per person per weekday morning, only when something is pending. Mentors get the approvals and reviews they owe (annual goals, H1/H2 goal reviews, Project Goals sets and quarterly reviews), grouped by mentee. Staff get what is waiting on their mentor, goals sent back, goals approved since their last summary and quarterly reviews to acknowledge. The bell is unchanged.
+              One email per person per weekday morning, only when something is pending. Mentors get the approvals and reviews they owe (annual goals, H1/H2 goal reviews, Project Goals sets and quarterly reviews), grouped by mentee. Staff get what is waiting on their mentor, goals sent back, and goals approved since their last summary. The bell is unchanged.
             </p>
           </div>
         </div>

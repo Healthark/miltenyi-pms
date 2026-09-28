@@ -6,7 +6,6 @@ Seeds one org in H2 FY26-27 / Q3 CY 26-27 with a mentor and two staff:
     Arjun — annual goal approved today with a submitted H1 self-review that the
             mentor has not answered; Project Goals set approved today; Q3
             self-review submitted (review still a draft); Q2 review published
-            and not yet acknowledged
 and checks what each digest lists, that a run sends one mail per person and a
 second run on the same day sends nothing, and that no slot is claimed while
 SMTP is unconfigured.
@@ -88,7 +87,7 @@ def _seed(db: Session) -> dict:
                              self_is_draft=False, self_submitted_at=NOW - timedelta(days=1), review_is_draft=True))
     db.add(ProjectGoalReview(org_id=org.id, set_id=s_approved.id, cycle_label=quarter_label(PERIOD, 2),
                              self_is_draft=False, self_submitted_at=NOW - timedelta(days=20),
-                             review_is_draft=False, review_submitted_at=NOW - timedelta(days=3), acknowledged_at=None))
+                             review_is_draft=False, review_submitted_at=NOW - timedelta(days=3)))
     db.commit()
     return {"org": org, "mentor": mentor, "aarav": aarav, "arjun": arjun}
 
@@ -115,11 +114,11 @@ def test_staff_digests_split_waiting_from_moved(db_session: Session) -> None:
     assert set(digests) == {s["aarav"].id, s["arjun"].id}
     a = digests[s["aarav"].id]
     assert [i["label"] for i in a["awaiting_approval"]] == ["Annual goal “Dossier on time”", "Project Goals CY 26-27"]
-    assert a["mentor_name"] == "Rahul Mentor" and not a["approved"] and not a["to_acknowledge"]
+    assert a["mentor_name"] == "Rahul Mentor" and not a["approved"]
     b = digests[s["arjun"].id]
     assert not b["awaiting_approval"]
     assert [i["label"] for i in b["approved"]] == ["Annual goal “Zero major findings”", "Project Goals CY 26-27"]
-    assert [i["label"] for i in b["to_acknowledge"]] == ["Q2 · CY 26-27 review"]
+    assert "to_acknowledge" not in b  # the read receipt was removed on 28 Sep 2026
 
 
 def test_run_sends_once_per_person_per_day(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -137,8 +136,8 @@ def test_run_sends_once_per_person_per_day(db_session: Session, monkeypatch: pyt
     assert mentor_mail["subject"] == "4 items need your attention" and mentor_mail["title"] == mentor_mail["subject"]
     assert "from 2 mentees" in mentor_mail["lead"] and len(mentor_mail["details"]) == 2
     arjun_mail = next(m for m in sent if m["to_email"] == s["arjun"].email)
-    assert arjun_mail["subject"] == "1 review to acknowledge"
-    assert ("Q2 · CY 26-27 review", "Reviewed · acknowledge it · 3d") in arjun_mail["details"]
+    assert arjun_mail["subject"] == "2 items approved"
+    assert ("Project Goals CY 26-27", "Approved") in arjun_mail["details"]
     assert arjun_mail["cta_url"].endswith("/dashboard")
 
     again = run_daily_digests(db_session, today=TODAY, enqueue=capture)
