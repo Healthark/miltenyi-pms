@@ -118,7 +118,7 @@ Emails only leave the server when SMTP is configured for that environment. Witho
 
 | Tab | What the Admin does there | Rules to know |
 | --- | --- | --- |
-| Users | Add, edit, deactivate, reactivate; set role, function, designation, mentor and the Miltenyi reviewer's name | Employee codes are assigned automatically. Deactivation blocks login at once and locks in-flight reviews; the person's mentees show as a coverage gap on the dashboard until re-paired. Reactivation keeps the old password |
+| Users | Add, edit, deactivate, reactivate; set role, function, designation, mentor and the Miltenyi reviewer's name | Employee codes are assigned automatically. The Add User form pre-fills a random temporary password (Generate rolls a new one; blank lets the server pick); it is emailed to the person, who must change it at first sign-in. Deactivation blocks login at once and locks in-flight reviews; the person's mentees show as a coverage gap on the dashboard until re-paired. Reactivation keeps the old password |
 | Framework Mapping | Function, designation (level), mentor and Miltenyi reviewer per person | Function and designation are locked while the person has a goal sheet in the active goal year (409); change them between years |
 | Framework | The goal themes per function × level: title, two paragraphs, KPIs with weightages totalling 100; add functions, designations and levels | Staged Save. A function without rows (Pharmacovigilance today) shows its staff "no framework yet" until rows are added |
 | Exports | Excel files: users, goals, annual reviews, everything | Every export is written to an append-only audit log |

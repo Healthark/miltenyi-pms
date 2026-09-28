@@ -315,3 +315,9 @@ Zaahid: the staff read receipt on a quarterly Project Goals review ("Acknowledge
 ## Revision — 28 September 2026: sign-in error messages
 
 Zaahid's UAT finding: an email without a password answered "Connection to server failed". Audit of every sign-in outcome, then: the login and forgot-password forms validate their fields before sending (`utils/authErrors.ts`) and map every answer to a sentence (422, 429, 5xx, no response); the backend answers the rate limit and the two public forms' validation errors with a plain `detail` sentence (`main.py` handlers) so any client shows the right words; the API client no longer treats a 401/403 from the sign-in call as an expired session. `tests/test_login_errors.py` covers each case.
+
+---
+
+## Revision — 28 September 2026: temporary password on Add User
+
+Parity with the Healthark PMS form: **Temporary Password** opens pre-filled with a random 12-character password and has a **Generate** button; the field may be left blank, in which case the backend generates one (`UserCreate.password` optional, blank = absent). The account is still created with a forced change at first sign-in and the welcome email carries the password when SMTP is configured. `tests/test_create_user_password.py`. No migration.

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { RefreshCw } from "lucide-react";
 import { createPortal } from "react-dom";
 import {
   adminService,
@@ -43,6 +44,17 @@ interface UserModalProps {
 
 const INPUT_CLS =
   "w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-brand";
+// Temporary password the form pre-fills (28 Sep 2026). Letters and digits
+// without the look-alikes (0/O, 1/l/I) so the Admin can read it out; the
+// backend generates the same shape when the field is left blank.
+const TEMP_PASSWORD_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+
+function generateTemporaryPassword(length = 12): string {
+  const bytes = new Uint32Array(length);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => TEMP_PASSWORD_ALPHABET[b % TEMP_PASSWORD_ALPHABET.length]).join("");
+}
+
 const LABEL_CLS = "block text-xs font-medium text-text-muted mb-1";
 
 export function UserModal({
@@ -90,7 +102,7 @@ export function UserModal({
           designation_id: "",
           mentor_id: "",
           miltenyi_reviewer_name: "",
-          password: "",
+          password: generateTemporaryPassword(),
         },
   );
 
@@ -205,7 +217,7 @@ export function UserModal({
           : null,
         mentor_id: form.mentor_id ? Number(form.mentor_id) : null,
         miltenyi_reviewer_name: form.miltenyi_reviewer_name.trim() || null,
-        password: form.password,
+        password: form.password.trim() || undefined,
       } satisfies UserCreatePayload);
     }
   };
@@ -444,19 +456,30 @@ export function UserModal({
 
           {!isEditing && (
             <div>
-              <label htmlFor="password" className={LABEL_CLS}>
-                Temporary Password *
-              </label>
+              <div className="mb-1 flex items-center justify-between gap-3">
+                <label htmlFor="password" className={`${LABEL_CLS} mb-0`}>
+                  Temporary Password
+                </label>
+                <button
+                  type="button"
+                  onClick={() => set("password", generateTemporaryPassword())}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1 text-xs font-medium text-text-muted hover:bg-slate-50 hover:text-text-main transition-colors"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+                  Generate
+                </button>
+              </div>
               <input
                 id="password"
-                type="password"
-                className={INPUT_CLS}
+                type="text"
+                autoComplete="new-password"
+                className={`${INPUT_CLS} font-mono`}
                 value={form.password}
                 onChange={(e) => set("password", e.target.value)}
-                placeholder="Min. 8 characters"
+                placeholder="Leave blank to let the server pick one (or type at least 8 characters)"
               />
               <p className="mt-1 text-xs text-text-muted">
-                The user should change this after first login.
+                Emailed to the user with a sign-in link; they must change it at first sign-in. If email is not configured, pass it on yourself.
               </p>
             </div>
           )}
