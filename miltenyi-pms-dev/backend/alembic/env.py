@@ -25,7 +25,7 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # 4. OVERRIDE: Tell Alembic to use our dynamic DATABASE_URL
-safe_url = settings.DATABASE_URL.replace("%", "%%")
+safe_url = settings.effective_database_url.replace("%", "%%")
 config.set_main_option("sqlalchemy.url", safe_url)
 
 # 5. Tell Alembic to look at our SQLAlchemy classes

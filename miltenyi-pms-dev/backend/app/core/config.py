@@ -1,4 +1,23 @@
+from urllib.parse import quote
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def database_url_for(url: str, schema: str | None) -> str:
+    """Point a Postgres URL at `schema` by adding the search_path option.
+
+    The Supabase session pooler drops the compact `-csearch_path=` form, so
+    the space is kept and URL-encoded (`options=-c%20search_path%3D<schema>`).
+    Any `options=` already in the URL is replaced. SQLite URLs and an empty
+    schema are returned unchanged."""
+    if not schema or url.startswith("sqlite"):
+        return url
+    opt = "options=" + quote(f"-c search_path={schema}", safe="")
+    base, _, query = url.partition("?")
+    params = [p for p in query.split("&") if p and not p.startswith("options=")]
+    params.append(opt)
+    return f"{base}?{'&'.join(params)}"
+
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Healthark PMS"
@@ -15,6 +34,15 @@ class Settings(BaseSettings):
 
     # Database
     DATABASE_URL: str
+    # Optional Postgres schema (28 Sep 2026). One Supabase project hosts one
+    # schema per environment — `miltenyi` (testing), `miltenyi_uat` (UAT) —
+    # so the same connection string serves every environment and only this
+    # value changes. When set it wins over any search_path in DATABASE_URL.
+    DB_SCHEMA: str | None = None
+
+    @property
+    def effective_database_url(self) -> str:
+        return database_url_for(self.DATABASE_URL, self.DB_SCHEMA)
 
     # ── Cookie auth ─────────────────────────────────────────────────
     # Whether frontend and backend share an origin in this deployment.

@@ -301,3 +301,5 @@ Item 22 of the annual audit ("snapshot emails"), built with an **in-process job*
 | `miltenyi-uat-seed.py` | `miltenyi_uat` (UAT) | Gautham (Admin), Shreshta (Mentor); password `password123`, no forced change; no function or designation; no staff, goals or reviews — the Admin adds staff from the Users tab with Shreshta as mentor |
 
 Zaahid's rulings: Shreshta = Mentor, Gautham = Admin; known password without a forced change; load everything; same cycle state as testing (Q3 current); a new schema rather than replacing the testing data; clean slate. The UAT backend points at the same connection string with `search_path=miltenyi_uat`; `public` (Healthark PMS) and `miltenyi` are untouched.
+
+**28 Sep 2026 — `DB_SCHEMA`:** the backend reads an optional `DB_SCHEMA` setting (`app/core/config.py`, `database_url_for`) and adds the pooler-safe `options=-c%20search_path%3D<schema>` to `DATABASE_URL` for the app and for Alembic. One connection string for every environment; `DB_SCHEMA=miltenyi` (testing) or `DB_SCHEMA=miltenyi_uat` (UAT) picks the schema and wins over any search_path already in the URL.

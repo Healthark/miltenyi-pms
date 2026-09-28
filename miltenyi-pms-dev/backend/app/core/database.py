@@ -2,15 +2,15 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import declarative_base, sessionmaker, with_loader_criteria
 from app.core.config import settings
 
-# Enterprise trick: Automatically adapt based on the .env URL
-if settings.DATABASE_URL.startswith("sqlite"):
+# Adapts to the .env URL; DB_SCHEMA (if set) picks the Postgres schema.
+if settings.effective_database_url.startswith("sqlite"):
     engine = create_engine(
-        settings.DATABASE_URL,
+        settings.effective_database_url,
         connect_args={"check_same_thread": False}
     )
 else:
     engine = create_engine(
-        settings.DATABASE_URL,
+        settings.effective_database_url,
         pool_size=10, 
         max_overflow=20,
         pool_pre_ping=True
