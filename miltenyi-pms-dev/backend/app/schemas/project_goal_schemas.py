@@ -278,7 +278,6 @@ class ReviewOut(BaseModel):
     final_rating_by: str
     review_is_draft: bool
     review_submitted_at: Optional[datetime] = None
-    acknowledged_at: Optional[datetime] = None
     items: list[ReviewItemOut] = []
 
 
@@ -392,7 +391,6 @@ class TeamRowOut(BaseModel):
     final_rating: Optional[int] = None
     self_submitted_at: Optional[datetime] = None
     review_submitted_at: Optional[datetime] = None
-    acknowledged_at: Optional[datetime] = None
     mentor_id: Optional[int] = None
     mentor_name: Optional[str] = None
     miltenyi_reviewer_name: Optional[str] = None

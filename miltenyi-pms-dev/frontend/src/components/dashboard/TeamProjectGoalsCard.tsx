@@ -7,7 +7,7 @@
  * summary line never disagree:
  *   - the yearly goal sets: not started / draft / awaiting approval / approved
  *   - the current quarter: waiting for the self-review, reviews to enter,
- *     reviewed, acknowledged
+ *     reviewed
  * The insight line names what is waiting on the viewer right now.
  */
 
@@ -66,7 +66,7 @@ export function TeamProjectGoalsCard({ rows, period, viewerIsHr = false }: TeamP
   const funnel = rows ? aggregate(rows) : null;
   const toApprove = rows?.filter((r) => nextAction(r, cycleLabel, viewerIsHr) === "approve").length ?? 0;
   const toReview = rows?.filter((r) => nextAction(r, cycleLabel, viewerIsHr) === "review").length ?? 0;
-  const buckets = { self_pending: 0, review_pending: 0, reviewed: 0, acknowledged: 0 };
+  const buckets = { self_pending: 0, review_pending: 0, reviewed: 0 };
   for (const r of rows ?? []) {
     const b = quarterBucket(r);
     if (b && b !== "all") buckets[b] += 1;
@@ -129,11 +129,10 @@ export function TeamProjectGoalsCard({ rows, period, viewerIsHr = false }: TeamP
           {q && (
             <div>
               <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-text-muted">{q}</p>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                 <Stat count={buckets.self_pending} label="Waiting for self-review" />
                 <Stat count={buckets.review_pending} label="Reviews to enter" highlight={buckets.review_pending > 0} />
                 <Stat count={buckets.reviewed} label="Reviewed" />
-                <Stat count={buckets.acknowledged} label="Acknowledged" />
               </div>
             </div>
           )}

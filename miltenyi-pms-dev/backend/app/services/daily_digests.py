@@ -22,7 +22,6 @@ Two audiences, because the two sides are stuck on each other:
               since their last summary
             - the Project Goals set awaiting approval, or approved since the
               last summary
-            - a quarterly review that is in and still to be acknowledged
 
 Idempotent per (recipient, digest type, day) through `daily_digest_log`; the
 scheduler (services/digest_scheduler.py) and the Admin's "send now" button both
@@ -164,10 +163,9 @@ def _project_goal_pending(db: Session, org_id: int, today: date) -> dict:
     """Project Goals items of the ACTIVE goal year.
 
     Returns {"sets_awaiting_approval": [(set, days)],
-             "reviews_awaiting_mentor": [(set, review, days)],
-             "reviews_to_acknowledge": [(set, review, days)]}.
+             "reviews_awaiting_mentor": [(set, review, days)]}.
     """
-    empty = {"sets_awaiting_approval": [], "reviews_awaiting_mentor": [], "reviews_to_acknowledge": []}
+    empty = {"sets_awaiting_approval": [], "reviews_awaiting_mentor": []}
     period = pg_periods.active_period(db, org_id)
     if period is None:
         return empty
@@ -196,8 +194,6 @@ def _project_goal_pending(db: Session, org_id: int, today: date) -> dict:
             continue
         if not r.self_is_draft and r.review_is_draft and pg_periods.is_writable(period, quarter):
             out["reviews_awaiting_mentor"].append((s, r, _days_waiting(_as_utc(r.self_submitted_at), today)))
-        if not r.review_is_draft and r.acknowledged_at is None:
-            out["reviews_to_acknowledge"].append((s, r, _days_waiting(_as_utc(r.review_submitted_at), today)))
     return out
 
 
@@ -317,7 +313,6 @@ def build_staff_digests(db: Session, org_id: int, today: date) -> dict[int, dict
     owner_ids = (
         {g.user_id for g in goals} | {g.user_id for g in approved_goals}
         | {s.user_id for s, _ in pg["sets_awaiting_approval"]} | {s.user_id for s in approved_sets}
-        | {s.user_id for s, _, _ in pg["reviews_to_acknowledge"]}
     )
     if not owner_ids:
         return {}
@@ -333,7 +328,6 @@ def build_staff_digests(db: Session, org_id: int, today: date) -> dict[int, dict
             "awaiting_approval": [],   # [{label, days}]
             "changes_requested": [],   # [{label}]
             "approved": [],            # [{label}]
-            "to_acknowledge": [],      # [{label, days}]
             "oldest_days": 0,
         })
 
@@ -362,14 +356,10 @@ def build_staff_digests(db: Session, org_id: int, today: date) -> dict[int, dict
         owner = owners.get(s.user_id)
         if owner is not None and owner.email:
             entry_for(owner)["approved"].append({"label": f"Project Goals {s.period_label}"})
-    for s, r, days in pg["reviews_to_acknowledge"]:
-        owner = owners.get(s.user_id)
-        if owner is not None and owner.email:
-            entry_for(owner)["to_acknowledge"].append({"label": f"{quarter_display(r.cycle_label)} review", "days": days})
 
     return {
         uid: e for uid, e in out.items()
-        if e["awaiting_approval"] or e["changes_requested"] or e["approved"] or e["to_acknowledge"]
+        if e["awaiting_approval"] or e["changes_requested"] or e["approved"]
     }
 
 
@@ -431,15 +421,12 @@ def _staff_email(payload: dict) -> tuple[str, str, list[tuple[str, str]]]:
     waiting = payload["awaiting_approval"]
     sent_back = payload["changes_requested"]
     approved = payload["approved"]
-    ack = payload["to_acknowledge"]
     mentor = payload["mentor_name"] or "your mentor"
 
     if sent_back:
         subject = f"{len(sent_back)} goal{_plural(len(sent_back))} sent back for changes"
     elif waiting:
         subject = f"{len(waiting)} item{_plural(len(waiting))} awaiting approval"
-    elif ack:
-        subject = f"{len(ack)} review{_plural(len(ack))} to acknowledge"
     else:
         subject = f"{len(approved)} item{_plural(len(approved))} approved"
 
@@ -449,8 +436,6 @@ def _staff_email(payload: dict) -> tuple[str, str, list[tuple[str, str]]]:
         parts.append(f"{len(waiting)} of your goals {'have' if len(waiting) != 1 else 'has'} been awaiting approval from {mentor} for {oldest} day{_plural(oldest)}.")
     if sent_back:
         parts.append(f"{len(sent_back)} annual goal{_plural(len(sent_back))} {'were' if len(sent_back) != 1 else 'was'} sent back for changes and {'are' if len(sent_back) != 1 else 'is'} waiting on you.")
-    if ack:
-        parts.append(f"{len(ack)} quarterly review{_plural(len(ack))} {'are' if len(ack) != 1 else 'is'} in and waiting for your acknowledgement.")
     if approved:
         parts.append(f"{len(approved)} item{_plural(len(approved))} {'were' if len(approved) != 1 else 'was'} approved.")
     intro = " ".join(parts)
@@ -460,8 +445,6 @@ def _staff_email(payload: dict) -> tuple[str, str, list[tuple[str, str]]]:
         details.append((i["label"], "Changes requested · action needed"))
     for i in waiting:
         details.append((i["label"], f"Awaiting approval · {i['days']}d"))
-    for i in ack:
-        details.append((i["label"], f"Reviewed · acknowledge it · {i['days']}d"))
     for i in approved:
         details.append((i["label"], "Approved"))
     return subject, intro, details

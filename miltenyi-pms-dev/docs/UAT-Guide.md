@@ -52,8 +52,7 @@ A staff member has one goal sheet per goal year: one goal per KPI of the framewo
 | Draft the Miltenyi review | Mentor or Admin | quarter writable; a draft may start before the self-review |
 | Submit the Miltenyi review | Mentor (Admin may submit anyway) | after the self-review is in; one final rating, "Given by" Miltenyi reviewer or Healthark; optional Secondary review note. Submitted = final |
 | See the final rating | Staff | only after the Admin turns **Ratings visible** on for that quarter |
-| Acknowledge the review | Staff | once the review is submitted; a read receipt, not agreement |
-| Unlock a submitted review | Admin | any time; the review returns to draft and the acknowledgement is cleared |
+| Unlock a submitted review | Admin | any time; the review returns to draft, the self-review is kept |
 
 Weightages are informational and appear to staff only while **Weightages visible to staff** is on. The Team Goals and All Goals queues show every sheet's state per quarter and let the Admin filter by function, level and mentor.
 
@@ -110,7 +109,7 @@ All switches for CY 26-27 are ON in the UAT database except the per-quarter rati
 
 - **The bell** fires per event: a goal submitted, approved or sent back, a self-review or review submitted, a mentor's nudge, every quarter move, every Admin announcement. It also shows live alerts (drafts not submitted, goals awaiting a mentor's approval) and an Announcements tab for paused switches and a changed cycle.
 - **Notify tab** (Admin): one announcement to a group. Filters combine: named people, roles (Staff / Mentor / Admin), functions; nothing selected means everyone except the sender. Channels: in-app, email or both. Bold, italic and lists carry through to the bell and the email. A confirmation shows the recipient count before sending.
-- **Daily summary emails**: one email per person on weekdays at 09:00 (Asia/Kolkata), only when something is pending. Mentors get what they owe, grouped by mentee; staff get what is waiting on their mentor, goals sent back, approvals and quarterly reviews to acknowledge. The Notify tab shows the schedule and a **Send today's summaries now** button; a second run on the same day sends nothing.
+- **Daily summary emails**: one email per person on weekdays at 09:00 (Asia/Kolkata), only when something is pending. Mentors get what they owe, grouped by mentee; staff get what is waiting on their mentor, goals sent back and approvals. The Notify tab shows the schedule and a **Send today's summaries now** button; a second run on the same day sends nothing.
 - **Other emails**: a welcome email with a temporary password when a user is created, password-reset links, and per-event mails for the main lifecycle steps.
 
 Emails only leave the server when SMTP is configured for that environment. Without it the app works normally, the Notify tab says "Email not configured", and the Admin sees a new user's temporary password on screen instead.

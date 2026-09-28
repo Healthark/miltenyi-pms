@@ -19,14 +19,14 @@ const GRID_HR =
 const GRID_MENTOR =
   "grid-cols-[minmax(190px,1.5fr)_minmax(170px,1.2fr)_minmax(140px,1fr)_minmax(150px,1fr)_minmax(140px,1fr)_minmax(140px,1fr)_minmax(140px,0.9fr)]";
 
-type ReviewFilter = "all" | "self_pending" | "review_pending" | "reviewed" | "acknowledged";
+type ReviewFilter = "all" | "self_pending" | "review_pending" | "reviewed";
 
 /** Where one row stands in the selected quarter. */
 export function quarterBucket(r: TeamRow): ReviewFilter | null {
   if (!r.has_framework || r.goals_status !== "approved") return null;
   if (r.self_status !== "submitted" && r.review_status !== "submitted") return "self_pending";
   if (r.review_status !== "submitted") return "review_pending";
-  return r.acknowledged_at ? "acknowledged" : "reviewed";
+  return "reviewed";
 }
 
 /** What the viewer can do on this row right now. */
@@ -114,7 +114,7 @@ export function TeamQueue({ rows, cycleLabel, onOpen, viewerIsHr }: TeamQueuePro
         <StepBadge status={status} />
         {when && (
           <span className="text-[11px] text-text-muted">
-            {fmtDate(when)}{rating != null ? ` · rated ${rating}` : ""}{kind === "review" && r.acknowledged_at ? " · acknowledged" : ""}
+            {fmtDate(when)}{rating != null ? ` · rated ${rating}` : ""}
           </span>
         )}
       </div>
@@ -176,7 +176,6 @@ export function TeamQueue({ rows, cycleLabel, onOpen, viewerIsHr }: TeamQueuePro
             <option value="self_pending">Self-review pending</option>
             <option value="review_pending">Review pending</option>
             <option value="reviewed">Reviewed</option>
-            <option value="acknowledged">Acknowledged</option>
           </select>
         </label>
       </div>

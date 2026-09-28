@@ -175,7 +175,6 @@ export interface GoalReview {
   final_rating_by: FinalRatingBy;
   review_is_draft: boolean;
   review_submitted_at: string | null;
-  acknowledged_at: string | null;
   items: ReviewItem[];
 }
 
@@ -240,7 +239,6 @@ export interface TeamRow {
   final_rating: number | null;
   self_submitted_at: string | null;
   review_submitted_at: string | null;
-  acknowledged_at: string | null;
   mentor_id: number | null;
   mentor_name: string | null;
   miltenyi_reviewer_name: string | null;
@@ -302,8 +300,6 @@ export const projectGoalsService = {
     (await apiClient.put<GoalSet>("/project-goals/me/self-review", payload)).data,
   submitMySelfReview: async (cycleLabel: string): Promise<GoalSet> =>
     (await apiClient.post<GoalSet>("/project-goals/me/self-review/submit", { cycle_label: cycleLabel })).data,
-  acknowledge: async (cycleLabel: string): Promise<GoalSet> =>
-    (await apiClient.post<GoalSet>("/project-goals/me/acknowledge", { cycle_label: cycleLabel })).data,
 
   // Mentor / Admin
   getTeam: async (period?: string | null, cycle?: string | null): Promise<TeamRow[]> =>
