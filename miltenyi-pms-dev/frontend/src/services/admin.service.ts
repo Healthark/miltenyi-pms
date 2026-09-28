@@ -195,7 +195,9 @@ export interface UserCreatePayload {
   designation_id?: number | null;
   mentor_id?: number | null;
   miltenyi_reviewer_name?: string | null;
-  password: string;
+  /** Temporary password. Omit to let the server generate one; either way
+   *  it is emailed to the user, who must change it at first sign-in. */
+  password?: string;
 }
 
 export interface UserUpdatePayload {

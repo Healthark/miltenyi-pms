@@ -1135,6 +1135,11 @@ def create_user(
     # Cheap query but runs late so cheaper 400/409s fail first.
     _validate_mentor_role(db, current_user.org_id, user_in.mentor_id)
 
+    # The Admin's typed password, or a server-generated one when the field
+    # came through blank (28 Sep 2026). Either way it is hashed below and
+    # leaves the process only through the welcome email.
+    temp_password = user_in.password or _generate_temp_password()
+
     new_user = User(
         org_id=current_user.org_id,  # Forced from JWT — never trusted from body
         employee_code=derived_code,
@@ -1146,15 +1151,16 @@ def create_user(
         designation_id=user_in.designation_id,
         mentor_id=user_in.mentor_id,
         miltenyi_reviewer_name=user_in.miltenyi_reviewer_name,
-        password_hash=get_password_hash(user_in.password),
+        password_hash=get_password_hash(temp_password),
         # Initial `password_changed_at` value is the row's birth time.
         # Required so the user's first JWT (when they log in with the
         # admin-issued temp password) carries a non-zero `pwd_iat` claim
         # and passes the revocation check in resolve_authenticated_user.
         password_changed_at=datetime.now(timezone.utc),
-        # Force a password change on first login. The admin chose the
-        # initial password and emailed it to the user; ProtectedRoute
-        # routes the user to /change-password until they pick their own.
+        # Force a password change on first login. The temporary password
+        # reached the user by the welcome email (or the Admin relayed it);
+        # ProtectedRoute routes them to /change-password until they pick
+        # their own.
         must_change_password=True,
     )
 
@@ -1172,7 +1178,7 @@ def create_user(
             send_welcome_user_email,
             to_email=new_user.email,
             full_name=new_user.full_name,
-            password=user_in.password,
+            password=temp_password,
             login_url=login_url,
             org_id=new_user.org_id,
         )

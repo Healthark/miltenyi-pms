@@ -306,6 +306,16 @@ There are 8 export surfaces. Test each one.
 
 ---
 
+## 5.4a Add User: temporary password
+
+### TC-USER-TEMP-001 — Pre-filled temporary password
+
+**Login as:** Admin
+**Steps:** Admin Panel → Users → **Add User**. Look at **Temporary Password**; click **Generate**; clear the field; save with a valid name, email and role.
+**Expected:** The field opens pre-filled with a readable 12-character password (no 0/O or 1/l look-alikes) and **Generate** replaces it with a new one. A typed password shorter than 8 characters is refused (422). Saving with the field blank still creates the account: the server picks the password. With email configured the person receives the welcome email with the sign-in link and that password; without email nothing is sent and the Admin passes the password on. On first sign-in the person is taken to Change Password and can go nowhere else until they set their own.
+
+---
+
 ## 5.5 Notify (announcements)
 
 ### TC-NOTIFY-001 — Send an announcement to a group

@@ -73,7 +73,10 @@ class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-_ROLE_PATTERN = r"^(HR_MyOrg|HR_Miltenyi|Mentor|PM|Employee)$"
+# The three Miltenyi roles (Admin / Staff / Mentor since 10 Sep 2026). This
+# still listed the retired HR_MyOrg / HR_Miltenyi / PM / Employee names until
+# 28 Sep 2026, so creating a Staff or Admin user answered 422.
+_ROLE_PATTERN = r"^(Admin|Staff|Mentor)$"
 
 
 class UserCreate(BaseModel):
@@ -94,7 +97,18 @@ class UserCreate(BaseModel):
     designation_id: Optional[int] = None
     mentor_id: Optional[int] = None
     miltenyi_reviewer_name: Optional[str] = Field(default=None, max_length=200)
-    password: str = Field(..., min_length=8, max_length=128)
+    # Optional since 28 Sep 2026: the form pre-fills a random one and the
+    # Admin may clear it, in which case the server generates the password.
+    # Blank or whitespace counts as absent.
+    password: Optional[str] = Field(default=None, min_length=8, max_length=128)
+
+    @field_validator("password", mode="before")
+    @classmethod
+    def _blank_password_is_absent(cls, value):
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
 
 
 class UserUpdate(BaseModel):
