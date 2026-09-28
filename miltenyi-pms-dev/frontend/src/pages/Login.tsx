@@ -3,30 +3,9 @@ import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { AlertTriangle, ArrowLeft, CheckCircle2, Info, Loader2, Lock, Mail } from "lucide-react";
 import { authService } from "@/services/auth.service";
 import { useAuth } from "@/hooks/useAuth";
+import { describeAuthError, validateEmailField, validateLoginFields } from "@/utils/authErrors";
 
 // ─── Types & Configuration ───────────────────────────────────────────────────
-
-interface ApiErrorResponse {
-  response?: {
-    data?: {
-      detail?: string;
-    };
-  };
-}
-
-// Narrow: the error looks like an axios error AND the backend sent a plain
-// string `detail`. FastAPI 422 returns `detail` as an array of objects —
-// those callers should fall through to the generic connection-error copy
-// rather than rendering [object Object].
-function isApiError(
-  error: unknown,
-): error is ApiErrorResponse & { response: { data: { detail: string } } } {
-  if (typeof error !== "object" || error === null || !("response" in error)) {
-    return false;
-  }
-  const detail = (error as ApiErrorResponse).response?.data?.detail;
-  return typeof detail === "string";
-}
 
 const MILTENYI_ASSETS = {
   id: "miltenyi",
@@ -87,16 +66,19 @@ export function Login() {
     e: React.FormEvent<HTMLFormElement>,
   ): Promise<void> => {
     e.preventDefault();
+    // The form is noValidate, so check here before anything is sent.
+    const problem = validateEmailField(email);
+    if (problem) {
+      setForgotError(problem);
+      return;
+    }
     setIsForgotLoading(true);
     setForgotError("");
     try {
-      await authService.forgotPassword(email);
+      await authService.forgotPassword(email.trim());
       setForgotSent(true);
     } catch (err: unknown) {
-      const message = isApiError(err)
-        ? err.response.data.detail
-        : "Connection to server failed. Please try again.";
-      setForgotError(message);
+      setForgotError(describeAuthError(err, "forgot"));
     } finally {
       setIsForgotLoading(false);
     }
@@ -129,19 +111,23 @@ export function Login() {
     e: React.FormEvent<HTMLFormElement>,
   ): Promise<void> => {
     e.preventDefault();
+    // The form is noValidate (no browser bubbles), so blank or malformed
+    // fields are caught here with a sentence in the error box instead of a
+    // round trip that used to end in "Connection to server failed".
+    const problem = validateLoginFields(email, password);
+    if (problem) {
+      setError(problem);
+      return;
+    }
     setIsLoading(true);
     setError("");
 
     try {
-      const data = await authService.login(email, password);
+      const data = await authService.login(email.trim(), password);
       login(data);
       navigate(intendedPath, { replace: true });
     } catch (err: unknown) {
-      const message = isApiError(err)
-        ? err.response.data.detail
-        : "Connection to server failed. Please try again.";
-
-      setError(message);
+      setError(describeAuthError(err, "login"));
     } finally {
       setIsLoading(false);
     }

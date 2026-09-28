@@ -108,7 +108,10 @@ def test_filters_are_and_combined(db_session: Session, app_with_db: FastAPI, as_
     assert resp.status_code == 400, resp.text  # only the sender matches, and the sender is excluded
 
 
-def test_email_channel_writes_no_bell_rows(db_session: Session, app_with_db: FastAPI, as_user) -> None:
+def test_email_channel_writes_no_bell_rows(db_session: Session, app_with_db: FastAPI, as_user, monkeypatch) -> None:
+    # Never depend on the developer's .env: pretend SMTP is not configured so
+    # no mail is enqueued and the API reports emailed=False.
+    monkeypatch.setattr("app.api.routes.admin_routes.is_smtp_configured", lambda: False)
     s = _seed(db_session)
     resp = _send(_client(as_user, s["admin"]), channel="email", user_ids=[s["mentor"].id])
     assert resp.status_code == 200, resp.text
