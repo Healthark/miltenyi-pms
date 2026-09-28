@@ -140,8 +140,11 @@ def test_run_sends_once_per_person_per_day(db_session: Session, monkeypatch: pyt
     assert ("Project Goals CY 26-27", "Approved") in arjun_mail["details"]
     assert arjun_mail["cta_url"].endswith("/dashboard")
 
+    # Second run the same day: the mentor and Aarav still have pending work and
+    # are skipped; Arjun's approvals were reported once and are not repeated,
+    # so he is not in the run at all.
     again = run_daily_digests(db_session, today=TODAY, enqueue=capture)
-    assert again["mentor"] == 0 and again["staff"] == 0 and again["skipped_already_sent"] == 3
+    assert again["mentor"] == 0 and again["staff"] == 0 and again["skipped_already_sent"] == 2
     assert len(sent) == 3
     assert db_session.query(DailyDigestLog).count() == 3
 
