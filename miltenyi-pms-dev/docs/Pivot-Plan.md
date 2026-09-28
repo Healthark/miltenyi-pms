@@ -309,3 +309,9 @@ Zaahid's rulings: Shreshta = Mentor, Gautham = Admin; known password without a f
 ## Revision — 28 September 2026: review acknowledgement removed
 
 Zaahid: the staff read receipt on a quarterly Project Goals review ("Acknowledge Q3 · CY 26-27 review") has no use. Removed end to end: the endpoint, the button and notice on the staff page, the "Acknowledged" chip in the quarter progress, the Team Goals queue filter and column note, the dashboard bucket, the "to acknowledge" line in the daily staff summary, and the `acknowledged_at` column (migration `d3e5f7a9b2c4`). Unlocking a review no longer has anything to clear. Change-log rows with the old "acknowledge" action stay as history.
+
+---
+
+## Revision — 28 September 2026: sign-in error messages
+
+Zaahid's UAT finding: an email without a password answered "Connection to server failed". Audit of every sign-in outcome, then: the login and forgot-password forms validate their fields before sending (`utils/authErrors.ts`) and map every answer to a sentence (422, 429, 5xx, no response); the backend answers the rate limit and the two public forms' validation errors with a plain `detail` sentence (`main.py` handlers) so any client shows the right words; the API client no longer treats a 401/403 from the sign-in call as an expired session. `tests/test_login_errors.py` covers each case.

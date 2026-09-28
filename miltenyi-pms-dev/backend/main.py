@@ -2,10 +2,11 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from slowapi import _rate_limit_exceeded_handler
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from slowapi.errors import RateLimitExceeded
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import Response
+from starlette.responses import JSONResponse, Response
 
 from app.core.config import settings
 from app.core.csrf import CSRFMiddleware
@@ -50,7 +51,35 @@ app = FastAPI(
 # both the attribute and the handler are required for `@limiter.limit(...)`
 # decorators on individual routes to translate quota exhaustion into a 429.
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+async def _rate_limited(request: Request, exc: RateLimitExceeded) -> Response:
+    """429 in the same {"detail": ...} shape as every other error, so a client
+    shows a sentence instead of slowapi's raw "10 per 5 minute" string."""
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Too many attempts. Wait a few minutes and try again."},
+    )
+
+
+# The two public forms (sign-in, forgot password) answer a validation error
+# with one sentence a person can act on; every other endpoint keeps
+# FastAPI's field-by-field 422 body (28 Sep 2026).
+_PUBLIC_FORM_MESSAGES = {
+    "/auth/login": "Enter your email and password.",
+    "/auth/forgot-password": "Enter a valid email address.",
+}
+
+
+async def _validation_error(request: Request, exc: RequestValidationError) -> Response:
+    for suffix, message in _PUBLIC_FORM_MESSAGES.items():
+        if request.url.path.endswith(suffix):
+            return JSONResponse(status_code=422, content={"detail": message})
+    return await request_validation_exception_handler(request, exc)
+
+
+app.add_exception_handler(RateLimitExceeded, _rate_limited)
+app.add_exception_handler(RequestValidationError, _validation_error)
 
 _default_origins = [
     "http://localhost",

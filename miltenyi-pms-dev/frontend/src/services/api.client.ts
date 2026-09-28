@@ -7,6 +7,10 @@ const MUTATING_METHODS = new Set(["post", "put", "patch", "delete"]);
 // bootstrap /auth/session probe) must NOT yank the user away. Mirrors the
 // public Routes registered in App.tsx.
 const PUBLIC_AUTH_PATHS = new Set(["/login", "/reset-password", "/unauthorized"]);
+// Calls that answer 401/403 as part of their normal contract (a wrong
+// password, a deactivated account signing in). Those are the caller's
+// errors to show, not a session to tear down.
+const PUBLIC_AUTH_ENDPOINTS = /\/auth\/(login|forgot-password|reset-password)$/;
 
 // In development this falls back to localhost. In production set
 // VITE_API_URL=https://<your-render-backend>/api/v1 in Vercel env vars.
@@ -85,6 +89,10 @@ function forceLogout(reason?: LogoutReason): void {
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
+    const requestUrl: string = error.config?.url ?? "";
+    if (PUBLIC_AUTH_ENDPOINTS.test(requestUrl)) {
+      return Promise.reject(error);
+    }
     const status = error.response?.status;
     const detail = error.response?.data?.detail;
     const isDeactivated =

@@ -98,11 +98,16 @@ Resize the browser window to test 3 widths each time: **narrow (≈ 600 px wide)
 2. Click **Sign In**.
 
 **Expected:**
-- The form does not submit.
-- The browser's "Please fill out this field" hint, or an inline error, appears next to each empty field.
+- Nothing is sent to the server. The red error box reads "Enter your email and password." (the same with only one field filled). An email without an @ reads "Enter a valid email address.". Fixed 28 Sep 2026: this used to show "Connection to server failed".
+- Both fields keep what you typed.
 
-**UI checks:**
-- The required-field indicator (asterisk or red border) is consistent on both fields.
+---
+
+### TC-AUTH-004a — Too many failed attempts
+
+**Login as:** _not logged in_
+**Steps:** Enter a wrong password 10 times, then try an 11th time (right or wrong password).
+**Expected:** The 11th attempt reads "Too many attempts. Wait a few minutes and try again." (10 attempts per 5 minutes from one network address). After 5 minutes signing in works again. The same limit applies to "Forgot password?" (10 requests per hour) and a blank or malformed email there reads "Enter a valid email address.".
 
 ---
 
