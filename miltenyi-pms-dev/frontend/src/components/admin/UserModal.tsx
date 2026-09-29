@@ -266,11 +266,7 @@ export function UserModal({
                   ? ""
                   : "Pick a role to generate code"
               : "EMP-003";
-            const codeInputCls = `${INPUT_CLS} ${
-              !isEditing
-                ? "cursor-not-allowed opacity-70 bg-slate-50 dark:bg-slate-800/40"
-                : ""
-            }`;
+            const codeInputCls = INPUT_CLS;
             return (
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -303,11 +299,6 @@ export function UserModal({
                         : undefined
                     }
                   />
-                  {!isEditing && (
-                    <p className="mt-1 text-[11px] text-text-muted">
-                      Suggested from the role. Type your own code or clear the field to let the system pick one.
-                    </p>
-                  )}
                 </div>
                 <div>
                   <label htmlFor="full-name" className={LABEL_CLS}>
