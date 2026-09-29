@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, RotateCcw } from "lucide-react";
 import { createPortal } from "react-dom";
 import {
   adminService,
@@ -111,6 +111,10 @@ export function UserModal({
   // Toggle to "loading" while the request is in flight so the input
   // shows a placeholder instead of stale text.
   const [codeLoading, setCodeLoading] = useState(false);
+  // Once the Admin edits the code, a role change must not overwrite it;
+  // "Reset to suggested" clears the flag and fetches the next code again.
+  const [codeTouched, setCodeTouched] = useState(false);
+  const [codeRefresh, setCodeRefresh] = useState(0);
 
   // Auto-generate the employee code as the HR picks a role. Create
   // mode only — edit mode keeps the existing code (immutable identity
@@ -119,7 +123,7 @@ export function UserModal({
   // never authoritative; HR sees the actual saved code via the
   // mutation response if a race causes a drift.
   useEffect(() => {
-    if (isEditing || !isOpen || !form.role) return;
+    if (isEditing || !isOpen || !form.role || codeTouched) return;
     let cancelled = false;
     setCodeLoading(true);
     adminService
@@ -141,7 +145,7 @@ export function UserModal({
     return () => {
       cancelled = true;
     };
-  }, [form.role, isEditing, isOpen]);
+  }, [form.role, isEditing, isOpen, codeTouched, codeRefresh]);
 
   if (!isOpen) return null;
 
@@ -196,7 +200,7 @@ export function UserModal({
         full_name: form.full_name || undefined,
         phone: form.phone || undefined,
         role: form.role || undefined,
-        employee_code: form.employee_code || undefined,
+        employee_code: form.employee_code.trim() || undefined,
         function_id: form.function_id ? Number(form.function_id) : null,
         designation_id: form.designation_id
           ? Number(form.designation_id)
@@ -252,7 +256,9 @@ export function UserModal({
             // always read-only in create mode — HR shouldn't be able
             // to type a custom code. In edit mode the existing rule
             // applies: Healthark HR can edit, Miltenyi HR cannot.
-            const isCodeReadOnly = !isEditing;
+            // Editable on create since 29 Sep 2026 (HR may use its own
+            // scheme); the generated code stays the default.
+            const isCodeReadOnly = false;
             const codePlaceholder = !isEditing
               ? codeLoading
                 ? "Generating…"
@@ -268,23 +274,40 @@ export function UserModal({
             return (
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label htmlFor="emp-code" className={LABEL_CLS}>
-                    Employee Code *
-                  </label>
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <label htmlFor="emp-code" className={`${LABEL_CLS} mb-0`}>
+                      Employee Code {isEditing ? "*" : ""}
+                    </label>
+                    {!isEditing && codeTouched && (
+                      <button
+                        type="button"
+                        onClick={() => { setCodeTouched(false); setCodeRefresh((n) => n + 1); }}
+                        className="inline-flex items-center gap-1 text-[11px] font-medium text-brand hover:underline"
+                      >
+                        <RotateCcw className="h-3 w-3" aria-hidden="true" /> Reset to suggested
+                      </button>
+                    )}
+                  </div>
                   <input
                     id="emp-code"
                     className={codeInputCls}
                     value={form.employee_code}
-                    onChange={(e) => set("employee_code", e.target.value)}
+                    onChange={(e) => { setCodeTouched(true); set("employee_code", e.target.value); }}
                     placeholder={codePlaceholder}
                     readOnly={isCodeReadOnly}
                     aria-readonly={isCodeReadOnly}
+                    maxLength={20}
                     title={
                       !isEditing
-                        ? "Auto-generated from the selected role"
+                        ? "Suggested from the role; edit it or leave it"
                         : undefined
                     }
                   />
+                  {!isEditing && (
+                    <p className="mt-1 text-[11px] text-text-muted">
+                      Suggested from the role. Type your own code or clear the field to let the system pick one.
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label htmlFor="full-name" className={LABEL_CLS}>

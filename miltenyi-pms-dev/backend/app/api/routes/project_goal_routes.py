@@ -176,6 +176,7 @@ def _framework_out(fw: GoalFramework, show_weights: bool) -> FrameworkRowOut:
         business_outcomes=fw.business_outcomes,
         functional_goals=fw.functional_goals,
         kpis=[FrameworkKpiOut(id=k.id, seq=k.seq, text=k.text, weightage=k.weightage if show_weights else None) for k in fw.kpis],
+        extra_goal_weightage=fw.extra_goal_weightage if show_weights else None,
     )
 
 
@@ -502,9 +503,9 @@ def create_my_set(db: DbSession, current_user: CurrentUser, period: Optional[str
     for k in fw.kpis:
         db.add(ProjectGoalItem(set_id=s.id, seq=k.seq, kpi_id=k.id, kpi_text=k.text, weightage=k.weightage))
     if period.extra_goal_enabled:
-        # The optional "Additional goals" row, last, with the year's weightage.
+        # The optional "Additional goals" row, last, at this column's weightage.
         db.add(ProjectGoalItem(set_id=s.id, seq=max((k.seq for k in fw.kpis), default=0) + 1, kpi_id=None,
-                               kpi_text=EXTRA_GOAL_LABEL, weightage=period.extra_goal_weightage, is_extra=True))
+                               kpi_text=EXTRA_GOAL_LABEL, weightage=fw.extra_goal_weightage, is_extra=True))
     db.commit()
     return _set_out(db, _get_set(db, s.id, current_user.org_id), current_user, period)
 

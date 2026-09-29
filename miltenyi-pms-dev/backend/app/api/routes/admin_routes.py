@@ -1104,32 +1104,35 @@ def create_user(
             detail=f"A user with email '{user_in.email}' already exists in this organization.",
         )
 
-    # Employee code is server-derived from the role per the convention
-    # in `_compute_next_employee_code` (see also `_employee_code_prefix`).
-    # Any value the client sent in `user_in.employee_code` is ignored —
-    # the UserCreate schema keeps the field for backwards-compatibility
-    # but we treat it as advisory only. The frontend now shows the
-    # auto-generated value in a read-only input via the preview endpoint.
-    derived_code = _compute_next_employee_code(
-        db, current_user.org_id, user_in.role
-    )
-
-    # Defensive duplicate-check in case a concurrent create just took
-    # the same number (preview is not a reservation). Both end up
-    # deriving the same MAX+1; the unique index on
-    # (org_id, employee_code) would catch the collision at flush time
-    # anyway, but a friendlier 409 here keeps the error surface
-    # predictable. The frontend's drift-toast covers the rare case
-    # where this races; on a clean run the duplicate check is a no-op.
-    existing_code = db.query(User).filter(
-        User.org_id == current_user.org_id,
-        User.employee_code == derived_code,
-    ).first()
-    if existing_code:
-        # Race: another create won. Re-derive and try once more.
+    # Employee code (29 Sep 2026): the Admin's typed code wins; blank means
+    # the server derives the next HRK-<ROLE>-nnn per
+    # `_compute_next_employee_code`. Custom codes never disturb that
+    # sequence — it only counts codes of its own shape.
+    if user_in.employee_code:
+        derived_code = user_in.employee_code
+        if db.query(User).filter(
+            User.org_id == current_user.org_id,
+            User.employee_code == derived_code,
+        ).first():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Employee code '{derived_code}' is already in use.",
+            )
+    else:
         derived_code = _compute_next_employee_code(
             db, current_user.org_id, user_in.role
         )
+        # Defensive duplicate-check in case a concurrent create just took
+        # the same number (the preview is not a reservation). The unique
+        # index on (org_id, employee_code) would catch it at flush time
+        # anyway; re-deriving once keeps the error surface predictable.
+        if db.query(User).filter(
+            User.org_id == current_user.org_id,
+            User.employee_code == derived_code,
+        ).first():
+            derived_code = _compute_next_employee_code(
+                db, current_user.org_id, user_in.role
+            )
 
     # Validate mentor_id points at a real Mentor-role user in this org.
     # Cheap query but runs late so cheaper 400/409s fail first.

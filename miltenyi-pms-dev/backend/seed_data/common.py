@@ -227,7 +227,7 @@ def ensure_goal_period(db: Session, org: Organization, admin: User) -> None:
         db.add(ProjectGoalPeriodSettings(
             org_id=org.id, period_label=PERIOD_LABEL, is_active=True,
             entry_open=True, weightages_visible=True, current_quarter_seq=CURRENT_QUARTER,
-            extra_goal_enabled=True, extra_goal_weightage=10,
+            extra_goal_enabled=True,
             updated_by_id=admin.id,
         ))
         for seq in range(1, CURRENT_QUARTER + 1):

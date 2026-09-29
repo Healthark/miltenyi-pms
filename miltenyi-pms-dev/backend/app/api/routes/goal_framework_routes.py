@@ -103,6 +103,7 @@ def _row_out(fw: GoalFramework) -> FrameworkRowOut:
         level=fw.level, period_label=fw.period_label, title=fw.title,
         business_outcomes=fw.business_outcomes, functional_goals=fw.functional_goals,
         kpis=[FrameworkKpiOut(id=k.id, seq=k.seq, text=k.text, weightage=k.weightage) for k in fw.kpis],
+        extra_goal_weightage=fw.extra_goal_weightage,
     )
 
 
@@ -177,6 +178,7 @@ def create_row(payload: FrameworkRowCreate, db: DbSession, current_user: Current
         org_id=current_user.org_id, function_id=fn.id, level=payload.level, period_label=period_label,
         title=payload.title.strip(), business_outcomes=payload.business_outcomes.strip(),
         functional_goals=payload.functional_goals.strip(), created_by_id=current_user.id,
+        extra_goal_weightage=payload.extra_goal_weightage,
     )
     db.add(fw)
     db.flush()
@@ -196,6 +198,8 @@ def update_row(row_id: int, payload: FrameworkRowUpdate, db: DbSession, current_
     fw.title = payload.title.strip()
     fw.business_outcomes = payload.business_outcomes.strip()
     fw.functional_goals = payload.functional_goals.strip()
+    extra_changed = fw.extra_goal_weightage != payload.extra_goal_weightage
+    fw.extra_goal_weightage = payload.extra_goal_weightage
 
     existing = {k.seq: k for k in fw.kpis}
     for i, k in enumerate(payload.kpis, start=1):
@@ -207,6 +211,13 @@ def update_row(row_id: int, payload: FrameworkRowUpdate, db: DbSession, current_
             row.weightage = k.weightage
     for leftover in existing.values():
         db.delete(leftover)
+    if extra_changed:
+        # Draft sheets built from this column follow the new weightage;
+        # submitted and approved sheets keep their snapshot.
+        for st in db.query(ProjectGoalSet).filter(ProjectGoalSet.framework_id == fw.id, ProjectGoalSet.status == "draft").all():
+            for it in st.items:
+                if it.is_extra:
+                    it.weightage = fw.extra_goal_weightage
     db.commit()
     db.expire_all()
     return _row_out(_get_row(db, fw.id, current_user.org_id))
@@ -371,8 +382,8 @@ def update_period_settings(payload: PeriodSettingsUpdate, db: DbSession, current
         if value is not None:
             setattr(row, field, value)
     row.updated_by_id = current_user.id
-    if "extra_goal_enabled" in data or "extra_goal_weightage" in data:
-        # Draft sets follow the year's setting; submitted sets keep their snapshot.
+    if "extra_goal_enabled" in data:
+        # Draft sets follow the year's switch; submitted sets keep their snapshot.
         _sync_extra_rows(db, row)
     if data.get("is_active"):
         db.query(ProjectGoalPeriodSettings).filter(
@@ -385,21 +396,23 @@ def update_period_settings(payload: PeriodSettingsUpdate, db: DbSession, current
 
 
 def _sync_extra_rows(db, period: ProjectGoalPeriodSettings) -> None:
-    """Keep the DRAFT sets of a year in step with its "Additional goals" row:
-    add the row when the Admin enables it, update its weightage, drop it again
-    when disabled and still empty. Submitted / approved sets keep their snapshot."""
+    """Keep the DRAFT sets of a year in step with its "Additional goals" switch:
+    add the row (at the framework column's weightage) when the Admin enables it,
+    drop it again when disabled and still empty. Submitted / approved sets keep
+    their snapshot."""
     from app.models.project_goal_models import EXTRA_GOAL_LABEL, ProjectGoalItem
     drafts = db.query(ProjectGoalSet).filter(
         ProjectGoalSet.org_id == period.org_id, ProjectGoalSet.period_label == period.period_label, ProjectGoalSet.status == "draft",
     ).all()
     for st in drafts:
         extra = next((it for it in st.items if it.is_extra), None)
+        weight = st.framework.extra_goal_weightage if st.framework is not None else 10
         if period.extra_goal_enabled:
             if extra is None:
                 seq = max((it.seq for it in st.items), default=0) + 1
-                db.add(ProjectGoalItem(set_id=st.id, seq=seq, kpi_id=None, kpi_text=EXTRA_GOAL_LABEL, weightage=period.extra_goal_weightage, is_extra=True))
+                db.add(ProjectGoalItem(set_id=st.id, seq=seq, kpi_id=None, kpi_text=EXTRA_GOAL_LABEL, weightage=weight, is_extra=True))
             else:
-                extra.weightage = period.extra_goal_weightage
+                extra.weightage = weight
         elif extra is not None and not (extra.goal_text or "").strip():
             db.delete(extra)
     db.flush()
@@ -465,7 +478,7 @@ def _copy_frameworks(db, org_id: int, from_label: str, to_label: str, actor_id: 
         clone = GoalFramework(
             org_id=org_id, function_id=fw.function_id, level=fw.level, period_label=to_label,
             title=fw.title, business_outcomes=fw.business_outcomes, functional_goals=fw.functional_goals,
-            created_by_id=actor_id,
+            created_by_id=actor_id, extra_goal_weightage=fw.extra_goal_weightage,
         )
         db.add(clone)
         db.flush()
@@ -489,7 +502,6 @@ def _activate_period(db, org_id: int, period_label: str, actor: User, template: 
             org_id=org_id, period_label=period_label, is_active=True, entry_open=False, backfill_open=True,
             weightages_visible=template.weightages_visible if template else True,
             extra_goal_enabled=template.extra_goal_enabled if template else False,
-            extra_goal_weightage=template.extra_goal_weightage if template else 10,
             updated_by_id=actor.id,
         )
         db.add(row)

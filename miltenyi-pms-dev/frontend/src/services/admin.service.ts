@@ -186,7 +186,8 @@ export interface YearPreflight {
 // ---------------------------------------------------------------------------
 
 export interface UserCreatePayload {
-  employee_code: string;
+  /** Leave out to let the server generate the next HRK-<ROLE>-nnn code. */
+  employee_code?: string;
   full_name: string;
   email: string;
   phone?: string;

@@ -38,6 +38,8 @@ class FrameworkRowOut(BaseModel):
     business_outcomes: str
     functional_goals: str
     kpis: list[FrameworkKpiOut]
+    # None when weightages are hidden from the viewer (staff, switch off).
+    extra_goal_weightage: Optional[int] = None
 
 
 class FrameworkKpiIn(BaseModel):
@@ -50,10 +52,17 @@ def _validate_kpis(kpis: list[FrameworkKpiIn]) -> list[FrameworkKpiIn]:
         raise ValueError("A framework row needs at least one KPI.")
     if len(kpis) > 12:
         raise ValueError("A framework row can hold at most 12 KPIs.")
-    total = sum(k.weightage for k in kpis)
-    if total != 100:
-        raise ValueError(f"KPI weightages must total 100 (got {total}).")
     return kpis
+
+
+def _validate_total(kpis: list[FrameworkKpiIn], extra: int) -> None:
+    """KPIs + the "Additional goals" row must total 100 (29 Sep 2026)."""
+    kpi_total = sum(k.weightage for k in kpis)
+    if kpi_total + extra != 100:
+        raise ValueError(
+            f"KPI weightages plus the Additional goals row must total 100 "
+            f"(got {kpi_total} + {extra} = {kpi_total + extra})."
+        )
 
 
 class FrameworkRowCreate(BaseModel):
@@ -64,11 +73,17 @@ class FrameworkRowCreate(BaseModel):
     business_outcomes: str = Field(..., min_length=1, max_length=4000)
     functional_goals: str = Field(..., min_length=1, max_length=4000)
     kpis: list[FrameworkKpiIn]
+    extra_goal_weightage: int = Field(default=10, ge=0, le=100)
 
     @field_validator("kpis")
     @classmethod
-    def _kpis_total_100(cls, v: list[FrameworkKpiIn]) -> list[FrameworkKpiIn]:
+    def _kpis_shape(cls, v: list[FrameworkKpiIn]) -> list[FrameworkKpiIn]:
         return _validate_kpis(v)
+
+    @model_validator(mode="after")
+    def _total_100(self):
+        _validate_total(self.kpis, self.extra_goal_weightage)
+        return self
 
 
 class FrameworkRowUpdate(BaseModel):
@@ -76,11 +91,17 @@ class FrameworkRowUpdate(BaseModel):
     business_outcomes: str = Field(..., min_length=1, max_length=4000)
     functional_goals: str = Field(..., min_length=1, max_length=4000)
     kpis: list[FrameworkKpiIn]
+    extra_goal_weightage: int = Field(default=10, ge=0, le=100)
 
     @field_validator("kpis")
     @classmethod
-    def _kpis_total_100(cls, v: list[FrameworkKpiIn]) -> list[FrameworkKpiIn]:
+    def _kpis_shape(cls, v: list[FrameworkKpiIn]) -> list[FrameworkKpiIn]:
         return _validate_kpis(v)
+
+    @model_validator(mode="after")
+    def _total_100(self):
+        _validate_total(self.kpis, self.extra_goal_weightage)
+        return self
 
 
 class DesignationBriefOut(BaseModel):
@@ -127,8 +148,7 @@ class PeriodSettingsOut(BaseModel):
     entry_open: bool
     weightages_visible: bool
     backfill_open: bool = True              # past year: started quarters stay writable while on
-    extra_goal_enabled: bool = False        # the "Additional goals" row at the end of every sheet
-    extra_goal_weightage: int = 10
+    extra_goal_enabled: bool = False        # the "Additional goals" row at the end of every sheet (its weightage is per framework column)
     current_quarter_seq: Optional[int] = None
     current_quarter_label: Optional[str] = None
     quarters: list[QuarterOut] = []         # started quarters only (seq <= current)
@@ -140,7 +160,6 @@ class PeriodSettingsUpdate(BaseModel):
     weightages_visible: Optional[bool] = None
     backfill_open: Optional[bool] = None
     extra_goal_enabled: Optional[bool] = None
-    extra_goal_weightage: Optional[int] = Field(default=None, ge=0, le=100)
 
 
 class PeriodBriefOut(BaseModel):

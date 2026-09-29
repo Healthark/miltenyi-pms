@@ -326,3 +326,12 @@ Parity with the Healthark PMS form: **Temporary Password** opens pre-filled with
 ## Revision — 28 September 2026: Team Goals no longer hides approved goals
 
 UAT finding (Zaahid): after approving a goal the mentor saw no way to review it. Cause: the Team Goals tab defaulted its Status filter to "Pending Approval", so the approved goal left the list, and the "Approved" option did not match a goal already in H1/H2 review. Now the tab opens on **All**, the buckets are All / Pending approval / **Awaiting my review** / Approved (any stage) / Changes requested, and the empty state says to pick All when a filter hides everything. Deep links with `?status=` keep working. Frontend only.
+
+---
+
+## Revision — 29 September 2026: editable employee code; Additional goals weightage per framework column
+
+Zaahid's two asks after the UAT walkthrough.
+
+- **Employee code.** Add User still suggests the next `HRK-<ROLE>-nnn`, but the field is editable and a **Reset to suggested** link brings the generated code back. The backend keeps a typed code as typed (unique within the organisation, 409 on a clash) and generates one only when the field is blank; custom codes never disturb the generated sequence. Editing an existing user's code already worked.
+- **Additional goals weightage.** One per-year percentage made every sheet total 110 (KPIs 100 + row 10). The weightage now lives on each framework column (`goal_frameworks.extra_goal_weightage`, migration `e4f6a8b0c2d5`, backfilled from the year's old value), shown on the Framework tab as a pinned last row that can be edited but not removed; the column rule is **KPIs + Additional goals = 100**. New sheets snapshot the column's weight, draft sheets follow a change, submitted sheets keep theirs; the year switch in System Settings stays as the on/off and lost its weightage box. Seeded columns (KPIs 100) show a red 110% until the Admin trims a KPI — that is the discrepancy made visible.
