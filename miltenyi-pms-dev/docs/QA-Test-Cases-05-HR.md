@@ -316,6 +316,14 @@ There are 8 export surfaces. Test each one.
 
 ---
 
+### TC-USER-CODE-001 — Employee code: suggested, editable
+
+**Login as:** Admin
+**Steps:** Users → **Add User**. Pick a role; watch **Employee Code**. Type your own code (e.g. `MB-2026-17`), click **Reset to suggested**, then type a code that already exists and save.
+**Expected:** The field fills with the next code for the role (HRK-STF-004 style) and changes when the role changes, until you edit it. A typed code is kept exactly as typed; **Reset to suggested** brings the generated one back. An existing code is refused: "Employee code 'X' is already in use." A blank field is allowed and gets the generated code. Custom codes never change the numbering the system suggests next. Editing an existing user's code works the same way.
+
+---
+
 ## 5.5 Notify (announcements)
 
 ### TC-NOTIFY-001 — Send an announcement to a group

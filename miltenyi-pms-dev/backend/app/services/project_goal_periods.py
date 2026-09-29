@@ -154,7 +154,6 @@ def period_out(db: Session, period: ProjectGoalPeriodSettings) -> PeriodSettings
         weightages_visible=period.weightages_visible,
         backfill_open=period.backfill_open,
         extra_goal_enabled=period.extra_goal_enabled,
-        extra_goal_weightage=period.extra_goal_weightage,
         current_quarter_seq=period.current_quarter_seq,
         current_quarter_label=current_label(period),
         quarters=[

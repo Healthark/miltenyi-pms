@@ -66,6 +66,10 @@ class GoalFramework(Base):
     title = Column(String, nullable=False)                  # role title, as printed
     business_outcomes = Column(Text, nullable=False)        # Illustrative Business & Strategic Outcomes
     functional_goals = Column(Text, nullable=False)         # Illustrative Functional / Operational Excellence Goals
+    # Weightage of the optional "Additional goals" row on sheets built from
+    # this column (29 Sep 2026). KPIs + this must total 100; the per-year
+    # switch on ProjectGoalPeriodSettings decides whether the row appears.
+    extra_goal_weightage = Column(Integer, nullable=False, default=10, server_default="10")
 
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

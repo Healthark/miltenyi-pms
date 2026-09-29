@@ -68,6 +68,8 @@ export interface FrameworkRow {
   business_outcomes: string;
   functional_goals: string;
   kpis: FrameworkKpi[];
+  /** Weightage of the "Additional goals" row on sheets built from this column; null when weightages are hidden. */
+  extra_goal_weightage: number | null;
 }
 
 // ── Period & quarters ───────────────────────────────────────────────
@@ -91,9 +93,8 @@ export interface PeriodSettings {
   weightages_visible: boolean;
   /** Past year: its started quarters stay writable while this is on. */
   backfill_open: boolean;
-  /** The optional "Additional goals" row and the weightage the Admin gives it. */
+  /** The optional "Additional goals" row (its weightage sits on the framework column). */
   extra_goal_enabled: boolean;
-  extra_goal_weightage: number;
   current_quarter_seq: number | null;
   current_quarter_label: string | null;
   /** Started quarters only (seq ≤ current), ordered by seq. */

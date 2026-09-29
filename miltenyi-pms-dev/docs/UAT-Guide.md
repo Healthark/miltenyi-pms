@@ -98,7 +98,7 @@ Admin Panel → System Settings: the quarter roll-out card on top, one **Configu
 | Show H1 / H2 Mentor Reviews on Annual Goals | per year, one per half | staff see "review submitted, hidden until published" instead of the mentor's text |
 | Goal entry open | per goal year | staff cannot start or submit a Project Goals sheet; approved sheets and reviews are unaffected |
 | Weightages visible to staff | per goal year | KPI weightages are hidden from staff |
-| Additional goals row (with its weightage) | per goal year | no free-text extra row on new sheets; submitted sheets keep what they had |
+| Additional goals row | per goal year | no free-text extra row on new sheets; submitted sheets keep what they had. Its weightage is set per function and level on the Framework tab (KPIs + row = 100) |
 | Year open for backfill | past goal year only | that year's quarters become read-only |
 | Open for backfill (per quarter) | earlier quarters of the year | that quarter becomes read-only; the current quarter is always open |
 | Ratings visible (per quarter) | per quarter | the final quarterly rating is hidden from staff |
@@ -118,9 +118,9 @@ Emails only leave the server when SMTP is configured for that environment. Witho
 
 | Tab | What the Admin does there | Rules to know |
 | --- | --- | --- |
-| Users | Add, edit, deactivate, reactivate; set role, function, designation, mentor and the Miltenyi reviewer's name | Employee codes are assigned automatically. The Add User form pre-fills a random temporary password (Generate rolls a new one; blank lets the server pick); it is emailed to the person, who must change it at first sign-in. Deactivation blocks login at once and locks in-flight reviews; the person's mentees show as a coverage gap on the dashboard until re-paired. Reactivation keeps the old password |
+| Users | Add, edit, deactivate, reactivate; set role, function, designation, mentor and the Miltenyi reviewer's name | Employee codes are suggested from the role and can be edited or replaced with HR's own. The Add User form pre-fills a random temporary password (Generate rolls a new one; blank lets the server pick); it is emailed to the person, who must change it at first sign-in. Deactivation blocks login at once and locks in-flight reviews; the person's mentees show as a coverage gap on the dashboard until re-paired. Reactivation keeps the old password |
 | Framework Mapping | Function, designation (level), mentor and Miltenyi reviewer per person | Function and designation are locked while the person has a goal sheet in the active goal year (409); change them between years |
-| Framework | The goal themes per function × level: title, two paragraphs, KPIs with weightages totalling 100; add functions, designations and levels | Staged Save. A function without rows (Pharmacovigilance today) shows its staff "no framework yet" until rows are added |
+| Framework | The goal themes per function × level: title, two paragraphs, KPIs with weightages, and the pinned Additional goals row whose weightage is editable but never deleted; KPIs plus that row total 100. Add functions, designations and levels | Staged Save. A function without rows (Pharmacovigilance today) shows its staff "no framework yet" until rows are added |
 | Exports | Excel files: users, goals, annual reviews, everything | Every export is written to an append-only audit log |
 | System Settings | Quarter roll-out, per-year switches, Calendar | See the cheat sheet above |
 | Notify | Announcements and the daily summary emails | See above |

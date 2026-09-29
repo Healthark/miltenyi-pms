@@ -15,7 +15,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, FileQuestion, Loader2, Pencil, Plus, RotateCcw, Save, X } from "lucide-react";
+import { Check, FileQuestion, Loader2, Lock, Pencil, Plus, RotateCcw, Save, X } from "lucide-react";
 
 import { queryKeys } from "@/lib/queryKeys";
 import { getErrorMessage } from "@/utils/errors";
@@ -35,13 +35,17 @@ const LEVEL_OPTIONS = Array.from({ length: MAX_LEVEL }, (_, i) => i + 1);
 const BAND: Record<number, string> = { 1: "Entry", 2: "Mid", 3: "Senior", 4: "Lead" };
 const SELECT_CLS =
   "rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand cursor-pointer";
-const DEFAULT_KPIS: FrameworkKpiInput[] = [30, 25, 20, 15, 10].map((w) => ({ text: "", weightage: w }));
+// New column: four KPIs at 90 plus the Additional goals row at 10 = 100.
+const DEFAULT_KPIS: FrameworkKpiInput[] = [30, 25, 20, 15].map((w) => ({ text: "", weightage: w }));
+const DEFAULT_EXTRA_WEIGHT = 10;
 
 interface RowDraft {
   title: string;
   business_outcomes: string;
   functional_goals: string;
   kpis: FrameworkKpiInput[];
+  /** The pinned "Additional goals" row: editable weightage, never deleted. */
+  extra_goal_weightage: number;
 }
 
 const draftOf = (row: FrameworkRow): RowDraft => ({
@@ -49,12 +53,15 @@ const draftOf = (row: FrameworkRow): RowDraft => ({
   business_outcomes: row.business_outcomes,
   functional_goals: row.functional_goals,
   kpis: row.kpis.map((k) => ({ text: k.text, weightage: k.weightage ?? 0 })),
+  extra_goal_weightage: row.extra_goal_weightage ?? DEFAULT_EXTRA_WEIGHT,
 });
 
-const emptyDraft = (): RowDraft => ({ title: "", business_outcomes: "", functional_goals: "", kpis: DEFAULT_KPIS.map((k) => ({ ...k })) });
+const emptyDraft = (): RowDraft => ({ title: "", business_outcomes: "", functional_goals: "", kpis: DEFAULT_KPIS.map((k) => ({ ...k })), extra_goal_weightage: DEFAULT_EXTRA_WEIGHT });
 
-const total = (kpis: FrameworkKpiInput[]) => kpis.reduce((a, k) => a + (Number(k.weightage) || 0), 0);
-const draftValid = (d: RowDraft) => total(d.kpis) === 100 && d.kpis.length > 0 && d.kpis.every((k) => k.text.trim()) && !!d.title.trim() && !!d.business_outcomes.trim() && !!d.functional_goals.trim();
+const kpiTotal = (kpis: FrameworkKpiInput[]) => kpis.reduce((a, k) => a + (Number(k.weightage) || 0), 0);
+/** KPIs plus the Additional goals row — this is what must be 100. */
+const total = (d: RowDraft) => kpiTotal(d.kpis) + (Number(d.extra_goal_weightage) || 0);
+const draftValid = (d: RowDraft) => total(d) === 100 && d.kpis.length > 0 && d.kpis.every((k) => k.text.trim()) && !!d.title.trim() && !!d.business_outcomes.trim() && !!d.functional_goals.trim();
 const levelName = (l: number) => (BAND[l] ? `Level ${l} · ${BAND[l]}` : `Level ${l}`);
 
 function TotalBadge({ value }: Readonly<{ value: number }>) {
@@ -213,6 +220,7 @@ export function FrameworkTab() {
           business_outcomes: d.business_outcomes.trim(),
           functional_goals: d.functional_goals.trim(),
           kpis: d.kpis.map((k) => ({ text: k.text.trim(), weightage: Number(k.weightage) || 0 })),
+          extra_goal_weightage: Number(d.extra_goal_weightage) || 0,
         });
       }
       for (const [level, d] of Object.entries(newLevels)) {
@@ -223,6 +231,7 @@ export function FrameworkTab() {
           business_outcomes: d.business_outcomes.trim(),
           functional_goals: d.functional_goals.trim(),
           kpis: d.kpis.map((k) => ({ text: k.text.trim(), weightage: Number(k.weightage) || 0 })),
+          extra_goal_weightage: Number(d.extra_goal_weightage) || 0,
         });
       }
     },
@@ -280,8 +289,8 @@ export function FrameworkTab() {
   };
 
   // ── KPI cell (existing row or new column) ────────────────────────
-  const kpiEditor = (key: string, d: RowDraft, setKpis: (kpis: FrameworkKpiInput[]) => void, alwaysOpen: boolean) => {
-    const t = total(d.kpis);
+  const kpiEditor = (key: string, d: RowDraft, setKpis: (kpis: FrameworkKpiInput[]) => void, setExtra: (w: number) => void, alwaysOpen: boolean) => {
+    const t = total(d);
     const editing = alwaysOpen || editingKpis.has(key);
     if (!editing) {
       return (
@@ -294,6 +303,11 @@ export function FrameworkTab() {
                 <WeightChip weight={k.weightage} />
               </li>
             ))}
+            <li className="flex items-start gap-2.5 border-t border-dashed border-border pt-2">
+              <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-slate-100 text-[12px] font-bold text-text-muted">+</span>
+              <p className="flex-1 text-[13px] leading-snug text-text-muted">Additional goals <span className="text-[11px]">· free-text row, on/off per year in System Settings</span></p>
+              <WeightChip weight={d.extra_goal_weightage} />
+            </li>
           </ol>
           <div className="mt-3 flex items-center justify-between border-t border-border pt-2">
             <button type="button" onClick={() => setEditingKpis((s) => new Set(s).add(key))} className="flex items-center gap-1 text-[12px] font-medium text-brand-accent hover:underline">
@@ -320,6 +334,18 @@ export function FrameworkTab() {
             </div>
           </div>
         ))}
+        <div className="rounded-lg border border-dashed border-border bg-slate-50/70 p-2.5">
+          <div className="mb-1 flex items-center justify-between">
+            <span className={TH_CLS}>Additional goals</span>
+            <span className="inline-flex items-center gap-1 text-[11px] text-text-muted" title="This row cannot be removed; set its weightage, or 0 when the year's switch is off"><Lock className="h-3 w-3" aria-hidden="true" /> fixed row</span>
+          </div>
+          <p className="text-[12px] text-text-muted">One free-text row at the end of every sheet; whether it shows is the year's switch in System Settings.</p>
+          <div className="mt-1.5 flex items-center gap-2">
+            <label className="text-[11px] text-text-muted">Weightage</label>
+            <input type="number" min={0} max={100} value={d.extra_goal_weightage} onChange={(e) => setExtra(Number(e.target.value))} className="w-20 rounded-lg border border-border bg-white px-2 py-1 text-right font-mono text-[13px] outline-none focus:border-brand" />
+            <span className="text-[11px] text-text-muted">%</span>
+          </div>
+        </div>
         <div className="flex items-center justify-between pt-1">
           <div className="flex items-center gap-3">
             <button type="button" onClick={() => setKpis([...d.kpis, { text: "", weightage: 0 }])} className="flex items-center gap-1 text-[12px] font-medium text-brand-accent hover:underline"><Plus className="h-3 w-3" /> Add KPI</button>
@@ -472,10 +498,10 @@ export function FrameworkTab() {
                 <td className="border-b border-border px-3 py-3">{addLevelCell}</td>
               </tr>
               <tr>
-                {rowLabel("Illustrative KPI / Success Measures · Weightage", "4–7 KPIs per level, weightages total 100%")}
+                {rowLabel("Illustrative KPI / Success Measures · Weightage", "4–7 KPIs per level plus the Additional goals row; together they total 100%")}
                 {levels.map((l) => {
                   const { row, isNew, d, patch } = column(l);
-                  return <td key={l} className={`px-3 py-3 ${isNew ? "bg-brand-light/20" : ""}`}>{d && kpiEditor(row ? String(row.id) : `new-${l}`, d, (kpis) => patch({ kpis }), isNew)}</td>;
+                  return <td key={l} className={`px-3 py-3 ${isNew ? "bg-brand-light/20" : ""}`}>{d && kpiEditor(row ? String(row.id) : `new-${l}`, d, (kpis) => patch({ kpis }), (w) => patch({ extra_goal_weightage: w }), isNew)}</td>;
                 })}
                 <td className="px-3 py-3">{addLevelCell}</td>
               </tr>

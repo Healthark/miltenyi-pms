@@ -82,13 +82,20 @@ _ROLE_PATTERN = r"^(Admin|Staff|Mentor)$"
 class UserCreate(BaseModel):
     """Payload from the 'Add New User' modal.
 
-    `employee_code` is OPTIONAL and effectively advisory — the create
-    route auto-derives the canonical code from the role per the
-    convention in `admin_routes._compute_next_employee_code`. Any
-    value the client sends is ignored. Field kept on the schema so
-    existing clients that still send it don't 422.
+    `employee_code` is OPTIONAL (29 Sep 2026): the form pre-fills the next
+    HRK-<ROLE>-nnn code and the Admin may keep it, edit it or clear it.
+    A typed code is kept as typed (unique within the organisation); blank
+    means "generate one".
     """
     employee_code: Optional[str] = Field(default=None, max_length=20)
+
+    @field_validator("employee_code", mode="before")
+    @classmethod
+    def _blank_code_is_absent(cls, value):
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
     full_name: str = Field(..., min_length=1, max_length=100)
     email: str = Field(..., min_length=5, max_length=100)
     phone: Optional[str] = None

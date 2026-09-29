@@ -210,13 +210,13 @@ The staff read receipt on a quarterly review ("Acknowledge Q3 review") was remov
 
 ### TC-PG-016a — The "Additional goals" row (HR requirement)
 
-**Pre-condition:** Admin turned **Additional goals row** on in System Settings (Project Goals column) with weightage 10 % and saved.
+**Pre-condition:** Admin turned **Additional goals row** on in System Settings (Project Goals column) and saved; the Regulatory Affairs Level 1 column on the Framework tab has the row at 10 % (KPIs 90 + 10 = 100).
 **Login as:** Staff (Kabir, no set yet), then Mentor (Rahul)
 **Expected:**
 - **Start goal set** creates the KPI rows plus one last row marked **+** and titled **Additional goals** — "Anything else you are working on this year, agreed with your reviewer · optional" — with the 10 % chip. The framework band's note ends with "plus one optional "Additional goals" row at 10%".
 - The row is optional everywhere: **Submit Goals** enables once every *KPI* row is filled even if this row is empty; the same for the self-review and for the mentor's review. An empty row reads "No additional goals" on the read-only views.
 - Text written in it is reviewed like any other row: self-review and Miltenyi comment cells work the same.
-- Draft sheets follow the Admin's setting: turning the switch off removes the empty row from drafts (a filled one stays), changing the weightage updates drafts; submitted and approved sheets keep the row and weightage they were created with. The setting is carried into the next goal year at roll-over.
+- Draft sheets follow the Admin: turning the year's switch off removes the empty row from drafts (a filled one stays); changing the column's weightage on the Framework tab updates drafts built from that column; submitted and approved sheets keep the row and weightage they were created with. Switch and weightages are carried into the next goal year at roll-over.
 
 ---
 
@@ -368,13 +368,13 @@ The change log tab was dropped from the set page. Actions are still recorded in 
 **Steps:**
 1. Admin Panel → **Framework**. Select **Biostatistics**.
 2. In the KPI row for Level 1 click **Edit KPIs**, change one weightage so the total is not 100, click **Done**.
-3. Fix the weightages so the total is 100 again, click **Done**, then **Save**.
+3. Fix the weightages so KPIs plus the **Additional goals** row total 100 again, click **Done**, then **Save**.
 
 **Expected:**
 - Function select lists every function; those without a level column are marked "(no levels yet)". A pencil next to the select renames the function.
 - Summary chip "20 KPIs · 4 levels defined · CY 26-27".
 - **Designations → levels** strip: each designation of the function with a level select 1–12 (changes apply immediately, toast "Designation level updated") and a pencil to rename it.
-- Matrix: one column per defined level (levels 1–4 also show their band name Entry / Mid / Senior / Lead), rows *Outcomes*, *Functional goals* and *KPI / Success Measures · Weightage* with a **Total 100%** badge, plus a last **Add level** column.
+- Matrix: one column per defined level (levels 1–4 also show their band name Entry / Mid / Senior / Lead), rows *Outcomes*, *Functional goals* and *KPI / Success Measures · Weightage* with a **Total 100%** badge, plus a last **Add level** column. The KPI list ends with a pinned **Additional goals** row (29 Sep 2026): its weightage is editable, it cannot be removed or renamed, and the total counts it (KPIs + Additional goals = 100). Columns seeded at KPIs 100 show a red 110% until the Admin trims a KPI.
 - While the total is not 100 the badge turns red and **Save** is disabled. **Discard** drops all staged edits.
 - **Save** → toast "Framework saved".
 - The Framework tab holds content only; every switch is in System Settings.
@@ -403,7 +403,7 @@ The change log tab was dropped from the set page. Actions are still recorded in 
 **Steps:** Admin Panel → **System Settings**. From top to bottom: the **Quarter roll-out** card (full width), the **Configure year** dropdown with the single **Save CY 26-27 configuration** button, then two columns for that year — **Annual Reviews / Annual Goals** on the left and **Project Goals** on the right — then **Calendar**. Flip one switch in each column, click Save, read the confirmation, apply.
 **Expected:**
 - Years are labelled **CY yy-zz** everywhere (the fiscal year and the goal year are the same April-to-April span). The dropdown marks the current year "(Current)"; a year without Project Goals reads "— annual only", a past goal year "— goals open for backfill" or "— goals closed".
-- Project Goals switches for the year: **Goal entry open** → TC-PG-014, **Weightages visible to staff** → TC-PG-015, **Additional goals row** with its weightage → TC-PG-016a, for a past year **Year open for backfill** (TC-PG-046), and a **Quarters** table with one row per started quarter and two switch columns: **Open for backfill** (the current quarter shows an "always open" chip instead) → TC-PG-007a and **Ratings visible** → TC-PG-011. There is **no** "self-review window" switch. For a year without a goal year the right column says "No Project Goals year exists for CY yy-zz…".
+- Project Goals switches for the year: **Goal entry open** → TC-PG-014, **Weightages visible to staff** → TC-PG-015, **Additional goals row** (on/off; the weightage is on the Framework tab) → TC-PG-016a, for a past year **Year open for backfill** (TC-PG-046), and a **Quarters** table with one row per started quarter and two switch columns: **Open for backfill** (the current quarter shows an "always open" chip instead) → TC-PG-007a and **Ratings visible** → TC-PG-011. There is **no** "self-review window" switch. For a year without a goal year the right column says "No Project Goals year exists for CY yy-zz…".
 - Nothing saves on click. The Save button shows the number of staged flips, and the dialog lists every flip tagged **Annual** or **Project Goals** (ON → OFF) with impact lines from the live data, e.g. "3 staff members have not started goals and 1 draft set is still being written…" or "Q3 · CY 26-27: 1 submitted review will show their final rating to staff." **Apply changes** → toast "Configuration saved for CY 26-27."; both columns persist after refresh.
 - With no active goal year at all, an amber notice in the right column offers **Make CY 26-27 the active year**.
 

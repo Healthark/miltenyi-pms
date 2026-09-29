@@ -42,6 +42,8 @@ export interface FrameworkRowCreatePayload {
   business_outcomes: string;
   functional_goals: string;
   kpis: FrameworkKpiInput[];
+  /** Weightage of the "Additional goals" row; KPIs + this must total 100. */
+  extra_goal_weightage: number;
 }
 
 export interface FrameworkRowUpdatePayload {
@@ -49,6 +51,7 @@ export interface FrameworkRowUpdatePayload {
   business_outcomes: string;
   functional_goals: string;
   kpis: FrameworkKpiInput[];
+  extra_goal_weightage: number;
 }
 
 export type MappingStatus = "mapped" | "no_framework" | "no_designation" | "no_function";
@@ -91,7 +94,6 @@ export interface PeriodSettingsUpdatePayload {
   weightages_visible?: boolean;
   backfill_open?: boolean;
   extra_goal_enabled?: boolean;
-  extra_goal_weightage?: number;
 }
 
 /** Per-quarter switches; send only what changed. */

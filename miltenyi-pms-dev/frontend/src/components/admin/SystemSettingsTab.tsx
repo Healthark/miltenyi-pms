@@ -212,7 +212,6 @@ interface PeriodForm {
   weightages_visible: boolean;
   backfill_open: boolean;
   extra_goal_enabled: boolean;
-  extra_goal_weightage: string;
   ratings: Record<number, boolean>;
   quarterBackfill: Record<number, boolean>;
 }
@@ -222,12 +221,10 @@ const periodFormOf = (s: PeriodSettings): PeriodForm => ({
   weightages_visible: s.weightages_visible,
   backfill_open: s.backfill_open,
   extra_goal_enabled: s.extra_goal_enabled,
-  extra_goal_weightage: String(s.extra_goal_weightage),
   ratings: Object.fromEntries(s.quarters.map((q) => [q.seq, q.ratings_visible])),
   quarterBackfill: Object.fromEntries(s.quarters.map((q) => [q.seq, q.backfill_open])),
 });
 
-const extraWeightOk = (v: string) => /^\d{1,3}$/.test(v.trim()) && Number(v) >= 0 && Number(v) <= 100;
 
 function plural(n: number, word: string) {
   return `${n} ${word}${n === 1 ? "" : "s"}`;
@@ -259,7 +256,6 @@ function periodWarnings(rows: ChangeRow[], p: PeriodPreflight | null, saved: Per
     if (key === "extra_goal_enabled") out.push(d.to
       ? `Every ${saved.period_label} sheet still in Draft gets an "Additional goals" row at the end (${plural(p.sets_draft, "draft set")} now); submitted and approved sheets keep their rows. The row is optional and has no KPI behind it.`
       : `The "Additional goals" row is removed from empty Draft sheets; sheets where it was filled keep it.`);
-    if (key === "extra_goal_weightage") out.push(`Draft sheets show the new weightage; submitted and approved sheets keep the weightage they were created with.`);
     const qb = /^backfill_(\d+)$/.exec(key);
     if (qb) {
       const seq = Number(qb[1]);
@@ -376,7 +372,7 @@ export function SystemSettingsTab({
   const savedPg = hasPeriod ? pgQ.data ?? null : null;
   const [pgForm, setPgForm] = useState<PeriodForm | null>(null);
   const [pgKey, setPgKey] = useState<string>("");
-  const savedPgKey = savedPg ? `${savedPg.period_label}|${savedPg.entry_open}|${savedPg.weightages_visible}|${savedPg.backfill_open}|${savedPg.extra_goal_enabled}|${savedPg.extra_goal_weightage}|${savedPg.quarters.map((q) => `${q.seq}:${q.ratings_visible}:${q.backfill_open}`).join(",")}` : "";
+  const savedPgKey = savedPg ? `${savedPg.period_label}|${savedPg.entry_open}|${savedPg.weightages_visible}|${savedPg.backfill_open}|${savedPg.extra_goal_enabled}|${savedPg.quarters.map((q) => `${q.seq}:${q.ratings_visible}:${q.backfill_open}`).join(",")}` : "";
   if (savedPg && pgKey !== savedPgKey) {
     setPgForm(periodFormOf(savedPg));
     setPgKey(savedPgKey);
@@ -395,7 +391,6 @@ export function SystemSettingsTab({
       if (pgForm.weightages_visible !== savedPg.weightages_visible) rows.push({ key: "pg:weightages_visible", group: "Project Goals", label: "Weightages visible to staff", from: savedPg.weightages_visible, to: pgForm.weightages_visible });
       if (!savedPg.is_active && pgForm.backfill_open !== savedPg.backfill_open) rows.push({ key: "pg:backfill_open", group: "Project Goals", label: "Quarters open for backfill", from: savedPg.backfill_open, to: pgForm.backfill_open });
       if (pgForm.extra_goal_enabled !== savedPg.extra_goal_enabled) rows.push({ key: "pg:extra_goal_enabled", group: "Project Goals", label: "Additional goals row", from: savedPg.extra_goal_enabled, to: pgForm.extra_goal_enabled });
-      if (extraWeightOk(pgForm.extra_goal_weightage) && Number(pgForm.extra_goal_weightage) !== savedPg.extra_goal_weightage) rows.push({ key: "pg:extra_goal_weightage", group: "Project Goals", label: `Additional goals weightage ${savedPg.extra_goal_weightage}% → ${Number(pgForm.extra_goal_weightage)}%`, from: true, to: true });
       for (const q of savedPg.quarters) {
         const to = pgForm.ratings[q.seq] ?? q.ratings_visible;
         if (to !== q.ratings_visible) rows.push({ key: `pg:ratings_${q.seq}`, group: "Project Goals", label: `${quarterDisplay(q.cycle_label)} ratings visible to staff`, from: q.ratings_visible, to });
@@ -448,7 +443,6 @@ export function SystemSettingsTab({
         if (pgForm.weightages_visible !== savedPg.weightages_visible) patch.weightages_visible = pgForm.weightages_visible;
         if (!savedPg.is_active && pgForm.backfill_open !== savedPg.backfill_open) patch.backfill_open = pgForm.backfill_open;
         if (pgForm.extra_goal_enabled !== savedPg.extra_goal_enabled) patch.extra_goal_enabled = pgForm.extra_goal_enabled;
-        if (extraWeightOk(pgForm.extra_goal_weightage) && Number(pgForm.extra_goal_weightage) !== savedPg.extra_goal_weightage) patch.extra_goal_weightage = Number(pgForm.extra_goal_weightage);
         if (Object.keys(patch).length) await goalFrameworkService.updateSettings(patch, savedPg.period_label);
         for (const q of savedPg.quarters) {
           const payload: { ratings_visible?: boolean; backfill_open?: boolean } = {};
@@ -626,24 +620,9 @@ export function SystemSettingsTab({
                   <div className="flex items-center justify-between gap-4 py-3">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-text-main">Additional goals row</p>
-                      <p className="text-xs text-text-muted mt-0.5">One free-text row at the end of every goal sheet where staff write any other goals they are working on. Optional; its weightage is informational, like the KPIs'.</p>
+                      <p className="text-xs text-text-muted mt-0.5">One free-text row at the end of every goal sheet where staff write any other goals they are working on. Its weightage is set per function and level on the Framework tab, where KPIs plus this row total 100%. Also applies to. Optional; its weightage is informational, like the KPIs'.</p>
                     </div>
                     <div className="flex items-center gap-3">
-                      <label className="flex items-center gap-1.5 text-xs text-text-muted">
-                        Weightage
-                        <input
-                          type="number"
-                          min={0}
-                          max={100}
-                          step={1}
-                          value={pgForm?.extra_goal_weightage ?? ""}
-                          disabled={!pgForm || !pgForm.extra_goal_enabled || save.isPending}
-                          onChange={(e) => setPgForm((f) => (f ? { ...f, extra_goal_weightage: e.target.value } : f))}
-                          className={`w-20 rounded-lg border bg-white px-2 py-1 text-right font-mono text-[13px] outline-none focus:border-brand disabled:bg-slate-50 disabled:text-text-muted ${pgForm && !extraWeightOk(pgForm.extra_goal_weightage) ? "border-red-400" : "border-border"}`}
-                          aria-label="Additional goals weightage"
-                        />
-                        %
-                      </label>
                       <Switch
                         ariaLabel="Additional goals row"
                         checked={!!pgForm?.extra_goal_enabled}

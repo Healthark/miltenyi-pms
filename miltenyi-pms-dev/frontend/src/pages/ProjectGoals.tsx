@@ -321,7 +321,7 @@ function EmployeeGoals() {
   } else if (!set) {
     body = (
       <>
-        <FrameworkBand framework={framework} kpiCountNote={`${framework.kpis.length} KPIs follow${period.weightages_visible ? "; weightages are fixed by Miltenyi and total 100%" : ""}${period.extra_goal_enabled ? `, plus one optional "Additional goals" row${period.weightages_visible ? ` at ${period.extra_goal_weightage}%` : ""}.` : "."}`} />
+        <FrameworkBand framework={framework} kpiCountNote={`${framework.kpis.length} KPIs follow${period.weightages_visible ? "; weightages are fixed by Miltenyi and total 100%" : ""}${period.extra_goal_enabled ? `, plus one optional "Additional goals" row${framework.extra_goal_weightage != null ? ` at ${framework.extra_goal_weightage}%` : ""}.` : "."}`} />
         {period.entry_open ? (
           <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border px-6 py-10 text-center">
             <PenLine className="h-8 w-8 text-text-muted" aria-hidden="true" />
