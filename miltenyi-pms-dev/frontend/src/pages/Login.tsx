@@ -9,8 +9,8 @@ import { describeAuthError, validateEmailField, validateLoginFields } from "@/ut
 
 const MILTENYI_ASSETS = {
   id: "miltenyi",
-  name: "Miltenyi Biotec",
-  logo: "/miltenyi-biotec-logo.svg",
+  name: "Healthark and Miltenyi Biotec",
+  logo: "/Healthark PMS_Milteny-01.png",
   logoClass: "h-14 w-auto object-contain drop-shadow-sm",
   placeholder: "you@healthark.ai",
 } as const;
@@ -97,7 +97,7 @@ export function Login() {
     }
 
     favicon.href = "/miltenyi-biotech-small.svg";
-    document.title = "Miltenyi Biotec PMS";
+    document.title = "Healthark-Miltenyi PMS";
   }, [user]);
 
   // Synchronous redirect for already-authenticated users — avoids the
@@ -148,14 +148,8 @@ export function Login() {
         {/* ── Login Form Card ── */}
         <div className="bg-surface py-8 px-4 shadow-xl sm:rounded-xl sm:px-10 border border-border transition-colors duration-1000 ease-in-out">
           
-          {/* Dynamic Logo, PMS Tag, and Header */}
+          {/* Logo (the artwork carries the product name) */}
           <div className="flex flex-col items-center justify-center mb-8 gap-3">
-            
-            {/* PMS Text positioned ABOVE the logo */}
-            <span className="text-text-muted font-medium text-lg tracking-[0.15em] animate-[fadeIn_0.8s_ease-in-out]">
-              PMS
-            </span>
-
             {/* Logo */}
             <img
               key={currentAssets.id}
