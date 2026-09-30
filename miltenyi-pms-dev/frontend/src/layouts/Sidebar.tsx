@@ -28,10 +28,11 @@ interface NavItemData {
 }
 
 const ORG_ASSETS = {
-  logo: "/miltenyi-biotec-logo.svg",
-  logoSmall: "/miltenyi-biotech-small.svg",
-  displayName: "Miltenyi Biotec",
-  logoClass: "h-10 w-auto object-contain shrink-0 max-w-[180px]",
+  logo: "/Healthark PMS_Milteny-01.png",
+  logoSmall: "/Healthark PMS_Milteny-02.png",
+  displayName: "Healthark and Miltenyi Biotec Performance Management System",
+  // The full logo is ~6.6:1, so it is sized by width and fills the rail.
+  logoClass: "w-full h-auto object-contain shrink-0",
 } as const;
 
 const NavItem = ({
@@ -169,20 +170,14 @@ export function Sidebar() {
           <img
             src={activeAssets.logoSmall}
             alt={activeAssets.displayName}
-            className="h-8 w-8 object-contain shrink-0"
+            className="h-6 w-12 object-contain shrink-0"
           />
         ) : (
-          <>
-            <img
-              src={activeAssets.logo}
-              alt={activeAssets.displayName}
-              className={activeAssets.logoClass} 
-            />
-            {/* Removed the org_id check so PMS shows for everyone */}
-            <span className="text-text-muted font-normal text-sm ml-2 shrink-0 whitespace-nowrap mt-4">
-              PMS
-            </span>
-          </>
+          <img
+            src={activeAssets.logo}
+            alt={activeAssets.displayName}
+            className={activeAssets.logoClass}
+          />
         )}
       </div>
       {/* -------------------------------- */}
