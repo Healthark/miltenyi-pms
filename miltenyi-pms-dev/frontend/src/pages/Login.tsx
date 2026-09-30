@@ -11,7 +11,7 @@ const MILTENYI_ASSETS = {
   id: "miltenyi",
   name: "Healthark and Miltenyi Biotec",
   logo: "/Healthark PMS_Milteny-01.png",
-  logoClass: "h-14 w-auto object-contain drop-shadow-sm",
+  logoClass: "brand-logo h-18 w-auto max-w-full object-contain drop-shadow-sm",
   placeholder: "you@healthark.ai",
 } as const;
 

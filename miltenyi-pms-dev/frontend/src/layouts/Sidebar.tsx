@@ -32,7 +32,7 @@ const ORG_ASSETS = {
   logoSmall: "/Healthark PMS_Milteny-02.png",
   displayName: "Healthark and Miltenyi Biotec Performance Management System",
   // The full logo is ~6.6:1, so it is sized by width and fills the rail.
-  logoClass: "w-full h-auto object-contain shrink-0",
+  logoClass: "brand-logo w-full h-auto object-contain shrink-0",
 } as const;
 
 const NavItem = ({
@@ -170,7 +170,7 @@ export function Sidebar() {
           <img
             src={activeAssets.logoSmall}
             alt={activeAssets.displayName}
-            className="h-6 w-12 object-contain shrink-0"
+            className="brand-logo h-6 w-12 object-contain shrink-0"
           />
         ) : (
           <img
