@@ -440,13 +440,13 @@
     0 2px 16px rgba(168, 124, 201, 0.35);
 }
 
-/* The Miltenyi wordmark is rendered as a single SVG containing the
-   deep-purple "Miltenyi Biotec" text. On a dark background the purple
-   blends into the slate, so we lift the brightness and add a soft
-   brand-purple glow around it. Targeted by alt attribute so we don't
-   need to mutate the component. Applies to both the expanded logo and
-   the collapsed small mark. */
-:root.dark img[alt="Miltenyi Biotec"] {
+/* The Healthark + Miltenyi logo (navy Healthark wordmark, deep-purple
+   Miltenyi mark) blends into the dark slate, so in dark mode we lift
+   the brightness and add a soft brand-purple glow around it. Every logo
+   <img> carries the `brand-logo` class: the sidebar's expanded logo and
+   collapsed mark, and the login card. (It used to match the alt text,
+   which silently stopped working when the alt changed.) */
+:root.dark img.brand-logo {
   filter:
     brightness(1.3) saturate(1.05)
     drop-shadow(0 0 8px rgba(213, 184, 232, 0.35));
