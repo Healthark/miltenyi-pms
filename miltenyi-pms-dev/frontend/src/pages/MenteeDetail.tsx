@@ -165,7 +165,7 @@ export function MenteeDetail() {
     if (activeFyToken) s.add(activeFyToken);
     if (data) {
       for (const g of data.goals_list) {
-        s.add(fyStartYearToToken(g.fy_year));
+        if (g.fy_year != null) s.add(fyStartYearToToken(g.fy_year));
       }
       for (const r of data.reviews_list) {
         s.add(extractFyToken(r.cycle_name));

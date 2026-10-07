@@ -38,6 +38,7 @@ import {
   type ReviewStatus,
 } from "@/services/annual-review.service";
 import type { MenteeDetail } from "@/services/mentee.service";
+import { GCC_COMPETENCIES } from "@/constants/gccFramework";
 import type {
   TeamGoal,
   GoalSelfReview,
@@ -286,25 +287,10 @@ function GoalSummaryCard({ goal }: { readonly goal: TeamGoal }) {
 
 // ── Project card ────────────────────────────────────────────────────
 
-const COMPETENCY_LABELS: ReadonlyArray<{
-  key:
-    | "comment_task_execution"
-    | "comment_ownership"
-    | "comment_project_management"
-    | "comment_client_deliverables"
-    | "comment_communication"
-    | "comment_mentoring"
-    | "comment_competency_skills";
-  label: string;
-}> = [
-  { key: "comment_task_execution", label: "Task Execution" },
-  { key: "comment_ownership", label: "Ownership" },
-  { key: "comment_project_management", label: "Project Management" },
-  { key: "comment_client_deliverables", label: "Client Deliverables" },
-  { key: "comment_communication", label: "Communication" },
-  { key: "comment_mentoring", label: "Mentoring" },
-  { key: "comment_competency_skills", label: "Competency & Skills" },
-];
+// The GCC competency comments a project review carries (one per competency
+// since the 25 May 2026 framework change), labelled from the shared
+// GCC_COMPETENCIES list so the keys cannot drift from the review type again.
+const COMPETENCY_LABELS = GCC_COMPETENCIES.map(({ commentKey, label }) => ({ key: commentKey, label }));
 
 function ProjectSummaryCard({
   assignment,

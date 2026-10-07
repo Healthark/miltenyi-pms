@@ -49,7 +49,6 @@ import {
 } from "@/utils/fy";
 import {
   groupProjectReviews,
-  type CycleSlot,
   type GroupedReviewRow,
 } from "@/utils/groupProjectReviews";
 import { CycleReviewChip } from "@/components/reviews/CycleReviewChip";
@@ -738,7 +737,6 @@ export function ProjectReviews() {
                 // wiring needed here.
                 filters={allReviewsFilters}
                 onFiltersChange={setAllReviewsFilters}
-                serverTotal={allReviewsTotal}
                 // Running row-number offset so the # column reads as
                 // the row's absolute position (1-based) across pages.
                 rowNumberOffset={(allReviewsPage - 1) * allReviewsPageSize}
@@ -851,7 +849,6 @@ function ReadOnlyReviewsList({
   emptySubtitle,
   filters,
   onFiltersChange,
-  serverTotal,
   rowNumberOffset = 0,
   filterOptionsOverride,
   defaultCycle,
@@ -889,11 +886,6 @@ function ReadOnlyReviewsList({
   readonly filters?: AllProjectReviewsFilters;
   /** Setter for the controlled-mode filter state. */
   readonly onFiltersChange?: (next: AllProjectReviewsFilters) => void;
-  /** Server-side count of reviews matching the active filter set.
-   *  Provided in controlled mode so the counter reads filtered total
-   *  (matching what Load More pages through) instead of the loaded
-   *  array length. */
-  readonly serverTotal?: number;
   /** 0-based offset for the running row-number column. Passed by the
    *  HR consumer as `(page - 1) * pageSize` so the # cell reads as the
    *  row's absolute position across pages (matches the "Showing N–M of
