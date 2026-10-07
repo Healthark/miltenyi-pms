@@ -87,11 +87,11 @@ export function RoleExpectationsModal({
         <div className="flex-1 overflow-y-auto px-6 py-5">
           <ol className="grid grid-cols-1 gap-x-6 gap-y-5 md:grid-cols-2">
             {GCC_COMPETENCIES.map(({ expKey, label }, idx) => {
-              // UserRoleExpectation shares its exp_* field shape with
-              // the RoleExpectation type that backs GCC_COMPETENCIES, so
-              // we can index it with expKey directly.
-              const text = (expectation as Record<string, string | null | number | undefined>)[expKey];
-              if (!text || typeof text !== "string") return null;
+              // UserRoleExpectation has the same six exp_* fields that
+              // GCC_COMPETENCIES' expKey is typed against, so it indexes
+              // directly and the compiler checks the names.
+              const text = expectation[expKey];
+              if (!text) return null;
               return (
                 <li
                   key={expKey}
