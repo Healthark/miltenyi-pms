@@ -191,6 +191,7 @@ export default function App() {
               }
             >
               <Route path="/annual-goals" element={<AnnualGoals />} />
+              <Route path="/annual-goals/:goalId" element={<AnnualGoals />} />
             </Route>
 
             <Route

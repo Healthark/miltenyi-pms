@@ -3,693 +3,321 @@
 > **Audience:** Manual QA tester, non-technical.
 > **Prerequisite:** You have completed Module 1 (Foundational). Refer back to Module 1 §1.7 for the cross-cutting UI checklist — apply it on every screen here too.
 > **Test accounts needed:** Staff (with mentor), Staff (no mentor), Mentor (with mentees), Admin.
-> **Vocab:** A *goal* moves through these states — **Draft → Pending Approval → Approved → H1/H2 Self-Reviewed → H1/H2 Mentor-Reviewed** (or Q1..Q4 in quarterly orgs). It can also be sent back as **Changes Requested**.
+> **Vocab:** A *goal* moves through **Draft → Pending Approval → Approved → H1/H2 Self-Reviewed → H1/H2 Mentor-Reviewed**. The mentor can send it back as **Changes Requested**. Ratings are not on this page; the year's rating is given on Annual Reviews.
+> **Rewritten 7 Oct 2026.** Annual goals now use the Project Goals table layout: **one goal per person per year in one row** (every goal for the year is written in that row), an **H1 / H2 selector** for the two review columns, and for mentors and the Admin a **roster** with one row per person that opens the same table. The old cards, filters, Add Goal button and pop-up forms are gone, and their test cases are retired.
 
 ---
 
-## 2.1 My Goals tab (Staff)
+## 2.1 My Goal (Staff)
 
-### TC-GOAL-001 — Open My Goals tab
+### TC-GOAL-001 — Open the page with no goal yet
 
-**Login as:** Staff
-**Steps:**
-1. Open **Annual Goals** from the sidebar.
-2. Default tab should be **My Goals**.
+**Login as:** Staff (with a mentor; goal entry open for the year)
+**Steps:** Open **Annual Goals** from the sidebar.
 
 **Expected:**
-- Page header reads "Team Goals" or "Annual Goals" with the active FY (e.g. "· CY 26-27") in muted text next to it.
-- A short subtitle below the header explains the page.
-- An **Add Goal** button is in the top-right (only when the goal-edit gate is open AND you have a mentor).
-- A "Reference your role expectations…" banner appears with a **View Role Expectations** button.
-
-**UI checks:**
-- Header and Add Goal button are vertically centered with each other.
-- The role-expectations banner does not stretch edge-to-edge; it has padding inside.
-- If you have no goals yet, you see a friendly empty state with a target icon and the message "No goals yet".
+- Header "Annual Goals · CY 26-27" with a subtitle. A **Goal year** dropdown appears only when there is more than one year.
+- One tab, **My Goal · CY 26-27**. Above the table: "Goal · CY 26-27", a grey **Not started** badge and a **View role expectations** button.
+- An info notice: "Write **all** of your goals for CY 26-27 in this one row…".
+- The table has three columns: **Goal** (marked *editing*, with Title, Your goals for the year and Link · optional), **Self review** ("Opens once the goal is approved") and **Mentor review** ("After approval").
+- The table footer reads "One goal per person per year. The year's rating is given on the Annual Reviews page."
+- Below the table: **Save draft** and **Submit for approval**.
 
 ---
 
-### TC-GOAL-002 — Add Goal button hidden when no mentor
+### TC-GOAL-002 — No mentor assigned
 
-**Login as:** Staff who does NOT have a mentor assigned
-**Steps:**
-1. Open Annual Goals → My Goals.
-
-**Expected:**
-- The Add Goal button is REPLACED by a locked banner: "No mentor assigned — goal creation is disabled."
-- The banner has a lock icon.
-
-**UI checks:**
-- Lock icon is the same height as the banner text.
-- Banner uses muted/gray styling (not red, not green — it's informational).
+**Login as:** Staff who does NOT have a mentor
+**Expected:** An amber notice "No mentor is assigned to you yet, so you can't set your annual goal. Ask the Admin to assign one." No table and no buttons.
 
 ---
 
-### TC-GOAL-003 — Add Goal button hidden when edit gate closed
+### TC-GOAL-003 — Goal entry closed
 
-**Pre-condition:** Admin toggles **Annual goals edit enabled** to OFF in Settings.
+**Pre-condition:** Admin turns **Edit Access for Annual Goals** OFF for the year (System Settings).
 **Login as:** Staff (with a mentor)
+**Expected:**
+- With no goal: amber notice "Annual goal entry for CY 26-27 is closed. The Admin opens it in System Settings." No table.
+- With a saved draft: the goal shows read-only with "Your goal is still a draft, but goal entry for CY 26-27 is closed…".
+
+---
+
+### TC-GOAL-004 — Write and save a draft
+
 **Steps:**
-1. Open Annual Goals → My Goals.
+1. Type a title.
+2. In **Your goals for the year**, write several goals; use the bullet button (or start lines with `- `) and bold one phrase.
+3. Click **Save draft**. Refresh the page.
 
 **Expected:**
-- Add Goal button is REPLACED by an amber banner: "Goal submissions are currently closed."
-- The banner has a lock icon.
-
-**UI checks:**
-- Amber/yellow color (distinct from the gray "no mentor" banner).
+- Toast "Draft saved"; the badge reads **Draft**; your text is still there after the refresh.
+- The notice and the Mentor review column now name your mentor.
+- **Save draft** stays disabled until there is a title (tooltip "Give the goal a title first"); **Submit for approval** needs a title and your goals.
 
 ---
 
-### TC-GOAL-004 — Create a new goal
+### TC-GOAL-005 — Link must be a web address
 
-**Pre-condition:** Goal edit gate is ON, you have a mentor.
-**Login as:** Staff
-**Steps:**
-1. Click **Add Goal**.
-2. A modal opens.
-3. Fill in:
-   - Title (required) — e.g. "Improve assay turnaround time"
-   - Description (optional)
-   - Attachment URL (optional)
-   - Add 2–3 criteria (each requires a title)
-4. Click **Save** (or **Create**).
+**Steps:** In **Link · optional**, type `drive folder`.
+**Expected:** Red text "Enter a web link that starts with http:// or https://." under the field; both buttons are disabled with the tooltip "Fix the link first". A `https://…` link clears it.
 
+---
+
+### TC-GOAL-006 — Only one goal per year
+
+**Steps:** After saving a draft, look for any way to add another goal.
 **Expected:**
-- Modal closes.
-- Success toast appears.
-- New goal appears at the top of My Goals (most-recent first).
-- Status badge reads **Draft** (gray).
-- Progress shows 0%.
-
-**UI checks on the modal:**
-- Modal is horizontally and vertically centered.
-- Title field has a clear asterisk indicating required.
-- Save and Cancel buttons are at the bottom-right; Cancel left of Save.
-- Criteria section lets you add multiple rows with a "+ Add criterion" button — each row aligned consistently.
+- There is none: the page always shows the one row.
+- (Testers with API tools) A second create for the same year is refused with "You already have an annual goal for CY 26-27. Write all of the year's goals in that one goal." A mentor or the Admin creating one on the staff member's behalf gets "This staff member already has an annual goal for CY 26-27…".
 
 ---
 
-### TC-GOAL-005 — Save validation — empty title
+### TC-GOAL-007 — Submit for approval
 
-**Login as:** Staff
-**Steps:**
-1. Click Add Goal.
-2. Leave Title blank.
-3. Click Save.
-
+**Steps:** Click **Submit for approval** and confirm "Submit your CY 26-27 goal for approval?".
 **Expected:**
-- Save does not proceed.
-- An inline error appears under the Title field: "Title is required."
-- The modal stays open.
+- Badge **Pending Approval**; blue notice "Submitted for approval. <Mentor> approves it or asks for changes. You can't edit it while it waits."
+- The Goal column is read-only: title in bold, the goals as a real list, an **Attachment** link if you gave one.
+- The mentor gets a bell notification.
 
 ---
 
-### TC-GOAL-006 — Edit a draft goal
+### TC-GOAL-008 — Changes requested, then resubmit
 
-**Login as:** Staff
-**Steps:**
-1. On a goal with **Draft** status, click the **Edit** icon (or the goal title in card view).
-2. Change the title or description.
-3. Save.
-
+**Pre-condition:** The mentor requested changes (TC-MENT-004).
 **Expected:**
-- Goal updates inline; success toast.
-- Status remains Draft.
-
-**UI checks:**
-- Edit modal pre-fills with the existing values; criteria show in the order they were created.
+- Amber notice "<Mentor> asked for changes. “<feedback>” Edit your goal below and submit it again."; the Goal column is editable with your earlier text.
+- **Save draft** turns it back into **Draft**; the info notice keeps "<Mentor>'s last feedback: “…”".
+- **Submit for approval** sends it again (Pending Approval).
 
 ---
 
-### TC-GOAL-007 — Cannot edit a non-draft goal
+### TC-GOAL-009 — Approved goal
 
-**Login as:** Staff
-**Steps:**
-1. Find a goal whose status is **Pending Approval** or **Approved**.
-2. Look for the Edit button.
+**Pre-condition:** The mentor approved the goal.
+**Expected:** Green notice "Approved on <date>. Your goal is fixed for CY 26-27; each half you review your progress against it." The Goal column is read-only and the H1 / H2 selector appears (§2.2).
 
+---
+
+### TC-GOAL-010 — Attachment link opens externally
+
+**Steps:** Click **Attachment** in the Goal column.
+**Expected:** The link opens in a new browser tab.
+
+---
+
+### TC-GOAL-011 — Rich text in the goal
+
+**Steps:** Write goals with bold, italic, a bullet list and a numbered list; save; view the goal read-only (after submitting) and, as Admin, Exports → Goals.
 **Expected:**
-- Edit button is absent (or disabled) for these statuses.
-- Hovering a disabled button (if present) shows a tooltip "Goal is locked".
+- The editor stores plain Markdown (`**bold**`, `- item`); its toolbar counter counts the source (max 5,000).
+- The read-only Goal column shows real bold text and lists. Typed HTML such as `<b>x</b>` shows as literal text.
+- The Excel Description cell has the markers stripped (bullets as "•", line breaks kept).
 
 ---
 
-### TC-GOAL-008 — Submit a draft for approval
+### TC-GOAL-012 — Another year
 
-**Login as:** Staff
-**Steps:**
-1. On a Draft goal, click **Request Approval** (or **Submit**).
-2. A confirmation dialog appears: "Submit goal for approval?"
-3. Click **Submit**.
+**Pre-condition:** You have goals in two years, or the goal year has moved on.
+**Expected:** The **Goal year** dropdown lists the years ("(current)" on the active one). A past year is read-only ("H2 is closed. CY 25-26 is a past year and read-only."); a past year without a goal reads "You have no annual goal for CY 25-26."
 
+---
+
+### TC-GOAL-013 — Notification links and role expectations
+
+**Steps:** Click a goal notification in the bell; then click **View role expectations**.
+**Expected:** The link opens your Annual Goals page on that goal's year. The dialog is titled "Your Role Expectations" and lists the six competencies for your function and level.
+
+---
+
+## 2.2 Self-review in the table (Staff)
+
+### TC-SELFREV-001 — The half selector
+
+**Pre-condition:** Approved goal; the Project Goals quarter is Q3 (annual half H2).
 **Expected:**
-- Status badge updates to **Pending Approval** (amber/yellow).
-- Edit and Request-Approval buttons disappear.
-- A small note "Awaiting review…" appears in the action area.
-
-**UI checks:**
-- Confirm dialog is centered with clear primary (Submit) and secondary (Cancel) buttons.
-- Pending Approval badge color matches every other "pending" badge in the app.
+- Pills **H1** and **H2**; H2 is marked **current**. H1 reads "Open for backfill", or its state once something is in ("In progress", "Self-review in · awaiting review", "Reviewed").
+- A half not reached yet (H2 while in Q1–Q2) is greyed with a lock and "Not started".
+- On the right: "Self-review · <state>" and "Mentor review · <state>" badges for the selected half; "Half closed" when it is.
+- The two review columns are headed with the selected half ("Self review · H1 · you", "Mentor review · H1 · <mentor>").
 
 ---
 
-### TC-GOAL-009 — Goal in Changes Requested state
+### TC-SELFREV-002 — Save a self-review draft
 
-**Pre-condition:** Mentor sent a goal back (see TC-MENT-002 in Mentor section). The goal status is now **Changes Requested** and `manager_feedback` is filled.
-**Login as:** Staff
-**Steps:**
-1. Open My Goals.
-2. Find the goal whose status is Changes Requested.
+**Steps:** On an open half, type in the **Self review** column (marked *editing*); **Save draft**; refresh.
+**Expected:** Toast "H1 self-review draft saved"; the text is kept; the pill reads "In progress". The mentor and the Admin do not see the draft.
 
+---
+
+### TC-SELFREV-003 — Submit the self-review
+
+**Steps:** **Submit H1 self-review** and confirm.
 **Expected:**
-- Status badge is amber/red **Changes Requested**.
-- Edit button is enabled again.
-- The mentor's feedback is visible — either inline in the row (expanded view) or in the goal card.
-
-**UI checks:**
-- Feedback is in a tinted box (amber/red 50) with a message icon.
-- Feedback text wraps; does not overflow the card or row.
+- Teal notice "H1 self-review submitted on <date>. <Mentor>'s review fills the last column once it is in."; the column is read-only; badge **H1 Self-Reviewed**.
+- The mentor gets a bell notification; their roster shows "Write review" for you.
+- **Submit** stays disabled while the text is empty.
 
 ---
 
-### TC-GOAL-010 — Resubmit after changes
-
-**Login as:** Staff
-**Steps:**
-1. On a Changes Requested goal, click Edit.
-2. Change the title or description.
-3. Save → status returns to Draft.
-4. Click Request Approval → status moves to Pending Approval again.
-
-**Expected:** Goal can cycle through draft → pending again. Mentor's previous feedback is preserved (visible in the goal's history if available).
-
----
-
-### TC-GOAL-011 — (removed 9 Sep 2026)
-
-Key results / criteria under a goal were dropped for the Miltenyi instance (confirmed again on 24 Sep 2026). There is no checklist to test.
-
----
-
-### TC-GOAL-012 — Attachment link opens externally
-
-**Login as:** Staff
-**Steps:**
-1. On a goal with an attachment URL (one you set during creation), click the **Attachment** link.
-2. Edit a goal and try to save `javascript:alert(1)` or `not a link` as the attachment.
-
-**Expected:**
-- Opens in a new browser tab; the original app tab is preserved.
-- Step 2 is refused in the form ("The attachment must be a web link starting with http:// or https://."); the API refuses it too (422). Only http(s) links are ever rendered as clickable — anything else already stored shows as the plain text "Attachment (not a web link)".
-
----
-
-### TC-GOAL-013 — Year filter
-
-**Pre-condition:** You have goals across multiple FYs.
-**Login as:** Staff
-**Steps:**
-1. Use the **Year** dropdown filter.
-2. Select a specific year (e.g. "CY 26-27").
-
-**Expected:** Only goals matching that FY are shown.
-
-**Then:** Select "All Years" → table resets.
-
-**UI checks:** Year dropdown options use the human format "CY 26-27", not the raw `2026`.
-
----
-
-### TC-GOAL-014 — Status filter
-
-**Login as:** Staff
-**Steps:**
-1. Use the Status dropdown.
-2. Select "Draft" → only Draft goals shown.
-3. Try each option: Pending Approval, Changes Requested, Approved, H1 Self-Reviewed, H1 Mentor-Reviewed, H2 Self-Reviewed, H2 Mentor-Reviewed.
-
-**Expected:** Each filter narrows the list correctly. "All" resets.
-
----
-
-### TC-GOAL-015 — Search
-
-**Login as:** Staff
-**Steps:**
-1. Type part of a goal title in the search box.
-
-**Expected:** Live filter — only matching goals remain.
-
----
-
-### TC-GOAL-016 — Toggle Card / Table view
-
-**Login as:** Staff
-**Steps:**
-1. Switch to **Cards** view.
-2. Switch to **Table** view.
-
-**Expected:**
-- Both views show the same goals after filtering.
-- View preference might persist on the page (acceptable either way).
-
-**UI checks:**
-- Card view: cards are equal height in the same row; the layout uses a 3-column grid on wide screens, 2 on medium, 1 on narrow.
-- Table view: columns are Goal / Mentor / Year / Status / Actions; sortable headers are clickable.
-
----
-
-### TC-GOAL-017 — Sort columns (table view)
-
-**Login as:** Staff
-**Steps:**
-1. Click the **Goal** column header → rows sort alphabetically.
-2. Click again → reverse order.
-3. Click **Year** → numeric sort.
-4. Click **Status** → alphabetical by status.
-
-**Expected:** Sort indicator (arrow) appears only on the active column.
-
----
-
-### TC-GOAL-018 — Expand a goal row (table view)
-
-**Login as:** Staff
-**Steps:**
-1. Click on a goal row.
-
-**Expected:**
-- Row expands to show description, attachment link, mentor feedback (if any), and criteria checklist.
-- The chevron icon rotates 180°.
-
-**UI checks:**
-- Expanded content is indented under the row, not breaking column alignment of OTHER rows.
-- Chevron rotation animates smoothly.
-
----
-
-### TC-GOAL-019 — Self-review menu appears on approved goals
-
-**Pre-condition:** A goal is in **Approved** state and you're inside the H1 window.
-**Login as:** Staff
-**Steps:**
-1. Look at the action area of the approved goal.
-
-**Expected:** A "Self-Review" cycle menu (dropdown or button group) is visible offering **H1** and possibly **H2** (depending on the current half).
-
-**UI checks:**
-- Menu options are clearly labeled with the half AND year (e.g. "H1 · CY 26-27").
-
----
-
-## 2.2 Team Goals tab (Mentor)
-
-### TC-MENT-001 — Open Team Goals tab
-
-**Login as:** Mentor
-**Steps:**
-1. Open Annual Goals.
-2. Default tab is **Team Goals**.
-
-**Expected:**
-- A table or grid of mentees' goals is shown, **every** goal by default (Status = All). Until 28 Sep 2026 the tab opened on "Pending Approval", which hid a goal the moment it was approved.
-- Each row includes: mentee name, goal title, year, status.
-- The Status dropdown has five buckets: All, Pending approval, **Awaiting my review** (a submitted self-review without your submitted review for that half), Approved (any stage, including goals already in H1/H2 review), Changes requested. The dashboard's "awaiting your approval" link still opens the tab on Pending approval.
-
-**UI checks:**
-- Mentee name is in the same column position as **Goal** in the Staff view — alignment is consistent across roles.
-
----
-
-### TC-MENT-002 — Approve a pending goal
-
-**Login as:** Mentor
-**Steps:**
-1. Find a goal with status **Pending Approval**.
-2. Click the action button → **Approve** (or open the goal card → Approve).
-3. Confirm in the dialog.
-
-**Expected:**
-- Status updates to **Approved**.
-- Success toast.
-- Approved-at timestamp is recorded (visible in expanded view or details).
-
----
-
-### TC-MENT-003 — Request changes with feedback
-
-**Login as:** Mentor
-**Steps:**
-1. Find a Pending Approval goal.
-2. Click **Request Changes**.
-3. A feedback modal opens.
-4. Type a clear message (e.g. "Please add a deadline to criterion #2.").
-5. Click Submit.
-
-**Expected:**
-- Status updates to **Changes Requested**.
-- Mentee sees this feedback when they next open the goal (TC-GOAL-009).
-
-**UI checks:**
-- Feedback textarea is comfortably sized (multiple lines, resizable or generous).
-- Submit button is disabled until you've typed some feedback.
-
----
-
-### TC-MENT-004 — Bulk approve
-
-**Pre-condition:** Multiple goals are in Pending Approval.
-**Login as:** Mentor
-**Steps:**
-1. Select 2–3 goals via checkboxes in the table.
-2. Click **Bulk Approve**.
-3. Confirm.
-
-**Expected:**
-- All selected goals move to Approved.
-- A summary toast or snackbar notes how many succeeded.
-- If any failed (e.g. one was already moved by another window), the snackbar lists each failure with a reason.
-
-**UI checks:**
-- Bulk Approve button is hidden until at least one row is selected.
-- Button is on the right side of the toolbar; doesn't shift layout when it appears.
-
----
-
-### TC-MENT-005 — Mentor review (H1)
-
-**Pre-condition:** A mentee has submitted their H1 self-review on an approved goal.
-**Login as:** Mentor
-**Steps:**
-1. Find the goal in Team Goals.
-2. Open the goal; locate the Mentor Review section for H1.
-3. Read the mentee's H1 self-review.
-4. Click **Write Mentor Review** for H1.
-5. Type your review.
-6. Click **Save Draft** → confirm a draft saved.
-7. Reopen the same goal — draft is preserved.
-8. Edit the draft → click **Submit**.
-
-**Expected:**
-- Status moves to **H1 Mentor-Reviewed**.
-- Mentee sees the mentor review next time they open the goal.
-
-**UI checks:**
-- Modal shows mentee's self-review (read-only) above your textarea — visually distinct sections.
-- Role-expectations side panel (if present) is collapsible.
-
----
-
-### TC-MENT-006 — Filter mentees and search
-
-**Login as:** Mentor
-**Steps:**
-1. Use the search box to type a mentee's name → table filters.
-2. Combine with a Status filter → AND logic applies.
-
----
-
-## 2.3 All Goals tab (Admin)
-
-### TC-ALLGOAL-001 — Open All Goals tab
-
-**Login as:** Admin
-**Steps:**
-1. Open Annual Goals → All Goals.
-
-**Expected:**
-- A table of employees who have any goal (drafts excluded).
-- Columns: **Employee · Function · Designation · Year · Mentor**.
-- A row count caption like "9 employees · 14 of 14 goals".
-
-**UI checks:**
-- Columns are aligned consistently across rows.
-- The export button is in its own column on the right.
-
----
-
-### TC-ALLGOAL-002 — Expand an employee row
-
-**Login as:** Admin
-**Steps:**
-1. Click on an employee row.
-
-**Expected:**
-- Row expands; a brand-tinted sub-header appears with columns **Goal · Description · Status · Action**.
-- Each goal under the employee is numbered `1.`, `2.`, `3.` …
-- A left ribbon visually attaches the expanded block to the employee row.
-
-**UI checks:**
-- Sub-header columns align under the parent columns (Goal under Employee, Description spans Function+Designation, Status under Year, Action under Mentor).
-- Description wraps to multiple lines if long, never cuts off.
-- Brand-tinted background reads as clearly a "child" of the employee row.
-
----
-
-### TC-ALLGOAL-003 — Filters
-
-**Login as:** Admin
-**Steps:**
-1. Try each filter individually: Employee (typeable combobox), Year, Function, Designation, Status.
-2. Combine filters → AND logic applies.
-
-**Expected:** Row count caption updates with each filter change.
-
-**UI checks:**
-- Employee combobox is typeable; matching suggestions appear as you type.
-- Combobox results scroll if more than ~8 items.
-
----
-
-### TC-ALLGOAL-004 — View modal for a goal with reviews
-
-**Pre-condition:** At least one goal has a submitted self-review and/or mentor review.
-**Login as:** Admin
-**Steps:**
-1. Expand the employee.
-2. On a goal with reviews, click **View**.
-
-**Expected:**
-- A read-only modal opens showing:
-  - Goal title + owner + FY + mentor in the header.
-  - Status badge.
-  - Description.
-  - For each cycle half (H1 / H2 or Q1..Q4) with content:
-    - **Self-Review** — blue-tinted block.
-    - **Mentor Review** — green-tinted block.
-- Halves without either review are skipped — not shown as empty.
-- Draft reviews are hidden (HR sees only submitted content).
-
-**UI checks:**
-- Modal is wider than the goal-create modal (≈ 3xl) for readability.
-- Sections have clear spacing between them.
-- Close X is in the top-right.
-- ESC and clicking the dark backdrop close the modal.
-
----
-
-### TC-ALLGOAL-005 — Goal without reviews shows dash
-
-**Login as:** Admin
-**Steps:**
-1. Expand an employee; find a goal that's only in Draft/Pending/Approved (no reviews yet).
-
-**Expected:**
-- Action column shows `—` (em dash), not a View button.
-
----
-
-### TC-ALLGOAL-006 — Export Goals to Excel
-
-**Login as:** Admin
-**Steps:**
-1. Click the **Export** button on the All Goals tab.
-2. Excel file downloads.
-
-**Expected:** File opens cleanly in Excel/Sheets with one row per goal and columns matching what HR sees in the table (plus reviews if exported).
-
-**Refer to Module 5 §5.2 for full export test cases.**
-
----
-
-## 2.4 Goal Self-Review
-
-### TC-SELFREV-001 — Open Self-Review modal (H1)
-
-**Pre-condition:** A goal is **Approved**.
-**Login as:** Staff
-**Steps:**
-1. On the approved goal, choose **H1** from the self-review menu.
-2. Modal opens.
-
-**Expected:**
-- Modal title reads "Self-Review · H1 · CY 26-27" (or current FY).
-- A single freeform textarea is present.
-
-**UI checks:**
-- Textarea is at least 6 rows tall.
-- Modal width is comfortable (around max-w-xl).
-- Save Draft and Submit buttons at the bottom-right.
-
----
-
-### TC-SELFREV-002 — Save Draft
-
-**Login as:** Staff
-**Steps:**
-1. Type a partial reflection.
-2. Click **Save Draft**.
-
-**Expected:**
-- Success toast: "Draft saved."
-- Modal stays open with a "Draft" badge in the title bar.
-- Submit button remains enabled.
-
----
-
-### TC-SELFREV-003 — Submit Self-Review
-
-**Login as:** Staff
-**Steps:**
-1. With the modal still open and the draft text in place, click **Submit**.
-2. Confirm in the dialog.
-
-**Expected:**
-- Modal closes.
-- Goal status updates to **H1 Self-Reviewed**.
-- Success toast.
-- The self-review is now locked — opening it again shows it read-only.
-
----
-
-### TC-SELFREV-004 — Re-opening a submitted self-review
-
-**Login as:** Staff
-**Steps:**
-1. Re-open the H1 self-review from the goal.
-
-**Expected:**
-- Textarea is read-only (or replaced with a static paragraph).
-- Save Draft / Submit are hidden or disabled.
-- A note says "Submitted on <date>".
+### TC-SELFREV-004 — Moving on closes the earlier half
+
+**Pre-condition:** During H2, the goal is Approved and H1 was never filled.
+**Steps:** Submit an H2 self-review, then select H1.
+**Expected:** H1 reads "H1 can no longer be filled: your goal has moved on to the next half." (the server rule: halves are filed in order).
 
 ---
 
 ### TC-SELFREV-005 — H2 opens when the Admin rolls out Q3
 
-**Pre-condition:** Project Goals is in Q1 or Q2 of the current year (System Settings → Quarter roll-out); the Calendar card and the Topbar read "H1 · CY 26-27".
-**Login as:** Staff
-**Steps:**
-1. Look at the self-review menu options on an approved goal.
-2. Ask the Admin to roll out Q3. The confirmation lists "Annual goals and reviews move to H2 · CY 26-27: the H2 self-review and mentor review open; H1 stays open for backfill." Refresh.
-
+**Pre-condition:** Project Goals is in Q1 or Q2 (System Settings → Quarter roll-out); the Topbar reads "H1 · CY 26-27".
+**Steps:** Look at the half pills on an approved goal; ask the Admin to roll out Q3 (the confirmation says "Annual goals and reviews move to H2 · CY 26-27…"); refresh.
 **Expected:**
-- Step 1: H1 is enabled; H2 is locked with "H2 has not opened yet — it opens when the Admin rolls out Q3". The mentor's chip reads "H2 · Not open".
-- Step 2: both H1 and H2 are available; the Topbar and the Calendar card read "H2 · CY 26-27"; everyone's bell ends with "Annual goals and reviews are now in H2 · CY 26-27."
-- Rolling back to Q2 closes H2 again (H1 stays open). Rolling out Q4 changes nothing for the annual cycle. Starting the next goal year (Q1 CY 27-28) moves the annual cycle to H1 · CY 27-28 and closes both halves of CY 26-27; new annual goals are stamped CY 27-28.
-- There is no date simulation and no bypass switch: the quarter roll-out is the only control (25 Sep 2026).
+- Before: H1 is current; H2 is locked "Not started".
+- After: H2 is current and open; H1 stays open for backfill. Rolling back to Q2 closes H2 again. Starting the next goal year moves annual goals to CY 27-28 and closes both halves of CY 26-27.
 
 ---
 
-## 2.5 Goal Mentor-Review
+## 2.3 Mentor: roster and one goal
 
-### TC-MENTREV-001 — Mentor reads mentee's self-review
-
-**Pre-condition:** Mentee has submitted an H1 self-review.
-**Login as:** Mentor
-**Steps:**
-1. Open the goal in Team Goals.
-2. Locate the H1 review section.
-
-**Expected:** The mentee's self-review is visible (read-only) to the mentor.
-
----
-
-### TC-MENTREV-002 — Mentor writes H1 review
+### TC-MENT-001 — Open the roster
 
 **Login as:** Mentor
-**Steps:**
-1. Click **Write Mentor Review** for H1.
-2. Type a review.
-3. Save Draft → reopen → Submit.
+**Expected:**
+- Header "Annual Goals · CY 26-27", tab **Team Goals**, a line "Goal entry for CY 26-27 is open. H2 reviews are open."
+- One row per mentee, including those who have not started: Staff member (name and code), Function · designation, Goal (title, "Drafting" for a draft, "Not started"), Status badge, **H1 · self / mentor** and **H2 · self / mentor** step badges, and an Action.
+- Summary line, e.g. "3 people · 1 pending approval · 1 review to write · 1 not started".
+- Filters: search by name, Function, Status. **Bulk approve (N)** appears when a goal is pending.
+
+---
+
+### TC-MENT-002 — Actions and filters
 
 **Expected:**
-- Status moves to **H1 Mentor-Reviewed**.
-- Mentee sees the review in their goal.
-
-**UI checks:**
-- Role-expectations reference panel (if present) is collapsed by default; toggle expands/collapses it.
-- Modal does not become too tall on small screens — it scrolls inside itself.
+- Action **Approve** on a Pending Approval row; **Write review** when a self-review for an open half is in (H1 counts during H2); **Open** otherwise. Rows for drafts and not-started people have no action and do not open.
+- Status filter options: Not started, Drafting, Pending approval, Changes requested, Approved (any stage), Self-review in, review pending.
+- The dashboard card link `/annual-goals?status=pending_approval` opens the roster pre-filtered.
 
 ---
 
-### TC-MENTREV-003 — Mentor can draft, not submit, before the mentee's self-review
+### TC-MENT-003 — Approve a goal
 
-**Login as:** Mentor
-**Steps:**
-1. Find a goal that's Approved but the mentee has NOT submitted the H1 self-review yet.
-2. Click the outlined **Draft H1 review** chip; type a review; **Save Draft**; close and reopen.
+**Steps:** Click **Approve** on a row, then **Approve** on the goal page and confirm "Approve <name>'s CY 26-27 goal?".
+**Expected:** Blue notice before: "Submitted for your approval. Approve it, or request changes with a note…". After: toast "Goal approved", badge **Approved**, "Approved on <date>" beside it; the staff member is notified.
 
+---
+
+### TC-MENT-004 — Request changes
+
+**Steps:** On a pending goal, **Request changes**; type feedback; **Send feedback**.
+**Expected:** The dialog's button stays disabled while the feedback is empty. After sending: badge **Changes Requested**, amber notice with your note, "Waiting for <name> to revise the goal…"; the staff member sees the note (TC-GOAL-008).
+
+---
+
+### TC-MENT-005 — Bulk approve
+
+**Steps:** On the roster, **Bulk approve (N)**; tick the goals; **Approve**.
+**Expected:** The dialog lists the pending goals by mentee; changes-requested goals show as "Awaiting revision" and cannot be ticked. Toast "Approved N goals"; the rows move to Approved.
+
+---
+
+### TC-MENT-006 — A draft stays private
+
+**Expected:** A mentee's draft shows "Drafting" in the roster; opening it by link shows "Staff member drafting" in the Goal column and "<name> is still drafting their CY 26-27 goal. Nothing to do yet."
+
+---
+
+## 2.4 Mentor review in the table
+
+### TC-MENTREV-001 — The page opens on the half waiting for you
+
+**Pre-condition:** During H2, a mentee submitted their H1 self-review.
+**Steps:** Click **Write review** on the roster.
+**Expected:** The goal page opens on **H1** (not the current H2): teal notice "H1 self-review in (<date>). Write your review in the last column."; the Mentor review column is *editing*; the mentee's self-review is shown read-only.
+
+---
+
+### TC-MENTREV-002 — Write and submit the review
+
+**Steps:** Type a review; **Save draft**; refresh; **Submit H1 review** and confirm.
 **Expected:**
-- The chip is enabled while the H1 window is open (grey "H1 · Not open" when it is not).
-- The modal shows "The mentee has not submitted their self-review for this half yet. You can draft your review now; Submit unlocks once it arrives." — **Save Draft** works, **Submit Review** stays disabled. The chip now reads "Resume H1 · Draft".
-- The mentee never sees the draft. Once the mentee submits the self-review, **Submit Review** enables (the API refuses an early submit with 400).
+- Toast "H1 review draft saved"; the draft is kept after the refresh and only you see it.
+- After submitting: green notice "H1 review submitted on <date>." and the page stays on H1; badge **H1 Mentor-Reviewed**; the roster shows "Mentor · submitted"; the mentee is notified.
 
 ---
 
-### TC-MENTREV-004 — The review shows who wrote it
+### TC-MENTREV-003 — Draft before the self-review
 
-**Login as:** Admin (All Goals) or Staff (My Goals → View)
-**Steps:** Open the review details of a goal with a submitted mentor review.
-**Expected:** The block is titled "Mentor Review · <author>" with the name of the person who submitted it, even if the staff member's mentor changed afterwards.
+**Pre-condition:** Approved goal, no self-review yet for the open half.
+**Expected:** Amber notice "<name> has not submitted an H2 self-review yet. You can draft your review now; submitting waits for the self-review." **Save draft** works; **Submit H2 review** is disabled with the tooltip "Waiting for <name>'s H2 self-review".
 
 ---
 
-### TC-MENTREV-005 — Mentor reviews stay hidden until the Admin publishes the half
+### TC-MENTREV-004 — The mentee's role expectations
 
-**Pre-condition:** A submitted H1 mentor review; System Settings → Annual Goals → **Show H1 Mentor Reviews on Annual Goals** is OFF for the year.
-**Login as:** Staff (the goal owner)
-**Steps:**
-1. My Goals → the goal's Mentor Feedback → **View**.
-2. Ask the Admin to turn the H1 switch ON, then refresh.
+**Steps:** **View role expectations** on the goal page.
+**Expected:** A dialog titled "<name>'s role expectations" with the mentee's function, designation and six competencies (it no longer depends on the retired Project Reviews feature). The Admin sees the same dialog.
 
+---
+
+### TC-MENTREV-005 — The review shows who wrote it
+
+**Expected:** Under a submitted mentor review, the author's name is shown, even if the staff member's mentor changed afterwards.
+
+---
+
+### TC-MENTREV-006 — Hidden until the Admin releases the half
+
+**Pre-condition:** A submitted H1 mentor review; System Settings → **Show H1 Mentor Reviews on Annual Goals** is OFF for the year.
 **Expected:**
-- Step 1: the status still shows the goal as mentor-reviewed, but the review block reads "Mentor review submitted · hidden until the Admin publishes the H1 reviews (System Settings → Annual Goals)" — no text, no author.
-- Step 2: the review text and "Mentor Review · <author>" appear. H2 has its own switch. Mentors and the Admin always see the full review.
+- The mentor's confirmation and notice say the review stays hidden from the mentee until the Admin releases H1 reviews.
+- The staff member's Mentor review column shows a lock: "Your mentor's H1 review is in. It shows here once the Admin releases H1 reviews." After the Admin turns the switch ON, the text and the author appear. H2 has its own switch.
 
 ---
 
-### TC-GOAL-020 — Delete a draft goal (soft delete)
+### TC-MENTREV-007 — From My Mentees
 
-**Login as:** Staff
-**Steps:** Delete one of your **Draft** goals.
-**Expected:** It disappears from My Goals, Team Goals, All Goals, the dashboards and the exports, and opening its old link answers "not found". Nothing else changes; the row is kept in the database with its history (there is no restore screen).
+**Steps:** My Mentees → a mentee → **Annual Goals** tab.
+**Expected:** The same goal view (status, half selector, table, Approve / Request changes / review buttons) for the year picked at the top of the mentee page; "All years" lists each year's goal, newest first. A mentee without a goal shows "No annual goal for this year yet".
 
 ---
 
-### TC-GOAL-021 — Rich text in the goal description
+## 2.5 Admin: All Goals (read only)
 
-**Login as:** Staff
-**Steps:**
-1. Add or edit a goal. In **Goal Description**, select a phrase and click **B** (or press Ctrl+B); put the cursor on a line and click the bullet-list button; type a second bullet on the next line.
-2. Save. Look at the card on My Goals, the table view, and the review details (**View**).
-3. As Admin: Exports → Goals.
+### TC-ALLGOAL-001 — The roster of every staff member
 
-**Expected:**
-- The editor stores plain Markdown (`**bold**`, `- item`); the **Preview** under the editor shows the formatting live. The counter in the toolbar counts the source (max 5,000).
-- Cards and the table show the text without the markers (bullets as "•"), clamped to two lines; the review details show real bold text and bullet / numbered lists. Typed HTML such as `<b>x</b>` shows as literal text everywhere — nothing is rendered as HTML.
-- The Excel Description cell has the markers stripped (bullets as "•", line breaks kept).
-- The mentor's Team Goals table and cards show the same rendering. Goals written before 26 Sep 2026 look exactly as they did.
+**Login as:** Admin
+**Expected:** Tab **All Goals** with every Staff member (with or without a goal); an extra **Mentor** column and filter ("No mentor" when none); **Export Excel** at the top right. The Action column offers **Open** only.
+
+---
+
+### TC-ALLGOAL-002 — Open a goal
+
+**Expected:** The same table, read-only: no Approve, Request changes or review buttons. Notices say who is waiting ("Waiting for <mentor> to approve it.", "Waiting for <mentor>'s review."). Unsubmitted drafts of the staff member and of the mentor are not shown. **Back to all goals** returns to the roster on the same year.
+
+---
+
+### TC-ALLGOAL-003 — Year and dashboard link
+
+**Expected:** The **Goal year** dropdown lists every year with goals plus the active one. The HR dashboard's Goal Approval Progress card opens the roster on its year (`?fy=2026`).
+
+---
+
+### TC-ALLGOAL-004 — Export Goals to Excel
+
+**Steps:** **Export Excel** on the roster.
+**Expected:** The goals workbook downloads, as before.
 
 ---
 
 ## 2.6 Annual Goals — Cross-checks
 
 - Refer to **Module 1 §1.7** UI checklist for every screen in this module.
-- All success operations show a green toast; all failures show a red toast.
-- After every state change (submit, approve, reject, save-draft), refresh the page and confirm the change persisted.
-- Test in three browser widths: narrow / medium / wide.
+- Successful saves show a green toast; failures show a red message above the table.
+- After every state change (save, submit, approve, request changes, review), refresh and confirm it persisted.
+- Test in three browser widths: narrow / medium / wide. The table scrolls sideways on narrow screens; the page itself does not.
+- There is no delete button: the one goal for the year is edited while it is a draft.
+- Data from before the one-goal rule can hold two goals in one year: the staff page shows the oldest with an amber note, and the roster shows "+1 older goal this year".
 
 ---
 

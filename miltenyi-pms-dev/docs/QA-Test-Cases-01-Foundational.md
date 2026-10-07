@@ -363,8 +363,8 @@ Resize the browser window to test 3 widths each time: **narrow (≈ 600 px wide)
 
 **Expected:**
 - The page still loads.
-- A banner reads "Goal submissions are currently closed."
-- The **Add Goal** button is NOT present (or is disabled).
+- An amber notice reads "Annual goal entry for CY 26-27 is closed. The Admin opens it in System Settings."
+- No editable goal row is shown (a saved draft shows read-only).
 
 ---
 
@@ -412,13 +412,12 @@ Resize the browser window to test 3 widths each time: **narrow (≈ 600 px wide)
 
 **Login as:** Staff
 **Steps:**
-1. Open Annual Goals → My Goals.
-2. Look for a banner that says "Reference your role expectations…" with a **View Role Expectations** button.
-3. Click it.
+1. Open Annual Goals → My Goal.
+2. Click **View role expectations** beside the goal's status.
 
 **Expected:**
-- A modal opens, centered, with a darkened backdrop.
-- The modal lists 8 competency / expectation sections relevant to your role+function.
+- A modal titled "Your Role Expectations" opens, centered, with a darkened backdrop.
+- The modal lists the six competency / expectation sections for your function and level.
 - Each section has a heading and a description paragraph.
 
 **UI checks:**
@@ -576,8 +575,8 @@ Resize the browser window to test 3 widths each time: **narrow (≈ 600 px wide)
 
 **Then verify the effect:**
 - Login as Staff in another browser.
-- If the toggle is now OFF, Staff cannot add new goals (button hidden or banner shown).
-- If the toggle is now ON, Staff can add goals.
+- If the toggle is now OFF, Staff cannot start or edit their annual goal (amber notice, no editable row).
+- If the toggle is now ON, Staff can write and submit their one annual goal.
 
 ---
 
