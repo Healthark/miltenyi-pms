@@ -63,7 +63,7 @@ Run each of these at three browser widths: **narrow ≈ 600 px** · **medium ≈
 ### TC-RESP-005 — Forms on narrow widths
 
 **Steps:**
-1. Open a multi-field form (Add Goal, Invite User) at narrow width.
+1. Open a multi-field form (the annual goal row while editing, Invite User) at narrow width.
 
 **Expected:**
 - Multi-column forms collapse to single column.

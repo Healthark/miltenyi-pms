@@ -22,7 +22,7 @@ from fastapi import APIRouter, HTTPException, status
 from app.api.dependencies import DbSession, CurrentUser, CurrentUserAllowingPasswordReset
 from app.core.security import verify_password, get_password_hash
 from app.schemas.user_schemas import PasswordChangeRequest, UserProfile
-from app.models.role_expectation_models import RoleExpectation
+from app.services.role_expectations import role_expectation_for
 from app.schemas.user_schemas import UserRoleExpectationResponse
 
 router = APIRouter()
@@ -102,9 +102,6 @@ def change_password(
 
     return {"message": "Password updated successfully."}
 
-_CAREER_LEVEL_LABELS = {1: "Entry", 2: "Mid", 3: "Senior", 4: "Lead"}
-_EXPECTATION_NOT_DEFINED = "Role expectation not defined"
-
 
 @router.get("/me/expectations", response_model=UserRoleExpectationResponse)
 def get_my_role_expectations(
@@ -113,52 +110,8 @@ def get_my_role_expectations(
 ):
     """
     Return the GCC role expectations (6 columns) for the current user,
-    resolved by (function, designation.career_level). When the user has
-    no function / no designation / a designation without a career level,
-    or the (function, career_level) row hasn't been seeded yet, every
-    expectation field returns the same 'Role expectation not defined'
-    placeholder so the frontend can render the panel without null-checks.
+    resolved by (function, designation.career_level). Missing pieces come
+    back as a 'Role expectation not defined' placeholder; see
+    app/services/role_expectations.py.
     """
-    func_name = current_user.function.name if current_user.function else "Unassigned"
-    desig = current_user.designation
-    desig_name = desig.name if desig else "Unassigned"
-    career_level = desig.career_level if desig and desig.career_level is not None else None
-    career_level_label = _CAREER_LEVEL_LABELS.get(career_level) if career_level is not None else None
-
-    fallback = UserRoleExpectationResponse(
-        function_name=func_name,
-        designation_name=desig_name,
-        career_level=career_level,
-        career_level_label=career_level_label,
-        exp_scope_of_role=_EXPECTATION_NOT_DEFINED,
-        exp_key_responsibilities=_EXPECTATION_NOT_DEFINED,
-        exp_technical_competencies=_EXPECTATION_NOT_DEFINED,
-        exp_delivery_ownership=_EXPECTATION_NOT_DEFINED,
-        exp_regulatory_compliance=_EXPECTATION_NOT_DEFINED,
-        exp_project_resource_management=_EXPECTATION_NOT_DEFINED,
-    )
-
-    if not current_user.function_id or career_level is None:
-        return fallback
-
-    expectation = db.query(RoleExpectation).filter(
-        RoleExpectation.org_id == current_user.org_id,
-        RoleExpectation.function_id == current_user.function_id,
-        RoleExpectation.career_level == career_level,
-    ).first()
-
-    if not expectation:
-        return fallback
-
-    return UserRoleExpectationResponse(
-        function_name=func_name,
-        designation_name=desig_name,
-        career_level=career_level,
-        career_level_label=career_level_label,
-        exp_scope_of_role=expectation.exp_scope_of_role or _EXPECTATION_NOT_DEFINED,
-        exp_key_responsibilities=expectation.exp_key_responsibilities or _EXPECTATION_NOT_DEFINED,
-        exp_technical_competencies=expectation.exp_technical_competencies or _EXPECTATION_NOT_DEFINED,
-        exp_delivery_ownership=expectation.exp_delivery_ownership or _EXPECTATION_NOT_DEFINED,
-        exp_regulatory_compliance=expectation.exp_regulatory_compliance or _EXPECTATION_NOT_DEFINED,
-        exp_project_resource_management=expectation.exp_project_resource_management or _EXPECTATION_NOT_DEFINED,
-    )
+    return role_expectation_for(db, current_user)

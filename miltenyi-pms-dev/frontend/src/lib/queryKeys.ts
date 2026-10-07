@@ -187,6 +187,15 @@ export const queryKeys = {
     org: (filters: Record<string, string | number | undefined> = {}) =>
       [...queryKeys.goals.all, "org", filters] as const,
     mentees: () => [...queryKeys.goals.all, "mentees"] as const,
+    /** Mentor / Admin roster of annual goals for one year (null = active year). */
+    annualRoster: (fyYear: number | null = null) =>
+      [...queryKeys.goals.all, "annual-roster", fyYear ?? "active"] as const,
+    /** One annual goal as the table shows it. */
+    annualSheet: (goalId: number) =>
+      [...queryKeys.goals.all, "annual-sheet", goalId] as const,
+    /** The owner of one annual goal: their role expectations. */
+    annualOwnerExpectations: (goalId: number) =>
+      [...queryKeys.goals.all, "annual-sheet", goalId, "expectations"] as const,
   },
 
   // ── Profile-scoped resources (role expectations, etc.) ─────────────

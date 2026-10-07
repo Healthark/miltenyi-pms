@@ -297,3 +297,66 @@ class TeamGoalResponse(GoalResponse):
     # can match the right RoleExpectation row without a second round-trip.
     owner_function_name: Optional[str] = None
     owner_designation_name: Optional[str] = None
+
+
+# ── Annual goal table (7 Oct 2026) ───────────────────────────────────
+#
+# Annual goals are shown like Project Goals: one table with ONE row per
+# person per year (every goal for the year is written in that row), an
+# H1/H2 selector for the two review columns, and for mentors and the Admin
+# a roster with one row per person that opens the same table.
+
+ReviewStep = Literal["none", "draft", "submitted"]
+
+
+class AnnualGoalSheetResponse(TeamGoalResponse):
+    """One annual goal as the table shows it, plus the owner's current
+    mentor and what the caller may do with it."""
+    owner_mentor_id: Optional[int] = None
+    owner_mentor_name: Optional[str] = None
+    # The caller owns the goal (staff view).
+    is_owner: bool = False
+    # The caller is the owner's current mentor: approves, requests changes
+    # and writes the mentor review. The Admin only reads.
+    can_review: bool = False
+
+
+class AnnualRosterRow(BaseModel):
+    """One person in the mentor's or Admin's annual goals roster for a year."""
+    user_id: int
+    full_name: str
+    employee_code: Optional[str] = None
+    function_name: Optional[str] = None
+    designation_name: Optional[str] = None
+    mentor_id: Optional[int] = None
+    mentor_name: Optional[str] = None
+    # None when the person has no goal for the year yet.
+    goal_id: Optional[int] = None
+    # None while the goal is a draft: only its owner reads a draft.
+    goal_title: Optional[str] = None
+    approval_status: Optional[str] = None
+    approved_at: Optional[datetime] = None
+    # Goals beyond the first one in the same year. Only data from before the
+    # one-goal rule can have any.
+    extra_goals: int = 0
+    h1_self: ReviewStep = "none"
+    h1_mentor: ReviewStep = "none"
+    h2_self: ReviewStep = "none"
+    h2_mentor: ReviewStep = "none"
+
+
+class AnnualRosterResponse(BaseModel):
+    fy_year: int
+    # Stored year token, e.g. "FY26-27".
+    fy_label: str
+    active_fy_year: Optional[int] = None
+    # "H1" / "H2" of the active annual cycle (it follows the Project Goals quarter).
+    active_half: Optional[str] = None
+    # Years that can be picked: every year with an annual goal in scope plus
+    # the active one, newest first.
+    years: list[int]
+    # The year's switches from System Settings.
+    entry_open: bool
+    reviews_visible_h1: bool
+    reviews_visible_h2: bool
+    rows: list[AnnualRosterRow]

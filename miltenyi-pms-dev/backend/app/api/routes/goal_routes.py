@@ -49,16 +49,22 @@ from app.schemas.goal_schemas import (
     GoalMentorReviewSubmit,
     GoalMentorReviewDraft,
     TeamGoalResponse,
+    AnnualGoalSheetResponse,
+    AnnualRosterResponse,
+    AnnualRosterRow,
 )
 from app.schemas.pagination import Paginated
-from app.core.cycle_utils import extract_fy_label, half_display, year_display
-from app.services.annual_cycle import is_half_open, sync_annual_cycle
+from app.core.cycle_utils import extract_fy_label, extract_fy_year, half_display, year_display
+from app.services.annual_cycle import half_and_year_of, is_half_open, sync_annual_cycle
 from app.core.cycle_utils import (
     _fy_label_of_goal,
+    _format_fy_span,
     cycles_before,
     get_year_override,
 )
 from app.core.user_filters import active_user_ids_query
+from app.schemas.user_schemas import UserRoleExpectationResponse
+from app.services.role_expectations import role_expectation_for
 
 router = APIRouter()
 
@@ -199,15 +205,15 @@ def _goal_fy_year(goal: Goal) -> Optional[int]:
 
 
 
-def _owner_view(db: DbSession, org_id: int, goal: Goal) -> GoalResponse:
+def _hide_unreleased_mentor_reviews(db: DbSession, org_id: int, goal: Goal, resp):
     """What the goal OWNER may see of the mentor's reviews (25 Sep 2026).
 
     Mentor drafts are dropped. A submitted review whose half the Admin has
     not published yet (`goal_reviews_visible_h1` / `_h2` on the goal year's
     override row) is blanked and flagged `hidden`, so the mentee sees that
     a review exists but not its content. Years without an override row are
-    treated as published (legacy data)."""
-    resp = GoalResponse.model_validate(goal)
+    treated as published (legacy data). Works on any response built from
+    the goal (GoalResponse or the annual goal sheet)."""
     override = get_year_override(db, org_id, _fy_label_of_goal(goal))
     kept = []
     for mr in resp.mentor_reviews:
@@ -223,6 +229,37 @@ def _owner_view(db: DbSession, org_id: int, goal: Goal) -> GoalResponse:
         kept.append(mr)
     resp.mentor_reviews = kept
     return resp
+
+
+def _owner_view(db: DbSession, org_id: int, goal: Goal) -> GoalResponse:
+    """The owner's view of a goal; see `_hide_unreleased_mentor_reviews`."""
+    return _hide_unreleased_mentor_reviews(db, org_id, goal, GoalResponse.model_validate(goal))
+
+
+def _review_step(rows, half: str) -> str:
+    """"submitted" / "draft" / "none" for one half's self or mentor review rows."""
+    found = [r for r in rows if getattr(r.cycle_half, "value", r.cycle_half) == half]
+    if any(not r.is_draft for r in found):
+        return "submitted"
+    return "draft" if found else "none"
+
+
+def _annual_goals_in_year(db: DbSession, org_id: int, user_id: int, fy_year: int) -> list[Goal]:
+    """One person's annual goals for one year, oldest first. Since 7 Oct 2026
+    a person has at most one (every goal for the year is written in it);
+    only older data can hold more."""
+    goals = (
+        db.query(Goal)
+        .filter(
+            Goal.org_id == org_id,
+            Goal.user_id == user_id,
+            Goal.goal_type == GoalType.ANNUAL.value,
+            Goal.is_deleted == False,  # noqa: E712
+        )
+        .order_by(Goal.created_at, Goal.id)
+        .all()
+    )
+    return [g for g in goals if _goal_fy_year(g) == fy_year]
 
 # =====================================================================
 # CORE CRUD OPERATIONS
@@ -344,6 +381,22 @@ def create_goal(
         # not the calendar date (25 Sep 2026).
         cycle_name = extract_fy_label(settings.active_cycle_name)
         _assert_annual_gate_open(db, current_user.org_id, cycle_name)
+
+        # One annual goal per person per year (7 Oct 2026): every goal for
+        # the year is written in that one goal. The owner's row is locked
+        # first so two quick saves cannot both pass the check (Postgres;
+        # SQLite runs one writer at a time anyway).
+        fy_year = extract_fy_year(cycle_name)
+        db.query(User.id).filter(User.id == target_user_id).with_for_update().first()
+        if fy_year is not None and _annual_goals_in_year(db, current_user.org_id, target_user_id, fy_year):
+            whose = "You already have" if target_user_id == current_user.id else "This staff member already has"
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"{whose} an annual goal for {year_display(cycle_name)}. "
+                    "Write all of the year's goals in that one goal."
+                ),
+            )
 
     # ── Build the Goal record ──────────────────────────────────────────
     new_goal = Goal(
@@ -846,6 +899,187 @@ def list_distinct_goal_years(
                 break
 
     return sorted(years, reverse=True)
+
+
+# =====================================================================
+# ANNUAL GOAL TABLE (7 Oct 2026)
+# =====================================================================
+# Annual goals are shown like Project Goals: one row per person per year,
+# an H1/H2 selector for the two review columns, and for mentors and the
+# Admin a roster with one row per person that opens the same table.
+
+
+@router.get("/annual/roster", response_model=AnnualRosterResponse)
+def annual_goal_roster(
+    db: DbSession,
+    current_user: CurrentUser,
+    fy_year: Optional[int] = Query(default=None, ge=2000, le=2100),
+):
+    """One row per person whose annual goal the caller follows, for one year.
+
+    Mentor: their mentees. Admin: every Staff member. Staff are refused
+    (their own goal comes from GET /goals/?goal_type=annual). People without
+    a goal for the year are listed too, so the queue shows who has not
+    started. A draft goal shows its status but not its title: only the
+    owner reads a draft. `fy_year` defaults to the active annual year.
+    """
+    is_admin = current_user.role == Role.ADMIN.value
+    if not is_admin and current_user.role != Role.MENTOR.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only mentors and the Admin can see other people's annual goals.",
+        )
+    settings = _get_settings(db, current_user.org_id)
+    active_half, active_year = half_and_year_of(settings.active_cycle_name)
+
+    people_q = (
+        db.query(User)
+        .options(joinedload(User.function), joinedload(User.designation))
+        .filter(User.org_id == current_user.org_id, User.is_deleted == False)  # noqa: E712
+    )
+    if is_admin:
+        people_q = people_q.filter(User.role == Role.STAFF.value)
+    else:
+        people_q = people_q.filter(User.mentor_id == current_user.id)
+    people = people_q.order_by(User.full_name).all()
+    ids = [p.id for p in people]
+
+    goals = (
+        db.query(Goal)
+        .filter(
+            Goal.org_id == current_user.org_id,
+            Goal.goal_type == GoalType.ANNUAL.value,
+            Goal.user_id.in_(ids),
+        )
+        .order_by(Goal.created_at, Goal.id)
+        .all()
+        if ids else []
+    )
+    years = {y for y in (_goal_fy_year(g) for g in goals) if y is not None}
+    if active_year is not None:
+        years.add(active_year)
+    fy = fy_year or active_year or (max(years) if years else datetime.now(timezone.utc).year)
+    years.add(fy)
+
+    by_user: dict[int, list[Goal]] = {}
+    for g in goals:
+        if _goal_fy_year(g) == fy:
+            by_user.setdefault(g.user_id, []).append(g)
+
+    mentor_ids = {p.mentor_id for p in people if p.mentor_id}
+    mentor_names = (
+        dict(db.query(User.id, User.full_name).filter(User.id.in_(mentor_ids)).all())
+        if mentor_ids else {}
+    )
+
+    rows: list[AnnualRosterRow] = []
+    for p in people:
+        mine = by_user.get(p.id, [])
+        g = mine[0] if mine else None
+        rows.append(AnnualRosterRow(
+            user_id=p.id,
+            full_name=p.full_name,
+            employee_code=p.employee_code,
+            function_name=p.function.name if p.function else None,
+            designation_name=p.designation.name if p.designation else None,
+            mentor_id=p.mentor_id,
+            mentor_name=mentor_names.get(p.mentor_id),
+            goal_id=g.id if g else None,
+            goal_title=g.title if g and g.approval_status != ApprovalStatus.DRAFT.value else None,
+            approval_status=g.approval_status if g else None,
+            approved_at=g.approved_at if g else None,
+            extra_goals=max(0, len(mine) - 1),
+            h1_self=_review_step(g.self_reviews, "H1") if g else "none",
+            h1_mentor=_review_step(g.mentor_reviews, "H1") if g else "none",
+            h2_self=_review_step(g.self_reviews, "H2") if g else "none",
+            h2_mentor=_review_step(g.mentor_reviews, "H2") if g else "none",
+        ))
+
+    fy_label = _format_fy_span(fy)
+    override = get_year_override(db, current_user.org_id, fy_label)
+    return AnnualRosterResponse(
+        fy_year=fy,
+        fy_label=fy_label,
+        active_fy_year=active_year,
+        active_half=active_half,
+        years=sorted(years, reverse=True),
+        entry_open=bool(override and override.annual_goals_edit_enabled),
+        reviews_visible_h1=True if override is None else bool(override.goal_reviews_visible_h1),
+        reviews_visible_h2=True if override is None else bool(override.goal_reviews_visible_h2),
+        rows=rows,
+    )
+
+
+def _annual_goal_for_reader(db: DbSession, goal_id: int, current_user: User):
+    """The annual goal and its owner, if the caller may read it: the owner,
+    the owner's current mentor or the Admin. Returns (goal, owner, is_owner,
+    can_review); `can_review` = the caller is the owner's current mentor."""
+    goal = _get_goal_with_relations(db, goal_id, current_user.org_id)
+    if goal.goal_type != GoalType.ANNUAL.value:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Annual goal not found.")
+    owner = (
+        db.query(User)
+        .options(joinedload(User.function), joinedload(User.designation))
+        .filter(User.id == goal.user_id)
+        .first()
+    )
+    is_owner = goal.user_id == current_user.id
+    can_review = bool(owner and owner.mentor_id == current_user.id)
+    if not (is_owner or can_review or current_user.role == Role.ADMIN.value):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have access to view this goal.",
+        )
+    return goal, owner, is_owner, can_review
+
+
+@router.get("/annual/{goal_id}", response_model=AnnualGoalSheetResponse)
+def get_annual_goal_sheet(
+    goal_id: int,
+    db: DbSession,
+    current_user: CurrentUser,
+):
+    """One annual goal for the table: the goal, both halves' reviews, the
+    owner's details and current mentor, and what the caller may do.
+
+    Readers: the owner, the owner's current mentor and the Admin. The owner
+    sees a mentor review only once the Admin has released that half. Others
+    never see the owner's unsubmitted self-review, and only the mentor who
+    writes it sees a mentor-review draft.
+    """
+    goal, owner, is_owner, can_review = _annual_goal_for_reader(db, goal_id, current_user)
+    mentor = (
+        db.query(User).filter(User.id == owner.mentor_id).first()
+        if owner and owner.mentor_id else None
+    )
+    goal.owner_name = owner.full_name if owner else "Unknown"
+    goal.owner_function_name = owner.function.name if owner and owner.function else None
+    goal.owner_designation_name = owner.designation.name if owner and owner.designation else None
+    goal.owner_mentor_id = owner.mentor_id if owner else None
+    goal.owner_mentor_name = mentor.full_name if mentor else None
+    goal.is_owner = is_owner
+    goal.can_review = can_review
+    resp = AnnualGoalSheetResponse.model_validate(goal)
+    if is_owner:
+        return _hide_unreleased_mentor_reviews(db, current_user.org_id, goal, resp)
+    resp.self_reviews = [sr for sr in resp.self_reviews if not sr.is_draft]
+    if not can_review:
+        resp.mentor_reviews = [mr for mr in resp.mentor_reviews if not mr.is_draft]
+    return resp
+
+
+@router.get("/annual/{goal_id}/expectations", response_model=UserRoleExpectationResponse)
+def get_annual_goal_owner_expectations(
+    goal_id: int,
+    db: DbSession,
+    current_user: CurrentUser,
+):
+    """The goal owner's GCC role expectations, for the mentor writing the
+    review and the Admin reading it. Same readers as the goal itself."""
+    _goal, owner, _is_owner, _can_review = _annual_goal_for_reader(db, goal_id, current_user)
+    if owner is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Goal owner not found.")
+    return role_expectation_for(db, owner)
 
 
 @router.get("/{goal_id}", response_model=GoalResponse)

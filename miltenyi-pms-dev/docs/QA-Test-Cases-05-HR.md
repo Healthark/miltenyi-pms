@@ -138,11 +138,10 @@ There are 8 export surfaces. Test each one.
 **Login as:** Admin
 **Steps:**
 1. Open Annual Goals → All Goals.
-2. Apply at least one filter (e.g. Year = current FY).
-3. Click **Export**.
+2. Click **Export Excel** at the top right of the roster.
 
 **Expected:**
-- Excel file downloads with goals matching the current filter (filtered, not all).
+- The goals workbook downloads with every annual goal; the roster's filters do not narrow the file.
 - Columns include: Employee · Function · Designation · Goal Title · Description · Year · Mentor · Status · Created · (Self/Mentor Review status per half).
 
 ---

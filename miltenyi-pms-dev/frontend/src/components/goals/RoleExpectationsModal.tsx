@@ -17,11 +17,15 @@ import { GCC_COMPETENCIES } from "@/constants/gccFramework";
 interface RoleExpectationsModalProps {
   readonly expectation: UserRoleExpectation;
   readonly onClose: () => void;
+  /** Heading; defaults to the reader's own expectations. A mentor reading a
+   *  mentee's passes e.g. "Aarav's role expectations". */
+  readonly title?: string;
 }
 
 export function RoleExpectationsModal({
   expectation,
   onClose,
+  title = "Your Role Expectations",
 }: RoleExpectationsModalProps) {
   // Esc-to-close. The backdrop and the X button handle the other paths.
   useEffect(() => {
@@ -55,7 +59,7 @@ export function RoleExpectationsModal({
                 id="role-exp-modal-title"
                 className="font-display text-base font-semibold text-text-main"
               >
-                Your Role Expectations
+                {title}
               </h2>
               <p className="mt-0.5 text-xs text-text-muted">
                 {expectation.function_name ?? "—"} ·{" "}

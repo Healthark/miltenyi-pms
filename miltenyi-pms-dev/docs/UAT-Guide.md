@@ -15,7 +15,7 @@ No staff exist yet. First UAT step: Admin Panel → Users → add staff with rol
 
 Who may do what:
 
-- A Staff member can only create annual goals when they have an active mentor.
+- A Staff member can only write their annual goal when they have an active mentor.
 - Annual goals are approved and reviewed by the mentor of record. The Admin sees everything but does not approve annual goals.
 - Project Goals: the mentor records the offline approval and enters the quarterly Miltenyi review. The Admin may also submit a review and can unlock a submitted one.
 - Function and designation cannot be changed while the person has a goal set in the active goal year (promotions happen between years).
@@ -58,20 +58,19 @@ Weightages are informational and appear to staff only while **Weightages visible
 
 ## Annual Goals: competency goals with H1 and H2 reviews
 
-Each staff member writes their own annual goals (title, description with bold/italic/lists, optional web link), the mentor approves them, and both sides review them twice a year. Goals are stamped with the active year (CY 26-27).
+Each staff member writes **one annual goal per year, in one table row**: a title and every goal for the year as a list (bold, italic, bullet and numbered lists), plus an optional web link. The mentor approves it, and both sides review it twice a year in the same table, using an H1 / H2 selector the way Project Goals uses quarters. Mentors and the Admin get a roster with one row per person that opens the same table. Goals are stamped with the active year (CY 26-27). The year's rating stays on the Annual Reviews page.
 
 | Action | Who | Allowed when |
 | --- | --- | --- |
-| Create, edit, submit a goal | Staff (a mentor or the Admin may create one on a mentee's behalf) | **Edit Access for Annual Goals** is on for the year and the staff member has a mentor |
+| Write, edit, submit the goal | Staff | **Edit Access for Annual Goals** is on for the year and the staff member has a mentor; one goal per person per year (a second one is refused) |
 | Approve or request changes | Mentor of record | goal Submitted; "changes requested" sends it back for editing and resubmission |
-| Delete a goal | Staff | only a Draft; it disappears everywhere but the record is kept |
 | H1 self-review | Staff | goal Approved and H1 open: from Q1 until the next goal year starts (H1 stays open for backfill during H2) |
 | H2 self-review | Staff | goal Approved and H2 open: from the Q3 roll-out until the next goal year starts |
 | Mentor review, draft | Mentor | any time the half is open, even before the self-review |
 | Mentor review, submit | Mentor | only after the mentee's self-review for that half |
 | Staff sees the mentor's review | Staff | only when **Show H1 / H2 Mentor Reviews on Annual Goals** is on for the year; until then they see "submitted, hidden until published" |
 
-Each review records who wrote it. The mentor's Team Goals tab has a **Notify** button per goal for a free-text nudge to the mentee. Once a half is closed (the next goal year has started) nothing can be added for it.
+Each review records who wrote it. The mentor's roster flags what needs them (Approve, Write review), including an H1 review still open during H2, and a goal page opens on the half waiting for the mentor. **View role expectations** shows the staff member's competencies to the mentor and the Admin. Once a half is closed (the next goal year has started) nothing can be added for it.
 
 ## Annual Reviews and Management Review
 

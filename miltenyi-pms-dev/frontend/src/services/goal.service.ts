@@ -9,6 +9,7 @@
 
 import apiClient from "@/services/api.client";
 import type { Paginated } from "@/lib/pagination";
+import type { UserRoleExpectation } from "@/services/profile.service";
 
 // ── Enums ───────────────────────────────────────────────────────────
 
@@ -129,6 +130,62 @@ export interface TeamGoal extends Goal {
    *  match the right RoleExpectation row without an extra fetch. */
   owner_function_name: string | null;
   owner_designation_name: string | null;
+}
+
+// ── Annual goal table (7 Oct 2026) ─────────────────────────────────
+// One annual goal per person per year, shown as a one-row table like
+// Project Goals. Mentors and the Admin get a roster with one row per
+// person that opens the same table.
+
+/** One half's self or mentor review step. */
+export type ReviewStep = "none" | "draft" | "submitted";
+
+/** One annual goal as the table shows it: the goal, both halves' reviews,
+ *  the owner's details and current mentor, and what the caller may do. */
+export interface AnnualGoalSheet extends TeamGoal {
+  owner_mentor_id: number | null;
+  owner_mentor_name: string | null;
+  /** The caller owns the goal. */
+  is_owner: boolean;
+  /** The caller is the owner's current mentor: approves and reviews. */
+  can_review: boolean;
+}
+
+/** One person in the mentor's or Admin's roster for one year. */
+export interface AnnualRosterRow {
+  user_id: number;
+  full_name: string;
+  employee_code: string | null;
+  function_name: string | null;
+  designation_name: string | null;
+  mentor_id: number | null;
+  mentor_name: string | null;
+  /** Null when the person has no goal for the year yet. */
+  goal_id: number | null;
+  /** Null while the goal is a draft (only its owner reads a draft). */
+  goal_title: string | null;
+  approval_status: ApprovalStatus | null;
+  approved_at: string | null;
+  /** Goals beyond the first in the same year (data from before the one-goal rule). */
+  extra_goals: number;
+  h1_self: ReviewStep;
+  h1_mentor: ReviewStep;
+  h2_self: ReviewStep;
+  h2_mentor: ReviewStep;
+}
+
+export interface AnnualRoster {
+  fy_year: number;
+  /** Stored year token, e.g. "FY26-27". */
+  fy_label: string;
+  active_fy_year: number | null;
+  active_half: "H1" | "H2" | null;
+  /** Pickable years, newest first. */
+  years: number[];
+  entry_open: boolean;
+  reviews_visible_h1: boolean;
+  reviews_visible_h2: boolean;
+  rows: AnnualRosterRow[];
 }
 
 export interface GoalCreatePayload {
@@ -315,6 +372,25 @@ export const goalService = {
    *  HR "All Goals" tab — a separate fetch is required because the
    *  /goals/all data is server-filtered and deriving years from it
    *  would shrink the dropdown to only the selected year. HR-only. */
+  /** Mentor: their mentees. Admin: every staff member. One row per person. */
+  getAnnualRoster: async (fyYear?: number | null): Promise<AnnualRoster> => {
+    const res = await apiClient.get<AnnualRoster>("/goals/annual/roster", {
+      params: fyYear ? { fy_year: fyYear } : undefined,
+    });
+    return res.data;
+  },
+
+  getAnnualSheet: async (goalId: number): Promise<AnnualGoalSheet> => {
+    const res = await apiClient.get<AnnualGoalSheet>(`/goals/annual/${goalId}`);
+    return res.data;
+  },
+
+  /** The goal owner's GCC role expectations (owner, mentor or Admin). */
+  getAnnualOwnerExpectations: async (goalId: number): Promise<UserRoleExpectation> => {
+    const res = await apiClient.get<UserRoleExpectation>(`/goals/annual/${goalId}/expectations`);
+    return res.data;
+  },
+
   getDistinctGoalYears: async (): Promise<number[]> => {
     const res = await apiClient.get<number[]>("/goals/all/distinct-years");
     return res.data;
