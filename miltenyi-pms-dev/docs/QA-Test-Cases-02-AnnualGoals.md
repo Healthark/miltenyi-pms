@@ -194,7 +194,7 @@
 ### TC-MENT-002 — Actions and filters
 
 **Expected:**
-- Action **Approve** on a Pending Approval row; **Write review** when a self-review for an open half is in (H1 counts during H2); **Open** otherwise. Rows for drafts and not-started people have no action and do not open.
+- Action **Review goals** on a Pending Approval row (it only opens the goal; approval happens on that page); **Write review** when a self-review for an open half is in (H1 counts during H2); **Open** otherwise. Rows for drafts and not-started people have no action and do not open.
 - Status filter options: Not started, Drafting, Pending approval, Changes requested, Approved (any stage), Self-review in, review pending.
 - The dashboard card link `/annual-goals?status=pending_approval` opens the roster pre-filtered.
 
@@ -202,7 +202,7 @@
 
 ### TC-MENT-003 — Approve a goal
 
-**Steps:** Click **Approve** on a row, then **Approve** on the goal page and confirm "Approve <name>'s CY 26-27 goal?".
+**Steps:** Click **Review goals** on a row, then **Approve** on the goal page and confirm "Approve <name>'s CY 26-27 goal?".
 **Expected:** Blue notice before: "Submitted for your approval. Approve it, or request changes with a note…". After: toast "Goal approved", badge **Approved**, "Approved on <date>" beside it; the staff member is notified.
 
 ---

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Check, Eye, PenLine, Search } from "lucide-react";
+import { Eye, FileSearch, PenLine, Search } from "lucide-react";
 import type { AnnualRosterRow } from "@/services/goal.service";
 import { ApprovalStatusBadge } from "@/components/goals/ApprovalStatusBadge";
 import { ClearFiltersButton } from "@/components/common/ClearFiltersButton";
@@ -237,7 +237,7 @@ export function AnnualRosterTable({ rows, activeHalf, viewerIsHr, initialStatus 
                             : "bg-brand/10 text-brand hover:bg-brand hover:text-white"
                         }`}
                       >
-                        {action === "approve" && <><Check className="h-3 w-3" aria-hidden="true" /> Approve</>}
+                        {action === "approve" && <><FileSearch className="h-3 w-3" aria-hidden="true" /> Review goals</>}
                         {action === "review" && <><PenLine className="h-3 w-3" aria-hidden="true" /> Write review</>}
                         {action === "view" && <><Eye className="h-3 w-3" aria-hidden="true" /> Open</>}
                       </button>
