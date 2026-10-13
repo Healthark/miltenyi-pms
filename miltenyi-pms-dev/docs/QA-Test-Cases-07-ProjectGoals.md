@@ -232,7 +232,7 @@ The staff read receipt on a quarterly review ("Acknowledge Q3 review") was remov
 - Filters: search (name, email, designation, mentor, Miltenyi reviewer), **Function**, **Level**, **Goals** (Not started, Draft, Submitted, Approved, No framework) and **Q3 · CY 26-27** (Self-review pending, Review pending, Reviewed). The Admin also gets a **Mentor** filter (with "No mentor").
 - Under the filters one summary line: "Showing 3 of 3 staff · 1 awaiting approval · 2 Q3 · CY 26-27 reviews to enter". There are no count chips.
 - Columns: Staff member · Function · level · (Admin only: Mentor) · Miltenyi reviewer · Goals · year · **Q3 · CY 26-27 self-review** · **Q3 · CY 26-27 review** · Actions. No Trials column.
-- Actions: **Mark approved** (goals Submitted), **Enter Q3 review** (goals Approved and the quarter's self-review Submitted; Admins also without it), **Open** (everything else with a set), "Not started" text for no set, and "No framework for this level" in red when the function × level row is missing.
+- Actions: **Review goals** (goals Submitted; it only opens the goals, approval happens on that page), **Enter Q3 review** (goals Approved and the quarter's self-review Submitted; Admins also without it), **Open** (everything else with a set), "Not started" text for no set, and "No framework for this level" in red when the function × level row is missing.
 - Only the mentor's own mentees are listed.
 
 ---
@@ -240,7 +240,7 @@ The staff read receipt on a quarterly review ("Acknowledge Q3 review") was remov
 ### TC-PG-021 — Open a set
 
 **Login as:** Mentor (Rahul)
-**Steps:** Click **Open** / **Mark approved** on Aarav.
+**Steps:** Click **Open** / **Review goals** on Aarav.
 **Expected:**
 - Header "Aarav Patel · Regulatory Affairs Associate · Regulatory Affairs · CY 26-27" and a line "Mentor: Rahul Verma · Miltenyi reviewer: Stefan Bauer" (no Trials).
 - **Back to team** returns to the queue. One tab: **Goals & reviews · CY 26-27** (there is no change log).

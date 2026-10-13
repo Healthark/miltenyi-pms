@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Check, Eye, PenLine, Search } from "lucide-react";
+import { Eye, FileSearch, PenLine, Search } from "lucide-react";
 import { quarterDisplay, quarterSeq, type TeamRow } from "@/services/project-goals.service";
 import { SetStatusBadge, StepBadge, TH_CLS, fmtDate } from "@/components/project-goals/ui";
 
@@ -86,7 +86,7 @@ export function TeamQueue({ rows, cycleLabel, onOpen, viewerIsHr }: TeamQueuePro
       case "approve":
         return (
           <button type="button" onClick={() => onOpen(r)} className="flex items-center gap-1.5 rounded-md bg-brand-light px-2.5 py-1.5 text-xs font-medium text-brand-accent hover:bg-brand hover:text-white transition-colors">
-            <Check className="h-3.5 w-3.5" aria-hidden="true" /> Mark approved
+            <FileSearch className="h-3.5 w-3.5" aria-hidden="true" /> Review goals
           </button>
         );
       case "review":
