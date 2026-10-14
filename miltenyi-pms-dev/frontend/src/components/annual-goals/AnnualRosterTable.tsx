@@ -1,16 +1,19 @@
 import { useMemo, useState } from "react";
-import { Eye, FileSearch, PenLine, Search } from "lucide-react";
+import { Eye, PenLine, Search } from "lucide-react";
 import type { AnnualRosterRow } from "@/services/goal.service";
 import { ApprovalStatusBadge } from "@/components/goals/ApprovalStatusBadge";
 import { ClearFiltersButton } from "@/components/common/ClearFiltersButton";
 import { StepBadge, TH_CLS } from "@/components/project-goals/ui";
 import { isPostApproved } from "@/utils/goalStatus";
 import {
+  HALF_REVIEW_LABELS,
   HALVES,
   ROSTER_STATUS_OPTIONS,
+  halfBucket,
   rowStep,
   stepStatus,
   type Half,
+  type RosterReviewFilter,
   type RosterStatusFilter,
 } from "@/components/annual-goals/helpers";
 
@@ -39,7 +42,7 @@ function nextAction(r: AnnualRosterRow, open: readonly Half[], viewerIsHr: boole
   return "view";
 }
 
-function matches(r: AnnualRosterRow, f: RosterStatusFilter, open: readonly Half[]): boolean {
+function matchesGoals(r: AnnualRosterRow, f: RosterStatusFilter): boolean {
   switch (f) {
     case "all":
       return true;
@@ -47,11 +50,15 @@ function matches(r: AnnualRosterRow, f: RosterStatusFilter, open: readonly Half[
       return !r.goal_id;
     case "approved":
       return !!r.approval_status && isPostApproved(r.approval_status);
-    case "to_review":
-      return awaitsReview(r, open);
     default:
       return r.approval_status === f;
   }
+}
+
+function matchesReviews(r: AnnualRosterRow, f: RosterReviewFilter): boolean {
+  if (f === "all") return true;
+  const [half, bucket] = f.split(":") as [Half, string];
+  return halfBucket(r, half) === bucket;
 }
 
 const SELECT_CLS =
@@ -61,6 +68,8 @@ interface AnnualRosterTableProps {
   readonly rows: AnnualRosterRow[];
   /** The active half when the roster shows the active year; null for other years. */
   readonly activeHalf: Half | null;
+  /** Label of the year shown, e.g. "CY 26-27" (heads the Reviews filter groups). */
+  readonly yearLabel: string;
   readonly viewerIsHr: boolean;
   readonly initialStatus?: RosterStatusFilter;
   readonly onOpen: (row: AnnualRosterRow) => void;
@@ -69,17 +78,26 @@ interface AnnualRosterTableProps {
 /**
  * The mentor's mentees (or every staff member, for the Admin) for one year:
  * one row per person with the goal's status and both halves' review steps.
- * A row with a submitted goal opens that person's goal table.
+ * Filters mirror the Project Goals team list. A row with a goal past draft
+ * opens that person's goal table (the whole row, or its button).
  */
-export function AnnualRosterTable({ rows, activeHalf, viewerIsHr, initialStatus = "all", onOpen }: AnnualRosterTableProps) {
+export function AnnualRosterTable({ rows, activeHalf, yearLabel, viewerIsHr, initialStatus = "all", onOpen }: AnnualRosterTableProps) {
   const [search, setSearch] = useState("");
   const [fn, setFn] = useState("all");
+  const [lvl, setLvl] = useState("all");
   const [mentor, setMentor] = useState("all");
   const [status, setStatus] = useState<RosterStatusFilter>(initialStatus);
+  const [reviews, setReviews] = useState<RosterReviewFilter>("all");
   const open = openHalves(activeHalf);
+  // Halves that can be filtered on: those started in the active year, both in a past year.
+  const filterHalves: Half[] = activeHalf ? open : [...HALVES];
 
   const functions = useMemo(
     () => Array.from(new Set(rows.map((r) => r.function_name).filter((x): x is string => !!x))).sort(),
+    [rows],
+  );
+  const levels = useMemo(
+    () => Array.from(new Set(rows.map((r) => r.level).filter((x): x is number => x != null))).sort((a, b) => a - b),
     [rows],
   );
   const mentors = useMemo(
@@ -87,65 +105,90 @@ export function AnnualRosterTable({ rows, activeHalf, viewerIsHr, initialStatus 
     [rows],
   );
 
-  const filtered = rows.filter((r) => {
-    if (search.trim() && !r.full_name.toLowerCase().includes(search.trim().toLowerCase())) return false;
-    if (fn !== "all" && r.function_name !== fn) return false;
-    if (mentor !== "all" && r.mentor_name !== mentor) return false;
-    return matches(r, status, open);
-  });
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return rows.filter((r) => {
+      const haystack = `${r.full_name} ${r.employee_code ?? ""} ${r.designation_name ?? ""} ${r.mentor_name ?? ""}`;
+      if (q && !haystack.toLowerCase().includes(q)) return false;
+      if (fn !== "all" && r.function_name !== fn) return false;
+      if (lvl !== "all" && String(r.level ?? "") !== lvl) return false;
+      if (mentor !== "all" && (mentor === "__none__" ? !!r.mentor_name : r.mentor_name !== mentor)) return false;
+      return matchesGoals(r, status) && matchesReviews(r, reviews);
+    });
+  }, [rows, search, fn, lvl, mentor, status, reviews]);
 
   const pending = filtered.filter((r) => r.approval_status === "pending_approval").length;
   const toReview = filtered.filter((r) => awaitsReview(r, open)).length;
   const notStarted = filtered.filter((r) => !r.goal_id).length;
-  const hasFilter = search.trim() !== "" || fn !== "all" || mentor !== "all" || status !== "all";
+  const hasFilter =
+    search.trim() !== "" || fn !== "all" || lvl !== "all" || mentor !== "all" || status !== "all" || reviews !== "all";
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="relative w-56">
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="relative min-w-[220px] max-w-xs flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-muted" aria-hidden="true" />
           <input
             type="text"
-            aria-label="Search by name"
-            placeholder="Search by name…"
+            aria-label="Search staff"
+            placeholder={viewerIsHr ? "Search staff, code, designation, mentor…" : "Search staff, code, designation…"}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full rounded-lg border border-border bg-white py-1.5 pl-9 pr-3 text-[13px] text-text-main outline-none placeholder:text-text-muted focus:border-brand"
           />
         </div>
-        <label className="flex items-center gap-2">
+        <label className="flex flex-col gap-1">
           <span className={TH_CLS}>Function</span>
-          <select value={fn} onChange={(e) => setFn(e.target.value)} className={`${SELECT_CLS} min-w-[160px]`}>
+          <select value={fn} onChange={(e) => setFn(e.target.value)} className={`${SELECT_CLS} min-w-[170px]`}>
             <option value="all">All functions</option>
             {functions.map((f) => <option key={f} value={f}>{f}</option>)}
           </select>
         </label>
+        <label className="flex flex-col gap-1">
+          <span className={TH_CLS}>Level</span>
+          <select value={lvl} onChange={(e) => setLvl(e.target.value)} className={`${SELECT_CLS} min-w-[110px]`}>
+            <option value="all">All</option>
+            {levels.map((l) => <option key={l} value={String(l)}>Level {l}</option>)}
+          </select>
+        </label>
         {viewerIsHr && (
-          <label className="flex items-center gap-2">
+          <label className="flex flex-col gap-1">
             <span className={TH_CLS}>Mentor</span>
-            <select value={mentor} onChange={(e) => setMentor(e.target.value)} className={`${SELECT_CLS} min-w-[150px]`}>
+            <select value={mentor} onChange={(e) => setMentor(e.target.value)} className={`${SELECT_CLS} min-w-[160px]`}>
               <option value="all">All mentors</option>
               {mentors.map((m) => <option key={m} value={m}>{m}</option>)}
+              <option value="__none__">No mentor</option>
             </select>
           </label>
         )}
-        <label className="flex items-center gap-2">
-          <span className={TH_CLS}>Status</span>
-          <select value={status} onChange={(e) => setStatus(e.target.value as RosterStatusFilter)} className={`${SELECT_CLS} min-w-[190px]`}>
-            {ROSTER_STATUS_OPTIONS.filter((o) => o.value !== "to_review" || open.length > 0).map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
+        <label className="flex flex-col gap-1">
+          <span className={TH_CLS}>Goals</span>
+          <select value={status} onChange={(e) => setStatus(e.target.value as RosterStatusFilter)} className={`${SELECT_CLS} min-w-[170px]`}>
+            {ROSTER_STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className={TH_CLS}>Reviews</span>
+          <select value={reviews} onChange={(e) => setReviews(e.target.value as RosterReviewFilter)} className={`${SELECT_CLS} min-w-[200px]`}>
+            <option value="all">All</option>
+            {filterHalves.map((h) => (
+              <optgroup key={h} label={`${h} · ${yearLabel}`}>
+                {HALF_REVIEW_LABELS.map(({ bucket, label }) => (
+                  <option key={bucket} value={`${h}:${bucket}`}>{h} · {label}</option>
+                ))}
+              </optgroup>
             ))}
           </select>
         </label>
         <ClearFiltersButton
           active={hasFilter}
-          onClear={() => { setSearch(""); setFn("all"); setMentor("all"); setStatus("all"); }}
+          onClear={() => { setSearch(""); setFn("all"); setLvl("all"); setMentor("all"); setStatus("all"); setReviews("all"); }}
         />
       </div>
 
       <p className="text-xs text-text-muted">
-        <b>{filtered.length}</b> {filtered.length === 1 ? "person" : "people"}
-        {pending > 0 && <> · <b>{pending}</b> pending approval</>}
+        Showing <b>{filtered.length}</b> of {rows.length} staff{hasFilter ? " (filtered)" : ""}
+        {pending > 0 && <> · <b>{pending}</b> awaiting approval</>}
         {toReview > 0 && <> · <b>{toReview}</b> review{toReview === 1 ? "" : "s"} to write</>}
         {notStarted > 0 && <> · <b>{notStarted}</b> not started</>}
       </p>
@@ -237,9 +280,11 @@ export function AnnualRosterTable({ rows, activeHalf, viewerIsHr, initialStatus 
                             : "bg-brand/10 text-brand hover:bg-brand hover:text-white"
                         }`}
                       >
-                        {action === "approve" && <><FileSearch className="h-3 w-3" aria-hidden="true" /> Review goals</>}
-                        {action === "review" && <><PenLine className="h-3 w-3" aria-hidden="true" /> Write review</>}
-                        {action === "view" && <><Eye className="h-3 w-3" aria-hidden="true" /> Open</>}
+                        {action === "review" ? (
+                          <><PenLine className="h-3 w-3" aria-hidden="true" /> Write review</>
+                        ) : (
+                          <><Eye className="h-3 w-3" aria-hidden="true" /> View</>
+                        )}
                       </button>
                     )}
                   </td>

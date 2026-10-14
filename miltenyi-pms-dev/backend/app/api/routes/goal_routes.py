@@ -982,6 +982,7 @@ def annual_goal_roster(
             employee_code=p.employee_code,
             function_name=p.function.name if p.function else None,
             designation_name=p.designation.name if p.designation else None,
+            level=p.designation.career_level if p.designation else None,
             mentor_id=p.mentor_id,
             mentor_name=mentor_names.get(p.mentor_id),
             goal_id=g.id if g else None,

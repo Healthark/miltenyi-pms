@@ -328,6 +328,8 @@ class AnnualRosterRow(BaseModel):
     employee_code: Optional[str] = None
     function_name: Optional[str] = None
     designation_name: Optional[str] = None
+    # Career level of the designation (1-12), for the roster's Level filter.
+    level: Optional[int] = None
     mentor_id: Optional[int] = None
     mentor_name: Optional[str] = None
     # None when the person has no goal for the year yet.

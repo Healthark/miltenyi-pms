@@ -70,7 +70,7 @@ Each staff member writes **one annual goal per year, in one table row**: a title
 | Mentor review, submit | Mentor | only after the mentee's self-review for that half |
 | Staff sees the mentor's review | Staff | only when **Show H1 / H2 Mentor Reviews on Annual Goals** is on for the year; until then they see "submitted, hidden until published" |
 
-Each review records who wrote it. The mentor's roster flags what needs them (Approve, Write review), including an H1 review still open during H2, and a goal page opens on the half waiting for the mentor. **View role expectations** shows the staff member's competencies to the mentor and the Admin. Once a half is closed (the next goal year has started) nothing can be added for it.
+Each review records who wrote it. The mentor's roster flags what needs them (a highlighted View on goals awaiting approval, Write review), every row opens the goal when clicked, including an H1 review still open during H2, and a goal page opens on the half waiting for the mentor. **View role expectations** shows the staff member's competencies to the mentor and the Admin. Once a half is closed (the next goal year has started) nothing can be added for it.
 
 ## Annual Reviews and Management Review
 

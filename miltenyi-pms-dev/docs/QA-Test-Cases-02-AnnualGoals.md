@@ -186,23 +186,24 @@
 **Expected:**
 - Header "Annual Goals · CY 26-27", tab **Team Goals**, a line "Goal entry for CY 26-27 is open. H2 reviews are open."
 - One row per mentee, including those who have not started: Staff member (name and code), Function · designation, Goal (title, "Drafting" for a draft, "Not started"), Status badge, **H1 · self / mentor** and **H2 · self / mentor** step badges, and an Action.
-- Summary line, e.g. "3 people · 1 pending approval · 1 review to write · 1 not started".
-- Filters: search by name, Function, Status. **Bulk approve (N)** appears when a goal is pending.
+- Summary line, e.g. "Showing 3 of 3 staff · 1 awaiting approval · 1 review to write · 1 not started".
+- Filters, as on the Project Goals team list: search (name, code, designation; for the Admin also mentor), **Function**, **Level**, **Goals** and **Reviews**. **Bulk approve (N)** appears when a goal is pending.
 
 ---
 
 ### TC-MENT-002 — Actions and filters
 
 **Expected:**
-- Action **Review goals** on a Pending Approval row (it only opens the goal; approval happens on that page); **Write review** when a self-review for an open half is in (H1 counts during H2); **Open** otherwise. Rows for drafts and not-started people have no action and do not open.
-- Status filter options: Not started, Drafting, Pending approval, Changes requested, Approved (any stage), Self-review in, review pending.
+- Action **View** (highlighted on a Pending Approval row; it only opens the goal, approval happens on that page); **Write review** when a self-review for an open half is in (H1 counts during H2); **View** otherwise. Clicking anywhere on the row does the same. Rows for drafts and not-started people have no action and do not open.
+- **Goals** filter: All, Not started, Draft, Pending approval, Changes requested, Approved (any stage).
+- **Reviews** filter, grouped by half ("H1 · CY 26-27", and H2 once it has started; both halves for a past year): Self-review pending, Review pending, Reviewed. It only matches approved goals.
 - The dashboard card link `/annual-goals?status=pending_approval` opens the roster pre-filtered.
 
 ---
 
 ### TC-MENT-003 — Approve a goal
 
-**Steps:** Click **Review goals** on a row, then **Approve** on the goal page and confirm "Approve <name>'s CY 26-27 goal?".
+**Steps:** Click a Pending Approval row (or its **View** button), then **Approve** on the goal page and confirm "Approve <name>'s CY 26-27 goal?".
 **Expected:** Blue notice before: "Submitted for your approval. Approve it, or request changes with a note…". After: toast "Goal approved", badge **Approved**, "Approved on <date>" beside it; the staff member is notified.
 
 ---
@@ -287,7 +288,7 @@
 ### TC-ALLGOAL-001 — The roster of every staff member
 
 **Login as:** Admin
-**Expected:** Tab **All Goals** with every Staff member (with or without a goal); an extra **Mentor** column and filter ("No mentor" when none); **Export Excel** at the top right. The Action column offers **Open** only.
+**Expected:** Tab **All Goals** with every Staff member (with or without a goal); an extra **Mentor** column and filter ("No mentor" when none); **Export Excel** at the top right. The Action column offers **View** only.
 
 ---
 

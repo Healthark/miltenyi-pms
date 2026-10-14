@@ -127,6 +127,7 @@ def test_roster_lists_everyone_and_hides_draft_titles(db_session: Session, app_w
     assert rows["Aarav Staff"]["approval_status"] == "draft" and rows["Aarav Staff"]["goal_title"] is None
     assert rows["Aarav Staff"]["goal_id"] is not None and rows["Aarav Staff"]["h1_self"] == "none"
     assert rows["Bina Staff"]["goal_id"] is None and rows["Bina Staff"]["approval_status"] is None
+    assert rows["Aarav Staff"]["level"] == 1
 
     # The Admin sees every Staff member, mentor names included.
     r = _as(as_user, s["admin"]).get(f"{GOALS}/annual/roster", params={"fy_year": 2026})
