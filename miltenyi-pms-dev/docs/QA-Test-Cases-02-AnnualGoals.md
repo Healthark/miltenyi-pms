@@ -224,7 +224,7 @@
 
 ### TC-MENT-006 — A draft stays private
 
-**Expected:** A mentee's draft shows "Drafting" in the roster; opening it by link shows "Staff member drafting" in the Goal column and "<name> is still drafting their CY 26-27 goal. Nothing to do yet."
+**Expected:** A mentee's draft shows "Drafting" in the roster with no button, and the row does not open. Opening it by link refuses with "<name>'s goal is still a draft. It opens once it is submitted." (also for the Admin). It opens normally once submitted.
 
 ---
 

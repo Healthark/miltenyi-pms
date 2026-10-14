@@ -205,6 +205,9 @@ def test_owner_role_expectations_for_the_goal_readers(db_session: Session, app_w
     db_session.commit()
     gid = _new_goal(as_user, s["aarav"])["id"]
     url = f"{GOALS}/annual/{gid}/expectations"
+    # Others read it once the goal has left draft (drafts are private).
+    assert _as(as_user, s["mentor"]).get(url).status_code == 403
+    assert _as(as_user, s["aarav"]).patch(f"{GOALS}/{gid}/submit").status_code == 200
 
     # Every reader gets the owner's level. The feature-gated project-review
     # route the old mentor dialog called is not involved.
@@ -220,3 +223,20 @@ def test_owner_role_expectations_for_the_goal_readers(db_session: Session, app_w
     # The staff member's own lookup still answers the same way.
     r = _as(as_user, s["aarav"]).get("/api/v1/users/me/expectations")
     assert r.status_code == 200 and r.json()["exp_scope_of_role"] == "Owns routine submissions under supervision."
+
+
+def test_a_draft_goal_stays_with_its_owner(db_session: Session, app_with_db: FastAPI, as_user) -> None:
+    s = _seed(db_session)
+    gid = _new_goal(as_user, s["aarav"])["id"]
+
+    # Only the owner opens a draft, on the annual page and the older single-goal endpoint.
+    assert _as(as_user, s["aarav"]).get(f"{GOALS}/annual/{gid}").status_code == 200
+    for reader in ("mentor", "admin"):
+        r = _as(as_user, s[reader]).get(f"{GOALS}/annual/{gid}")
+        assert r.status_code == 403 and "still a draft" in r.json()["detail"], (reader, r.text)
+        assert _as(as_user, s[reader]).get(f"{GOALS}/{gid}").status_code == 403
+
+    # Once submitted, the mentor and the Admin can open it.
+    assert _as(as_user, s["aarav"]).patch(f"{GOALS}/{gid}/submit").status_code == 200
+    for reader in ("mentor", "admin"):
+        assert _as(as_user, s[reader]).get(f"{GOALS}/annual/{gid}").status_code == 200

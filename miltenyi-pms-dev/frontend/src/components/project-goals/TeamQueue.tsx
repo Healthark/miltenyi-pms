@@ -30,9 +30,11 @@ export function quarterBucket(r: TeamRow): ReviewFilter | null {
 }
 
 /** What the viewer can do on this row right now. */
-export function nextAction(r: TeamRow, cycleLabel: string | null, viewerIsHr: boolean): "approve" | "review" | "open" | "not_started" | "no_framework" {
+export function nextAction(r: TeamRow, cycleLabel: string | null, viewerIsHr: boolean): "approve" | "review" | "open" | "drafting" | "not_started" | "no_framework" {
   if (!r.has_framework) return "no_framework";
   if (!r.set_id) return "not_started";
+  // A draft is the staff member's private work: nothing to open until submitted.
+  if (r.goals_status === "draft") return "drafting";
   if (r.goals_status === "submitted") return "approve";
   const reviewOpen = r.goals_status === "approved" && !!cycleLabel && r.review_status !== "submitted";
   if (reviewOpen && (r.self_status === "submitted" || viewerIsHr)) return "review";
@@ -83,6 +85,8 @@ export function TeamQueue({ rows, cycleLabel, onOpen, viewerIsHr }: TeamQueuePro
         return <span className="text-xs text-red-700">No framework for this level</span>;
       case "not_started":
         return <span className="text-xs italic text-text-muted">Not started</span>;
+      case "drafting":
+        return <span className="text-xs italic text-text-muted" title="Opens once the staff member submits the goals">Drafting</span>;
       case "approve":
         return (
           <button type="button" onClick={(e) => { e.stopPropagation(); onOpen(r); }} title="Opens the goals; approve them there" className="flex items-center gap-1.5 rounded-md bg-brand-light px-2.5 py-1.5 text-xs font-medium text-brand-accent hover:bg-brand hover:text-white transition-colors">
@@ -202,8 +206,9 @@ export function TeamQueue({ rows, cycleLabel, onOpen, viewerIsHr }: TeamQueuePro
             <div className="px-4 py-8 text-center text-sm text-text-muted">No staff match these filters.</div>
           )}
           {filtered.map((r) => {
-            // Any row with a goal set opens it, not only its button (13 Oct 2026).
-            const opens = !!r.set_id && r.has_framework;
+            // Any row with a submitted or approved goal set opens it, not only
+            // its button (13 Oct 2026). Drafts stay closed (14 Oct 2026).
+            const opens = !!r.set_id && r.has_framework && r.goals_status !== "draft";
             return (
             <div
               key={r.user_id}

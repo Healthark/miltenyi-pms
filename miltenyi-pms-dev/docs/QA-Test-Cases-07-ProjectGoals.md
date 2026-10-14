@@ -232,8 +232,8 @@ The staff read receipt on a quarterly review ("Acknowledge Q3 review") was remov
 - Filters: search (name, email, designation, mentor, Miltenyi reviewer), **Function**, **Level**, **Goals** (Not started, Draft, Submitted, Approved, No framework) and **Q3 · CY 26-27** (Self-review pending, Review pending, Reviewed). The Admin also gets a **Mentor** filter (with "No mentor").
 - Under the filters one summary line: "Showing 3 of 3 staff · 1 awaiting approval · 2 Q3 · CY 26-27 reviews to enter". There are no count chips.
 - Columns: Staff member · Function · level · (Admin only: Mentor) · Miltenyi reviewer · Goals · year · **Q3 · CY 26-27 self-review** · **Q3 · CY 26-27 review** · Actions. No Trials column.
-- Actions: **View** (highlighted when the goals are Submitted and wait for approval; it only opens the goals, approval happens on that page), **Enter Q3 review** (goals Approved and the quarter's self-review Submitted; Admins also without it), **View** (everything else with a set), "Not started" text for no set, and "No framework for this level" in red when the function × level row is missing.
-- Clicking anywhere on a row with a goal set opens it, the same as its button. Rows without a set (Not started, No framework) do not open.
+- Actions: **View** (highlighted when the goals are Submitted and wait for approval; it only opens the goals, approval happens on that page), **Enter Q3 review** (goals Approved and the quarter's self-review Submitted; Admins also without it), **View** (approved sets), *Drafting* text and no button while the goals are a Draft (the row does not open and the API sends the mentor and the Admin no draft goal text until it is submitted), "Not started" text for no set, and "No framework for this level" in red when the function × level row is missing.
+- Clicking anywhere on a row with a submitted or approved goal set opens it, the same as its button. Draft, Not started and No framework rows do not open.
 - Only the mentor's own mentees are listed.
 
 ---

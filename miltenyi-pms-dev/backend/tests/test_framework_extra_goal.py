@@ -121,3 +121,28 @@ def test_sheets_snapshot_the_column_weightage_and_drafts_follow(db_session: Sess
     assert r.status_code == 200, r.text
     db_session.expire_all()
     assert _extra_item(db_session, s["staff"].id).one().weightage == 15
+
+
+def test_draft_goal_text_stays_with_its_owner(db_session: Session, app_with_db: FastAPI, as_user) -> None:
+    """A draft set's goal text reaches only its owner; the mentor and the
+    Admin see that the set exists, and its text once submitted (14 Oct 2026)."""
+    s = _seed(db_session)
+    staff = _as(as_user, s["staff"])
+    created = staff.post("/api/v1/project-goals/me", params={"period": PERIOD})
+    assert created.status_code == 201, created.text
+    set_id = created.json()["id"]
+    items = [{"item_id": it["id"], "goal_text": f"Goal {it['seq']}"} for it in created.json()["items"]]
+    r = _as(as_user, s["staff"]).put("/api/v1/project-goals/me/items", params={"period": PERIOD}, json={"items": items})
+    assert r.status_code == 200, r.text
+
+    mentor = db_session.query(User).filter(User.id == s["staff"].mentor_id).one()
+    for reader in (mentor, s["admin"]):
+        body = _as(as_user, reader).get(f"/api/v1/project-goals/sets/{set_id}").json()
+        assert body["status"] == "draft" and all(it["goal_text"] is None for it in body["items"])
+    own = _as(as_user, s["staff"]).get(f"/api/v1/project-goals/sets/{set_id}").json()
+    assert own["items"][0]["goal_text"] == "Goal 1"
+
+    r = _as(as_user, s["staff"]).post("/api/v1/project-goals/me/submit", params={"period": PERIOD})
+    assert r.status_code == 200, r.text
+    body = _as(as_user, mentor).get(f"/api/v1/project-goals/sets/{set_id}").json()
+    assert body["items"][0]["goal_text"] == "Goal 1"

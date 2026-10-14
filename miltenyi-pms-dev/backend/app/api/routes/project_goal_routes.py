@@ -259,12 +259,15 @@ def _set_out(db, s: ProjectGoalSet, viewer: User, period: Optional[ProjectGoalPe
 
     reviews = sorted(s.reviews, key=lambda r: _seq_of(r.cycle_label))
     mentor = owner.mentor
+    # A draft is the staff member's private work (14 Oct 2026): the mentor and
+    # the Admin see that it exists, never its text, until it is submitted.
+    show_goal_text = is_owner or s.status != S.DRAFT.value
     return GoalSetOut(
         id=s.id, user_id=owner.id, owner_name=owner.full_name, owner_email=owner.email,
         period_label=s.period_label, status=s.status,
         framework=_framework_out(s.framework, weights_visible) if s.framework else None,
         items=[
-            GoalItemOut(id=it.id, seq=it.seq, kpi_text=it.kpi_text, weightage=it.weightage if weights_visible else None, goal_text=it.goal_text, is_extra=it.is_extra)
+            GoalItemOut(id=it.id, seq=it.seq, kpi_text=it.kpi_text, weightage=it.weightage if weights_visible else None, goal_text=it.goal_text if show_goal_text else None, is_extra=it.is_extra)
             for it in s.items
         ],
         reviews=[_review_out(r, is_owner, set_period, quarters.get(_seq_of(r.cycle_label))) for r in reviews],
