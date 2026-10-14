@@ -1031,6 +1031,13 @@ def _annual_goal_for_reader(db: DbSession, goal_id: int, current_user: User):
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have access to view this goal.",
         )
+    # A draft is the staff member's private work (14 Oct 2026); it opens for
+    # the mentor and the Admin once it is submitted.
+    if not is_owner and goal.approval_status == ApprovalStatus.DRAFT.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"{owner.full_name if owner else 'This'}'s goal is still a draft. It opens once it is submitted.",
+        )
     return goal, owner, is_owner, can_review
 
 
@@ -1105,6 +1112,12 @@ def get_goal(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have access to view this goal.",
+        )
+    # Drafts stay with their owner (14 Oct 2026), as on the annual goal page.
+    if not is_owner and goal.approval_status == ApprovalStatus.DRAFT.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This goal is still a draft. It opens once it is submitted.",
         )
 
     if is_owner and not is_manager:
