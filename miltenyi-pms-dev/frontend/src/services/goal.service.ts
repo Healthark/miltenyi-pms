@@ -158,6 +158,8 @@ export interface AnnualRosterRow {
   employee_code: string | null;
   function_name: string | null;
   designation_name: string | null;
+  /** Career level of the designation, for the Level filter. */
+  level: number | null;
   mentor_id: number | null;
   mentor_name: string | null;
   /** Null when the person has no goal for the year yet. */

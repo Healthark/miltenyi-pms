@@ -546,6 +546,7 @@ function AnnualGoalsRoster({ viewerIsHr }: Readonly<{ viewerIsHr: boolean }>) {
               key={roster.fy_year}
               rows={roster.rows}
               activeHalf={activeHalf}
+              yearLabel={yearText}
               viewerIsHr={viewerIsHr}
               initialStatus={initialStatus}
               onOpen={(r) => { if (r.goal_id) navigate(`/annual-goals/${r.goal_id}`); }}

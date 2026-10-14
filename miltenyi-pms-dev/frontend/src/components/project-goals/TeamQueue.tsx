@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Eye, FileSearch, PenLine, Search } from "lucide-react";
+import { Eye, PenLine, Search } from "lucide-react";
 import { quarterDisplay, quarterSeq, type TeamRow } from "@/services/project-goals.service";
 import { SetStatusBadge, StepBadge, TH_CLS, fmtDate } from "@/components/project-goals/ui";
 
@@ -85,20 +85,20 @@ export function TeamQueue({ rows, cycleLabel, onOpen, viewerIsHr }: TeamQueuePro
         return <span className="text-xs italic text-text-muted">Not started</span>;
       case "approve":
         return (
-          <button type="button" onClick={() => onOpen(r)} className="flex items-center gap-1.5 rounded-md bg-brand-light px-2.5 py-1.5 text-xs font-medium text-brand-accent hover:bg-brand hover:text-white transition-colors">
-            <FileSearch className="h-3.5 w-3.5" aria-hidden="true" /> Review goals
+          <button type="button" onClick={(e) => { e.stopPropagation(); onOpen(r); }} title="Opens the goals; approve them there" className="flex items-center gap-1.5 rounded-md bg-brand-light px-2.5 py-1.5 text-xs font-medium text-brand-accent hover:bg-brand hover:text-white transition-colors">
+            <Eye className="h-3.5 w-3.5" aria-hidden="true" /> View
           </button>
         );
       case "review":
         return (
-          <button type="button" onClick={() => onOpen(r)} className="flex items-center gap-1.5 rounded-md bg-brand px-2.5 py-1.5 text-xs font-medium text-white hover:opacity-90">
+          <button type="button" onClick={(e) => { e.stopPropagation(); onOpen(r); }} className="flex items-center gap-1.5 rounded-md bg-brand px-2.5 py-1.5 text-xs font-medium text-white hover:opacity-90">
             <PenLine className="h-3.5 w-3.5" aria-hidden="true" /> Enter {qShort ?? ""} review
           </button>
         );
       default:
         return (
-          <button type="button" onClick={() => onOpen(r)} className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-text-main hover:bg-slate-50">
-            <Eye className="h-3.5 w-3.5" aria-hidden="true" /> Open
+          <button type="button" onClick={(e) => { e.stopPropagation(); onOpen(r); }} className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-text-main hover:bg-slate-50">
+            <Eye className="h-3.5 w-3.5" aria-hidden="true" /> View
           </button>
         );
     }
@@ -201,8 +201,15 @@ export function TeamQueue({ rows, cycleLabel, onOpen, viewerIsHr }: TeamQueuePro
           {filtered.length === 0 && (
             <div className="px-4 py-8 text-center text-sm text-text-muted">No staff match these filters.</div>
           )}
-          {filtered.map((r) => (
-            <div key={r.user_id} className={`grid ${GRID} items-center gap-3 border-b border-border px-4 py-3 last:border-b-0 hover:bg-slate-50`}>
+          {filtered.map((r) => {
+            // Any row with a goal set opens it, not only its button (13 Oct 2026).
+            const opens = !!r.set_id && r.has_framework;
+            return (
+            <div
+              key={r.user_id}
+              onClick={() => opens && onOpen(r)}
+              className={`grid ${GRID} items-center gap-3 border-b border-border px-4 py-3 last:border-b-0 hover:bg-slate-50 ${opens ? "cursor-pointer" : ""}`}
+            >
               <div className="min-w-0">
                 <div className="text-sm font-medium text-text-main">{r.full_name}</div>
                 <div className="truncate text-xs text-text-muted">{r.designation_name ?? r.email}</div>
@@ -222,7 +229,8 @@ export function TeamQueue({ rows, cycleLabel, onOpen, viewerIsHr }: TeamQueuePro
               <div>{stepCell(r, "review")}</div>
               <div>{action(r)}</div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>

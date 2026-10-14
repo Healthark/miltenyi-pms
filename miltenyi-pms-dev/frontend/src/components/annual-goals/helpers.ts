@@ -166,29 +166,47 @@ export function useResettableState<T>(resetKey: string, initial: () => T): [T, D
   return [value, setValue];
 }
 
-// ── Roster status filter ────────────────────────────────────────────
+// ── Roster filters ──────────────────────────────────────────────────
 
+/** The goal's own status (the "Goals" filter). */
 export type RosterStatusFilter =
   | "all"
   | "not_started"
   | "draft"
   | "pending_approval"
   | "changes_requested"
-  | "approved"
-  | "to_review";
+  | "approved";
 
 export const ROSTER_STATUS_OPTIONS: ReadonlyArray<{ value: RosterStatusFilter; label: string }> = [
-  { value: "all", label: "All statuses" },
+  { value: "all", label: "All" },
   { value: "not_started", label: "Not started" },
-  { value: "draft", label: "Drafting" },
+  { value: "draft", label: "Draft" },
   { value: "pending_approval", label: "Pending approval" },
   { value: "changes_requested", label: "Changes requested" },
   { value: "approved", label: "Approved (any stage)" },
-  { value: "to_review", label: "Self-review in, review pending" },
 ];
 
+/** `?status=` deep links (dashboard cards) pre-select the Goals filter. */
 export function isRosterStatusFilter(v: string | null): v is RosterStatusFilter {
   return !!v && ROSTER_STATUS_OPTIONS.some((o) => o.value === v);
+}
+
+/** Where an approved goal stands in one half (the "Reviews" filter),
+ *  mirroring the Project Goals quarter filter. */
+export type HalfReviewBucket = "self_pending" | "review_pending" | "reviewed";
+export type RosterReviewFilter = "all" | `${Half}:${HalfReviewBucket}`;
+
+export const HALF_REVIEW_LABELS: ReadonlyArray<{ bucket: HalfReviewBucket; label: string }> = [
+  { bucket: "self_pending", label: "Self-review pending" },
+  { bucket: "review_pending", label: "Review pending" },
+  { bucket: "reviewed", label: "Reviewed" },
+];
+
+export function halfBucket(row: AnnualRosterRow, half: Half): HalfReviewBucket | null {
+  if (!row.approval_status || !isPostApproved(row.approval_status)) return null;
+  if (rowStep(row, half, "mentor") === "submitted") return "reviewed";
+  if (rowStep(row, half, "self") === "submitted") return "review_pending";
+  return "self_pending";
 }
 
 /** The goal shown for a year: the oldest one. Only data from before the
