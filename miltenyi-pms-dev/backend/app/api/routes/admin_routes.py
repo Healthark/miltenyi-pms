@@ -42,6 +42,7 @@ from app.models.user_models import User, Role
 from app.models.reference_models import Function, Designation, career_level_label
 from app.models.project_goal_models import ProjectGoalSet
 from app.services import project_goal_periods as goal_periods
+from app.services.personal_frameworks import personal_framework
 from app.models.project_models import (
     Project,
     ProjectAssignment,
@@ -1314,6 +1315,16 @@ def update_user(
                     detail=(
                         f"{user.full_name} has {active_period.period_label} project goals in progress "
                         f"({existing_set.status}). Function and designation can change once the next goal year starts."
+                    ),
+                )
+            # A personal framework (16 Oct 2026) was made for this person's
+            # function and level; it is reverted before either changes.
+            if personal_framework(db, current_user.org_id, user.id, active_period.period_label) is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"{user.full_name} has a personal {active_period.period_label} Project Goals framework. "
+                        f"Revert it to the standard on the Framework Mapping tab before changing their function or designation."
                     ),
                 )
 
