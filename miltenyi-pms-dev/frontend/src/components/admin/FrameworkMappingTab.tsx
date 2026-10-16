@@ -31,7 +31,7 @@ import { PersonalFrameworkModal } from "@/components/admin/PersonalFrameworkModa
 const SELECT_CLS =
   "rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand cursor-pointer";
 const GRID =
-  "grid-cols-[minmax(200px,1.5fr)_minmax(160px,1.1fr)_minmax(200px,1.3fr)_minmax(120px,0.8fr)_minmax(150px,1fr)_minmax(160px,1.1fr)_minmax(130px,0.9fr)_84px]";
+  "grid-cols-[minmax(200px,1.5fr)_minmax(160px,1.1fr)_minmax(200px,1.3fr)_minmax(120px,0.8fr)_minmax(150px,1fr)_minmax(160px,1.1fr)_minmax(130px,0.9fr)_260px]";
 
 const STATUS_LABEL: Record<MappingStatus, { label: string; dot: string; text: string }> = {
   mapped: { label: "Mapped", dot: "bg-green-500", text: "text-green-600" },
@@ -180,7 +180,7 @@ export function FrameworkMappingTab({ users }: Readonly<{ users: UserResponse[] 
       {q.isError && <p className="rounded-lg bg-red-50 px-4 py-2.5 text-sm text-red-600">{getErrorMessage(q.error)}</p>}
       {q.isSuccess && (
         <div className="overflow-x-auto rounded-lg border border-border">
-          <div className="min-w-[1200px]">
+          <div className="min-w-[1380px]">
             <div className={`grid ${GRID} gap-3 border-b border-border bg-slate-50 px-4 py-2.5`}>
               <span className={TH_CLS}>Staff member</span>
               <span className={TH_CLS}>Function</span>
@@ -212,19 +212,19 @@ export function FrameworkMappingTab({ users }: Readonly<{ users: UserResponse[] 
                     </span>
                   )}
                 </div>
-                <div className="flex justify-end gap-0.5">
+                <div className="flex justify-end gap-1">
                   <button
                     type="button"
                     disabled={r.status !== "mapped"}
                     onClick={() => setCustomise(r.user_id)}
-                    className="rounded-md p-1.5 text-text-muted hover:bg-brand-light hover:text-brand transition-colors disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-text-muted"
-                    title={r.status === "mapped" ? "Customise framework for this staff member" : "Map a function, a level and its framework column first"}
-                    aria-label={`Customise framework for ${r.full_name}`}
+                    className="flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1.5 text-xs font-medium text-brand-accent hover:bg-brand-light transition-colors disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+                    title={r.status === "mapped" ? "Give this staff member their own framework for the year" : "Map a function, a level and its framework column first"}
+                    aria-label={`Personalise framework for ${r.full_name}`}
                   >
-                    <UserCog className="h-4 w-4" aria-hidden="true" />
+                    <UserCog className="h-4 w-4" aria-hidden="true" /> Personalise framework
                   </button>
-                  <button type="button" onClick={() => openEdit(r)} className="rounded-md p-1.5 text-text-muted hover:bg-brand-light hover:text-brand transition-colors" title="Edit mapping" aria-label={`Edit mapping for ${r.full_name}`}>
-                    <Pencil className="h-4 w-4" aria-hidden="true" />
+                  <button type="button" onClick={() => openEdit(r)} className="flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1.5 text-xs font-medium text-brand-accent hover:bg-brand-light transition-colors" title="Edit mapping" aria-label={`Edit mapping for ${r.full_name}`}>
+                    <Pencil className="h-4 w-4" aria-hidden="true" /> Edit
                   </button>
                 </div>
               </div>
@@ -233,7 +233,7 @@ export function FrameworkMappingTab({ users }: Readonly<{ users: UserResponse[] 
         </div>
       )}
       <p className="text-xs text-text-muted">
-        Function, GCC designation, mentor and Miltenyi reviewer are the same fields as on the Users tab. The designation's level (set on the Framework tab) decides which framework column the staff member sees. Function and designation cannot change while the staff member's goals for the current year are in progress — record promotions between goal years. The person icon customises one staff member's framework for the year (their own title, paragraphs, KPIs and weightages).
+        Function, GCC designation, mentor and Miltenyi reviewer are the same fields as on the Users tab. The designation's level (set on the Framework tab) decides which framework column the staff member sees. Function and designation cannot change while the staff member's goals for the current year are in progress — record promotions between goal years. <b>Personalise framework</b> gives one staff member their own framework for the year (their own title, paragraphs, KPIs and weightages).
       </p>
 
       {customise !== null && <PersonalFrameworkModal userId={customise} onClose={() => setCustomise(null)} />}

@@ -361,7 +361,7 @@ The change log tab was dropped from the set page. Actions are still recorded in 
 - The edit dialog has four fields: **Function**, **GCC designation** (filtered by the chosen function; the level follows the designation and is shown read-only), **Reviewer (Mentor)** and **Miltenyi reviewer**. **Save** → toast "Mapping saved"; the same values show on the Users tab, in the queue rows and in the staff member's page header.
 - A staff member whose goals for the current year exist (Draft, Submitted or Approved) shows a small lock note "Goals …" under the status; in their dialog Function and GCC designation are disabled with an amber note, and the API refuses such a change with "… has CY 26-27 project goals in progress (…). Function and designation can change once the next goal year starts." (409). The same rule applies when editing the user on the Users tab. Promotions are recorded between goal years.
 - Only Admins see this tab. The Admin Panel tabs are **Users · Exports · System Settings · Framework Mapping · Framework** — there is no Projects tab.
-- Each row also has a **person icon** (Customise framework, §7.4a). A staff member with a personal framework shows a violet **Personalised** chip and has Function and GCC designation locked until it is reverted.
+- Each row ends with two buttons: **Personalise framework** (§7.4a) and **Edit** (this dialog). A staff member with a personal framework shows a violet **Personalised** chip and has Function and GCC designation locked until it is reverted.
 
 ---
 
@@ -476,7 +476,7 @@ A **personal framework** is one staff member's own framework for the active goal
 
 **Login as:** Admin (Aanya). Kabir Singh (Regulatory Affairs, Level 1) has not started his CY 26-27 goals.
 **Steps:**
-1. Admin Panel → **Framework Mapping**. On Kabir's row click the **person icon** (tooltip "Customise framework for this staff member").
+1. Admin Panel → **Framework Mapping**. On Kabir's row click **Personalise framework**.
 2. Change the role title, edit KPI 1's text, add a KPI and rebalance the weightages to 100 with the Additional goals row. Click **Save as personal framework**, read the line above the buttons, click **Confirm save**.
 3. Log in as Kabir → Project Goals. Click **Start**.
 4. Log in as Diya or Aarav (same function) → Project Goals.
@@ -494,7 +494,7 @@ A **personal framework** is one staff member's own framework for the active goal
 
 **Login as:** Aarav (start the sheet and write a goal in every row; do not submit), then Admin (Aanya)
 **Steps:**
-1. Framework Mapping → person icon on Aarav. Note the "· goal written" tag on each KPI.
+1. Framework Mapping → **Personalise framework** on Aarav's row. Note the "· goal written" tag on each KPI.
 2. Change KPI 1's text and weightage, remove the last KPI, add a new KPI, keep the total at 100.
 3. Save → Confirm save. Log in as Aarav and open Project Goals.
 
@@ -510,7 +510,7 @@ A **personal framework** is one staff member's own framework for the active goal
 
 **Login as:** Admin (Aanya), with Aarav's goals approved and a Q3 self-review saved
 **Steps:**
-1. Open the editor for Aarav (Framework Mapping person icon, or his sheet → **Edit personal framework** / **Customise framework** at the bottom left).
+1. Open the editor for Aarav (Framework Mapping → **Personalise framework**, or his sheet → **Edit personal framework** / **Customise framework** at the bottom left).
 2. Change a KPI text and two weightages (total 100). Save → Confirm save.
 3. Open the editor again and look at the KPI controls.
 
@@ -549,7 +549,7 @@ A **personal framework** is one staff member's own framework for the active goal
 
 **Login as:** Admin, Mentor (Rahul) and the staff member, with one personal framework in place
 **Expected:**
-- **Framework Mapping:** violet **Personalised** chip under the status; the person icon is disabled for rows that are not **Mapped** ("Map a function, a level and its framework column first").
+- **Framework Mapping:** violet **Personalised** chip under the status; **Personalise framework** is disabled for rows that are not **Mapped** ("Map a function, a level and its framework column first").
 - **Framework tab:** the **Personal frameworks · CY 26-27** list under the matrix (staff member, function · level, personal title with "based on …", KPI count and Additional goals %, goals status, updated date, **Edit** / **Revert**). The matrix itself shows role columns only; editing a column never changes a personal sheet.
 - **Project Goals:** the framework band carries the **Personalised** chip for the staff member, the mentor and the Admin; the Team Goals / All Goals queue shows **Personalised** under "Level n · <title>".
 - **Locks:** while a personal framework exists the Mapping dialog disables Function and GCC designation with "<Name> has a personal framework for this year. Revert it to the standard before changing function or designation."; the Users tab gets 409 "… has a personal CY 26-27 Project Goals framework. Revert it to the standard on the Framework Mapping tab before changing their function or designation."
