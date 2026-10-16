@@ -40,6 +40,9 @@ class FrameworkRowOut(BaseModel):
     kpis: list[FrameworkKpiOut]
     # None when weightages are hidden from the viewer (staff, switch off).
     extra_goal_weightage: Optional[int] = None
+    # One staff member's own framework, customised by the Admin (16 Oct 2026).
+    is_personal: bool = False
+    personal_for_name: Optional[str] = None
 
 
 class FrameworkKpiIn(BaseModel):
@@ -252,9 +255,89 @@ class MappingRowOut(BaseModel):
     # Function / designation are locked while this year's goal set exists.
     has_active_set: bool = False
     active_set_status: Optional[str] = None
-    # Function / designation are locked while this year's goal set exists.
-    has_active_set: bool = False
-    active_set_status: Optional[str] = None
+    # The Admin customised this staff member's framework for the year; it
+    # also locks function and designation until it is reverted.
+    personalised: bool = False
+
+
+# ── Personal frameworks (Admin, 16 Oct 2026) ─────────────────────────
+
+class PersonalKpiIn(FrameworkKpiIn):
+    # The goal row this KPI continues (keeps its goal text and reviews);
+    # None for a new row. Ignored before the staff member starts their sheet.
+    item_id: Optional[int] = None
+
+
+class PersonalFrameworkSave(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200)
+    business_outcomes: str = Field(..., min_length=1, max_length=4000)
+    functional_goals: str = Field(..., min_length=1, max_length=4000)
+    kpis: list[PersonalKpiIn]
+    extra_goal_weightage: int = Field(..., ge=0, le=100)
+
+    @field_validator("kpis")
+    @classmethod
+    def _kpis_shape(cls, v: list[PersonalKpiIn]) -> list[PersonalKpiIn]:
+        return _validate_kpis(v)
+
+    @model_validator(mode="after")
+    def _total_100(self):
+        _validate_total(self.kpis, self.extra_goal_weightage)
+        return self
+
+
+class PersonalKpiDraftOut(BaseModel):
+    item_id: Optional[int] = None           # the staff member's goal row, once the sheet exists
+    text: str
+    weightage: int
+    has_goal_text: bool = False             # removing this row deletes the goal written in it
+
+
+class PersonalFrameworkOut(BaseModel):
+    """What the personal-framework editor opens with. Before a personal
+    framework exists: the role column's text, with the KPI rows of the
+    staff member's sheet when they have one (custom weights show as they
+    are), else the column's KPIs."""
+    user_id: int
+    full_name: str
+    email: str
+    mentor_name: Optional[str] = None
+    function_id: int
+    function_name: str
+    level: int
+    level_label: Optional[str] = None
+    period_label: str
+    is_personal: bool                       # a personal framework exists for this year
+    framework_id: Optional[int] = None
+    based_on: Optional[FrameworkRowOut] = None   # the role column (the revert target)
+    title: str
+    business_outcomes: str
+    functional_goals: str
+    kpis: list[PersonalKpiDraftOut]
+    extra_goal_weightage: int
+    extra_goal_enabled: bool = False        # the year's switch: does the sheet show the Additional goals row
+    set_id: Optional[int] = None
+    set_status: Optional[str] = None        # draft | submitted | approved; None before Start
+    can_change_kpi_count: bool = True       # False once the goals are approved
+    last_year: Optional[FrameworkRowOut] = None  # last year's personal framework ("Copy last year's")
+    updated_at: Optional[datetime] = None
+
+
+class PersonalFrameworkRowOut(BaseModel):
+    """One line of the Framework tab's "Personal frameworks" list."""
+    user_id: int
+    full_name: str
+    email: str
+    framework_id: int
+    function_name: Optional[str] = None
+    level: int
+    level_label: Optional[str] = None
+    title: str
+    based_on_title: Optional[str] = None
+    kpi_count: int
+    extra_goal_weightage: int
+    set_status: Optional[str] = None
+    updated_at: Optional[datetime] = None
 
 
 # ── Goal set ─────────────────────────────────────────────────────────
@@ -402,6 +485,7 @@ class TeamRowOut(BaseModel):
     level: Optional[int] = None
     framework_title: Optional[str] = None
     has_framework: bool
+    personalised: bool = False               # the Admin customised this staff member's framework
     goals_status: GoalsStatus
     cycle_label: Optional[str] = None        # the quarter the review columns describe
     self_status: StepStatus = "not_started"

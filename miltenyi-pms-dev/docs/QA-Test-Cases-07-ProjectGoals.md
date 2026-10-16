@@ -5,6 +5,7 @@
 > **Test accounts needed (UAT seed, all passwords in `backend/miltenyi-test-seed.py`):** Staff with a framework row (`aarav.patel@healthark.ai`, Regulatory Affairs, Level 1, mentor Rahul), Staff whose function has no framework yet (`saanvi.reddy@healthark.ai`, Pharmacovigilance), Mentor (`rahul.verma@healthark.ai`), Admin (`aanya.sharma@healthark.ai`). Only Healthark staff have accounts; the Miltenyi reviewer is a name on the Staff record, not a login.
 > **Vocab:** Each staff member has **one goal set per goal year** (`CY 26-27`; goal years end around April, so they are labelled as spans). Its rows are the **KPIs** of the framework row for the staff member's function × designation level, copied in at creation with their weightages. **Goals are set once a year** — lifecycle **Draft → Submitted → Approved (agreed offline)** — and then **reviewed every quarter** against the same goals: per quarter one **self-review** (text per KPI + one self rating) and one **Miltenyi review** (comments per KPI + one final rating, typed in by the **Mentor** on the Miltenyi reviewer's behalf; the Mentor may add an optional **Secondary review** per KPI). A submitted review is final — only the Admin can unlock it. Quarters are labelled **Q1 · CY 26-27 … Q4 · CY 26-27**. Ratings are 1–5 where **lower = better**; never per KPI; weightages are informational.
 > **The review window is the quarter, not a switch.** The Admin **rolls quarters out** in System Settings (like the Healthark PMS cycle): the **current quarter** is writable, earlier quarters of the same year stay open for **backfill**, later quarters are **locked**. After Q4 the roll-out **starts the next goal year all closed** and the previous year **stays open for backfill until the Admin closes it**. Per goal year the Admin sets **goal entry open**, **weightages visible**, **quarters open for backfill** (past years) and **ratings visible per quarter**; every switch is staged and confirmed before saving. The UAT seed starts with **Q3 · CY 26-27 current and Q1–Q3 rolled out**.
+> **Personal frameworks (16 Oct 2026):** the Admin can give one staff member their own framework for the active goal year (title, paragraphs, KPI texts and weightages, Additional goals %); it applies to their sheet at once and shows a **Personalised** chip — §7.4a.
 
 ---
 
@@ -360,6 +361,7 @@ The change log tab was dropped from the set page. Actions are still recorded in 
 - The edit dialog has four fields: **Function**, **GCC designation** (filtered by the chosen function; the level follows the designation and is shown read-only), **Reviewer (Mentor)** and **Miltenyi reviewer**. **Save** → toast "Mapping saved"; the same values show on the Users tab, in the queue rows and in the staff member's page header.
 - A staff member whose goals for the current year exist (Draft, Submitted or Approved) shows a small lock note "Goals …" under the status; in their dialog Function and GCC designation are disabled with an amber note, and the API refuses such a change with "… has CY 26-27 project goals in progress (…). Function and designation can change once the next goal year starts." (409). The same rule applies when editing the user on the Users tab. Promotions are recorded between goal years.
 - Only Admins see this tab. The Admin Panel tabs are **Users · Exports · System Settings · Framework Mapping · Framework** — there is no Projects tab.
+- Each row also has a **person icon** (Customise framework, §7.4a). A staff member with a personal framework shows a violet **Personalised** chip and has Function and GCC designation locked until it is reverted.
 
 ---
 
@@ -379,6 +381,7 @@ The change log tab was dropped from the set page. Actions are still recorded in 
 - While the total is not 100 the badge turns red and **Save** is disabled. **Discard** drops all staged edits.
 - **Save** → toast "Framework saved".
 - The Framework tab holds content only; every switch is in System Settings.
+- Under the matrix, **Personal frameworks · CY 26-27** lists the staff members with their own framework (§7.4a, TC-PG-055); "No personal frameworks for CY 26-27…" when there are none.
 
 ---
 
@@ -465,6 +468,103 @@ The change log tab was dropped from the set page. Actions are still recorded in 
 
 ---
 
+## 7.4a Admin — Personal frameworks (added 16 Oct 2026)
+
+A **personal framework** is one staff member's own framework for the active goal year: the Admin changes their role title, the two paragraphs, KPI texts and weightages and the Additional goals %, starting from the column for their function × level. Saving applies it to their goal sheet **at once**: goal text and quarter reviews stay on their rows. KPIs can be added or removed only **until the goals are approved**; after that only texts and weightages change. **Revert to standard** goes back to the column. It is not carried into the next goal year.
+
+### TC-PG-050 — Customise a framework before the staff member starts
+
+**Login as:** Admin (Aanya). Kabir Singh (Regulatory Affairs, Level 1) has not started his CY 26-27 goals.
+**Steps:**
+1. Admin Panel → **Framework Mapping**. On Kabir's row click the **person icon** (tooltip "Customise framework for this staff member").
+2. Change the role title, edit KPI 1's text, add a KPI and rebalance the weightages to 100 with the Additional goals row. Click **Save as personal framework**, read the line above the buttons, click **Confirm save**.
+3. Log in as Kabir → Project Goals. Click **Start**.
+4. Log in as Diya or Aarav (same function) → Project Goals.
+
+**Expected:**
+- The dialog is titled "Personal framework · Kabir Singh · CY 26-27", with "Regulatory Affairs · Level 1 · Entry · starts from "<column title>"" under it and a blue note that Kabir has not started. It opens with the column's title, paragraphs, KPIs and weightages; the KPI list ends with the pinned **Additional goals** row and a **Total 100%** badge. **Save** stays disabled while the total is not 100, a KPI is empty or a paragraph is blank.
+- The confirmation reads "Kabir Singh's goals will start from it. Kabir Singh and <mentor> are notified." **Confirm save** → toast "Framework personalised for Kabir Singh"; his Mapping row shows a violet **Personalised** chip under **Mapped**.
+- Kabir's page shows the band with **Personalised** next to "Framework · CY 26-27" and the new title; **Start** builds the sheet from his framework (his KPIs and weightages, then the Additional goals row at his %).
+- Colleagues in the same function and level still see the column, without the chip.
+- Kabir and his mentor each get the bell "The Admin personalised your CY 26-27 Project Goals framework." / "The Admin personalised the CY 26-27 Project Goals framework for Kabir Singh."
+
+---
+
+### TC-PG-051 — A draft sheet follows at once; goal text stays on its row
+
+**Login as:** Aarav (start the sheet and write a goal in every row; do not submit), then Admin (Aanya)
+**Steps:**
+1. Framework Mapping → person icon on Aarav. Note the "· goal written" tag on each KPI.
+2. Change KPI 1's text and weightage, remove the last KPI, add a new KPI, keep the total at 100.
+3. Save → Confirm save. Log in as Aarav and open Project Goals.
+
+**Expected:**
+- The note says "Aarav Patel's goals are a draft. Saving updates their sheet at once; goal text stays on its row."
+- After removing a KPI that has goal text a red note appears: "Saving deletes the goal Aarav Patel wrote for "<KPI text>"."
+- After saving, Aarav's sheet shows the new KPI text and weightage in row 1 with his goal text still in it; the removed row and its goal text are gone; the new KPI is an empty row; the Additional goals row stays last. No goal text moved to another KPI.
+- Opening the editor again shows the saved framework; **Save** reads **Save** (not "Save as personal framework") and stays disabled until something changes. The bells now say "The Admin changed your personal CY 26-27 Project Goals framework." (and "… for Aarav Patel." for the mentor).
+
+---
+
+### TC-PG-052 — Approved goals: texts and weightages only
+
+**Login as:** Admin (Aanya), with Aarav's goals approved and a Q3 self-review saved
+**Steps:**
+1. Open the editor for Aarav (Framework Mapping person icon, or his sheet → **Edit personal framework** / **Customise framework** at the bottom left).
+2. Change a KPI text and two weightages (total 100). Save → Confirm save.
+3. Open the editor again and look at the KPI controls.
+
+**Expected:**
+- An amber note: "Aarav Patel's goals are approved: KPI texts and weightages can change, KPIs cannot be added or removed. Their quarter reviews stay on the rows." Each KPI shows a lock instead of the remove X; **Add KPI** is disabled with the same tooltip.
+- The save applies at once: the sheet shows the new KPI text and weightages; the Q3 self-review text is still on each row.
+- Through the API, a save that adds or removes a KPI is refused (409): "Aarav Patel's goals are approved: you can change KPI texts and weightages, not add or remove KPIs."
+
+---
+
+### TC-PG-053 — A sheet with custom weights becomes a personal framework without changing
+
+**Login as:** Admin (Aanya). Use a staff member whose sheet weights differ from their column (production: Ramanadh Babu D, 35/30/20/10/5 + Additional goals 0, set by script on 7 Oct 2026).
+**Steps:** Open the editor for that person. Without changing anything click **Save as personal framework** → **Confirm save**.
+**Expected:** The editor opens with the sheet's own weightages (35/30/20/10/5 and Additional goals 0 = **Total 100%**), not the column's. After saving, the sheet looks exactly as before; the Mapping row shows **Personalised** and the Framework tab lists the person.
+
+---
+
+### TC-PG-054 — Revert to standard
+
+**Login as:** Admin (Aanya)
+**Steps:**
+1. Framework tab → **Personal frameworks · CY 26-27** → **Revert** on Kabir's or Aarav's line (or **Revert to standard** at the bottom left of the editor).
+2. Read the confirmation and click **Revert to standard**.
+3. Repeat for a staff member whose goals are approved and whose personal framework has a different number of KPIs from the column.
+
+**Expected:**
+- The confirmation reads "<Name>'s framework goes back to "<column title>" and their sheet follows now. <Name> and <mentor> are notified."; when the personal framework has more KPIs than the column it adds "Rows n–m of the sheet are removed, with the goal text in them."
+- After reverting: toast "<Name> is back on the standard framework"; the line leaves the list; the Mapping chip disappears; the sheet takes the column's KPI texts and weightages row by row (goal text stays on its row) and the Additional goals row takes the column's %.
+- Step 3: the revert button is disabled with "<Name>'s goals are approved with n KPIs and the role column has m; KPIs cannot be added or removed after approval. Edit the personal framework instead." (the API answers 409 with the same sentence).
+- Bells: "Your CY 26-27 Project Goals framework is back to the standard for your role." / "<Name>'s CY 26-27 Project Goals framework is back to the standard for their role."
+
+---
+
+### TC-PG-055 — Where "Personalised" shows, and what it locks
+
+**Login as:** Admin, Mentor (Rahul) and the staff member, with one personal framework in place
+**Expected:**
+- **Framework Mapping:** violet **Personalised** chip under the status; the person icon is disabled for rows that are not **Mapped** ("Map a function, a level and its framework column first").
+- **Framework tab:** the **Personal frameworks · CY 26-27** list under the matrix (staff member, function · level, personal title with "based on …", KPI count and Additional goals %, goals status, updated date, **Edit** / **Revert**). The matrix itself shows role columns only; editing a column never changes a personal sheet.
+- **Project Goals:** the framework band carries the **Personalised** chip for the staff member, the mentor and the Admin; the Team Goals / All Goals queue shows **Personalised** under "Level n · <title>".
+- **Locks:** while a personal framework exists the Mapping dialog disables Function and GCC designation with "<Name> has a personal framework for this year. Revert it to the standard before changing function or designation."; the Users tab gets 409 "… has a personal CY 26-27 Project Goals framework. Revert it to the standard on the Framework Mapping tab before changing their function or designation."
+- Mentors and staff never see the Customise action; the personal-framework endpoints answer 403 for them.
+- **Next goal year:** after the roll-over to CY 27-28 the person starts from the column again (the list is empty for CY 27-28). Opening the editor offers **Copy last year's** ("<Name> had a personal framework in CY 26-27: …"), which fills the editor with last year's title, paragraphs, KPIs and weightages.
+
+---
+
+### TC-PG-056 — Past goal years are locked
+
+**Login as:** Admin (Aanya), after the roll-over to CY 27-28 (TC-PG-046)
+**Expected:** The CY 26-27 framework can be read but not changed: a column save, add or delete for CY 26-27 through the API answers 409 "CY 26-27 is a past year; its framework is locked.", and so does a personal-framework save or revert for CY 26-27. CY 26-27 sheets and reviews keep the texts and weightages they had.
+
+---
+
 ## 7.5 Retired surfaces (project reviews and projects are off for Miltenyi)
 
 ### TC-PG-060 — Nothing points at Project Reviews or Projects any more
@@ -500,6 +600,8 @@ Bell = in-app notification (Topbar). Email is sent in addition when SMTP is conf
 | Staff submits a quarter's self-review | Mentor | "<Staff> submitted their Q3 · CY 26-27 self-review. Enter <Miltenyi reviewer>'s comments when they arrive." | "<Staff> submitted their Q3 · CY 26-27 self-review" |
 | Mentor/Admin submits a quarter's review | Staff | "<Miltenyi reviewer>'s Q3 · CY 26-27 comments on your project goals are in, entered by <Mentor>." | "Your Q3 · CY 26-27 project goals review is in" |
 | Admin unlocks goals or a quarter's review | Staff **and** Mentor | "The Admin unlocked the <CY 26-27 goals / Q3 · CY 26-27 review> on <Staff>'s project goals: <reason>" | "Project goals unlocked: …" |
+| Admin personalises a staff member's framework | Staff **and** Mentor | "The Admin personalised your CY 26-27 Project Goals framework." / "The Admin personalised the CY 26-27 Project Goals framework for <Staff>." (later saves: "…changed your personal…") | "Project Goals framework personalised (CY 26-27)" |
+| Admin reverts it to the standard | Staff **and** Mentor | "Your CY 26-27 Project Goals framework is back to the standard for your role." / "<Staff>'s CY 26-27 Project Goals framework is back to the standard for their role." | "Project Goals framework back to standard (CY 26-27)" |
 | Admin rolls a quarter out / sets / rolls back | Every active user (except the Admin who did it) | "Project Goals moved to Q4 · CY 26-27. Self-reviews and Miltenyi reviews for Q4 · CY 26-27 are open; earlier quarters of CY 26-27 stay open for backfill." (year change: "…CY 27-28 is the new goal year…"; roll back: "…Quarters after it are closed again.") | bell only |
 
 Self-notifications are suppressed (an Admin acting as the mentor of record is not pinged about their own action). Nothing is emailed for drafts.

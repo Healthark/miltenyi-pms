@@ -10,23 +10,28 @@
  * Function and designation are locked while the staff member has this
  * year's goal set in progress: the set was built from one framework row and
  * keeps it. Promotions are recorded between goal years.
+ *
+ * "Customise framework" (16 Oct 2026) gives one staff member their own
+ * framework for the year (PersonalFrameworkModal); a personalised row shows
+ * the chip and keeps function and designation locked until it is reverted.
  */
 import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Lock, Pencil, Save, Search, X } from "lucide-react";
+import { Loader2, Lock, Pencil, Save, Search, UserCog, X } from "lucide-react";
 
 import { queryKeys } from "@/lib/queryKeys";
 import { getErrorMessage } from "@/utils/errors";
 import { adminService, type DesignationBrief, type FunctionBrief, type UserResponse } from "@/services/admin.service";
 import { goalFrameworkService, type MappingRow, type MappingStatus } from "@/services/goal-framework.service";
 import { useToast } from "@/hooks/useToast";
-import { BTN_GHOST, BTN_PRIMARY, INPUT_CLS, TH_CLS } from "@/components/project-goals/ui";
+import { BTN_GHOST, BTN_PRIMARY, INPUT_CLS, PersonalisedChip, TH_CLS } from "@/components/project-goals/ui";
+import { PersonalFrameworkModal } from "@/components/admin/PersonalFrameworkModal";
 
 const SELECT_CLS =
   "rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand cursor-pointer";
 const GRID =
-  "grid-cols-[minmax(200px,1.5fr)_minmax(160px,1.1fr)_minmax(200px,1.3fr)_minmax(120px,0.8fr)_minmax(150px,1fr)_minmax(160px,1.1fr)_minmax(130px,0.9fr)_56px]";
+  "grid-cols-[minmax(200px,1.5fr)_minmax(160px,1.1fr)_minmax(200px,1.3fr)_minmax(120px,0.8fr)_minmax(150px,1fr)_minmax(160px,1.1fr)_minmax(130px,0.9fr)_84px]";
 
 const STATUS_LABEL: Record<MappingStatus, { label: string; dot: string; text: string }> = {
   mapped: { label: "Mapped", dot: "bg-green-500", text: "text-green-600" },
@@ -36,6 +41,9 @@ const STATUS_LABEL: Record<MappingStatus, { label: string; dot: string; text: st
 };
 
 const GOALS_STATUS_LABEL: Record<string, string> = { draft: "Draft", submitted: "Submitted", approved: "Approved" };
+
+/** Function and designation stay put while this year's goals or a personal framework exist. */
+const mappingLocked = (r: MappingRow) => r.has_active_set || r.personalised;
 
 function StatusPill({ status }: Readonly<{ status: MappingStatus }>) {
   const s = STATUS_LABEL[status];
@@ -72,6 +80,7 @@ export function FrameworkMappingTab({ users }: Readonly<{ users: UserResponse[] 
   const [st, setSt] = useState("all");
   const [edit, setEdit] = useState<EditState | null>(null);
   const [error, setError] = useState("");
+  const [customise, setCustomise] = useState<number | null>(null);
 
   const q = useQuery({ queryKey: queryKeys.admin.goalMapping(), queryFn: () => goalFrameworkService.getMapping() });
   const rows = q.data ?? [];
@@ -101,7 +110,7 @@ export function FrameworkMappingTab({ users }: Readonly<{ users: UserResponse[] 
         mentor_id: e.mentorId ? Number(e.mentorId) : null,
         miltenyi_reviewer_name: e.reviewer.trim() || null,
       };
-      if (!e.row.has_active_set) {
+      if (!mappingLocked(e.row)) {
         payload.function_id = e.functionId ? Number(e.functionId) : null;
         payload.designation_id = e.designationId ? Number(e.designationId) : null;
       }
@@ -194,16 +203,27 @@ export function FrameworkMappingTab({ users }: Readonly<{ users: UserResponse[] 
                 <div><LevelChip level={r.level} label={r.level_label} /></div>
                 <div className={`text-sm ${r.mentor_name ? "text-text-main" : "italic text-text-muted"}`}>{r.mentor_name ?? "No mentor"}</div>
                 <div className={`text-sm ${r.miltenyi_reviewer_name ? "text-text-main" : "italic text-text-muted"}`}>{r.miltenyi_reviewer_name ?? "Not set"}</div>
-                <div className="flex flex-col gap-0.5">
+                <div className="flex flex-col items-start gap-0.5">
                   <StatusPill status={r.status} />
+                  {r.personalised && <PersonalisedChip title="This staff member has their own framework for the year" />}
                   {r.has_active_set && (
                     <span className="inline-flex items-center gap-1 text-[11px] text-text-muted" title="Function and designation are locked while this year's goals are in progress">
                       <Lock className="h-3 w-3" aria-hidden="true" /> Goals {GOALS_STATUS_LABEL[r.active_set_status ?? ""] ?? "in progress"}
                     </span>
                   )}
                 </div>
-                <div className="text-right">
-                  <button type="button" onClick={() => openEdit(r)} className="rounded-md p-1.5 text-text-muted hover:bg-brand-light hover:text-brand transition-colors" title="Edit mapping">
+                <div className="flex justify-end gap-0.5">
+                  <button
+                    type="button"
+                    disabled={r.status !== "mapped"}
+                    onClick={() => setCustomise(r.user_id)}
+                    className="rounded-md p-1.5 text-text-muted hover:bg-brand-light hover:text-brand transition-colors disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-text-muted"
+                    title={r.status === "mapped" ? "Customise framework for this staff member" : "Map a function, a level and its framework column first"}
+                    aria-label={`Customise framework for ${r.full_name}`}
+                  >
+                    <UserCog className="h-4 w-4" aria-hidden="true" />
+                  </button>
+                  <button type="button" onClick={() => openEdit(r)} className="rounded-md p-1.5 text-text-muted hover:bg-brand-light hover:text-brand transition-colors" title="Edit mapping" aria-label={`Edit mapping for ${r.full_name}`}>
                     <Pencil className="h-4 w-4" aria-hidden="true" />
                   </button>
                 </div>
@@ -213,8 +233,10 @@ export function FrameworkMappingTab({ users }: Readonly<{ users: UserResponse[] 
         </div>
       )}
       <p className="text-xs text-text-muted">
-        Function, GCC designation, mentor and Miltenyi reviewer are the same fields as on the Users tab. The designation's level (set on the Framework tab) decides which framework column the staff member sees. Function and designation cannot change while the staff member's goals for the current year are in progress — record promotions between goal years.
+        Function, GCC designation, mentor and Miltenyi reviewer are the same fields as on the Users tab. The designation's level (set on the Framework tab) decides which framework column the staff member sees. Function and designation cannot change while the staff member's goals for the current year are in progress — record promotions between goal years. The person icon customises one staff member's framework for the year (their own title, paragraphs, KPIs and weightages).
       </p>
+
+      {customise !== null && <PersonalFrameworkModal userId={customise} onClose={() => setCustomise(null)} />}
 
       {edit &&
         createPortal(
@@ -237,17 +259,25 @@ export function FrameworkMappingTab({ users }: Readonly<{ users: UserResponse[] 
                     </span>
                   </div>
                 )}
+                {!edit.row.has_active_set && edit.row.personalised && (
+                  <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                    <span>
+                      {edit.row.full_name} has a personal framework for this year. Revert it to the standard before changing function or designation; the reviewer fields can still change.
+                    </span>
+                  </div>
+                )}
                 <div className="grid gap-4 sm:grid-cols-2">
                   <label className="block">
                     <span className="mb-1 block text-xs font-semibold text-text-main">Function</span>
-                    <select value={edit.functionId} disabled={edit.row.has_active_set} onChange={(e) => setEdit({ ...edit, functionId: e.target.value, designationId: "" })} className={`${INPUT_CLS} cursor-pointer disabled:cursor-not-allowed`}>
+                    <select value={edit.functionId} disabled={mappingLocked(edit.row)} onChange={(e) => setEdit({ ...edit, functionId: e.target.value, designationId: "" })} className={`${INPUT_CLS} cursor-pointer disabled:cursor-not-allowed`}>
                       <option value="">No function</option>
                       {allFunctions.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
                     </select>
                   </label>
                   <label className="block">
                     <span className="mb-1 block text-xs font-semibold text-text-main">GCC designation</span>
-                    <select value={edit.designationId} disabled={edit.row.has_active_set} onChange={(e) => setEdit({ ...edit, designationId: e.target.value })} className={`${INPUT_CLS} cursor-pointer disabled:cursor-not-allowed`}>
+                    <select value={edit.designationId} disabled={mappingLocked(edit.row)} onChange={(e) => setEdit({ ...edit, designationId: e.target.value })} className={`${INPUT_CLS} cursor-pointer disabled:cursor-not-allowed`}>
                       <option value="">No designation</option>
                       {designationOptions(edit).map((d) => <option key={d.id} value={d.id}>{d.name}{d.career_level ? ` · L${d.career_level}` : ""}</option>)}
                     </select>

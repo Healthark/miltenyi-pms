@@ -11,7 +11,8 @@ the employee's Mentor on behalf of an offline Miltenyi reviewer. Additive
 tables keep both older modules intact.
 
 Shape:
-    GoalFramework          one row of the Miltenyi document: (function, level, period)
+    GoalFramework          one row of the Miltenyi document: (function, level, period),
+                           or one staff member's personal framework (user_id set)
       └ GoalFrameworkKpi   ordered KPI + weightage (weights total 100 per row)
     ProjectGoalSet         one per employee per period; status machine below
       ├ ProjectGoalItem    one per KPI: snapshot of KPI text/weight + the goal text
@@ -34,10 +35,12 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
+    text as sql_text,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -54,6 +57,12 @@ class GoalFramework(Base):
     title (Statistical Programmer, Biostatistician, ...); `title` stores
     that, `function_id` points at the department, `level` is the GCC
     career band 1..4 that `designations.career_level` resolves to.
+
+    Personal frameworks (16 Oct 2026): a row with `user_id` set is one staff
+    member's own framework for the year, customised by the Admin from the
+    role column `based_on_id`; it keeps that person's function and level.
+    Role columns have `user_id` NULL, and every query that means "the column
+    for function × level" must filter on that.
     """
     __tablename__ = "goal_frameworks"
 
@@ -71,15 +80,27 @@ class GoalFramework(Base):
     # switch on ProjectGoalPeriodSettings decides whether the row appears.
     extra_goal_weightage = Column(Integer, nullable=False, default=10, server_default="10")
 
+    # The staff member this personal framework belongs to (NULL = a role
+    # column) and the role column it was customised from.
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    based_on_id = Column(Integer, ForeignKey("goal_frameworks.id", ondelete="SET NULL"), nullable=True)
+
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     __table_args__ = (
-        UniqueConstraint("org_id", "function_id", "level", "period_label", name="uix_goal_framework_row"),
+        # One role column per function × level × year; one personal row per
+        # person × year (partial unique indexes, migration f5a7c9e1b3d6).
+        Index("uix_goal_framework_row", "org_id", "function_id", "level", "period_label", unique=True,
+              postgresql_where=sql_text("user_id IS NULL"), sqlite_where=sql_text("user_id IS NULL")),
+        Index("uix_goal_framework_personal", "org_id", "user_id", "period_label", unique=True,
+              postgresql_where=sql_text("user_id IS NOT NULL"), sqlite_where=sql_text("user_id IS NOT NULL")),
     )
 
     function = relationship("Function")
+    user = relationship("User", foreign_keys=[user_id])
+    based_on = relationship("GoalFramework", remote_side=[id], foreign_keys=[based_on_id])
     kpis = relationship(
         "GoalFrameworkKpi",
         back_populates="framework",

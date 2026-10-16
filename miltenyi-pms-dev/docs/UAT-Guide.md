@@ -53,8 +53,11 @@ A staff member has one goal sheet per goal year: one goal per KPI of the framewo
 | Submit the Miltenyi review | Mentor (Admin may submit anyway) | after the self-review is in; one final rating, "Given by" Miltenyi reviewer or Healthark; optional Secondary review note. Submitted = final |
 | See the final rating | Staff | only after the Admin turns **Ratings visible** on for that quarter |
 | Unlock a submitted review | Admin | any time; the review returns to draft, the self-review is kept |
+| Customise one person's framework (personal framework) | Admin | active goal year; the person has a function, a level and a framework column. Applies to their sheet at once (goal text and reviews stay on their rows); KPIs can be added or removed until their goals are approved, after that only texts and weightages. **Revert to standard** goes back to the column |
 
 Weightages are informational and appear to staff only while **Weightages visible to staff** is on. The Team Goals and All Goals queues show every sheet's state per quarter and let the Admin filter by function, level and mentor.
+
+A personal framework shows a **Personalised** chip on the framework band (for the staff member, the mentor and the Admin), in the queues and on Framework Mapping. It belongs to one goal year: the next year starts from the column again, and the editor offers **Copy last year's**. Past goal years are locked; their framework cannot be edited.
 
 ## Annual Goals: competency goals with H1 and H2 reviews
 
@@ -106,7 +109,7 @@ All switches for CY 26-27 are ON in the UAT database except the per-quarter rati
 
 ## Notifications, announcements and emails
 
-- **The bell** fires per event: a goal submitted, approved or sent back, a self-review or review submitted, a mentor's nudge, every quarter move, every Admin announcement. It also shows live alerts (drafts not submitted, goals awaiting a mentor's approval) and an Announcements tab for paused switches and a changed cycle.
+- **The bell** fires per event: a goal submitted, approved or sent back, a self-review or review submitted, a mentor's nudge, every quarter move, every Admin announcement, and a personal framework saved or reverted (to the staff member and their mentor). It also shows live alerts (drafts not submitted, goals awaiting a mentor's approval) and an Announcements tab for paused switches and a changed cycle.
 - **Notify tab** (Admin): one announcement to a group. Filters combine: named people, roles (Staff / Mentor / Admin), functions; nothing selected means everyone except the sender. Channels: in-app, email or both. Bold, italic and lists carry through to the bell and the email. A confirmation shows the recipient count before sending.
 - **Daily summary emails**: one email per person on weekdays at 09:00 (Asia/Kolkata), only when something is pending. Mentors get what they owe, grouped by mentee; staff get what is waiting on their mentor, goals sent back and approvals. The Notify tab shows the schedule and a **Send today's summaries now** button; a second run on the same day sends nothing.
 - **Other emails**: a welcome email with a temporary password when a user is created, password-reset links, and per-event mails for the main lifecycle steps.
@@ -118,8 +121,8 @@ Emails only leave the server when SMTP is configured for that environment. Witho
 | Tab | What the Admin does there | Rules to know |
 | --- | --- | --- |
 | Users | Add, edit, deactivate, reactivate; set role, function, designation, mentor and the Miltenyi reviewer's name | Employee codes are suggested from the role and can be edited or replaced with HR's own. The Add User form pre-fills a random temporary password (Generate rolls a new one; blank lets the server pick); it is emailed to the person, who must change it at first sign-in. Deactivation blocks login at once and locks in-flight reviews; the person's mentees show as a coverage gap on the dashboard until re-paired. Reactivation keeps the old password |
-| Framework Mapping | Function, designation (level), mentor and Miltenyi reviewer per person | Function and designation are locked while the person has a goal sheet in the active goal year (409); change them between years |
-| Framework | The goal themes per function × level: title, two paragraphs, KPIs with weightages, and the pinned Additional goals row whose weightage is editable but never deleted; KPIs plus that row total 100. Add functions, designations and levels | Staged Save. A function without rows (Pharmacovigilance today) shows its staff "no framework yet" until rows are added |
+| Framework Mapping | Function, designation (level), mentor and Miltenyi reviewer per person; the person icon customises that person's framework for the year | Function and designation are locked while the person has a goal sheet in the active goal year (409), or a personal framework (revert it first); change them between years |
+| Framework | The goal themes per function × level: title, two paragraphs, KPIs with weightages, and the pinned Additional goals row whose weightage is editable but never deleted; KPIs plus that row total 100. Add functions, designations and levels. Under the matrix, the year's personal frameworks with Edit and Revert | Staged Save. A function without rows (Pharmacovigilance today) shows its staff "no framework yet" until rows are added. A past goal year's framework is read-only |
 | Exports | Excel files: users, goals, annual reviews, everything | Every export is written to an append-only audit log |
 | System Settings | Quarter roll-out, per-year switches, Calendar | See the cheat sheet above |
 | Notify | Announcements and the daily summary emails | See above |

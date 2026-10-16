@@ -1,10 +1,12 @@
 import { BookOpen } from "lucide-react";
 import type { FrameworkRow } from "@/services/project-goals.service";
+import { PersonalisedChip } from "@/components/project-goals/ui";
 
 /**
  * The framework band above the goals table: level title, function, and the
  * two illustrative paragraphs from the Miltenyi document. Read-only; the
- * KPIs themselves are the table rows.
+ * KPIs themselves are the table rows. A framework the Admin customised for
+ * this staff member carries the "Personalised" chip (16 Oct 2026).
  */
 export function FrameworkBand({
   framework,
@@ -15,8 +17,11 @@ export function FrameworkBand({
       <div className="flex items-start gap-2.5">
         <BookOpen className="mt-1 h-4 w-4 shrink-0 text-blue-600" aria-hidden="true" />
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-wider text-blue-700">
+          <p className="flex flex-wrap items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-blue-700">
             Framework · {framework.period_label}
+            {framework.is_personal && (
+              <PersonalisedChip title={`Customised by the Admin for ${framework.personal_for_name ?? "this staff member"}`} />
+            )}
           </p>
           <h2 className="font-display text-base font-semibold text-text-main">
             {framework.title}{" "}

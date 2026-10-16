@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Eye, PenLine, Search } from "lucide-react";
 import { quarterDisplay, quarterSeq, type TeamRow } from "@/services/project-goals.service";
-import { SetStatusBadge, StepBadge, TH_CLS, fmtDate } from "@/components/project-goals/ui";
+import { PersonalisedChip, SetStatusBadge, StepBadge, TH_CLS, fmtDate } from "@/components/project-goals/ui";
 
 interface TeamQueueProps {
   readonly rows: TeamRow[];
@@ -224,6 +224,7 @@ export function TeamQueue({ rows, cycleLabel, onOpen, viewerIsHr }: TeamQueuePro
                 <div className="text-xs text-text-muted">
                   {r.has_framework ? `Level ${r.level} · ${r.framework_title ?? ""}` : r.level ? `Level ${r.level}` : "No level"}
                 </div>
+                {r.personalised && <div className="mt-0.5"><PersonalisedChip title="This staff member has their own framework for the year" /></div>}
               </div>
               {viewerIsHr && (
                 <div className={`text-sm ${r.mentor_name ? "text-text-main" : "italic text-text-muted"}`}>{r.mentor_name ?? "No mentor"}</div>

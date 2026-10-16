@@ -2,10 +2,10 @@
  * Shared bits for the Project Goals surfaces: class strings copied from the
  * existing evaluation forms so the module reads like the rest of the app,
  * a date formatter, and small presentational atoms (Notice, KpiNumber,
- * WeightChip, SetStatusBadge, StepBadge).
+ * WeightChip, SetStatusBadge, StepBadge, PersonalisedChip).
  */
 import type { ReactNode } from "react";
-import type { LucideIcon } from "lucide-react";
+import { UserCog, type LucideIcon } from "lucide-react";
 import type { GoalsStatus, StepStatus } from "@/services/project-goals.service";
 
 export const TEXTAREA_CLS =
@@ -92,6 +92,18 @@ export function WeightChip({ weight }: Readonly<{ weight: number | null }>) {
       title="Weightage fixed by Miltenyi · informational"
     >
       {weight}%
+    </span>
+  );
+}
+
+/** A framework the Admin customised for one staff member (16 Oct 2026). */
+export function PersonalisedChip({ title }: Readonly<{ title?: string }>) {
+  return (
+    <span
+      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-semibold text-violet-700"
+      title={title ?? "The Admin customised this framework for this staff member"}
+    >
+      <UserCog className="h-3 w-3" aria-hidden="true" /> Personalised
     </span>
   );
 }

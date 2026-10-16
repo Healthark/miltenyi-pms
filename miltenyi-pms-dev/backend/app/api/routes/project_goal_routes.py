@@ -28,6 +28,10 @@ seq is at or before the current one, so earlier quarters of the year stay
 open for backfill and future quarters are closed. Nothing is tracked per
 trial or project.
 
+A staff member's framework is their personal one when the Admin customised
+it for the year (16 Oct 2026, app/services/personal_frameworks.py), else the
+role column for their function × level.
+
 Security: CurrentUser (JWT) + the `project_goals` feature gate on the whole
 router; every query is scoped to current_user.org_id; mentor actions require
 `owner.mentor_id == current_user.id`; Admin reads everything and unlocks.
@@ -83,6 +87,7 @@ from app.schemas.project_goal_schemas import (
     TeamRowOut,
     UnlockRequest,
 )
+from app.services import personal_frameworks as pf
 from app.services import project_goal_periods as periods
 from app.services.notification_service import notify
 
@@ -140,21 +145,6 @@ def _period_of_label(db, org_id: int, cycle_label: str) -> ProjectGoalPeriodSett
     return row
 
 
-def _framework_for(db, org_id: int, function_id: Optional[int], level: Optional[int], period_label: str) -> Optional[GoalFramework]:
-    if function_id is None or level is None:
-        return None
-    return (
-        db.query(GoalFramework)
-        .filter(
-            GoalFramework.org_id == org_id,
-            GoalFramework.function_id == function_id,
-            GoalFramework.level == level,
-            GoalFramework.period_label == period_label,
-        )
-        .first()
-    )
-
-
 def _framework_missing_reason(user: User, framework: Optional[GoalFramework]) -> Optional[str]:
     if framework is not None:
         return None
@@ -177,6 +167,8 @@ def _framework_out(fw: GoalFramework, show_weights: bool) -> FrameworkRowOut:
         functional_goals=fw.functional_goals,
         kpis=[FrameworkKpiOut(id=k.id, seq=k.seq, text=k.text, weightage=k.weightage if show_weights else None) for k in fw.kpis],
         extra_goal_weightage=fw.extra_goal_weightage if show_weights else None,
+        is_personal=fw.user_id is not None,
+        personal_for_name=fw.user.full_name if fw.user_id is not None and fw.user else None,
     )
 
 
@@ -468,8 +460,8 @@ def my_project_goals(db: DbSession, current_user: CurrentUser, period: Optional[
         return MyProjectGoalsOut(period=None, periods=briefs, framework_missing_reason="No Project Goals period is open yet.")
     period = row
 
-    level = current_user.designation.career_level if current_user.designation else None
-    fw = _framework_for(db, current_user.org_id, current_user.function_id, level, period.period_label)
+    # The person's framework: their personal one when the Admin made it, else the role column.
+    fw = pf.framework_for_person(db, current_user, period.period_label)
     s = _own_set(db, current_user, period.period_label)
     return MyProjectGoalsOut(
         period=periods.period_out(db, period),
@@ -494,8 +486,7 @@ def create_my_set(db: DbSession, current_user: CurrentUser, period: Optional[str
     if not period.entry_open:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Goal entry is closed for this period.")
 
-    level = current_user.designation.career_level if current_user.designation else None
-    fw = _framework_for(db, current_user.org_id, current_user.function_id, level, period.period_label)
+    fw = pf.framework_for_person(db, current_user, period.period_label)
     if fw is None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_framework_missing_reason(current_user, None))
 
@@ -678,14 +669,18 @@ def team_goal_sets(
             sets_by_user[s.user_id] = s
 
     frameworks: dict[tuple[int, int], GoalFramework] = {}
+    personal: dict[int, GoalFramework] = {}
     if period:
-        for fw in db.query(GoalFramework).filter(GoalFramework.org_id == current_user.org_id, GoalFramework.period_label == period.period_label).all():
+        for fw in db.query(GoalFramework).filter(
+            GoalFramework.org_id == current_user.org_id, GoalFramework.period_label == period.period_label, GoalFramework.user_id.is_(None),
+        ).all():
             frameworks[(fw.function_id, fw.level)] = fw
+        personal = pf.personal_by_user(db, current_user.org_id, period.period_label)
 
     rows: list[TeamRowOut] = []
     for u in employees:
         level = u.designation.career_level if u.designation else None
-        fw = frameworks.get((u.function_id, level)) if (u.function_id and level) else None
+        fw = personal.get(u.id) or (frameworks.get((u.function_id, level)) if (u.function_id and level) else None)
         s = sets_by_user.get(u.id)
         review = _review_for(s, cycle_label) if (s and cycle_label) else None
         rows.append(TeamRowOut(
@@ -693,6 +688,7 @@ def team_goal_sets(
             function_name=u.function.name if u.function else None,
             designation_name=u.designation.name if u.designation else None,
             level=level, framework_title=fw.title if fw else None, has_framework=fw is not None,
+            personalised=u.id in personal,
             goals_status=s.status if s else "not_started",
             cycle_label=cycle_label,
             self_status=_step(_self_started(review), review.self_is_draft) if review else "not_started",

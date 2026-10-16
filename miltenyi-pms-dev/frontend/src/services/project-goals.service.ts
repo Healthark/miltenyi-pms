@@ -70,6 +70,9 @@ export interface FrameworkRow {
   kpis: FrameworkKpi[];
   /** Weightage of the "Additional goals" row on sheets built from this column; null when weightages are hidden. */
   extra_goal_weightage: number | null;
+  /** One staff member's own framework, customised by the Admin (16 Oct 2026). */
+  is_personal?: boolean;
+  personal_for_name?: string | null;
 }
 
 // ── Period & quarters ───────────────────────────────────────────────
@@ -232,6 +235,8 @@ export interface TeamRow {
   level: number | null;
   framework_title: string | null;
   has_framework: boolean;
+  /** The Admin customised this staff member's framework for the year. */
+  personalised: boolean;
   goals_status: GoalsStatus;
   cycle_label: string | null;
   self_status: StepStatus;
