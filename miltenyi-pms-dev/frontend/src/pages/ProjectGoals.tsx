@@ -34,6 +34,7 @@ import {
   Save,
   Send,
   Unlock,
+  UserCog,
 } from "lucide-react";
 
 import { useAuth } from "@/hooks/useAuth";
@@ -57,6 +58,7 @@ import {
 } from "@/services/project-goals.service";
 import { GoalsTable, type ReviewDraft, type Viewer } from "@/components/project-goals/GoalsTable";
 import { FrameworkBand } from "@/components/project-goals/FrameworkBand";
+import { PersonalFrameworkModal } from "@/components/admin/PersonalFrameworkModal";
 import { QuarterProgress, QuarterSelector, YearSelector } from "@/components/project-goals/QuarterSelector";
 import { ApproveModal } from "@/components/project-goals/ApproveModal";
 import { UnlockModal } from "@/components/project-goals/UnlockModal";
@@ -476,6 +478,7 @@ function SetDetail({ setId, viewer }: Readonly<{ setId: number; viewer: Viewer }
   const [error, setError] = useState("");
   const [approveOpen, setApproveOpen] = useState(false);
   const [unlockTarget, setUnlockTarget] = useState<UnlockPayload["target"] | null>(null);
+  const [customising, setCustomising] = useState(false);
 
   const q = useQuery({ queryKey: queryKeys.projectGoals.set(setId), queryFn: () => projectGoalsService.getSet(setId) });
   const set = q.data ?? null;
@@ -644,6 +647,11 @@ function SetDetail({ setId, viewer }: Readonly<{ setId: number; viewer: Viewer }
         {/* Footer actions */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
           <div className="flex items-center gap-3">
+            {viewer === "hr" && period?.is_active && (
+              <button type="button" disabled={busy} onClick={() => setCustomising(true)} className={BTN_SECONDARY} title="Give this staff member their own framework for the year: title, paragraphs, KPIs and weightages">
+                <UserCog className="h-4 w-4" /> {set.framework?.is_personal ? "Edit personal framework" : "Customise framework"}
+              </button>
+            )}
             {viewer === "hr" && (set.status === "submitted" || approved) && (
               <button type="button" disabled={busy} onClick={() => setUnlockTarget("goals")} className={BTN_SECONDARY} title="Refused once any quarter's self-review or review has been submitted"><Unlock className="h-4 w-4" /> Unlock goals</button>
             )}
@@ -679,6 +687,7 @@ function SetDetail({ setId, viewer }: Readonly<{ setId: number; viewer: Viewer }
       </Card>
 
       {approveOpen && <ApproveModal set={set} onClose={() => setApproveOpen(false)} onConfirm={async (p) => { await approve.mutateAsync(p).catch(() => undefined); }} isSaving={approve.isPending} error={approve.isError ? getErrorMessage(approve.error) : ""} />}
+      {customising && <PersonalFrameworkModal userId={set.user_id} onClose={() => setCustomising(false)} />}
       {unlockTarget && <UnlockModal target={unlockTarget} cycleLabel={cycle} ownerName={set.owner_name} onClose={() => setUnlockTarget(null)} onConfirm={async (p) => { await unlock.mutateAsync(p).catch(() => undefined); }} isSaving={unlock.isPending} error={unlock.isError ? getErrorMessage(unlock.error) : ""} />}
     </div>
   );

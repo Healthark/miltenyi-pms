@@ -78,6 +78,12 @@ export const queryKeys = {
     /** Employee → framework-level mapping table (HR_MyOrg). */
     goalMapping: (period: string | undefined = undefined) =>
       [...queryKeys.admin.all, "goal-mapping", period ?? "active"] as const,
+    /** The year's personal frameworks (Framework tab list). */
+    goalPersonalList: (period: string | undefined = undefined) =>
+      [...queryKeys.admin.all, "goal-personal", "list", period ?? "active"] as const,
+    /** One staff member's personal-framework editor contents. */
+    goalPersonal: (userId: number) =>
+      [...queryKeys.admin.all, "goal-personal", "user", userId] as const,
     /** Per-period Project Goals switches (Admin). */
     goalPeriodSettings: (period: string | undefined = undefined) =>
       [...queryKeys.admin.all, "goal-period-settings", period ?? "active"] as const,

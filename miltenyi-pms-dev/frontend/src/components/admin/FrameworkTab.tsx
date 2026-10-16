@@ -11,11 +11,15 @@
  * Reference data lives here too: add / rename a function, add / rename a
  * designation (with its level, 1–12), and the designation → level strip.
  * The period switches and the quarter roll-out are in System Settings.
+ *
+ * Below the matrix, the year's personal frameworks (16 Oct 2026): staff
+ * members whose framework the Admin customised, with Edit and Revert. They
+ * are created from the Framework Mapping tab ("Customise framework").
  */
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, FileQuestion, Loader2, Lock, Pencil, Plus, RotateCcw, Save, X } from "lucide-react";
+import { Check, FileQuestion, Loader2, Pencil, Plus, RotateCcw, Save, Undo2, UserCog, X } from "lucide-react";
 
 import { queryKeys } from "@/lib/queryKeys";
 import { getErrorMessage } from "@/utils/errors";
@@ -27,7 +31,10 @@ import {
   type FrameworkMatrix,
 } from "@/services/goal-framework.service";
 import type { FrameworkRow } from "@/services/project-goals.service";
-import { BTN_GHOST, BTN_PRIMARY, BTN_SECONDARY, INPUT_CLS, KpiNumber, TEXTAREA_CLS, TH_CLS, WeightChip } from "@/components/project-goals/ui";
+import { BTN_GHOST, BTN_PRIMARY, BTN_SECONDARY, INPUT_CLS, KpiNumber, TH_CLS, WeightChip, fmtDate } from "@/components/project-goals/ui";
+import { AutoTextarea, KpiListEditor, TotalBadge } from "@/components/admin/frameworkEditor";
+import { draftTotal, draftValid, type FrameworkDraft } from "@/components/admin/frameworkDraft";
+import { PersonalFrameworkModal } from "@/components/admin/PersonalFrameworkModal";
 
 export const MAX_LEVEL = 12;
 const LEVEL_OPTIONS = Array.from({ length: MAX_LEVEL }, (_, i) => i + 1);
@@ -39,14 +46,7 @@ const SELECT_CLS =
 const DEFAULT_KPIS: FrameworkKpiInput[] = [30, 25, 20, 15].map((w) => ({ text: "", weightage: w }));
 const DEFAULT_EXTRA_WEIGHT = 10;
 
-interface RowDraft {
-  title: string;
-  business_outcomes: string;
-  functional_goals: string;
-  kpis: FrameworkKpiInput[];
-  /** The pinned "Additional goals" row: editable weightage, never deleted. */
-  extra_goal_weightage: number;
-}
+type RowDraft = FrameworkDraft;
 
 const draftOf = (row: FrameworkRow): RowDraft => ({
   title: row.title,
@@ -58,25 +58,7 @@ const draftOf = (row: FrameworkRow): RowDraft => ({
 
 const emptyDraft = (): RowDraft => ({ title: "", business_outcomes: "", functional_goals: "", kpis: DEFAULT_KPIS.map((k) => ({ ...k })), extra_goal_weightage: DEFAULT_EXTRA_WEIGHT });
 
-const kpiTotal = (kpis: FrameworkKpiInput[]) => kpis.reduce((a, k) => a + (Number(k.weightage) || 0), 0);
-/** KPIs plus the Additional goals row — this is what must be 100. */
-const total = (d: RowDraft) => kpiTotal(d.kpis) + (Number(d.extra_goal_weightage) || 0);
-const draftValid = (d: RowDraft) => total(d) === 100 && d.kpis.length > 0 && d.kpis.every((k) => k.text.trim()) && !!d.title.trim() && !!d.business_outcomes.trim() && !!d.functional_goals.trim();
 const levelName = (l: number) => (BAND[l] ? `Level ${l} · ${BAND[l]}` : `Level ${l}`);
-
-function TotalBadge({ value }: Readonly<{ value: number }>) {
-  return (
-    <span className={`rounded-md px-1.5 py-0.5 font-mono text-[12px] font-semibold ${value === 100 ? "bg-emerald-100 text-emerald-700" : "bg-red-50 text-red-700"}`}>
-      Total {value}%
-    </span>
-  );
-}
-
-function AutoTextarea({ value, onChange, placeholder, className }: Readonly<{ value: string; onChange: (v: string) => void; placeholder?: string; className?: string }>) {
-  // Grows with content so long paragraphs never scroll inside the cell.
-  const rows = Math.max(3, Math.min(14, Math.ceil(value.length / 48) + 1));
-  return <textarea rows={rows} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className={`${TEXTAREA_CLS} text-[13px] leading-relaxed ${className ?? ""}`} />;
-}
 
 // ── Small modals ─────────────────────────────────────────────────────
 
@@ -163,6 +145,76 @@ function AddDesignationModal({ functions, defaultFunctionId, onClose, onSave, is
       </div>
       <p className="text-xs text-text-muted">The level decides which framework column applies to staff holding this designation. Levels run 1–{MAX_LEVEL}; 1–4 carry the GCC band names (Entry, Mid, Senior, Lead).</p>
     </ModalShell>
+  );
+}
+
+// ── Personal frameworks of the year ──────────────────────────────────
+
+const SET_STATUS_WORD: Record<string, string> = { draft: "Draft", submitted: "Submitted", approved: "Approved" };
+
+function PersonalFrameworksSection({ periodLabel }: Readonly<{ periodLabel: string }>) {
+  const q = useQuery({ queryKey: queryKeys.admin.goalPersonalList(), queryFn: () => goalFrameworkService.listPersonal() });
+  const [open, setOpen] = useState<{ userId: number; startWith?: "revert" } | null>(null);
+  const rows = q.data ?? [];
+  return (
+    <section className="rounded-lg border border-border bg-surface" aria-label="Personal frameworks">
+      <div className="flex flex-wrap items-start justify-between gap-2 border-b border-border px-4 py-3">
+        <div>
+          <p className={TH_CLS}>Personal frameworks · {periodLabel}</p>
+          <p className="mt-0.5 text-xs text-text-muted">
+            Staff members whose framework was customised for this year: their own title, paragraphs, KPIs and weightages, applied to their goal sheet at once. Customise one from the Framework Mapping tab. Not carried into the next goal year.
+          </p>
+        </div>
+        <span className="inline-flex items-center rounded-full border border-border bg-slate-100 px-2.5 py-0.5 text-xs text-text-main">{rows.length} personalised</span>
+      </div>
+      {q.isPending && <div className="m-4 h-16 animate-pulse rounded-lg bg-slate-100" />}
+      {q.isError && <p className="m-4 rounded-lg bg-red-50 px-4 py-2.5 text-sm text-red-600">{getErrorMessage(q.error)}</p>}
+      {q.isSuccess && rows.length === 0 && (
+        <p className="px-4 py-6 text-center text-sm text-text-muted">No personal frameworks for {periodLabel}. Everyone follows the column for their function and level.</p>
+      )}
+      {q.isSuccess && rows.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[900px] text-sm">
+            <thead className="bg-slate-50">
+              <tr className="text-left">
+                <th className="px-4 py-2.5"><span className={TH_CLS}>Staff member</span></th>
+                <th className="px-3 py-2.5"><span className={TH_CLS}>Function · level</span></th>
+                <th className="px-3 py-2.5"><span className={TH_CLS}>Personal title</span></th>
+                <th className="px-3 py-2.5"><span className={TH_CLS}>KPIs</span></th>
+                <th className="px-3 py-2.5"><span className={TH_CLS}>Goals</span></th>
+                <th className="px-3 py-2.5"><span className={TH_CLS}>Updated</span></th>
+                <th className="px-4 py-2.5" />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.user_id} className="border-t border-border align-top">
+                  <td className="px-4 py-3">
+                    <div className="font-medium text-text-main">{r.full_name}</div>
+                    <div className="text-xs text-text-muted">{r.email}</div>
+                  </td>
+                  <td className="px-3 py-3 text-text-main">{r.function_name ?? "—"} · L{r.level}{r.level_label ? ` · ${r.level_label}` : ""}</td>
+                  <td className="px-3 py-3">
+                    <div className="text-text-main">{r.title}</div>
+                    {r.based_on_title && <div className="text-xs text-text-muted">based on “{r.based_on_title}”</div>}
+                  </td>
+                  <td className="px-3 py-3 text-text-main">{r.kpi_count} KPIs · Additional goals {r.extra_goal_weightage}%</td>
+                  <td className="px-3 py-3 text-text-main">{r.set_status ? SET_STATUS_WORD[r.set_status] ?? r.set_status : <span className="text-text-muted">Not started</span>}</td>
+                  <td className="px-3 py-3 text-text-muted">{fmtDate(r.updated_at)}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex justify-end gap-2">
+                      <button type="button" onClick={() => setOpen({ userId: r.user_id })} className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-brand-accent hover:bg-brand-light transition-colors"><UserCog className="h-3.5 w-3.5" aria-hidden="true" /> Edit</button>
+                      <button type="button" onClick={() => setOpen({ userId: r.user_id, startWith: "revert" })} className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 transition-colors"><Undo2 className="h-3.5 w-3.5" aria-hidden="true" /> Revert</button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {open && <PersonalFrameworkModal userId={open.userId} startWith={open.startWith} onClose={() => setOpen(null)} />}
+    </section>
   );
 }
 
@@ -290,7 +342,7 @@ export function FrameworkTab() {
 
   // ── KPI cell (existing row or new column) ────────────────────────
   const kpiEditor = (key: string, d: RowDraft, setKpis: (kpis: FrameworkKpiInput[]) => void, setExtra: (w: number) => void, alwaysOpen: boolean) => {
-    const t = total(d);
+    const t = draftTotal(d);
     const editing = alwaysOpen || editingKpis.has(key);
     if (!editing) {
       return (
@@ -319,43 +371,17 @@ export function FrameworkTab() {
       );
     }
     return (
-      <div className="space-y-2.5">
-        {d.kpis.map((k, i) => (
-          <div key={`${key}-${i}`} className="rounded-lg border border-border bg-white p-2.5">
-            <div className="mb-1 flex items-center justify-between">
-              <span className={TH_CLS}>KPI {i + 1}</span>
-              <button type="button" onClick={() => setKpis(d.kpis.filter((_, j) => j !== i))} className="rounded p-0.5 text-text-muted hover:text-red-600" title="Remove KPI"><X className="h-3.5 w-3.5" /></button>
-            </div>
-            <AutoTextarea value={k.text} onChange={(v) => setKpis(d.kpis.map((x, j) => (j === i ? { ...x, text: v } : x)))} placeholder="KPI / success measure" />
-            <div className="mt-1.5 flex items-center gap-2">
-              <label className="text-[11px] text-text-muted">Weightage</label>
-              <input type="number" min={0} max={100} value={k.weightage} onChange={(e) => setKpis(d.kpis.map((x, j) => (j === i ? { ...x, weightage: Number(e.target.value) } : x)))} className="w-20 rounded-lg border border-border bg-white px-2 py-1 text-right font-mono text-[13px] outline-none focus:border-brand" />
-              <span className="text-[11px] text-text-muted">%</span>
-            </div>
-          </div>
-        ))}
-        <div className="rounded-lg border border-dashed border-border bg-slate-50/70 p-2.5">
-          <div className="mb-1 flex items-center justify-between">
-            <span className={TH_CLS}>Additional goals</span>
-            <span className="inline-flex items-center gap-1 text-[11px] text-text-muted" title="This row cannot be removed; set its weightage, or 0 when the year's switch is off"><Lock className="h-3 w-3" aria-hidden="true" /> fixed row</span>
-          </div>
-          <p className="text-[12px] text-text-muted">One free-text row at the end of every sheet; whether it shows is the year's switch in System Settings.</p>
-          <div className="mt-1.5 flex items-center gap-2">
-            <label className="text-[11px] text-text-muted">Weightage</label>
-            <input type="number" min={0} max={100} value={d.extra_goal_weightage} onChange={(e) => setExtra(Number(e.target.value))} className="w-20 rounded-lg border border-border bg-white px-2 py-1 text-right font-mono text-[13px] outline-none focus:border-brand" />
-            <span className="text-[11px] text-text-muted">%</span>
-          </div>
-        </div>
-        <div className="flex items-center justify-between pt-1">
-          <div className="flex items-center gap-3">
-            <button type="button" onClick={() => setKpis([...d.kpis, { text: "", weightage: 0 }])} className="flex items-center gap-1 text-[12px] font-medium text-brand-accent hover:underline"><Plus className="h-3 w-3" /> Add KPI</button>
-            {!alwaysOpen && (
-              <button type="button" onClick={() => setEditingKpis((s) => { const n = new Set(s); n.delete(key); return n; })} className="flex items-center gap-1 rounded-md bg-brand-light px-2 py-0.5 text-[12px] font-medium text-brand-accent hover:bg-brand hover:text-white transition-colors"><Check className="h-3 w-3" /> Done</button>
-            )}
-          </div>
-          <TotalBadge value={t} />
-        </div>
-      </div>
+      <KpiListEditor
+        idPrefix={`fw-${key}`}
+        kpis={d.kpis}
+        onKpisChange={setKpis}
+        newKpi={() => ({ text: "", weightage: 0 })}
+        extra={d.extra_goal_weightage}
+        onExtraChange={setExtra}
+        actions={!alwaysOpen && (
+          <button type="button" onClick={() => setEditingKpis((s) => { const n = new Set(s); n.delete(key); return n; })} className="flex items-center gap-1 rounded-md bg-brand-light px-2 py-0.5 text-[12px] font-medium text-brand-accent hover:bg-brand hover:text-white transition-colors"><Check className="h-3 w-3" /> Done</button>
+        )}
+      />
     );
   };
 
@@ -509,6 +535,8 @@ export function FrameworkTab() {
           </table>
         </div>
       ) : null}
+
+      <PersonalFrameworksSection periodLabel={matrix.period_label} />
 
       {modal?.kind === "add-function" && (
         <NameModal title="Add function" subtitle="A function (department) staff belong to, e.g. Pharmacovigilance." label="Function name" initial="" saveLabel="Add function" onClose={closeModal} isSaving={refMut.isPending} error={modalError} onSave={(name) => refMut.mutate({ kind: "add-function", value: name })} />

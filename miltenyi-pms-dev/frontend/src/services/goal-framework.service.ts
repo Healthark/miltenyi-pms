@@ -73,6 +73,75 @@ export interface MappingRow {
   /** Function / designation are locked while this year's goal set exists. */
   has_active_set: boolean;
   active_set_status: string | null;
+  /** A personal framework exists for the year; it also locks function and designation. */
+  personalised: boolean;
+}
+
+// ── Personal frameworks (16 Oct 2026) ───────────────────────────────
+
+/** One KPI row of the personal-framework editor. */
+export interface PersonalKpi extends FrameworkKpiInput {
+  /** The staff member's goal row this KPI continues; null for a new row or before they start. */
+  item_id: number | null;
+  /** The row holds goal text; removing it deletes that text. */
+  has_goal_text?: boolean;
+}
+
+/** What the editor opens with for one staff member (GET /personal/{user_id}). */
+export interface PersonalFramework {
+  user_id: number;
+  full_name: string;
+  email: string;
+  mentor_name: string | null;
+  function_id: number;
+  function_name: string;
+  level: number;
+  level_label: string | null;
+  period_label: string;
+  /** A personal framework exists for this year. */
+  is_personal: boolean;
+  framework_id: number | null;
+  /** The role column it is based on (and reverts to). */
+  based_on: FrameworkRow | null;
+  title: string;
+  business_outcomes: string;
+  functional_goals: string;
+  kpis: PersonalKpi[];
+  extra_goal_weightage: number;
+  /** The year's switch: whether sheets show the Additional goals row. */
+  extra_goal_enabled: boolean;
+  set_id: number | null;
+  set_status: "draft" | "submitted" | "approved" | null;
+  /** False once the goals are approved: texts and weightages only. */
+  can_change_kpi_count: boolean;
+  /** Last year's personal framework, for "Copy last year's". */
+  last_year: FrameworkRow | null;
+  updated_at: string | null;
+}
+
+/** One line of the Framework tab's "Personal frameworks" list. */
+export interface PersonalFrameworkRow {
+  user_id: number;
+  full_name: string;
+  email: string;
+  framework_id: number;
+  function_name: string | null;
+  level: number;
+  level_label: string | null;
+  title: string;
+  based_on_title: string | null;
+  kpi_count: number;
+  extra_goal_weightage: number;
+  set_status: "draft" | "submitted" | "approved" | null;
+  updated_at: string | null;
+}
+
+export interface PersonalFrameworkPayload {
+  title: string;
+  business_outcomes: string;
+  functional_goals: string;
+  kpis: { text: string; weightage: number; item_id: number | null }[];
+  extra_goal_weightage: number;
 }
 
 export interface DesignationCreatePayload {
@@ -170,6 +239,16 @@ export const goalFrameworkService = {
     (await apiClient.post<AdminDesignationBrief>("/admin/designations", payload)).data,
   getMapping: async (period?: string): Promise<MappingRow[]> =>
     (await apiClient.get<MappingRow[]>(`${BASE}/mapping`, { params: period ? { period } : undefined })).data,
+
+  // Personal frameworks (one staff member's own framework, active year)
+  listPersonal: async (period?: string): Promise<PersonalFrameworkRow[]> =>
+    (await apiClient.get<PersonalFrameworkRow[]>(`${BASE}/personal`, { params: period ? { period } : undefined })).data,
+  getPersonal: async (userId: number): Promise<PersonalFramework> =>
+    (await apiClient.get<PersonalFramework>(`${BASE}/personal/${userId}`)).data,
+  savePersonal: async (userId: number, payload: PersonalFrameworkPayload): Promise<PersonalFramework> =>
+    (await apiClient.put<PersonalFramework>(`${BASE}/personal/${userId}`, payload)).data,
+  revertPersonal: async (userId: number): Promise<PersonalFramework> =>
+    (await apiClient.delete<PersonalFramework>(`${BASE}/personal/${userId}`)).data,
 
   // Period switches
   getPeriods: async (): Promise<PeriodBrief[]> => (await apiClient.get<PeriodBrief[]>(`${BASE}/periods`)).data,
