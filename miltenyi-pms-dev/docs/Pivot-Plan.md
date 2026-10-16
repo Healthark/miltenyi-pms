@@ -347,3 +347,17 @@ Zaahid's ask: show Annual Goals like Project Goals, as a table, with only one go
 - **Mentor and Admin.** `GET /goals/annual/roster?fy_year=` lists one row per mentee (Admin: every staff member), including people who have not started; a draft shows its status but not its title. `GET /goals/annual/{id}` returns one goal with the owner's details, the current mentor and `can_review`; the owner sees mentor reviews only once released, others never see unsubmitted self-reviews, and only the writing mentor sees a mentor-review draft. The mentee page's Annual Goals tab shows the same view. Bulk approve stays on the roster.
 - **Role expectations for the mentor.** The old mentor dialog read them from the Project Reviews endpoint, which is switched off for Miltenyi (it returned 403). `GET /goals/annual/{id}/expectations` now serves the owner's expectations to the owner, the mentor and the Admin; the lookup moved to `app/services/role_expectations.py` and `/users/me/expectations` uses it too.
 - QA module 02 rewritten; QA 01, 05, 06 and the UAT guide follow.
+
+---
+
+## Revision — 16 October 2026: personal frameworks
+
+Zaahid's ask: the Admin must be able to override one staff member's Project Goals framework (weightages, KPI texts, the title and the two paragraphs) for that person only, taking effect at once, even when the role's framework is already set. Until now this was done once by a production script for Ramanadh Babu D (weights only). Plan: `docs/plans/2026-10-16-personal-frameworks-plan.md`; decisions taken the same day: KPIs can be added or removed only until the goals are approved; staff member and mentor are notified; not carried into the next goal year ("Copy last year's" instead); a "Personalised" marker everywhere; past-year frameworks locked.
+
+- **Data.** A personal framework is a `goal_frameworks` row with `user_id` set and `based_on_id` pointing at the role column (migration `f5a7c9e1b3d6`). The one-row-per-role rule became a partial unique index on role columns, plus one personal row per person per year. Additive; existing rows are role columns.
+- **Sync.** Saving applies the framework to the person's sheet at once: rows matched by the goal row they continue keep their goal text and quarter reviews, new KPIs add rows, removed KPIs delete theirs (draft or submitted only), the Additional goals row takes the framework's %. Revert matches the column's KPIs by position. Each save or revert writes a change-log row (`framework_personalised` / `framework_reverted`) and notifies the staff member and the mentor.
+- **Isolation.** The matrix, the column endpoints, Framework Mapping, the team queue and the year roll-over work on role columns only; editing a column never touches a personal sheet; Start and the staff page use the personal framework when there is one. Function and designation stay locked while a personal framework exists.
+- **Past years.** Column and personal edits for a goal year before the active one answer 409 "… is a past year; its framework is locked."
+- **Screens.** Framework Mapping (person icon + chip), the Framework tab's Personal frameworks list, the editor dialog (also on the Admin's sheet view), the chip on the framework band and in the queues.
+- **Roll-out.** Migrate `miltenyi`, `miltenyi_uat` and production `miltenyi_pms`; then the Admin opens Ramanadh's editor (it shows his 35/30/20/10/5 + 0) and saves it unchanged, which makes it his personal framework without changing his sheet. No script.
+- QA module 07 §7.4a (TC-PG-050 to TC-PG-056), QA 05 and the UAT guide follow.
