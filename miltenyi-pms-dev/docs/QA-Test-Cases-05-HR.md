@@ -302,7 +302,7 @@ There are 8 export surfaces. Test each one.
 - After every export, file opens correctly in Excel/Sheets — no corruption.
 - Audit log entries appear in real time after the triggering action.
 - **Personal frameworks** (Project Goals, 16 Oct 2026) are Admin-only: the Customise action shows only in the Admin Panel and on the Admin's view of a goal sheet, and Mentor / Staff get 403 from `/admin/goal-frameworks/personal`. Full cases in Module 7 §7.4a (TC-PG-050 to TC-PG-056).
-- **Users tab and personal frameworks:** editing the function or designation of a staff member who has a personal framework for the active goal year is refused (409) "… has a personal CY 26-27 Project Goals framework. Revert it to the standard on the Framework Mapping tab before changing their function or designation." Mentor, reviewer and other fields still save.
+- **Users tab and personal frameworks:** changing the function or level of a staff member who has a personal framework for the active goal year (and no goal sheet yet) asks **Remove the personal framework?** with what will happen; **Change and remove** saves and removes it, **Cancel** keeps the form open and saves nothing. Another designation at the same function and level saves without asking. Details in Module 7 TC-PG-057.
 - Refer to Module 1 §1.7 UI checklist on every screen.
 
 ---

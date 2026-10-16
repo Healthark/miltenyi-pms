@@ -11,9 +11,10 @@
  * year's goal set in progress: the set was built from one framework row and
  * keeps it. Promotions are recorded between goal years.
  *
- * "Customise framework" (16 Oct 2026) gives one staff member their own
+ * "Personalise framework" (16 Oct 2026) gives one staff member their own
  * framework for the year (PersonalFrameworkModal); a personalised row shows
- * the chip and keeps function and designation locked until it is reverted.
+ * the chip. Changing a personalised person's function or level removes the
+ * personal framework after a confirmation that says what happens.
  */
 import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
@@ -27,11 +28,16 @@ import { goalFrameworkService, type MappingRow, type MappingStatus } from "@/ser
 import { useToast } from "@/hooks/useToast";
 import { BTN_GHOST, BTN_PRIMARY, INPUT_CLS, PersonalisedChip, TH_CLS } from "@/components/project-goals/ui";
 import { PersonalFrameworkModal } from "@/components/admin/PersonalFrameworkModal";
+import { updateUserConfirmingPersonalFramework } from "@/components/admin/personalFrameworkConfirm";
+import { useConfirm } from "@/hooks/useConfirm";
 
 const SELECT_CLS =
   "rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] text-text-main outline-none focus:border-brand cursor-pointer";
+// Fixed last column: every row is its own grid, so an auto width would put
+// the header out of line. The two actions stack; side by side on 2xl.
 const GRID =
-  "grid-cols-[minmax(200px,1.5fr)_minmax(160px,1.1fr)_minmax(200px,1.3fr)_minmax(120px,0.8fr)_minmax(150px,1fr)_minmax(160px,1.1fr)_minmax(130px,0.9fr)_260px]";
+  "grid-cols-[minmax(160px,1.4fr)_minmax(110px,1fr)_minmax(140px,1.2fr)_minmax(92px,0.7fr)_minmax(110px,1fr)_minmax(110px,1fr)_minmax(104px,0.8fr)_144px] " +
+  "2xl:grid-cols-[minmax(160px,1.4fr)_minmax(110px,1fr)_minmax(140px,1.2fr)_minmax(92px,0.7fr)_minmax(110px,1fr)_minmax(110px,1fr)_minmax(104px,0.8fr)_200px]";
 
 const STATUS_LABEL: Record<MappingStatus, { label: string; dot: string; text: string }> = {
   mapped: { label: "Mapped", dot: "bg-green-500", text: "text-green-600" },
@@ -42,8 +48,8 @@ const STATUS_LABEL: Record<MappingStatus, { label: string; dot: string; text: st
 
 const GOALS_STATUS_LABEL: Record<string, string> = { draft: "Draft", submitted: "Submitted", approved: "Approved" };
 
-/** Function and designation stay put while this year's goals or a personal framework exist. */
-const mappingLocked = (r: MappingRow) => r.has_active_set || r.personalised;
+/** Function and designation stay put while this year's goals exist. */
+const mappingLocked = (r: MappingRow) => r.has_active_set;
 
 function StatusPill({ status }: Readonly<{ status: MappingStatus }>) {
   const s = STATUS_LABEL[status];
@@ -75,6 +81,7 @@ interface EditState {
 export function FrameworkMappingTab({ users }: Readonly<{ users: UserResponse[] }>) {
   const queryClient = useQueryClient();
   const toast = useToast();
+  const confirm = useConfirm();
   const [search, setSearch] = useState("");
   const [fn, setFn] = useState("all");
   const [st, setSt] = useState("all");
@@ -114,9 +121,10 @@ export function FrameworkMappingTab({ users }: Readonly<{ users: UserResponse[] 
         payload.function_id = e.functionId ? Number(e.functionId) : null;
         payload.designation_id = e.designationId ? Number(e.designationId) : null;
       }
-      return adminService.updateUser(e.row.user_id, payload);
+      return updateUserConfirmingPersonalFramework(confirm, e.row.user_id, payload);
     },
-    onSuccess: () => {
+    onSuccess: (updated) => {
+      if (!updated) return; // the Admin kept the personal framework; the dialog stays open
       setError("");
       setEdit(null);
       queryClient.invalidateQueries({ queryKey: queryKeys.admin.all });
@@ -180,8 +188,8 @@ export function FrameworkMappingTab({ users }: Readonly<{ users: UserResponse[] 
       {q.isError && <p className="rounded-lg bg-red-50 px-4 py-2.5 text-sm text-red-600">{getErrorMessage(q.error)}</p>}
       {q.isSuccess && (
         <div className="overflow-x-auto rounded-lg border border-border">
-          <div className="min-w-[1380px]">
-            <div className={`grid ${GRID} gap-3 border-b border-border bg-slate-50 px-4 py-2.5`}>
+          <div className="min-w-[1040px]">
+            <div className={`grid ${GRID} gap-2.5 border-b border-border bg-slate-50 px-4 py-2.5`}>
               <span className={TH_CLS}>Staff member</span>
               <span className={TH_CLS}>Function</span>
               <span className={TH_CLS}>GCC designation</span>
@@ -193,7 +201,7 @@ export function FrameworkMappingTab({ users }: Readonly<{ users: UserResponse[] 
             </div>
             {filtered.length === 0 && <div className="px-4 py-8 text-center text-sm text-text-muted">No staff match these filters.</div>}
             {filtered.map((r) => (
-              <div key={r.user_id} className={`grid ${GRID} items-center gap-3 border-b border-border px-4 py-3 last:border-b-0 hover:bg-slate-50`}>
+              <div key={r.user_id} className={`grid ${GRID} items-center gap-2.5 border-b border-border px-4 py-3 last:border-b-0 hover:bg-slate-50`}>
                 <div className="min-w-0">
                   <div className="text-sm font-medium text-text-main">{r.full_name}</div>
                   <div className="truncate text-xs text-text-muted">{r.email}</div>
@@ -212,7 +220,7 @@ export function FrameworkMappingTab({ users }: Readonly<{ users: UserResponse[] 
                     </span>
                   )}
                 </div>
-                <div className="flex justify-end gap-1">
+                <div className="flex flex-col items-stretch gap-1 2xl:flex-row 2xl:items-center 2xl:justify-end">
                   <button
                     type="button"
                     disabled={r.status !== "mapped"}
@@ -261,9 +269,9 @@ export function FrameworkMappingTab({ users }: Readonly<{ users: UserResponse[] 
                 )}
                 {!edit.row.has_active_set && edit.row.personalised && (
                   <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                    <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                    <UserCog className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                     <span>
-                      {edit.row.full_name} has a personal framework for this year. Revert it to the standard before changing function or designation; the reviewer fields can still change.
+                      {edit.row.full_name} has a personal framework for this year. Changing the function or the level removes it and {edit.row.full_name} follows the new role's framework; you are asked to confirm first. Another designation at the same level keeps it.
                     </span>
                   </div>
                 )}

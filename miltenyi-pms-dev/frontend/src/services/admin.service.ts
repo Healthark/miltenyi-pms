@@ -289,13 +289,18 @@ export const adminService = {
     return res.data.code;
   },
 
+  /** `dropPersonalFramework` confirms that a function / level change
+   *  removes the person's personal Project Goals framework (the API asks
+   *  first with a 409 whose detail code is "personal_framework"). */
   updateUser: async (
     userId: number,
     payload: UserUpdatePayload,
+    opts?: { dropPersonalFramework?: boolean },
   ): Promise<UserResponse> => {
     const res = await apiClient.patch<UserResponse>(
       `/admin/users/${userId}`,
       payload,
+      { params: opts?.dropPersonalFramework ? { drop_personal_framework: true } : undefined },
     );
     return res.data;
   },
