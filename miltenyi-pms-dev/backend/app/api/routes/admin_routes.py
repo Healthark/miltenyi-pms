@@ -42,7 +42,7 @@ from app.models.user_models import User, Role
 from app.models.reference_models import Function, Designation, career_level_label
 from app.models.project_goal_models import ProjectGoalSet
 from app.services import project_goal_periods as goal_periods
-from app.services.personal_frameworks import personal_framework
+from app.services.personal_frameworks import personal_framework, role_column
 from app.models.project_models import (
     Project,
     ProjectAssignment,
@@ -1207,6 +1207,23 @@ def create_user(
     return _load_user_with_relations(db, new_user.id)
 
 
+def _personal_drop_message(db, user: User, period_label: str, function_id, level, mentor_id) -> str:
+    """What the Admin confirms before a function / level change removes a
+    personal Project Goals framework (16 Oct 2026)."""
+    fn = db.query(Function).filter(Function.id == function_id).first() if function_id else None
+    if fn is None or level is None:
+        target = "They will have no framework until a function and a level are set."
+    elif role_column(db, user.org_id, fn.id, level, period_label) is None:
+        target = (f"There is no {fn.name} level {level} framework for {period_label} yet, "
+                  f"so they will see no framework until it is added on the Framework tab.")
+    else:
+        target = f"Their {period_label} goals will follow the {fn.name} level {level} framework."
+    mentor = db.query(User).filter(User.id == mentor_id).first() if mentor_id else None
+    notified = f"{user.full_name} and {mentor.full_name} are notified." if mentor else f"{user.full_name} is notified."
+    return (f"{user.full_name} has a personal {period_label} Project Goals framework. "
+            f"Changing their function or level removes it. {target} {notified}")
+
+
 @router.patch("/users/{user_id}", response_model=UserResponse)
 def update_user(
     user_id: int,
@@ -1214,6 +1231,10 @@ def update_user(
     db: DbSession,
     current_user: CurrentUser,
     background_tasks: BackgroundTasks,
+    drop_personal_framework: bool = Query(
+        default=False,
+        description="Confirms that changing the function or level removes the person's personal Project Goals framework for the active goal year.",
+    ),
 ):
     """
     Update a user's details (name, role, function, mentor, etc.).
@@ -1297,6 +1318,7 @@ def update_user(
     # which both write through this endpoint.
     wants_function = "function_id" in update_data and update_data["function_id"] != user.function_id
     wants_designation = "designation_id" in update_data and update_data["designation_id"] != user.designation_id
+    dropped_personal_label = None
     if wants_function or wants_designation:
         active_period = goal_periods.active_period(db, current_user.org_id)
         if active_period is not None:
@@ -1317,16 +1339,35 @@ def update_user(
                         f"({existing_set.status}). Function and designation can change once the next goal year starts."
                     ),
                 )
-            # A personal framework (16 Oct 2026) was made for this person's
-            # function and level; it is reverted before either changes.
-            if personal_framework(db, current_user.org_id, user.id, active_period.period_label) is not None:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=(
-                        f"{user.full_name} has a personal {active_period.period_label} Project Goals framework. "
-                        f"Revert it to the standard on the Framework Mapping tab before changing their function or designation."
-                    ),
+            # A personal framework (16 Oct 2026) belongs to this person's
+            # function and level. Changing either removes it once the Admin
+            # confirms (drop_personal_framework=true); the person then follows
+            # the new role's framework. Another designation at the same
+            # function and level keeps it. A goal sheet blocks the change
+            # above, so a sheet never loses its framework mid-year.
+            personal = personal_framework(db, current_user.org_id, user.id, active_period.period_label)
+            if personal is not None:
+                new_function_id = update_data["function_id"] if "function_id" in update_data else user.function_id
+                new_designation_id = update_data["designation_id"] if "designation_id" in update_data else user.designation_id
+                new_designation = (
+                    db.query(Designation).filter(Designation.id == new_designation_id).first() if new_designation_id else None
                 )
+                new_level = new_designation.career_level if new_designation else None
+                old_level = user.designation.career_level if user.designation else None
+                if new_function_id != user.function_id or new_level != old_level:
+                    if not drop_personal_framework:
+                        mentor_after = update_data["mentor_id"] if "mentor_id" in update_data else user.mentor_id
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail={
+                                "code": "personal_framework",
+                                "message": _personal_drop_message(
+                                    db, user, active_period.period_label, new_function_id, new_level, mentor_after,
+                                ),
+                            },
+                        )
+                    db.delete(personal)
+                    dropped_personal_label = active_period.period_label
 
     for field, value in update_data.items():
         setattr(user, field, value)
@@ -1367,6 +1408,23 @@ def update_user(
         )
 
     db.commit()
+
+    if dropped_personal_label:
+        # Same audience as a revert: the staff member and their mentor.
+        for recipient_id, message in (
+            (user.id, f"Your function or designation changed, so your personal {dropped_personal_label} Project Goals "
+                      f"framework was removed. Your goals follow the framework for your new role."),
+            (user.mentor_id, f"{user.full_name}'s function or designation changed, so their personal "
+                             f"{dropped_personal_label} Project Goals framework was removed."),
+        ):
+            if recipient_id is not None:
+                notify(
+                    db, org_id=current_user.org_id, recipient_id=recipient_id, sender_id=current_user.id,
+                    module="project_goal", entity_type="project_goal_framework", entity_id=None,
+                    message=message, entity_url="/project-goals", background_tasks=background_tasks,
+                    send_email=True, email_subject=f"Project Goals framework back to standard ({dropped_personal_label})",
+                )
+        db.commit()
 
     # Mentor reassignment notifications. We notify on any of:
     #   - mentor assigned for the first time   (None → X)

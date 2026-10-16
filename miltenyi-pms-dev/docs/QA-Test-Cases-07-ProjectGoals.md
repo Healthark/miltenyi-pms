@@ -361,7 +361,7 @@ The change log tab was dropped from the set page. Actions are still recorded in 
 - The edit dialog has four fields: **Function**, **GCC designation** (filtered by the chosen function; the level follows the designation and is shown read-only), **Reviewer (Mentor)** and **Miltenyi reviewer**. **Save** → toast "Mapping saved"; the same values show on the Users tab, in the queue rows and in the staff member's page header.
 - A staff member whose goals for the current year exist (Draft, Submitted or Approved) shows a small lock note "Goals …" under the status; in their dialog Function and GCC designation are disabled with an amber note, and the API refuses such a change with "… has CY 26-27 project goals in progress (…). Function and designation can change once the next goal year starts." (409). The same rule applies when editing the user on the Users tab. Promotions are recorded between goal years.
 - Only Admins see this tab. The Admin Panel tabs are **Users · Exports · System Settings · Framework Mapping · Framework** — there is no Projects tab.
-- Each row ends with two buttons: **Personalise framework** (§7.4a) and **Edit** (this dialog). A staff member with a personal framework shows a violet **Personalised** chip and has Function and GCC designation locked until it is reverted.
+- Each row ends with two buttons: **Personalise framework** (§7.4a) and **Edit** (this dialog). A staff member with a personal framework shows a violet **Personalised** chip; changing their function or level removes it after a confirmation (TC-PG-057).
 
 ---
 
@@ -552,7 +552,7 @@ A **personal framework** is one staff member's own framework for the active goal
 - **Framework Mapping:** violet **Personalised** chip under the status; **Personalise framework** is disabled for rows that are not **Mapped** ("Map a function, a level and its framework column first").
 - **Framework tab:** the **Personal frameworks · CY 26-27** list under the matrix (staff member, function · level, personal title with "based on …", KPI count and Additional goals %, goals status, updated date, **Edit** / **Revert**). The matrix itself shows role columns only; editing a column never changes a personal sheet.
 - **Project Goals:** the framework band carries the **Personalised** chip for the staff member, the mentor and the Admin; the Team Goals / All Goals queue shows **Personalised** under "Level n · <title>".
-- **Locks:** while a personal framework exists the Mapping dialog disables Function and GCC designation with "<Name> has a personal framework for this year. Revert it to the standard before changing function or designation."; the Users tab gets 409 "… has a personal CY 26-27 Project Goals framework. Revert it to the standard on the Framework Mapping tab before changing their function or designation."
+- **Function or level change:** removes the personal framework after a confirmation, on Framework Mapping and on the Users tab (TC-PG-057).
 - Mentors and staff never see the Customise action; the personal-framework endpoints answer 403 for them.
 - **Next goal year:** after the roll-over to CY 27-28 the person starts from the column again (the list is empty for CY 27-28). Opening the editor offers **Copy last year's** ("<Name> had a personal framework in CY 26-27: …"), which fills the editor with last year's title, paragraphs, KPIs and weightages.
 
@@ -562,6 +562,25 @@ A **personal framework** is one staff member's own framework for the active goal
 
 **Login as:** Admin (Aanya), after the roll-over to CY 27-28 (TC-PG-046)
 **Expected:** The CY 26-27 framework can be read but not changed: a column save, add or delete for CY 26-27 through the API answers 409 "CY 26-27 is a past year; its framework is locked.", and so does a personal-framework save or revert for CY 26-27. CY 26-27 sheets and reviews keep the texts and weightages they had.
+
+---
+
+### TC-PG-057 — A function or level change removes a personal framework, after a confirmation
+
+**Login as:** Admin (Aanya). Kabir Singh has a personal framework and has not started his goals; Aarav Patel has one and a goal sheet.
+**Steps:**
+1. Framework Mapping → **Edit** on Kabir. Read the amber note. Pick another designation at the **same** function and level, if one exists, and Save.
+2. Edit Kabir again, pick a designation at another level (or another function) and Save. In the confirmation click **Cancel**; then Save again and click **Change and remove**.
+3. Users tab → edit Kabir after personalising him again → change his function → **Save Changes**.
+4. Edit Aarav (goal sheet in progress) and try to change his designation.
+
+**Expected:**
+- The amber note reads "Kabir Singh has a personal framework for this year. Changing the function or the level removes it and Kabir Singh follows the new role's framework; you are asked to confirm first. Another designation at the same level keeps it."
+- Step 1 saves without a question and the **Personalised** chip stays.
+- Step 2 shows **Remove the personal framework?**: "Kabir Singh has a personal CY 26-27 Project Goals framework. Changing their function or level removes it. Their CY 26-27 goals will follow the <Function> level <n> framework. Kabir Singh and <mentor> are notified." When the new role has no column the middle sentence reads "There is no <Function> level <n> framework for CY 26-27 yet, so they will see no framework until it is added on the Framework tab." **Cancel** keeps the dialog open and saves nothing. **Change and remove** saves the mapping, the chip disappears, Kabir leaves the Framework tab's Personal frameworks list, and his page shows the new role's framework.
+- Bells: "Your function or designation changed, so your personal CY 26-27 Project Goals framework was removed. Your goals follow the framework for your new role." / "Kabir Singh's function or designation changed, so their personal CY 26-27 Project Goals framework was removed."
+- Step 3: the Users tab asks the same question with the same wording; Cancel keeps the form open.
+- Step 4 (mid-cycle or mid-review): Function and GCC designation are disabled as for anyone with a sheet, and the API refuses the change even when confirmed: "… has CY 26-27 project goals in progress (…). Function and designation can change once the next goal year starts." The sheet, its reviews and the personal framework stay as they are; adjust such a person mid-year by editing their personal framework instead.
 
 ---
 
@@ -601,6 +620,7 @@ Bell = in-app notification (Topbar). Email is sent in addition when SMTP is conf
 | Mentor/Admin submits a quarter's review | Staff | "<Miltenyi reviewer>'s Q3 · CY 26-27 comments on your project goals are in, entered by <Mentor>." | "Your Q3 · CY 26-27 project goals review is in" |
 | Admin unlocks goals or a quarter's review | Staff **and** Mentor | "The Admin unlocked the <CY 26-27 goals / Q3 · CY 26-27 review> on <Staff>'s project goals: <reason>" | "Project goals unlocked: …" |
 | Admin personalises a staff member's framework | Staff **and** Mentor | "The Admin personalised your CY 26-27 Project Goals framework." / "The Admin personalised the CY 26-27 Project Goals framework for <Staff>." (later saves: "…changed your personal…") | "Project Goals framework personalised (CY 26-27)" |
+| A function or level change removes it (confirmed by the Admin) | Staff **and** Mentor | "Your function or designation changed, so your personal CY 26-27 Project Goals framework was removed. Your goals follow the framework for your new role." / "<Staff>'s function or designation changed, so their personal CY 26-27 Project Goals framework was removed." | "Project Goals framework back to standard (CY 26-27)" |
 | Admin reverts it to the standard | Staff **and** Mentor | "Your CY 26-27 Project Goals framework is back to the standard for your role." / "<Staff>'s CY 26-27 Project Goals framework is back to the standard for their role." | "Project Goals framework back to standard (CY 26-27)" |
 | Admin rolls a quarter out / sets / rolls back | Every active user (except the Admin who did it) | "Project Goals moved to Q4 · CY 26-27. Self-reviews and Miltenyi reviews for Q4 · CY 26-27 are open; earlier quarters of CY 26-27 stay open for backfill." (year change: "…CY 27-28 is the new goal year…"; roll back: "…Quarters after it are closed again.") | bell only |
 

@@ -346,13 +346,58 @@ def test_personal_rows_stay_out_of_the_role_views(db_session: Session, app_with_
         db_session.commit()
     db_session.rollback()
 
-    # Function and designation stay put while the personal framework exists.
+    # A goal sheet in the active year blocks function / designation changes
+    # (existing rule), confirmed or not: the sheet keeps its framework.
     r = admin.patch(f"/api/v1/admin/users/{s['diya'].id}", json={"designation_id": s["desig2"].id})
-    assert r.status_code == 409  # Diya has a sheet in progress (existing rule)
-    db_session.query(ProjectGoalSet).filter(ProjectGoalSet.user_id == s["aarav"].id).delete()
+    assert r.status_code == 409  # Diya has a sheet in progress
+    r = admin.patch(f"/api/v1/admin/users/{s['aarav'].id}", params={"drop_personal_framework": "true"},
+                    json={"designation_id": s["desig2"].id})
+    assert r.status_code == 409 and "project goals in progress" in r.json()["detail"]
+    assert db_session.query(GoalFramework).filter(GoalFramework.user_id == s["aarav"].id).count() == 1
+
+
+def test_role_change_removes_the_personal_framework_once_confirmed(db_session: Session, app_with_db: FastAPI, as_user) -> None:
+    """Option 2 (16 Oct 2026): before the staff member starts their sheet, a
+    function or level change removes their personal framework, after the
+    Admin confirms; another designation at the same level keeps it."""
+    s = _seed(db_session)
+    same_level = Designation(org_id=s["org"].id, name="Regulatory Affairs Officer", level=1, career_level=1,
+                             career_level_label="Entry", function_id=s["fn"].id)
+    db_session.add(same_level)
     db_session.commit()
-    r = _as(as_user, s["admin"]).patch(f"/api/v1/admin/users/{s['aarav'].id}", json={"designation_id": s["desig2"].id})
-    assert r.status_code == 409 and "personal" in r.json()["detail"]
+    rows = [("KPI 1", 50, None), ("KPI 2", 40, None)]
+    assert _as(as_user, s["admin"]).put(f"{PF}/{s['aarav'].id}", json=_payload(rows, 10)).status_code == 200
+    users = "/api/v1/admin/users"
+
+    # Same function and level: nothing to confirm, the personal framework stays.
+    r = _as(as_user, s["admin"]).patch(f"{users}/{s['aarav'].id}", json={"designation_id": same_level.id})
+    assert r.status_code == 200, r.text
+    assert db_session.query(GoalFramework).filter(GoalFramework.user_id == s["aarav"].id).count() == 1
+
+    # Another level: the Admin is told what happens and must confirm.
+    r = _as(as_user, s["admin"]).patch(f"{users}/{s['aarav'].id}", json={"designation_id": s["desig2"].id})
+    assert r.status_code == 409, r.text
+    detail = r.json()["detail"]
+    assert detail["code"] == "personal_framework"
+    assert detail["message"] == (
+        f"Aarav has a personal {PERIOD} Project Goals framework. Changing their function or level removes it. "
+        f"There is no Regulatory Affairs level 2 framework for {PERIOD} yet, so they will see no framework until it is "
+        f"added on the Framework tab. Aarav and Rahul are notified."
+    )
+    db_session.expire_all()
+    assert db_session.get(User, s["aarav"].id).designation_id == same_level.id
+
+    r = _as(as_user, s["admin"]).patch(f"{users}/{s['aarav'].id}", params={"drop_personal_framework": "true"},
+                                       json={"designation_id": s["desig2"].id})
+    assert r.status_code == 200, r.text
+    db_session.expire_all()
+    assert db_session.get(User, s["aarav"].id).designation_id == s["desig2"].id
+    assert db_session.query(GoalFramework).filter(GoalFramework.user_id.isnot(None)).count() == 0
+    assert db_session.query(GoalFrameworkKpi).count() == 3  # only the column's KPIs remain
+    assert _notices(db_session, s["aarav"].id)[-1].message.startswith("Your function or designation changed, so your personal")
+    assert _notices(db_session, s["mentor"].id)[-1].message == (
+        f"Aarav's function or designation changed, so their personal {PERIOD} Project Goals framework was removed."
+    )
 
 
 def test_past_years_are_locked(db_session: Session, app_with_db: FastAPI, as_user) -> None:

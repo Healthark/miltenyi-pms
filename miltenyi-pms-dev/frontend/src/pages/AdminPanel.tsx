@@ -14,6 +14,7 @@ import {
   type UserUpdatePayload,
 } from "@/services/admin.service";
 import { getErrorMessage } from "@/utils/errors";
+import { updateUserConfirmingPersonalFramework } from "@/components/admin/personalFrameworkConfirm";
 import { UsersTab } from "@/components/admin/UsersTab";
 import { SystemSettingsTab } from "@/components/admin/SystemSettingsTab";
 import { UserModal } from "@/components/admin/UserModal";
@@ -216,10 +217,13 @@ export default function AdminPanel() {
   // useMutation's mutate() takes ONE argument. updateUser needs two
   // (id + payload), so we pack them into an object. This is the
   // canonical pattern for any multi-arg mutation.
+  // A function / level change that would remove a personal Project Goals
+  // framework asks for confirmation first (null = the Admin cancelled).
   const updateUserMutation = useMutation({
     mutationFn: (vars: { id: number; payload: UserUpdatePayload }) =>
-      adminService.updateUser(vars.id, vars.payload),
+      updateUserConfirmingPersonalFramework(confirm, vars.id, vars.payload),
     onSuccess: (updated) => {
+      if (!updated) return;
       void queryClient.invalidateQueries({ queryKey: queryKeys.admin.users() });
       closeUserModal();
       toast.success(`${updated.full_name} updated.`);
